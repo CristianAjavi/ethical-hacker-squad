@@ -66,22 +66,22 @@ Corrections worth carrying, because getting these wrong is common: the current O
 | `API6:2023`, `API4:2023` | web-api | §8 | `WEB-17`, `WEB-18` |
 | `API7:2023` | web-api | §4 | `WEB-10` |
 | `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | §7, §11 / §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
-| `ASVS 5.0 V1`, `V2`, `V5` | web-api | §3, §5 | `WEB-07`..`WEB-12` |
+| `ASVS 5.0 V1`, `V2`, `V5` | web-api | §3, §4, §5 | `WEB-07`..`WEB-12` |
 | `ASVS 5.0 V3` | web-api | §6, §7 | `WEB-13`..`WEB-16` |
 | `ASVS 5.0 V4` | web-api | §10 | `WEB-20`, `WEB-21` |
 | `ASVS 5.0 V6`, `V7`, `V9`, `V10` | web-api | §1 | `WEB-01`..`WEB-03` |
 | `ASVS 5.0 V8` | web-api | §2 | `WEB-04`..`WEB-06` |
 | `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | §9 / §1 | `WEB-19`, `INF-03` |
-| `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | §1, §5 / §1..§3 | `INF-01`..`INF-06`, `PRV-01`..`PRV-04` |
+| `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | §1, §5 / §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
 | `ASVS 5.0 V16` | web-api / infra-cloud | §11 / §1 | `WEB-22`, `INF-06` |
 | `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | §2, §6 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12` |
 | `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | §5, §7 | `MOB-09`, `MOB-10`, `MOB-13` |
 | `MASVS-PLATFORM-*` | mobile | §1, §3, §4, §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15` |
 | `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | §6, §7 | `MOB-11`..`MOB-13` |
-| `MASVS-PRIVACY-*` | privacy-abuse / mobile | §4 | `PRV-07`, `MOB-04` |
+| `MASVS-PRIVACY-*` | privacy-abuse / mobile | §5 / §2 | `PRV-07`, `MOB-04` |
 | `A01:2025` | web-api | §2, §4 | `WEB-04`..`WEB-06`, `WEB-10` |
 | `A02:2025` | infra-cloud | §1..§3, §5 | `INF-01`..`INF-12`, `INF-17` |
-| `A03:2025` | supply-chain | §1..§6 | `SUP-01`..`SUP-12`, `SUP-16`..`SUP-20` |
+| `A03:2025` | supply-chain | §1..§6, §8, §9 | `SUP-01`..`SUP-12`, `SUP-16`..`SUP-20` |
 | `A04:2025` | web-api / infra-cloud | §9 / §1 | `WEB-19`, `INF-03` |
 | `A05:2025` | web-api | §3 | `WEB-07`..`WEB-09` |
 | `A06:2025` | leader | design review across packs | — |
@@ -89,9 +89,9 @@ Corrections worth carrying, because getting these wrong is common: the current O
 | `A08:2025` | supply-chain | §5, §6 | `SUP-09`..`SUP-12` |
 | `A09:2025` | infra-cloud / web-api | §1 / §11 | `INF-06`, `WEB-22` |
 | `A10:2025` | web-api | §11 | `WEB-22` |
-| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | §4 / §5 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12` |
+| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | §4 / §5, §6 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12` |
 | `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | §5, §6 | `SUP-09`..`SUP-12` |
-| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | §5..§7 / part A | `SUP-13`..`SUP-16`, `REM-*` |
+| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | §5..§8 / part A | `SUP-13`..`SUP-16`, `REM-*` |
 | `LLM01:2026`, `AML.T0051` | ai-safety | §0, §1 | `AI-01`..`AI-04` |
 | `LLM02:2026`, `LLM08:2026` | ai-safety | §6 | `AI-17`, `AI-18` |
 | `LLM03:2026` | ai-safety | §2 | `AI-05`..`AI-07` |

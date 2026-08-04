@@ -310,7 +310,7 @@ dependency-check: "commons-collections 3.2.1" -> CPE of another product with the
 **Vulnerable pattern**
 ```env
 AWS_ACCESS_KEY_ID=AKIA...            # distinctive format: high detection precision
-DB_PASS=Prod!2026$rys                # no format: entropy only, high false-positive rate
+DB_PASS=Pr0d!2026#Ac9x                # no format: entropy only, high false-positive rate
 ```
 **What rules it out (false positive)**
 - The value is an example, a placeholder, or a key for a documented test service (`sk_test_`, `CHANGEME`, deterministic fixture values).

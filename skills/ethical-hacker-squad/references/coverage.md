@@ -31,6 +31,9 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 | Kubernetes manifests, Helm charts, `kustomization.yaml` | `infra-cloud` | `infra-cloud.md` §3 | Scanning an unrendered Helm chart produces template-literal false positives. |
 | `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`, `.circleci/` | `infra-cloud` + `supply-chain` | `infra-cloud.md` §4, `supply-chain.md` §5 | Mapped to `CICD-SEC-*`. Unpinned actions and `pull_request_target` are the highest-yield checks. |
 | Multiple environments, `.env*`, secret managers, deployment configuration | `infra-cloud` | `infra-cloud.md` §5 | |
+| SBOM, artifact signing, `cosign`, release or publishing workflow | `supply-chain` | `supply-chain.md` §6 | Provenance and attestation. Maps to `SLSA Build L1`..`L3`. |
+| A dependency added recently, an unfamiliar maintainer, or a suspected incident | `supply-chain` | `supply-chain.md` §9 | Malicious-package indicators. Read before concluding a package is merely outdated. |
+| Admin panel, support impersonation, structured logging of user actions | `privacy-abuse` | `privacy-abuse.md` §6, §7 | Export and deletion rights, and leakage through logs and traces. |
 | Live hosts, exposed ports, remote endpoints named in scope | `infra-cloud` | `infra-cloud.md` §6 | **REQUIRES AUTHORIZATION.** Default to proposing a local patch. |
 | LLM API calls, `anthropic`, `openai`, LangChain/LangGraph, LlamaIndex, agent frameworks | `ai-safety` | `ai-safety.md` §0-§2, §5-§7 | `AI-01` (lethal trifecta) always runs first. |
 | `.mcp.json`, `claude_desktop_config.json`, MCP server implementation, tool definitions | `ai-safety` | `ai-safety.md` §3 | MCP config files are a measured secret-sprawl surface, not just a config file. |

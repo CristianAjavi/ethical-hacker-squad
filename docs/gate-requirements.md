@@ -42,6 +42,12 @@ Progressive disclosure only works if the entry point stays small.
 
 Exceeding a limit fails with the file and its line count.
 
+### G3b — Declared counts match reality
+
+The corpus line count and procedure count are stated in `SKILL.md`, `references/knowledge/README.md`, `README.md` and `CHANGELOG.md`. Nothing currently stops the first added procedure from making all four wrong at once.
+
+Count procedures by matching the procedure heading pattern across `references/knowledge/*.md`, count corpus lines, and fail if either disagrees with any declared figure. Prose that repeats a number needs a check watching it, or it becomes a lie on the next commit.
+
 ## G4 — Every knowledge item is cited
 
 Every procedure in `references/knowledge/*.md` carries a **Traceability** line with at least one identifier, and every quantitative claim names its source. An item the loop adds or modifies additionally carries a source URL from the allowlist and a consultation date.

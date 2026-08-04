@@ -38,7 +38,7 @@ Two properties make our version worse than the average case. The blast radius is
 
 **Provenance per item.** Every knowledge item the loop touches carries a source URL and a consultation date. An item without provenance fails CI.
 
-**Protected paths fail closed.** A bot pull request whose diff touches the safety contract in `SKILL.md`, `.claude-plugin/**`, `agents/**`, `.github/workflows/**`, `docs/sources-allowlist.json`, `LICENSE` or `NOTICE.md` fails CI. Those files define the system's limits, and the loop cannot move its own fence.
+**Protected paths fail closed.** A bot pull request whose diff touches any protected path fails CI. The authoritative list is G7 in `docs/gate-requirements.md` and is deliberately not duplicated here: a security list maintained in two places diverges, and the copy is always the one someone trusts. Those files define the system's limits, and the loop cannot move its own fence.
 
 **Asymmetric review by branch prefix.** `bot/` branches face strictly harsher checks than human branches: protected-path enforcement, mandatory provenance on every changed item, and a diff-size cap. The prefix is a trust label, not decoration.
 
