@@ -1,0 +1,81 @@
+# Monitorea la taxonomia de labels. Sin esto, scripts/gh/labels.sh seria prosa:
+# si un label desaparece, los issue forms dejan de etiquetar EN SILENCIO (GitHub
+# ignora los labels inexistentes) y el triaje determinista se rompe sin avisar.
+#
+# Solo lee. Sin input no confiable: se dispara por schedule, a mano, o cuando cambia
+# el propio script o los formularios.
+name: Deriva de labels
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Sin anclas YAML a proposito: el parser de GitHub Actions no soporta anchors/aliases.
+    paths:
+      - 'scripts/gh/labels.sh'
+      - 'scripts/gates/gate-labels-taxonomy.sh'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/labels-drift.yml'
+  pull_request:
+    paths:
+      - 'scripts/gh/labels.sh'
+      - 'scripts/gates/gate-labels-taxonomy.sh'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/labels-drift.yml'
+
+permissions: {}
+
+jobs:
+  taxonomia:
+    name: Coherencia forms <-> taxonomia (sin red)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Comprobar que los forms solo usan labels declarados
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gates/gate-labels-taxonomy.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Taxonomia OK::Los forms solo aplican labels declarados." ;;
+            1) echo "::error title=Deriva::Un form aplica un label que no existe en scripts/gh/labels.sh; GitHub lo ignoraria en silencio." ;;
+            2) echo "::error title=NO PUDE MEDIR::Falta python3/PyYAML o los ficheros de entrada." ;;
+            *) echo "::error title=Gate roto::codigo de salida inesperado $rc" ;;
+          esac
+          exit "$rc"
+
+  check:
+    name: labels.sh --check (contra GitHub)
+    runs-on: ubuntu-latest
+    # En un PR desde un fork no aporta nada: la taxonomia vive en el repo de destino.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad' && github.event_name != 'pull_request'
+    permissions:
+      contents: read   # checkout y lectura de labels del repo publico
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Comprobar taxonomia
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gh/labels.sh --repo "$GITHUB_REPOSITORY" --check || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Labels OK::Taxonomia completa y sin deriva." ;;
+            1) echo "::error title=Deriva de labels::Faltan labels o difieren. Ejecuta scripts/gh/labels.sh --apply con una cuenta con permiso de escritura." ;;
+            2) echo "::error title=NO PUDE MEDIR::No se pudo consultar la taxonomia (falta gh/jq o la API no respondio)." ;;
+            *) echo "::error title=Script roto::codigo de salida inesperado $rc" ;;
+          esac
+          exit "$rc"

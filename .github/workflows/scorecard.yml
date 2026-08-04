@@ -1,0 +1,65 @@
+# OpenSSF Scorecard: MIDE la postura del repositorio. NO es una puerta.
+#
+# Se adopta casi literal el workflow oficial de ossf/scorecard
+# (.github/workflows/scorecard-analysis.yml), que ya cumple nuestras reglas duras:
+# solo push a la rama por defecto + schedule, `permissions` minimos elevados por job,
+# checkout con persist-credentials: false y acciones fijadas por SHA de 40 caracteres.
+#
+# POR QUE NO BLOQUEA: la accion oficial no tiene ningun input de umbral y nunca falla
+# el job por puntaje bajo (verificado en su action.yaml: sus unicos inputs son
+# results_file, results_format, repo_token, publish_results, file_mode e internal_*).
+# El CLI tampoco tiene flag de umbral. Ademas el puntaje agregado es un promedio
+# ponderado por riesgo del que se EXCLUYEN los checks que devuelven "?", asi que puede
+# BAJAR por hacer las cosas bien (un check pasa de "?" a puntuable). Gatear sobre el
+# agregado seria rojo eterno o un umbral que no mide nada.
+# El gate con dientes va aparte, por-check, en scripts/gates/.
+#
+# TRADE-OFF ASUMIDO: publish_results: true envia el resultado a api.scorecard.dev,
+# es decir es publico. Para un repo publico MIT es aceptable y es lo que habilita el badge.
+name: Scorecard (medicion)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Semanal, sabados. Cron en UTC.
+    - cron: '17 4 * * 6'
+  workflow_dispatch:
+
+# Ningun permiso por defecto. Cada job declara el suyo.
+permissions: {}
+
+jobs:
+  analysis:
+    name: Analisis Scorecard
+    runs-on: ubuntu-latest
+    # No corre en forks: publicaria resultados de un repo que no es este.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read          # checkout
+      security-events: write  # subir el SARIF al panel de code scanning
+      id-token: write         # token OIDC, requerido por publish_results: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ejecutar analisis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Guardar SARIF como artefacto
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Subir a code scanning
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: results.sarif
