@@ -1,0 +1,81 @@
+# .github/workflows/ci.yml
+#
+# CI del repo. Ejecuta TODOS los gates de scripts/gates/ y distingue los tres
+# resultados posibles: 0 medido/OK, 1 medido/FALLA, 2 NO PUDE MEDIR.
+# Un gate en 2 NO se da por bueno: el paso termina en rojo igual que un 1, pero
+# el resumen del run los separa para que se vea que una comprobacion no llego a
+# hacerse (no es lo mismo "revisado y correcto" que "no revisado").
+#
+# Disparadores: solo eventos del propio repositorio. Nada de pull_request_target,
+# issues, issue_comment ni workflow_run: son las vias por las que un tercero
+# mete texto en un contexto privilegiado.
+#
+# Nota sobre `push`: un push hecho por un workflow con GITHUB_TOKEN NO crea un
+# workflow run (documentado por GitHub). Es decir, si la promocion automatica a
+# `stable` empuja con GITHUB_TOKEN, este CI no se disparara sobre ese push; la
+# puerta de calidad tiene que haberse cerrado ANTES, en el run que promueve.
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - stable
+  push:
+    branches:
+      - main
+      - stable
+
+# Ningun permiso por defecto: cada trabajo pide lo minimo que necesita.
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: Gates deterministas (sin herramientas externas)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Inventario de gates
+        run: ./scripts/gates/run-all.sh --list
+
+      - name: Ejecutar gates que no dependen de herramientas externas
+        run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
+
+  workflow-hardening:
+    name: Endurecimiento de workflows (zizmor + actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Sin token: este trabajo analiza el contenido del PR, que en un fork es
+      # contenido no confiable. Las auditorias de zizmor que necesitan red van
+      # en supply-chain-audit.yml, que no se dispara desde forks.
+      #
+      # actionlint delega el analisis de los bloques `run:` en shellcheck. Si el
+      # runner no lo trae, el gate lo dice y devuelve 2 (NO PUDE MEDIR) y este
+      # paso queda en rojo A PROPOSITO: "no lo revise" no puede parecer verde.
+      - name: zizmor + actionlint sobre los workflows
+        env:
+          # Cache de herramientas fuera del arbol de trabajo: el gate instala
+          # zizmor y actionlint en versiones fijas y verifica el SHA-256 del
+          # binario descargado. (`runner.*` solo esta disponible a nivel de
+          # paso, no a nivel de trabajo.)
+          GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
+        run: ./scripts/gates/run-all.sh --only 'gate-actions-lint.sh'

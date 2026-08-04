@@ -1,0 +1,54 @@
+# .github/workflows/supply-chain-audit.yml
+#
+# Auditorias de zizmor que necesitan red y token: impostor-commit,
+# known-vulnerable-actions y stale-action-refs.
+#
+# ¿Por que en un workflow aparte y no en ci.yml?
+#   Fijar las acciones por SHA (regla dura de este repo) APAGA las alertas de
+#   Dependabot: GitHub solo alerta de acciones vulnerables cuando usan
+#   versionado semantico, no cuando estan fijadas a un SHA. Estas auditorias son
+#   la compensacion. Pero necesitan un token, y la regla "ningun trabajo que
+#   procese contenido no confiable recibe secretos" prohibe darselo al trabajo
+#   que analiza un PR (que en un fork es contenido de un tercero).
+#   Solucion: este workflow NO se dispara con pull_request. Solo con eventos
+#   sobre codigo ya integrado o iniciados a mano.
+name: Supply chain audit
+
+on:
+  schedule:
+    # Semanal, martes 05:23 UTC. `schedule` siempre corre sobre el ultimo
+    # commit de la rama por defecto.
+    - cron: "23 5 * * 2"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  online-audit:
+    name: zizmor con auditorias en linea
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: zizmor (offline + en linea) y actionlint
+        env:
+          # `runner.*` solo esta disponible a nivel de paso, no de trabajo.
+          GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
+          ZIZMOR_ONLINE: "1"
+          # GITHUB_TOKEN de solo lectura sobre este repo. No hay ningun otro
+          # secreto en el trabajo y el workflow no es alcanzable desde un fork.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/gates/run-all.sh --only 'gate-actions-lint.sh'
