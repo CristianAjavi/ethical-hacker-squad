@@ -1,47 +1,71 @@
-# Formato del informe
+# Report format
 
-## Resumen ejecutivo
+This file is a reference consumed by the skill: it defines the shape of the deliverable the squad leader produces.
 
-Indicar alcance, modo, componentes revisados, resultado general y los riesgos más importantes. Evitar garantías absolutas.
+## Language
 
-## Alcance y metodología
+Write the report in the language the user is using. Every label below describes what a section must contain, not a heading to copy verbatim: translate the headings, keep the content.
 
-Registrar:
+Never translate: standard identifiers (`WSTG-INPV-05`, `ASVS 5.0 V8`, `CWE-89`, `A01:2025`, `API1:2023`, `LLM01:2026`, `ASI06`, `MASVS-STORAGE-1`, `MASTG-TEST-0001`, `CAPEC-66`, `CICD-SEC-4`, `SSDF PW`, `SLSA Build L2`), procedure IDs from the packs (`WEB-07`, `AI-01`, `SUP-14`), tool names, command lines, file paths, code symbols, and CVE identifiers.
 
-- carpeta, repositorio, artefacto o endpoint autorizado;
-- commit o versión si está disponible;
-- técnicas y herramientas usadas;
-- pruebas activas realizadas;
-- exclusiones y limitaciones.
+## Executive summary
 
-## Hallazgos
+State scope, mode, components reviewed, overall result and the most important risks. Avoid absolute guarantees. If nothing significant was found, say the review found nothing significant **at the depth reached** - not that the system is secure.
 
-Ordenar por severidad y después por confianza. Para cada hallazgo incluir:
+## Scope and methodology
 
-1. ID y título.
-2. Estado, severidad y confianza.
-3. Ubicación precisa.
-4. Evidencia mínima redactada.
-5. Escenario de impacto y precondiciones.
-6. Causa raíz.
-7. Corrección recomendada o aplicada.
-8. Estado de verificación.
+Record:
 
-No inflar el informe con recomendaciones genéricas. Mantener los descartados en una nota breve solo cuando eviten repetir trabajo.
+- folder, repository, artifact or authorized endpoint;
+- commit or version when available;
+- techniques and tools used, with the exact invocation;
+- active tests actually performed, and against what;
+- exclusions and limitations.
 
-## Cambios realizados
+## Findings
 
-En modo `reforzar`, listar archivos modificados, objetivo de cada cambio y compatibilidad relevante. Separar rotaciones, despliegues u operaciones pendientes que requieran acción del usuario.
+Order by severity, then by confidence. For each finding:
 
-## Verificación
+1. ID and title.
+2. Status, severity and confidence.
+3. Precise location.
+4. Minimal redacted evidence.
+5. Impact scenario and preconditions.
+6. Root cause.
+7. Recommended or applied fix.
+8. Verification status.
+9. Traceability: the pack procedure ID it came from, plus the standard identifiers it maps to.
 
-Enumerar comandos o pruebas ejecutadas y su resultado. Distinguir claramente:
+Do not pad with generic recommendations. Keep discarded candidates only as a short note, and only when it saves someone repeating the work.
 
-- verificado;
-- verificado parcialmente;
-- no ejecutado;
-- bloqueado por autorización o entorno.
+Severity is a judgement about **this** system, not a copy of a scanner label. A dependency advisory rated critical whose vulnerable symbol is never reached is not a critical finding here; say so and explain why, rather than inheriting the number.
 
-## Riesgo residual y próximos pasos
+## Coverage declaration
 
-Priorizar acciones concretas. Señalar superficies no revisadas, dependencias de entorno y pruebas remotas que requieran autorización adicional.
+Mandatory. This is what separates an honest report from a reassuring one. Using `traceability.md`, state:
+
+- which standard families were exercised, at the granularity you can defend - for example, session management and authorization were covered, weak cryptography was not;
+- which pack sections each specialist opened, and which it skipped;
+- which surfaces present in the inventory had no matching pack;
+- which checks were impossible in this environment.
+
+Claiming coverage you did not exercise is worse than declaring a gap. A reader who knows what was not looked at can act on it; a reader who believes everything was looked at cannot.
+
+## Changes made
+
+In `harden` mode, list modified files, the objective of each change, and any relevant compatibility impact. Separate rotations, deployments or operations that still require the user to act, and say plainly that they have **not** been done.
+
+## Verification
+
+List the commands or tests executed and their result. Distinguish clearly:
+
+- verified;
+- partially verified;
+- not executed;
+- blocked by authorization or environment.
+
+"Tests pass" is not the same as "the vulnerability no longer reproduces". State which one you actually established. A clean static-analysis run belongs here as a fact about the tool, never as evidence that a class of bug is absent.
+
+## Residual risk and next steps
+
+Prioritize concrete actions. Point out unreviewed surfaces, environment dependencies, and remote tests that need further authorization. Where a fix was deliberately not applied, record the reason and who has to decide.

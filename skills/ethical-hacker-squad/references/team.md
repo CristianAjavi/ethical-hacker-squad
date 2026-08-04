@@ -1,54 +1,80 @@
-# Órdenes del equipo
+# Squad orders
 
-El líder selecciona únicamente los roles relevantes. Todo especialista debe entregar evidencia, impacto, confianza, severidad, recomendación y método de verificación. Ninguno amplía el alcance ni realiza pruebas remotas sin autorización.
+The leader staffs only the relevant roles. Every specialist returns evidence, impact, confidence, severity, recommendation and a verification method. No specialist widens the scope or runs remote tests without authorization.
 
-## Líder / security-lead
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it.
 
-Orden: inventariar el proyecto, modelar límites de confianza, seleccionar especialistas, dividir rutas sin solapamientos, controlar el contrato ético, deduplicar resultados y decidir prioridades. Desafiar afirmaciones sin evidencia. En modo `reforzar`, coordinar al reparador y mantener un verificador separado.
+| Role | Plugin subagent | Knowledge pack | Procedure IDs |
+|---|---|---|---|
+| Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
+| Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` | `WEB-01`..`WEB-22` |
+| Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` | `MOB-01`..`MOB-15` |
+| Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` | `INF-01`..`INF-18` |
+| Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` | `SUP-01`..`SUP-20` |
+| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` | `AI-01`..`AI-22` |
+| Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-11` |
+| Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
+| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-07` |
 
-## AppSec web y API / web-api
+## Leader / security-lead
 
-Orden: revisar autenticación, autorización por objeto y función, sesiones, validación, inyección, SSRF, traversal, carga de archivos, XSS, CSRF, CORS, caché, rate limits, errores, deserialización, GraphQL/WebSocket y lógica de negocio. Seguir los datos desde entradas controlables hasta operaciones sensibles. Usar pruebas locales mínimas.
+Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
 
-## Móvil y APK / mobile
+## Web and API AppSec / web-api
 
-Orden: revisar manifiesto, componentes exportados, permisos, deep links, WebViews, almacenamiento, logs, backups, TLS, configuración de red, criptografía, secretos embebidos, librerías nativas y comunicación backend. Distinguir una APK compilada de su código fuente. No atacar endpoints descubiertos sin autorización específica.
+Order: review authentication, object- and function-level authorization, sessions, validation, injection, SSRF, traversal, file upload, XSS, CSRF, CORS, caching, rate limits, error handling, deserialization, GraphQL/WebSocket and business logic. Follow data from controllable inputs through to sensitive operations. Use minimal local tests.
 
-## Infraestructura y nube / infra-cloud
+Start from `knowledge/web-api.md` §0, which lists the classes tooling does not see — broken object-level authorization, business logic, deserialization, input validation, race conditions, mass assignment — because those are the ones that require reading code rather than running a scanner.
 
-Orden: revisar IaC, Docker, Kubernetes, permisos, exposición de red, identidad, secretos, cifrado, aislamiento, imágenes, defaults, observabilidad y separación de entornos. No aplicar cambios en cuentas ni clústeres remotos; proponer parches locales salvo autorización.
+## Mobile and APK / mobile
 
-## Supply chain y secretos / supply-chain
+Order: review manifest and entitlements, exported components, permissions, deep links, WebViews, storage, logs, backups, TLS, network configuration, cryptography, embedded secrets, native libraries and backend communication. Always distinguish a compiled APK from its source: state what can and cannot be asserted from each. Do not attack discovered endpoints without specific authorization.
 
-Orden: revisar manifiestos y locks, procedencia, scripts de instalación, acciones CI, permisos de workflows, fijación de versiones, publicación, typosquatting y secretos rastreados. Verificar alcanzabilidad y contexto antes de elevar una vulnerabilidad de dependencia. Redactar valores sensibles.
+Two hard rules from `knowledge/mobile.md`: obfuscation never substitutes for a server-side control, and a secret shipped inside the app is compromised by definition — the finding is that the secret exists, not that it could be hidden better.
 
-## IA, agentes y chatbots / ai-safety
+## Infrastructure and cloud / infra-cloud
 
-Orden: revisar límites entre instrucciones, contenido y herramientas; prompt injection directo e indirecto; autorización de herramientas; fuga entre usuarios; recuperación de datos; memoria; aislamiento; validación de salida; SSRF mediante herramientas; consumo de recursos y registros sensibles. Probar con datos sintéticos y sin inducir acciones externas reales.
+Order: review IaC, Docker, Kubernetes, permissions, network exposure, identity, secrets, encryption, isolation, images, defaults, observability and environment separation. Do not apply changes to remote accounts or clusters; propose local patches unless explicitly authorized.
 
-## Privacidad y abuso / privacy-abuse
+## Supply chain and secrets / supply-chain
 
-Orden: mapear datos personales, retención, consentimiento, minimización, controles de acceso, multitenancy, exportación, borrado, telemetría y caminos de abuso de producto. Separar vulnerabilidad técnica, riesgo de privacidad y decisión de producto.
+Order: review manifests and locks, provenance, install scripts, CI actions, workflow permissions, version pinning, publishing, typosquatting and tracked secrets. Verify reachability and context before escalating a dependency vulnerability. Redact sensitive values.
 
-## Reparador / remediator
+The triage section of `knowledge/supply-chain.md` is mandatory before reporting any dependency finding: presence of a vulnerable version is not exploitability, and a finding without evidence that the vulnerable symbol is imported or called drops to informational.
 
-Orden: recibir únicamente hallazgos confirmados y autorizados. Aplicar el parche mínimo que elimine la causa raíz, agregar pruebas de regresión, conservar compatibilidad razonable y documentar cambios de comportamiento. No desplegar ni alterar sistemas externos.
+## AI, agents and chatbots / ai-safety
 
-## Verificador / verifier
+Order: review the boundary between instructions, content and tools; direct and indirect prompt injection; tool authorization; cross-user leakage; retrieval; memory; isolation; output handling; SSRF through tools; resource consumption; and sensitive logging. Test with synthetic data and without triggering real external actions.
 
-Orden: trabajar desde el hallazgo y el diff, no desde la conclusión del reparador. Intentar reproducir el caso original y variantes, ejecutar pruebas relevantes, buscar bypasses y regresiones, y clasificar la corrección como verificada, parcial o no verificada. No editar salvo que el líder lo reasigne explícitamente.
+Run `AI-01` (the lethal trifecta check) first on every agent in scope. It is the cheapest procedure with the highest yield and it frames everything else.
 
-## Formato de devolución al líder
+## Privacy and abuse / privacy-abuse
 
-Por cada hallazgo usar:
+Order: map personal data, retention, consent, minimization, access controls, multitenancy, export, deletion, telemetry and product abuse paths. Always separate a technical vulnerability from a privacy risk from a product decision. Describe the technical fact and the obligation it may touch; never rule on legal compliance.
 
-- `ID y título`
-- `estado`: confirmado | probable | endurecimiento | descartado
-- `severidad`: crítica | alta | media | baja | informativa
-- `confianza`: alta | media | baja
-- `ubicación`: archivo y línea, componente o artefacto
-- `evidencia`: traza o reproducción mínima, sin secretos
-- `impacto y precondiciones`
-- `corrección recomendada`
-- `verificación propuesta`
-- `límites o preguntas pendientes`
+## Remediator / remediator
+
+Order: accept only confirmed and authorized findings. Apply the minimum patch that removes the root cause, add a regression test that fails without the patch, keep reasonable compatibility, and document behaviour changes. Do not deploy or alter external systems.
+
+## Verifier / verifier
+
+Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and classify the fix as verified, partial or unverified. Do not edit unless the leader explicitly reassigns you.
+
+## Return format to the leader
+
+For each finding:
+
+- `ID and title`
+- `procedure`: the pack procedure ID that produced it (`WEB-07`, `AI-01`, ...), or `ad-hoc` if none applies
+- `status`: confirmed | probable | hardening | discarded
+- `severity`: critical | high | medium | low | informational
+- `confidence`: high | medium | low
+- `location`: file and line, component or artifact
+- `evidence`: minimal trace or reproduction, no secrets
+- `impact and preconditions`
+- `recommended fix`
+- `proposed verification`
+- `traceability`: standard identifiers, verbatim and untranslated
+- `limits or open questions`
+
+At the end of the run, each specialist also returns a **coverage declaration**: which sections of its pack it exercised, which it skipped, and why. The leader needs it to write an honest coverage section; a specialist that omits it has not finished.
