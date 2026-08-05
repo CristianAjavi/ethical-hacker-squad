@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Autoprueba de gate-issue-closure.sh. Un gate que nunca se ha visto fallar no es un
-# gate: aqui se prueba EN NEGATIVO (rc=1) y en "no pude medir" (rc=2), no solo en verde.
+# Self-test for gate-issue-closure.sh. A gate that has never been seen failing is not
+# a gate: here it is tested IN THE NEGATIVE (rc=1) and in "could not measure" (rc=2),
+# not only in the green path.
 #
-# Es offline: no toca la red ni GitHub. Todo entra por --body-file, --changed-files
-# y --labels-file.
+# It is offline: it touches neither the network nor GitHub. Everything comes in via
+# --body-file, --changed-files and --labels-file.
 #
-# Codigos de salida: 0 = todos los casos pasan | 1 = algun caso falla | 2 = no pude medir.
+# Exit codes: 0 = every case passes | 1 = some case fails | 2 = could not measure.
 
 set -uo pipefail
 
@@ -13,136 +14,136 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-issue-closure.sh"
 REPO="owner/repo"
 
-[ -x "$GATE" ] || { printf 'NO PUDE MEDIR: %s no es ejecutable.\n' "$GATE" >&2; exit 2; }
+[ -x "$GATE" ] || { printf 'COULD NOT MEASURE: %s is not executable.\n' "$GATE" >&2; exit 2; }
 
-T="$(mktemp -d)" || { printf 'NO PUDE MEDIR: sin temporal.\n' >&2; exit 2; }
+T="$(mktemp -d)" || { printf 'COULD NOT MEASURE: no temporary directory.\n' >&2; exit 2; }
 trap 'rm -rf "$T"' EXIT
 
 cat > "$T/labels.txt" <<'EOF'
-10 tipo/falso-positivo
-10 origen/humano
-11 tipo/falso-negativo
-12 tipo/bug
-12 estado/needs-triage
-99 tipo/falso-positivo
+10 type/false-positive
+10 origin/human
+11 type/false-negative
+12 type/bug
+12 status/needs-triage
+99 type/false-positive
 EOF
 
 printf 'scripts/gates/gate-issue-closure.sh\n' > "$T/files.gate"
 printf 'tests/fixtures/pickle-worker.yml\n'    > "$T/files.case"
-# Los tres remedios que admite el contrato G8 de docs/gate-requirements.md.
+# The three remedies that contract G8 of docs/gate-requirements.md accepts.
 printf 'skills/ethical-hacker-squad/references/knowledge/web-api.md\n' > "$T/files.corpus"
-# Prosa: explicar el error en la skill no es un check. G8 lo rechaza a proposito.
+# Prose: explaining the mistake in the skill is not a check. G8 rejects it on purpose.
 printf 'README.md\nskills/ethical-hacker-squad/SKILL.md\n' > "$T/files.norel"
 : > "$T/files.empty"
 
 pass=0; fail=0
-check() { # $1 nombre  $2 rc esperado  $3.. comando
+check() { # $1 name  $2 expected rc  $3.. command
   local name="$1" want="$2"; shift 2
   local out rc
   out="$("$@" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ]; then
     printf '  ok    %-58s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
-    printf '  FALLA %-58s rc=%s (esperado %s)\n' "$name" "$rc" "$want"; fail=$((fail+1))
+    printf '  FAIL  %-58s rc=%s (expected %s)\n' "$name" "$rc" "$want"; fail=$((fail+1))
     printf '%s\n' "$out" | sed 's/^/        | /'
   fi
 }
 
-printf 'Autoprueba de gate-issue-closure.sh\n===================================\n'
+printf 'Self-test for gate-issue-closure.sh\n===================================\n'
 
-# --- rc=1: MEDI y FALLA ----------------------------------------------------
+# --- rc=1: I MEASURED and it FAILS -----------------------------------------
 printf 'Fixes #10\n' > "$T/b1"
-check "falso positivo sin regresion vigilada" 1 \
+check "false positive with no watched regression" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-check "falso positivo sin ningun fichero tocado" 1 \
+check "false positive touching no file at all" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/files.empty"
 
 printf 'Resolves #11\n' > "$T/b2"
-check "falso negativo sin regresion vigilada" 1 \
+check "false negative with no watched regression" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b2" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-printf 'Cierro esto. Fixes https://github.com/owner/repo/issues/10\n' > "$T/b3"
-check "forma 'keyword + URL' tambien cuenta como cierre" 1 \
+printf 'Closing this. Fixes https://github.com/owner/repo/issues/10\n' > "$T/b3"
+check "form 'keyword + URL' also counts as a closure" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b3" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-printf 'Cambio suelto sin issue.\n' > "$T/b4"
-check "--require-link sin ningun cierre declarado" 1 \
+printf 'Standalone change with no issue.\n' > "$T/b4"
+check "--require-link with no closure declared" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b4" --labels-file "$T/labels.txt" --changed-files "$T/files.gate" --require-link
 
-# Borrar el gate que te delata no es vigilar la regresion. Antes esto pasaba en VERDE
-# porque `git diff --name-only` lista los borrados igual que los añadidos.
-check "cerrar un falso positivo BORRANDO el gate" 1 \
+# Deleting the gate that catches you is not watching the regression. This used to pass
+# GREEN because `git diff --name-only` lists deletions just like additions.
+check "closing a false positive by DELETING the gate" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
           --changed-files "$T/files.gate" --deleted-files "$T/files.gate"
 
-printf 'scripts/gates/gate-issue-closure.sh\ntests/cases/viejo.md\n' > "$T/files.mixto"
-printf 'tests/cases/viejo.md\n' > "$T/files.delcase"
-check "borra un caso pero modifica el gate: sigue contando" 0 \
+printf 'scripts/gates/gate-issue-closure.sh\ntests/cases/old.md\n' > "$T/files.mixed"
+printf 'tests/cases/old.md\n' > "$T/files.delcase"
+check "deletes a case but modifies the gate: still counts" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
-          --changed-files "$T/files.mixto" --deleted-files "$T/files.delcase"
+          --changed-files "$T/files.mixed" --deleted-files "$T/files.delcase"
 
-check "--deleted-files ilegible" 2 \
+check "--deleted-files unreadable" 2 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
-          --changed-files "$T/files.gate" --deleted-files "$T/no-existe.txt"
+          --changed-files "$T/files.gate" --deleted-files "$T/does-not-exist.txt"
 
-# --- rc=0: MEDI y esta bien ------------------------------------------------
-check "falso positivo + gate tocado" 0 \
+# --- rc=0: I MEASURED and it is fine ---------------------------------------
+check "false positive + gate touched" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/files.gate"
 
-check "falso negativo + fixture de gate tocado" 0 \
+check "false negative + gate fixture touched" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b2" --labels-file "$T/labels.txt" --changed-files "$T/files.case"
 
-# G8 nombra el caso de corpus como remedio principal de un falso negativo. Con el
-# EVIDENCE_PATHS anterior ("cases/*", que no existe) este PR correcto FALLABA.
-check "falso negativo + caso añadido al corpus" 0 \
+# G8 names the corpus case as the main remedy for a false negative. With the previous
+# EVIDENCE_PATHS ("cases/*", which does not exist) this correct PR FAILED.
+check "false negative + case added to the corpus" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b2" --labels-file "$T/labels.txt" --changed-files "$T/files.corpus"
 
 printf 'Closes #12\n' > "$T/b5"
-check "issue de tipo bug: no se exige regresion" 0 \
+check "issue of type bug: no regression is required" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b5" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-check "PR que no declara ningun cierre" 0 \
+check "PR that declares no closure" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b4" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-printf 'Fixes otro/proyecto#10\n' > "$T/b6"
-check "cierre en OTRO repositorio: no se juzga" 0 \
+printf 'Fixes other/project#10\n' > "$T/b6"
+check "closure in ANOTHER repository: not judged" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b6" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-printf 'Cambio de docs.\n<!-- ejemplo de la plantilla: Fixes #99 -->\nNada mas.\n' > "$T/b7"
-check "referencia dentro de comentario HTML: ignorada" 0 \
+printf 'Docs change.\n<!-- template example: Fixes #99 -->\nNothing else.\n' > "$T/b7"
+check "reference inside an HTML comment: ignored" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b7" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-printf 'Habla de prefixes #10 y de suffixes #10 sin cerrarlos.\n' > "$T/b8"
-check "palabra que solo CONTIENE 'fixes' no cuenta" 0 \
+printf 'Talks about prefixes #10 and suffixes #10 without closing them.\n' > "$T/b8"
+check "a word that merely CONTAINS 'fixes' does not count" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b8" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-# --- rc=2: NO PUDE MEDIR ---------------------------------------------------
-check "sin cuerpo de PR" 2 \
+# --- rc=2: COULD NOT MEASURE -----------------------------------------------
+check "no PR body" 2 \
   env -u PR_BODY "$GATE" --repo "$REPO" --labels-file "$T/labels.txt" --changed-files "$T/files.gate"
 
-check "mapa de labels ilegible" 2 \
-  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/no-existe.txt" --changed-files "$T/files.gate"
+check "label map unreadable" 2 \
+  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/does-not-exist.txt" --changed-files "$T/files.gate"
 
 printf 'Fixes #4242\n' > "$T/b10"
-check "issue ausente del mapa de labels (no es 'sin labels')" 2 \
+check "issue absent from the label map (not 'no labels')" 2 \
   "$GATE" --repo "$REPO" --body-file "$T/b10" --labels-file "$T/labels.txt" --changed-files "$T/files.norel"
 
-check "lista de ficheros ilegible" 2 \
-  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/no-existe.txt"
+check "file list unreadable" 2 \
+  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/does-not-exist.txt"
 
-check "opcion desconocida" 2 "$GATE" --lo-que-sea
+check "unknown option" 2 "$GATE" --whatever
 
 # --- --emit-refs -----------------------------------------------------------
 printf 'Fixes #10\ncloses #11\nresolved #10\n' > "$T/b9"
 got="$("$GATE" --repo "$REPO" --body-file "$T/b9" --emit-refs 2>&1 | tr '\n' ' ' | sed 's/ *$//')"
 if [ "$got" = "10 11" ]; then
-  printf '  ok    %-58s "%s"\n' "--emit-refs deduplica y ordena" "$got"; pass=$((pass+1))
+  printf '  ok    %-58s "%s"\n' "--emit-refs deduplicates and sorts" "$got"; pass=$((pass+1))
 else
-  printf '  FALLA %-58s "%s" (esperado "10 11")\n' "--emit-refs deduplica y ordena" "$got"; fail=$((fail+1))
+  printf '  FAIL  %-58s "%s" (expected "10 11")\n' "--emit-refs deduplicates and sorts" "$got"; fail=$((fail+1))
 fi
 
-printf '\nResumen: %d ok, %d fallos\n' "$pass" "$fail"
+printf '\nSummary: %d ok, %d failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
-printf 'Resultado: OK. El gate falla cuando debe fallar y distingue "no pude medir".\n'
+printf 'Result: OK. The gate fails when it must fail and distinguishes "could not measure".\n'
 exit 0

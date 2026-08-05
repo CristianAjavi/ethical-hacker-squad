@@ -1,41 +1,41 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# build-changelog.sh — genera la seccion de CHANGELOG de un release de stable.
+# build-changelog.sh - generates the CHANGELOG section of a stable release.
 #
-# MODELO DE AMENAZA DE ESTE SCRIPT
-#   Los asuntos de commit no son texto de confianza: pueden venir de un PR del
-#   loop de conocimiento (bot/knowledge-*), es decir, de contenido derivado de
-#   internet. El CHANGELOG se publica y ademas se convierte en el mensaje del
-#   tag anotado. Por eso cada asunto se SANEA:
-#     - se recorta a una sola linea y a 120 caracteres
-#     - se eliminan caracteres de control
-#     - se neutralizan las marcas que darian control tipografico o social:
-#       backticks (bloques de codigo), '<' '>' (HTML crudo), '[' ']' (enlaces),
-#       '@' (menciones que notifican a personas reales) y '#' (auto-enlace a
-#       issues/PRs, que permitiria hacer "referencia cruzada" desde el release
-#       a cualquier issue del repo).
-#   El resultado es texto plano legible, no markdown activo.
-#   LO QUE ESTO NO RESUELVE (medido, no lo escondemos): una URL desnuda sigue
-#   siendo autoenlazada por GitHub al renderizar. Lo que si se elimina es el
-#   enlace DISFRAZADO ([texto](destino)), que es el riesgo real: ahi la etiqueta
-#   miente sobre el destino. Una URL visible que dice exactamente adonde va es
-#   informacion, no engano.
+# THREAT MODEL OF THIS SCRIPT
+#   Commit subjects are not trusted text: they can come from a PR of the
+#   knowledge loop (bot/knowledge-*), that is, from content derived from the
+#   internet. The CHANGELOG is published and also becomes the message of the
+#   annotated tag. That is why every subject is SANITIZED:
+#     - it is trimmed to a single line and to 120 characters
+#     - control characters are removed
+#     - the marks that would grant typographic or social control are
+#       neutralized: backticks (code blocks), '<' '>' (raw HTML), '[' ']'
+#       (links), '@' (mentions that notify real people) and '#' (auto-link to
+#       issues/PRs, which would allow cross-referencing the release to any
+#       issue in the repo).
+#   The result is readable plain text, not active markdown.
+#   WHAT THIS DOES NOT SOLVE (measured, we do not hide it): a bare URL is still
+#   auto-linked by GitHub when rendering. What IS removed is the DISGUISED link
+#   ([text](target)), which is the real risk: there the label lies about the
+#   destination. A visible URL that says exactly where it goes is information,
+#   not deception.
 #
-# USO
+# USAGE
 #   scripts/gh/build-changelog.sh --version <semver> --from <ref|""> --to <sha> \
 #       [--date YYYY-MM-DD] [--repo owner/name]
 #
-# SALIDA: la seccion markdown por stdout.
+# OUTPUT: the markdown section on stdout.
 #
 # EXIT CODES
-#   0 = generado
-#   1 = entrada invalida o rango sin commits
-#   2 = NO PUDE MEDIR (falta git o el rango no resuelve)
+#   0 = generated
+#   1 = invalid input or range with no commits
+#   2 = COULD NOT MEASURE (git missing or the range does not resolve)
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
 die1() { printf 'build-changelog: %s\n' "$*" >&2; exit 1; }
-die2() { printf 'build-changelog: NO PUDE MEDIR — %s\n' "$*" >&2; exit 2; }
+die2() { printf 'build-changelog: COULD NOT MEASURE - %s\n' "$*" >&2; exit 2; }
 
 VERSION=""; FROM=""; TO=""; DATE=""; REPO="${GITHUB_REPOSITORY:-}"
 while (( $# > 0 )); do
@@ -45,25 +45,25 @@ while (( $# > 0 )); do
     --to)      TO="${2:-}";      shift 2 ;;
     --date)    DATE="${2:-}";    shift 2 ;;
     --repo)    REPO="${2:-}";    shift 2 ;;
-    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
-    *) die1 "argumento desconocido: $1" ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    *) die1 "unknown argument: $1" ;;
   esac
 done
 
-command -v git >/dev/null 2>&1 || die2 "falta git"
-[[ -n "$VERSION" ]] || die1 "falta --version"
-[[ -n "$TO" ]] || die1 "falta --to <sha>"
+command -v git >/dev/null 2>&1 || die2 "git is missing"
+[[ -n "$VERSION" ]] || die1 "--version is missing"
+[[ -n "$TO" ]] || die1 "--to <sha> is missing"
 [[ -n "$DATE" ]] || DATE=$(date -u +%Y-%m-%d)
 
-git rev-parse -q --verify "$TO^{commit}" >/dev/null 2>&1 || die2 "el sha '$TO' no resuelve"
+git rev-parse -q --verify "$TO^{commit}" >/dev/null 2>&1 || die2 "the sha '$TO' does not resolve"
 if [[ -n "$FROM" ]]; then
-  git rev-parse -q --verify "$FROM^{commit}" >/dev/null 2>&1 || die2 "el ref base '$FROM' no resuelve"
+  git rev-parse -q --verify "$FROM^{commit}" >/dev/null 2>&1 || die2 "the base ref '$FROM' does not resolve"
   RANGE="${FROM}..${TO}"
 else
   RANGE="$TO"
 fi
 
-# Saneado: una linea, sin control, sin markdown activo, <=120 caracteres.
+# Sanitizing: one line, no control chars, no active markdown, <=120 characters.
 sanitize() {
   printf '%s' "$1" \
     | tr '\r\n\t' '   ' \
@@ -76,14 +76,14 @@ sanitize() {
 FEATS=""; FIXES=""; SECS=""; OTHERS=""; BREAKS=""
 COUNT=0
 
-# UN REGISTRO POR COMMIT. Ver la nota en next-version.sh: el body trae saltos
-# de linea propios, asi que un formato '%H<TAB>%s<TAB>%b' hacia que CADA LINEA
-# del cuerpo se tratara como un commit distinto. MEDIDO: un solo commit
-# producia tres entradas de CHANGELOG, dos de ellas con texto elegido por quien
-# escribio el cuerpo y con un "sha" falso (los 7 primeros caracteres de esa
-# linea). Es decir, texto no confiable publicado como si fuera un commit real.
+# ONE RECORD PER COMMIT. See the note in next-version.sh: the body carries its
+# own line breaks, so a format like '%H<TAB>%s<TAB>%b' made EVERY LINE of the
+# body be treated as a separate commit. MEASURED: a single commit produced three
+# CHANGELOG entries, two of them with text chosen by whoever wrote the body and
+# with a fake "sha" (the first 7 characters of that line). That is, untrusted
+# text published as if it were a real commit.
 SHAS=$(git log --no-merges --format='%H' "$RANGE" 2>/dev/null)
-[[ -n "$SHAS" ]] || die1 "no hay commits en el rango '$RANGE'"
+[[ -n "$SHAS" ]] || die1 "there are no commits in the range '$RANGE'"
 
 while IFS= read -r sha; do
   [[ -n "$sha" ]] || continue
@@ -114,21 +114,21 @@ done <<<"$SHAS"
 
 printf '## %s — %s\n\n' "$VERSION" "$DATE"
 if [[ -n "$REPO" ]]; then
-  printf 'Promovido a `stable` desde `main@%s`.\n' "${TO:0:7}"
+  printf 'Promoted to `stable` from `main@%s`.\n' "${TO:0:7}"
   printf 'Diff: https://github.com/%s/compare/%s...%s\n\n' "$REPO" "${FROM:-$TO}" "$TO"
 else
-  printf 'Promovido a `stable` desde `main@%s`.\n\n' "${TO:0:7}"
+  printf 'Promoted to `stable` from `main@%s`.\n\n' "${TO:0:7}"
 fi
 
-emit() { # $1=titulo $2=cuerpo
+emit() { # $1=title $2=body
   [[ -n "$2" ]] || return 0
   printf '### %s\n\n%s\n' "$1" "$2"
 }
-emit "Cambios incompatibles" "$BREAKS"
-emit "Seguridad" "$SECS"
-emit "Nuevo" "$FEATS"
-emit "Correcciones" "$FIXES"
-emit "Otros" "$OTHERS"
+emit "Breaking changes" "$BREAKS"
+emit "Security" "$SECS"
+emit "New" "$FEATS"
+emit "Fixes" "$FIXES"
+emit "Other" "$OTHERS"
 
-printf '_%s commit(s). Asuntos saneados a texto plano: el CHANGELOG no ejecuta markdown de origen no confiable._\n' "$COUNT"
+printf '_%s commit(s). Subjects sanitized to plain text: the CHANGELOG does not execute markdown from untrusted sources._\n' "$COUNT"
 exit 0

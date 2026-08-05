@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # scripts/gates/lib/bootstrap-actions-lint.sh
 #
-# Deja disponibles zizmor y actionlint EN VERSIONES FIJAS, con la misma receta
-# en local (macOS, sin sudo, sin brew) y en CI (ubuntu-latest). Se hace `source`.
+# Makes zizmor and actionlint available AT PINNED VERSIONS, with the same recipe
+# locally (macOS, no sudo, no brew) and in CI (ubuntu-latest). Meant to be sourced.
 #
-# Define: ZIZMOR_BIN, ACTIONLINT_BIN  (vacios si no se pudo instalar).
-# Devuelve 0 si la herramienta quedo lista, 2 si NO se pudo (nunca 0 a ciegas).
+# Defines: ZIZMOR_BIN, ACTIONLINT_BIN  (empty if the tool could not be installed).
+# Returns 0 if the tool is ready, 2 if it could NOT be (never 0 blindly).
 #
-# Cache: $GATE_TOOLS_DIR (por defecto, fuera del repo, para no ensuciar el
-# arbol de trabajo ni obligar a tocar .gitignore).
+# Cache: $GATE_TOOLS_DIR (by default outside the repo, so the work tree stays
+# clean and .gitignore does not have to be touched).
 #
-# El tarball de actionlint se verifica contra un SHA-256 FIJADO en este fichero:
-# es el equivalente, para un binario, al pin por SHA que exigimos a las acciones.
+# The actionlint tarball is verified against a SHA-256 PINNED in this file: for a
+# binary, it is the equivalent of the SHA pin we demand from actions.
 
 # shellcheck shell=bash
 
@@ -19,9 +19,9 @@ ZIZMOR_VERSION="${ZIZMOR_VERSION:-1.29.0}"
 ACTIONLINT_VERSION="${ACTIONLINT_VERSION:-1.7.12}"
 GATE_TOOLS_DIR="${GATE_TOOLS_DIR:-${TMPDIR:-/tmp}/ehs-gate-tools}"
 
-# SHA-256 de los tarballs oficiales de actionlint v1.7.12
-# (fuente: actionlint_1.7.12_checksums.txt de la release de rhysd/actionlint,
-#  descargado y verificado el 2026-08-04 contra el tarball darwin_arm64).
+# SHA-256 of the official actionlint v1.7.12 tarballs
+# (source: actionlint_1.7.12_checksums.txt from the rhysd/actionlint release,
+#  downloaded and verified on 2026-08-04 against the darwin_arm64 tarball).
 _ACTIONLINT_SHA_1_7_12_darwin_arm64="aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f"
 _ACTIONLINT_SHA_1_7_12_darwin_amd64="5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644"
 _ACTIONLINT_SHA_1_7_12_linux_amd64="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
@@ -43,14 +43,14 @@ _sha256_of() {
 ensure_zizmor() {
   if [ -n "${ZIZMOR_BIN_OVERRIDE:-}" ] && [ -x "$ZIZMOR_BIN_OVERRIDE" ]; then
     ZIZMOR_BIN="$ZIZMOR_BIN_OVERRIDE"
-    _boot_note "zizmor: uso el binario indicado por ZIZMOR_BIN_OVERRIDE ($ZIZMOR_BIN)"
+    _boot_note "zizmor: using the binary pointed to by ZIZMOR_BIN_OVERRIDE ($ZIZMOR_BIN)"
     return 0
   fi
 
   local venv="$GATE_TOOLS_DIR/zizmor-$ZIZMOR_VERSION/venv"
   if [ -x "$venv/bin/zizmor" ]; then
     ZIZMOR_BIN="$venv/bin/zizmor"
-    _boot_note "zizmor: reutilizo la cache $venv"
+    _boot_note "zizmor: reusing the cache at $venv"
     return 0
   fi
 
@@ -59,27 +59,27 @@ ensure_zizmor() {
     have="$(zizmor --version 2>/dev/null | awk '{print $2}')"
     if [ "$have" = "$ZIZMOR_VERSION" ]; then
       ZIZMOR_BIN="$(command -v zizmor)"
-      _boot_note "zizmor: encontrado en el PATH con la version fijada ($have)"
+      _boot_note "zizmor: found in PATH at the pinned version ($have)"
       return 0
     fi
-    _boot_note "zizmor: hay un zizmor $have en el PATH pero la version fijada es $ZIZMOR_VERSION; instalo la fijada"
+    _boot_note "zizmor: there is a zizmor $have in PATH but the pinned version is $ZIZMOR_VERSION; installing the pinned one"
   fi
 
   if ! command -v python3 >/dev/null 2>&1; then
-    _boot_note "zizmor: NO instalable — no hay python3"
+    _boot_note "zizmor: NOT installable - there is no python3"
     return 2
   fi
-  mkdir -p "$(dirname "$venv")" || { _boot_note "zizmor: no pude crear $venv"; return 2; }
+  mkdir -p "$(dirname "$venv")" || { _boot_note "zizmor: I could not create $venv"; return 2; }
   if ! python3 -m venv "$venv" >/dev/null 2>&1; then
-    _boot_note "zizmor: NO instalable — 'python3 -m venv' fallo"
+    _boot_note "zizmor: NOT installable - 'python3 -m venv' failed"
     return 2
   fi
   if ! "$venv/bin/pip" install --quiet --disable-pip-version-check "zizmor==$ZIZMOR_VERSION" >/dev/null 2>&1; then
-    _boot_note "zizmor: NO instalable — 'pip install zizmor==$ZIZMOR_VERSION' fallo (¿sin red?)"
+    _boot_note "zizmor: NOT installable - 'pip install zizmor==$ZIZMOR_VERSION' failed (no network?)"
     return 2
   fi
   ZIZMOR_BIN="$venv/bin/zizmor"
-  _boot_note "zizmor: instalado $ZIZMOR_VERSION en $venv"
+  _boot_note "zizmor: installed $ZIZMOR_VERSION in $venv"
   return 0
 }
 
@@ -102,14 +102,14 @@ _actionlint_platform() {
 ensure_actionlint() {
   if [ -n "${ACTIONLINT_BIN_OVERRIDE:-}" ] && [ -x "$ACTIONLINT_BIN_OVERRIDE" ]; then
     ACTIONLINT_BIN="$ACTIONLINT_BIN_OVERRIDE"
-    _boot_note "actionlint: uso el binario indicado por ACTIONLINT_BIN_OVERRIDE ($ACTIONLINT_BIN)"
+    _boot_note "actionlint: using the binary pointed to by ACTIONLINT_BIN_OVERRIDE ($ACTIONLINT_BIN)"
     return 0
   fi
 
   local dir="$GATE_TOOLS_DIR/actionlint-$ACTIONLINT_VERSION"
   if [ -x "$dir/actionlint" ]; then
     ACTIONLINT_BIN="$dir/actionlint"
-    _boot_note "actionlint: reutilizo la cache $dir"
+    _boot_note "actionlint: reusing the cache at $dir"
     return 0
   fi
 
@@ -118,28 +118,28 @@ ensure_actionlint() {
     have="$(actionlint --version 2>/dev/null | head -1)"
     if [ "$have" = "$ACTIONLINT_VERSION" ]; then
       ACTIONLINT_BIN="$(command -v actionlint)"
-      _boot_note "actionlint: encontrado en el PATH con la version fijada ($have)"
+      _boot_note "actionlint: found in PATH at the pinned version ($have)"
       return 0
     fi
-    _boot_note "actionlint: hay un actionlint $have en el PATH pero la version fijada es $ACTIONLINT_VERSION; descargo la fijada"
+    _boot_note "actionlint: there is an actionlint $have in PATH but the pinned version is $ACTIONLINT_VERSION; downloading the pinned one"
   fi
 
   local plat
-  plat="$(_actionlint_platform)" || { _boot_note "actionlint: plataforma no soportada ($(uname -s)/$(uname -m))"; return 2; }
+  plat="$(_actionlint_platform)" || { _boot_note "actionlint: unsupported platform ($(uname -s)/$(uname -m))"; return 2; }
 
   local asset="actionlint_${ACTIONLINT_VERSION}_${plat}.tar.gz"
   local url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${asset}"
   local varname="_ACTIONLINT_SHA_${ACTIONLINT_VERSION//./_}_${plat}"
   local want="${!varname:-}"
   if [ -z "$want" ]; then
-    _boot_note "actionlint: no tengo SHA-256 fijado para $asset; me niego a instalar un binario sin verificar"
+    _boot_note "actionlint: I have no pinned SHA-256 for $asset; I refuse to install an unverified binary"
     return 2
   fi
 
-  mkdir -p "$dir" || { _boot_note "actionlint: no pude crear $dir"; return 2; }
+  mkdir -p "$dir" || { _boot_note "actionlint: I could not create $dir"; return 2; }
   local tarball="$dir/$asset" how=""
 
-  # 1) gh (autenticado): es lo que hay en la maquina del autor, sin curl.
+  # 1) gh (authenticated): that is what the author's machine has, without curl.
   if [ ! -f "$tarball" ] && command -v gh >/dev/null 2>&1; then
     if gh auth status >/dev/null 2>&1 || [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
       if gh release download "v${ACTIONLINT_VERSION}" --repo rhysd/actionlint \
@@ -148,34 +148,34 @@ ensure_actionlint() {
       fi
     fi
   fi
-  # 2) curl: es lo que hay en los runners de GitHub, donde gh no tiene token.
+  # 2) curl: that is what the GitHub runners have, where gh has no token.
   if [ ! -f "$tarball" ] && command -v curl >/dev/null 2>&1; then
     if curl -fsSL --retry 3 -o "$tarball" "$url" >/dev/null 2>&1; then
       how="curl"
     fi
   fi
   if [ ! -f "$tarball" ]; then
-    _boot_note "actionlint: NO descargable — ni gh (autenticado) ni curl pudieron traer $asset"
+    _boot_note "actionlint: NOT downloadable - neither gh (authenticated) nor curl could fetch $asset"
     return 2
   fi
 
   local got
   got="$(_sha256_of "$tarball")"
   if [ -z "$got" ]; then
-    _boot_note "actionlint: no hay sha256sum ni shasum para verificar el tarball; no instalo lo que no puedo verificar"
+    _boot_note "actionlint: there is no sha256sum or shasum to verify the tarball; I do not install what I cannot verify"
     return 2
   fi
   if [ "$got" != "$want" ]; then
-    _boot_note "actionlint: SHA-256 NO coincide para $asset (esperado $want, obtenido $got); aborto"
+    _boot_note "actionlint: SHA-256 does NOT match for $asset (expected $want, got $got); aborting"
     return 2
   fi
 
   if ! tar -xzf "$tarball" -C "$dir" actionlint >/dev/null 2>&1; then
-    _boot_note "actionlint: no pude extraer el binario de $asset"
+    _boot_note "actionlint: I could not extract the binary from $asset"
     return 2
   fi
   chmod +x "$dir/actionlint" 2>/dev/null || true
   ACTIONLINT_BIN="$dir/actionlint"
-  _boot_note "actionlint: instalado $ACTIONLINT_VERSION via $how, SHA-256 verificado ($want)"
+  _boot_note "actionlint: installed $ACTIONLINT_VERSION via $how, SHA-256 verified ($want)"
   return 0
 }

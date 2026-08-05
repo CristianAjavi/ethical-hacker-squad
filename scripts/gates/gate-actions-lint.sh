@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # scripts/gates/gate-actions-lint.sh
 #
-# Gate de analisis estatico de GitHub Actions con las dos herramientas que se
-# validaron para este repo: zizmor (seguridad) y actionlint (correccion).
-# Son complementarias, no redundantes:
-#   - zizmor cubre las reglas duras del modelo de amenaza: dangerous-triggers,
+# Static analysis gate for GitHub Actions, using the two tools validated for
+# this repo: zizmor (security) and actionlint (correctness). They are
+# complementary, not redundant:
+#   - zizmor covers the hard rules of the threat model: dangerous-triggers,
 #     template-injection, excessive-permissions, unpinned-uses, artipacked...
-#     y ademas audita .github/dependabot.yml.
-#   - actionlint valida sintaxis, expresiones, cron, etiquetas de runner, el
-#     formato de `uses:`, y pasa shellcheck sobre cada `run:`. Su lista de
-#     contextos no confiables (github.event.issue.title, comment.body, ...) es
-#     la enumeracion canonica que la documentacion de GitHub no publica.
+#     and it also audits .github/dependabot.yml.
+#   - actionlint validates syntax, expressions, cron, runner labels, the format
+#     of `uses:`, and runs shellcheck over every `run:`. Its list of untrusted
+#     contexts (github.event.issue.title, comment.body, ...) is the canonical
+#     enumeration that GitHub's own documentation does not publish.
 #
-# Codigos de salida: 0 = medido y bien | 1 = medido y falla | 2 = no pude medir.
+# Exit codes: 0 = measured and fine | 1 = measured and fails | 2 = could not measure.
 #
-# Mapeo de codigos MEDIDO empiricamente (zizmor 1.29.0, actionlint 1.7.12):
+# Code mapping MEASURED empirically (zizmor 1.29.0, actionlint 1.7.12):
 #   zizmor     0 -> 0 | 11,12,13,14 (informational/low/medium/high) -> 1
-#              3 (no se recolecto ningun input) -> 2 | 1 (error) -> 2
-#   actionlint 0 -> 0 | 1 -> 1 | 3 (no pudo leer) -> 2
+#              3 (no input was collected) -> 2 | 1 (error) -> 2
+#   actionlint 0 -> 0 | 1 -> 1 | 3 (could not read) -> 2
 #
-# PROHIBIDO en este fichero, por construccion:
-#   - `--format=sarif`: devuelve 0 aunque haya hallazgos high (comprobado).
-#   - pipear la herramienta a `tail`/`head`: destruye el codigo de salida.
-#     Por eso toda salida va a fichero por redireccion, y se lee despues.
+# FORBIDDEN in this file, by construction:
+#   - `--format=sarif`: it returns 0 even when there are high findings (verified).
+#   - piping the tool into `tail`/`head`: it destroys the exit code. That is why
+#     all output goes to a file by redirection, and is read afterwards.
 
 set -uo pipefail
 
@@ -39,25 +39,25 @@ TMPD="$(mktemp -d 2>/dev/null || mktemp -d -t gatelint)"
 trap 'rm -rf "$TMPD"' EXIT
 
 RC_FINAL=0
-# escala(rc): un FALLA (1) manda sobre un NO MEDIBLE (2); 0 no degrada nada.
-escala() {
+# escalate(rc): a FAIL (1) outranks an UNMEASURABLE (2); 0 degrades nothing.
+escalate() {
   case "$1" in
     1) RC_FINAL=1 ;;
     2) [ "$RC_FINAL" -eq 1 ] || RC_FINAL=2 ;;
   esac
 }
 
-dump() { # dump <fichero> <prefijo>
+dump() { # dump <file> <prefix>
   [ -s "$1" ] || return 0
   while IFS= read -r l; do printf '%s%s\n' "$2" "$l"; done < "$1"
 }
 
 gate_header "actions-lint (zizmor + actionlint)"
-gate_scope "todos los workflows, acciones compuestas y .github/dependabot.yml del repo"
-gate_out_of_scope "logica de negocio de los scripts; el contrato de permisos/disparadores lo verifica ademas gate-workflow-hardening.sh sin depender de estas herramientas"
+gate_scope "every workflow, composite action and .github/dependabot.yml in the repo"
+gate_out_of_scope "business logic of the scripts; the permissions/triggers contract is also verified by gate-workflow-hardening.sh without depending on these tools"
 
 if [ ! -d "$WF_DIR" ]; then
-  gate_warn "no existe $WF_DIR: no hay workflows que analizar (y eso no es un aprobado)"
+  gate_warn "$WF_DIR does not exist: there are no workflows to analyse (and that is not a pass)"
   gate_verdict 2
   exit "$GATE_UNMEASURABLE"
 fi
@@ -68,34 +68,34 @@ fi
 ZOUT="$TMPD/zizmor.txt"
 if ensure_zizmor; then
   ZARGS="--no-progress --color never --format plain"
-  # Auditorias en linea (impostor-commit, known-vulnerable-actions,
-  # stale-action-refs) solo si hay token Y se pide explicitamente. Nunca por
-  # defecto: un trabajo que analiza un PR de un fork no debe recibir secretos.
+  # Online audits (impostor-commit, known-vulnerable-actions, stale-action-refs)
+  # only when there is a token AND they are requested explicitly. Never by
+  # default: a job analysing a PR from a fork must not receive secrets.
   if [ "${ZIZMOR_ONLINE:-0}" = "1" ] && [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-    gate_info "zizmor: auditorias EN LINEA activadas (ZIZMOR_ONLINE=1 y hay token)"
+    gate_info "zizmor: ONLINE audits enabled (ZIZMOR_ONLINE=1 and a token is present)"
   else
     ZARGS="$ZARGS --no-online-audits"
-    gate_info "zizmor: auditorias en linea DESACTIVADAS — NO se comprobo impostor-commit, known-vulnerable-actions ni stale-action-refs (eso corre en el workflow supply-chain-audit)"
+    gate_info "zizmor: online audits DISABLED - impostor-commit, known-vulnerable-actions and stale-action-refs were NOT checked (that runs in the supply-chain-audit workflow)"
   fi
   # shellcheck disable=SC2086
   "$ZIZMOR_BIN" $ZARGS "$ROOT" > "$ZOUT" 2>&1
   zrc=$?
   case "$zrc" in
-    0)  gate_ok "zizmor $ZIZMOR_VERSION: sin hallazgos" ;;
+    0)  gate_ok "zizmor $ZIZMOR_VERSION: no findings" ;;
     11|12|13|14)
-        gate_fail "zizmor $ZIZMOR_VERSION: hallazgos (codigo $zrc)"
+        gate_fail "zizmor $ZIZMOR_VERSION: findings (code $zrc)"
         dump "$ZOUT" "  "
-        escala 1 ;;
-    3)  gate_warn "zizmor $ZIZMOR_VERSION: no recolecto ningun input (codigo 3)"
+        escalate 1 ;;
+    3)  gate_warn "zizmor $ZIZMOR_VERSION: it collected no input (code 3)"
         dump "$ZOUT" "  "
-        escala 2 ;;
-    *)  gate_warn "zizmor $ZIZMOR_VERSION: error de la herramienta (codigo $zrc)"
+        escalate 2 ;;
+    *)  gate_warn "zizmor $ZIZMOR_VERSION: tool error (code $zrc)"
         dump "$ZOUT" "  "
-        escala 2 ;;
+        escalate 2 ;;
   esac
 else
-  gate_warn "zizmor NO disponible: NO se auditaron dangerous-triggers, template-injection, excessive-permissions, unpinned-uses ni dependabot.yml"
-  escala 2
+  gate_warn "zizmor NOT available: dangerous-triggers, template-injection, excessive-permissions, unpinned-uses and dependabot.yml were NOT audited"
+  escalate 2
 fi
 printf '%s' "$BOOTSTRAP_NOTES" | sed 's/^/  · /'
 BOOTSTRAP_NOTES=""
@@ -106,26 +106,26 @@ BOOTSTRAP_NOTES=""
 AOUT="$TMPD/actionlint.txt"
 if ensure_actionlint; then
   if ! command -v shellcheck >/dev/null 2>&1; then
-    gate_warn "shellcheck NO esta instalado: actionlint NO analizara el contenido de los bloques \`run:\`. Se mide lo demas, pero esto NO es un aprobado completo."
-    escala 2
+    gate_warn "shellcheck is NOT installed: actionlint will NOT analyse the contents of the \`run:\` blocks. The rest is measured, but this is NOT a complete pass."
+    escalate 2
   fi
   ( cd "$ROOT" && "$ACTIONLINT_BIN" -no-color -oneline ) > "$AOUT" 2>&1
   arc=$?
   case "$arc" in
-    0) gate_ok "actionlint $ACTIONLINT_VERSION: sin problemas" ;;
-    1) gate_fail "actionlint $ACTIONLINT_VERSION: problemas encontrados (codigo 1)"
+    0) gate_ok "actionlint $ACTIONLINT_VERSION: no problems" ;;
+    1) gate_fail "actionlint $ACTIONLINT_VERSION: problems found (code 1)"
        dump "$AOUT" "  "
-       escala 1 ;;
-    3) gate_warn "actionlint $ACTIONLINT_VERSION: no pudo leer los ficheros (codigo 3)"
+       escalate 1 ;;
+    3) gate_warn "actionlint $ACTIONLINT_VERSION: it could not read the files (code 3)"
        dump "$AOUT" "  "
-       escala 2 ;;
-    *) gate_warn "actionlint $ACTIONLINT_VERSION: codigo inesperado $arc"
+       escalate 2 ;;
+    *) gate_warn "actionlint $ACTIONLINT_VERSION: unexpected code $arc"
        dump "$AOUT" "  "
-       escala 2 ;;
+       escalate 2 ;;
   esac
 else
-  gate_warn "actionlint NO disponible: NO se valido sintaxis, cron, runners, ni las expresiones con contextos no confiables"
-  escala 2
+  gate_warn "actionlint NOT available: syntax, cron, runners and the expressions with untrusted contexts were NOT validated"
+  escalate 2
 fi
 printf '%s' "$BOOTSTRAP_NOTES" | sed 's/^/  · /'
 

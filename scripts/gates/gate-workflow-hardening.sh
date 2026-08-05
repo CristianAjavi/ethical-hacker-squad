@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
 # scripts/gates/gate-workflow-hardening.sh
 #
-# Gate PROPIO de endurecimiento de GitHub Actions. No depende de zizmor, de
-# actionlint, de red ni de ningun paquete: solo awk POSIX. Es el gate que sigue
-# midiendo cuando el resto de la cadena de herramientas no esta disponible.
+# The repo's OWN GitHub Actions hardening gate. It depends on no zizmor, no
+# actionlint, no network and no package: only POSIX awk. It is the gate that
+# keeps measuring when the rest of the toolchain is unavailable.
 #
-# Verifica, sobre .github/workflows/*.yml:
-#   1. Que ningun workflow use `pull_request_target` (ni ningun otro disparador
-#      fuera de: schedule, workflow_dispatch, push, pull_request).
-#   2. Que el workflow declare `permissions: {}`, que TODO trabajo declare su
-#      propio bloque `permissions:` y que ninguno los conceda EN BLOQUE
-#      (`write-all`/`read-all`): la regla es "minimos", no "declarados".
-#   3. Que toda accion de tercero este fijada por SHA de 40 caracteres, con un
-#      comentario que sea una VERSION reconocible (`# v7.0.1`), que es lo que
-#      Dependabot necesita para actualizar el pin.
-#   4. Que ningun workflow alcanzable por terceros (`pull_request`, que tambien
-#      llega desde forks) lea el contexto `secrets` — en cualquiera de sus tres
-#      formas: `secrets.X`, `secrets['X']` y `toJSON(secrets)` — ni use
+# It verifies, over .github/workflows/*.yml:
+#   1. That no workflow uses `pull_request_target` (nor any trigger outside of:
+#      schedule, workflow_dispatch, push, pull_request).
+#   2. That the workflow declares `permissions: {}`, that EVERY job declares
+#      its own `permissions:` block and that none grants them IN BULK
+#      (`write-all`/`read-all`): the rule is "minimum", not "declared".
+#   3. That every third-party action is pinned to a 40-character SHA, with a
+#      comment that is a recognizable VERSION (`# v7.0.1`), which is what
+#      Dependabot needs in order to update the pin.
+#   4. That no workflow reachable by third parties (`pull_request`, which also
+#      arrives from forks) reads the `secrets` context - in any of its three
+#      forms: `secrets.X`, `secrets['X']` and `toJSON(secrets)` - nor uses
 #      `secrets: inherit`.
 #
-# Codigos de salida: 0 = medido y bien | 1 = medido y falla | 2 = no pude medir.
+# Exit codes: 0 = measured and fine | 1 = measured and fails | 2 = could not measure.
 #
-# Uso:
-#   scripts/gates/gate-workflow-hardening.sh              # audita el repo
-#   scripts/gates/gate-workflow-hardening.sh --dir DIR    # audita otro directorio
-#   scripts/gates/gate-workflow-hardening.sh --self-test  # solo la autoprueba
+# Usage:
+#   scripts/gates/gate-workflow-hardening.sh              # audits the repo
+#   scripts/gates/gate-workflow-hardening.sh --dir DIR    # audits another directory
+#   scripts/gates/gate-workflow-hardening.sh --self-test  # only the self-test
 #
-# Variables de entorno:
-#   GATE_SELFTEST=0   omite la autoprueba sobre los fixtures (no recomendado)
+# Environment variables:
+#   GATE_SELFTEST=0   skips the self-test over the fixtures (not recommended)
 
 set -uo pipefail
 
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do
     --dir) TARGET_DIR="${2:-}"; shift 2 ;;
     --self-test) ONLY_SELFTEST=1; shift ;;
     -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
-    *) gate_warn "argumento desconocido: $1"; exit "$GATE_UNMEASURABLE" ;;
+    *) gate_warn "unknown argument: $1"; exit "$GATE_UNMEASURABLE" ;;
   esac
 done
 
@@ -55,15 +55,15 @@ TMPDIR_GATE="$(mktemp -d 2>/dev/null || mktemp -d -t gatehard)"
 trap 'rm -rf "$TMPDIR_GATE"' EXIT
 
 # ---------------------------------------------------------------------------
-# scan_dir <dir> <fichero-de-salida>
-#   0 = escaneado sin hallazgos | 1 = hallazgos FAIL | 2 = no medible
+# scan_dir <dir> <output-file>
+#   0 = scanned with no findings | 1 = FAIL findings | 2 = unmeasurable
 # ---------------------------------------------------------------------------
 scan_dir() {
   local dir="$1" out="$2"
   : > "$out"
 
   if [ -z "$dir" ] || [ ! -d "$dir" ]; then
-    printf 'UNMEAS|%s|0|input|el directorio no existe\n' "$dir" >> "$out"
+    printf 'UNMEAS|%s|0|input|the directory does not exist\n' "$dir" >> "$out"
     return "$GATE_UNMEASURABLE"
   fi
 
@@ -74,7 +74,7 @@ scan_dir() {
   local n
   n="$(wc -l < "$list" | tr -d ' ')"
   if [ "$n" -eq 0 ]; then
-    printf 'UNMEAS|%s|0|input|no hay ficheros .yml/.yaml que auditar\n' "$dir" >> "$out"
+    printf 'UNMEAS|%s|0|input|there are no .yml/.yaml files to audit\n' "$dir" >> "$out"
     return "$GATE_UNMEASURABLE"
   fi
 
@@ -83,7 +83,7 @@ scan_dir() {
     [ -n "$f" ] || continue
     if ! awk -v FILE="$f" -f "$AWK_PROG" "$f" >> "$out" 2>"$TMPDIR_GATE/awk.err"; then
       awk_rc=1
-      printf 'UNMEAS|%s|0|tool|awk no pudo procesar el fichero: %s\n' \
+      printf 'UNMEAS|%s|0|tool|awk could not process the file: %s\n' \
         "$f" "$(tr '\n' ' ' < "$TMPDIR_GATE/awk.err")" >> "$out"
     fi
   done < "$list"
@@ -93,8 +93,9 @@ scan_dir() {
   nunmeas="$(grep -c '^UNMEAS|' "$out" 2>/dev/null || true)"
   nfail="${nfail:-0}"; nunmeas="${nunmeas:-0}"
 
-  # Un fallo MEDIDO manda sobre un "no pude medir": es mas accionable y ambos
-  # rompen la build igual. Los no-medibles se imprimen siempre, no se tragan.
+  # A MEASURED failure outranks a "could not measure": it is more actionable
+  # and both break the build the same way. The unmeasurables are always
+  # printed, never swallowed.
   if [ "$nfail" -gt 0 ]; then return "$GATE_FAIL"; fi
   if [ "$nunmeas" -gt 0 ] || [ "$awk_rc" -ne 0 ]; then return "$GATE_UNMEASURABLE"; fi
   return "$GATE_OK"
@@ -108,58 +109,58 @@ print_findings() {
 }
 
 # ---------------------------------------------------------------------------
-# AUTOPRUEBA: el gate se mide a si mismo antes de medir el repo.
-# Cada fixture declara en su cabecera `# gate-expect: <regla>` (o `ninguna`).
-# Si la autoprueba no cuadra, el gate NO puede afirmar nada -> rc 2.
+# SELF-TEST: the gate measures itself before measuring the repo.
+# Each fixture declares `# gate-expect: <rule>` in its header (or `none`).
+# If the self-test does not add up, the gate cannot assert anything -> rc 2.
 # ---------------------------------------------------------------------------
 self_test() {
   local ok=1 f out expect rule_found
 
   if [ ! -d "$FIXTURES" ]; then
-    gate_warn "autoprueba: no encuentro los fixtures en $FIXTURES"
+    gate_warn "self-test: I cannot find the fixtures in $FIXTURES"
     return "$GATE_UNMEASURABLE"
   fi
 
   out="$TMPDIR_GATE/selftest.out"
 
-  # --- casos que DEBEN fallar, con la regla concreta que deben disparar ---
+  # --- cases that MUST fail, with the exact rule they must trigger ---
   for f in "$FIXTURES"/bad/*.yml; do
-    [ -e "$f" ] || { gate_warn "autoprueba: no hay fixtures negativos"; return "$GATE_UNMEASURABLE"; }
+    [ -e "$f" ] || { gate_warn "self-test: there are no negative fixtures"; return "$GATE_UNMEASURABLE"; }
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     expect="$(sed -n 's/^#[ ]*gate-expect:[ ]*//p' "$f" | head -1)"
     if [ -z "$expect" ]; then
-      gate_warn "autoprueba: el fixture $(basename "$f") no declara '# gate-expect:'"
+      gate_warn "self-test: fixture $(basename "$f") does not declare '# gate-expect:'"
       ok=0
       continue
     fi
     rule_found="$(grep -c "^FAIL|[^|]*|[0-9]*|$expect|" "$out" 2>/dev/null || true)"
     if [ "${rule_found:-0}" -lt 1 ]; then
-      gate_warn "autoprueba EN NEGATIVO fallida: $(basename "$f") deberia disparar '$expect' y no lo hizo"
+      gate_warn "NEGATIVE self-test failed: $(basename "$f") should trigger '$expect' and it did not"
       ok=0
     fi
   done
 
-  # --- casos que DEBEN pasar limpios ---
+  # --- cases that MUST come out clean ---
   for f in "$FIXTURES"/good/*.yml; do
-    [ -e "$f" ] || { gate_warn "autoprueba: no hay fixtures positivos"; return "$GATE_UNMEASURABLE"; }
+    [ -e "$f" ] || { gate_warn "self-test: there are no positive fixtures"; return "$GATE_UNMEASURABLE"; }
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     if grep -q '^FAIL|' "$out" || grep -q '^UNMEAS|' "$out"; then
-      gate_warn "autoprueba EN POSITIVO fallida: $(basename "$f") deberia salir limpio:"
+      gate_warn "POSITIVE self-test failed: $(basename "$f") should come out clean:"
       print_findings "$out" FAIL   "        "
       print_findings "$out" UNMEAS "        "
       ok=0
     fi
   done
 
-  # --- casos que DEBEN salir como NO MEDIBLE (nunca como aprobado) ---
+  # --- cases that MUST come out as UNMEASURABLE (never as a pass) ---
   for f in "$FIXTURES"/unmeasurable/*.yml; do
     [ -e "$f" ] || continue
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     if ! grep -q '^UNMEAS|' "$out"; then
-      gate_warn "autoprueba fallida: $(basename "$f") deberia salir NO MEDIBLE y salio silencioso"
+      gate_warn "self-test failed: $(basename "$f") should come out UNMEASURABLE and it came out silent"
       ok=0
     fi
   done
@@ -170,17 +171,17 @@ self_test() {
 
 # ---------------------------------------------------------------------------
 main() {
-  gate_header "workflow-hardening (awk, sin dependencias externas)"
-  gate_scope   "disparadores permitidos; permissions {} en la raiz y minimos (no en bloque) por job; pin por SHA de 40 chars + comentario de version; lectura del contexto secrets (forma .X, ['X'] y toJSON) en workflows alcanzables desde forks"
-  gate_out_of_scope "inyeccion de plantillas en \`run:\`, shellcheck, sintaxis YAML/cron, acciones suplantadas o vulnerables conocidas — de eso se ocupa gate-actions-lint.sh (zizmor + actionlint)"
+  gate_header "workflow-hardening (awk, no external dependencies)"
+  gate_scope   "allowed triggers; permissions {} at the root and minimum (not in bulk) per job; pin to a 40-char SHA + version comment; reads of the secrets context (forms .X, ['X'] and toJSON) in workflows reachable from forks"
+  gate_out_of_scope "template injection in \`run:\`, shellcheck, YAML/cron syntax, impersonated or known-vulnerable actions - gate-actions-lint.sh (zizmor + actionlint) takes care of that"
 
   if [ ! -f "$AWK_PROG" ]; then
-    gate_warn "falta el escaner $AWK_PROG"
+    gate_warn "the scanner $AWK_PROG is missing"
     gate_verdict 2
     return "$GATE_UNMEASURABLE"
   fi
   if ! command -v awk >/dev/null 2>&1; then
-    gate_warn "no hay awk en el PATH"
+    gate_warn "there is no awk in PATH"
     gate_verdict 2
     return "$GATE_UNMEASURABLE"
   fi
@@ -189,26 +190,26 @@ main() {
     self_test
     local st=$?
     if [ "$st" -ne 0 ]; then
-      gate_warn "el gate NO supera su propia autoprueba; cualquier resultado sobre el repo seria indefendible"
+      gate_warn "the gate does NOT pass its own self-test; any result over the repo would be indefensible"
       gate_verdict 2
       return "$GATE_UNMEASURABLE"
     fi
-    gate_info "autoprueba superada (fixtures negativos, positivos y no-medibles en $FIXTURES)"
+    gate_info "self-test passed (negative, positive and unmeasurable fixtures in $FIXTURES)"
   else
-    # Omitir la autoprueba no puede producir un verde: si el gate no se ha
-    # medido a si mismo, su "todo correcto" no es defendible. Se permite el
-    # atajo para depurar, pero el veredicto queda topado en 2.
-    gate_warn "autoprueba OMITIDA por GATE_SELFTEST=0: el veredicto no podra ser 0"
+    # Skipping the self-test can never produce a green: if the gate has not
+    # measured itself, its "all correct" is not defensible. The shortcut is
+    # allowed for debugging, but the verdict is capped at 2.
+    gate_warn "self-test SKIPPED via GATE_SELFTEST=0: the verdict cannot be 0"
     SELFTEST_SKIPPED=1
   fi
 
   if [ "$ONLY_SELFTEST" -eq 1 ]; then
     if [ "$SELFTEST_SKIPPED" -eq 1 ]; then
-      gate_warn "--self-test con GATE_SELFTEST=0: no se ejecuto ninguna prueba"
+      gate_warn "--self-test with GATE_SELFTEST=0: no test was run"
       gate_verdict 2
       return "$GATE_UNMEASURABLE"
     fi
-    gate_ok "autoprueba superada; no se audito el repo (--self-test)"
+    gate_ok "self-test passed; the repo was not audited (--self-test)"
     gate_verdict 0
     return "$GATE_OK"
   fi
@@ -218,19 +219,19 @@ main() {
 
   local nf
   nf="$(find "$TARGET_DIR" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | wc -l | tr -d ' ')"
-  gate_info "directorio auditado: ${TARGET_DIR#"$ROOT"/} (${nf:-0} fichero(s))"
+  gate_info "audited directory: ${TARGET_DIR#"$ROOT"/} (${nf:-0} file(s))"
   awk -F'|' '$1=="STAT"{s[$2]+=$3} END{for (k in s) printf "· total %s: %d\n", k, s[k]}' "$out" | LC_ALL=C sort
 
   if [ "$rc" -eq 0 ] && [ "$SELFTEST_SKIPPED" -eq 1 ]; then
-    gate_warn "los ${nf} workflow(s) no dispararon hallazgos, pero la autoprueba se omitio: no puedo firmar este resultado"
+    gate_warn "the ${nf} workflow(s) triggered no findings, but the self-test was skipped: I cannot sign this result"
     rc="$GATE_UNMEASURABLE"
   fi
 
   if [ "$rc" -eq 0 ]; then
-    gate_ok "los ${nf} workflow(s) cumplen las reglas duras"
+    gate_ok "the ${nf} workflow(s) satisfy the hard rules"
   else
-    print_findings "$out" FAIL   "  FALLA     "
-    print_findings "$out" UNMEAS "  NO MEDIBLE"
+    print_findings "$out" FAIL   "  FAIL        "
+    print_findings "$out" UNMEAS "  UNMEASURABLE"
   fi
 
   gate_verdict "$rc"

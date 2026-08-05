@@ -1,40 +1,51 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# PRUEBA EN NEGATIVO del comparador de proteccion de ramas.
+# NEGATIVE TEST of the branch-protection comparator.
 #
-# governance.json declara una docena de campos de proteccion. La pregunta es si
-# el comparador los MIRA todos, o si hay campos declarados que nadie compara: un
-# campo declarado y no comparado produce un rc=0 que significa "no lo revise",
-# que es justo lo que esta doctrina prohibe.
+# governance.json declares a dozen protection fields. The question is whether
+# the comparator LOOKS at all of them, or whether there are declared fields that
+# nobody compares: a field declared and not compared produces an rc=0 that means
+# "I did not review it", which is exactly what this doctrine forbids.
 #
-# Metodo: se levanta un doble de la API de GitHub que responde exactamente el
-# estado deseado (linea base -> rc 0), y despues se desvia UN campo cada vez
-# exigiendo rc 1. Si un campo se desvia y el script sigue diciendo rc 0, ese
-# campo esta declarado pero no vigilado.
+# Method: a double of the GitHub API is raised that answers exactly the desired
+# state (baseline -> rc 0), and then ONE field at a time is deviated, requiring
+# rc 1. If a field is deviated and the script still says rc 0, that field is
+# declared but unwatched.
 #
-# Hallazgo original de esta suite: block_creations y allow_fork_syncing estaban
-# declarados en el JSON, se enviaban en el PUT, y no se comparaban nunca.
+# Original finding of this suite: block_creations and allow_fork_syncing were
+# declared in the JSON, were sent in the PUT, and were never compared.
 #
-# CODIGOS DE SALIDA:  0 todo vigilado / 1 hay un campo ciego / 2 no pude correr
+# EXIT CODES:  0 everything watched / 1 there is a blind field / 2 could not run
 # ---------------------------------------------------------------------------
 set -uo pipefail
 SP="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SP/../../.." && pwd)"
-command -v jq >/dev/null 2>&1 || { echo "  NO PUDE MEDIR: falta jq (rc 2)"; exit 2; }
-command -v awk >/dev/null 2>&1 || { echo "  NO PUDE MEDIR: falta awk (rc 2)"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "  COULD NOT MEASURE: jq is missing (rc 2)"; exit 2; }
+command -v awk >/dev/null 2>&1 || { echo "  COULD NOT MEASURE: awk is missing (rc 2)"; exit 2; }
 
 LAB="$(mktemp -d)"; trap 'rm -rf "$LAB"' EXIT
 mkdir -p "$LAB/bin" "$LAB/repo/scripts/gh" "$LAB/repo/.github/workflows" "$LAB/repo/scripts/gates"
 cp "$ROOT/scripts/gh/apply-governance.sh" "$LAB/repo/scripts/gh/"
 cp "$ROOT/scripts/gh/governance.json"     "$LAB/repo/scripts/gh/"
-cp "$ROOT/.github/workflows/promote-stable.yml" "$LAB/repo/.github/workflows/"
+# The label taxonomy is no longer declared in governance.json: apply-governance.sh
+# delegates it to labels.sh and folds in its rc. Without this copy the delegate is
+# missing and EVERY probe comes back rc=2, which would hide whether the protection
+# fields are watched at all.
+cp "$ROOT/scripts/gh/labels.sh"           "$LAB/repo/scripts/gh/"
+# release.yml is the promotion workflow (promote-stable.yml was removed in the
+# integration: two workflows were promoting to stable on the same cron).
+# apply-governance.sh reads it to check that the workflow and governance.json
+# talk about the same branches, labels and contexts.
+cp "$ROOT/.github/workflows/release.yml" "$LAB/repo/.github/workflows/"
+cp "$ROOT/.github/workflows/ci.yml"      "$LAB/repo/.github/workflows/"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$LAB/repo/scripts/gates/dummy.sh"
 STATE="$LAB/repo/scripts/gh/governance.json"
 
-# --- doble de la API: devuelve el estado DESEADO como si fuese el real -------
+# --- API double: returns the DESIRED state as if it were the real one --------
 cat >"$LAB/bin/gh" <<EOF
 #!/usr/bin/env bash
 STATE="$STATE"
+TAXONOMY="$LAB/repo/scripts/gh/labels.sh"
 PROT_OVERRIDE="\${PROT_OVERRIDE:-}"
 EOF
 cat >>"$LAB/bin/gh" <<'EOF'
@@ -50,7 +61,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 APP=$(jq -r '.actions_app_id' "$STATE")
-# Forma real de la respuesta GET: los booleanos vienen anidados en {enabled:...}
+# Real shape of the GET response: the booleans come nested in {enabled:...}
 protection() {
   jq -c --argjson app "$APP" --arg b "$1" '
     .branches[$b].protection as $p
@@ -77,7 +88,14 @@ case "$path" in
     [ -n "$PROT_OVERRIDE" ] && out=$(jq -c "$PROT_OVERRIDE" <<<"$out") ;;
   repos/*/branches/*) b=$(echo "$path" | awk -F/ '{print $5}'); out='{"name":"'"$b"'"}' ;;
   repos/*/topics) out=$(jq -c '{names: .topics}' "$STATE") ;;
-  repos/*/labels*) out=$(jq -c '[.labels[] | {name, color, description}]' "$STATE") ;;
+  # The repo answers with exactly the taxonomy declared in labels.sh, so the
+  # delegated 'labels.sh --check' sees no drift and the probes measure only the
+  # protection fields. Reading it from labels.sh (not from a fixed list here)
+  # keeps the double from going stale when the taxonomy changes.
+  repos/*/labels*)
+    out=$(grep -E '^[a-z]+/[a-z0-9-]+\|[0-9a-f]{6}\|' "$TAXONOMY" \
+          | jq -R -s -c 'split("\n") | map(select(length > 0) | split("|")
+                         | {name: .[0], color: .[1], description: .[2]})') ;;
   repos/*/vulnerability-alerts) exit 0 ;;
   repos/*/commits/*/check-runs)
     out='{"check_runs":[{"name":"gates","app":{"id":'"$APP"'},"status":"completed","conclusion":"success"}]}' ;;
@@ -95,33 +113,33 @@ chmod +x "$LAB/bin/gh"
 
 G="$LAB/repo/scripts/gh/apply-governance.sh"
 PASS=0; FAIL=0
-probe() { # nombre, override-jq, rc_esperado
+probe() { # name, override-jq, expected_rc
   local out rc
   out=$(PROT_OVERRIDE="$2" PATH="$LAB/bin:$PATH" "$G" --no-color 2>&1); rc=$?
   if [ "$rc" = "$3" ]; then printf '  PASS  %-56s rc=%s\n' "$1" "$rc"; PASS=$((PASS+1))
-  else printf '  FAIL  %-56s rc=%s (esperado %s)\n' "$1" "$rc" "$3"
-       printf '        campo declarado y NO vigilado: un rc=0 que no midio nada\n'; FAIL=$((FAIL+1)); fi
+  else printf '  FAIL  %-56s rc=%s (expected %s)\n' "$1" "$rc" "$3"
+       printf '        field declared and NOT watched: an rc=0 that measured nothing\n'; FAIL=$((FAIL+1)); fi
 }
 
-echo "== Linea base: rc=0 tiene que ser alcanzable (si no, es un codigo muerto)"
-probe "estado real == estado deseado -> 0" "" 0
+echo "== Baseline: rc=0 has to be reachable (otherwise it is dead code)"
+probe "real state == desired state -> 0" "" 0
 
 echo ""
-echo "== Cada campo declarado, desviado de uno en uno -> 1"
-probe "allow_force_pushes=true (el canal se podria reescribir)"  '.allow_force_pushes.enabled = true' 1
-probe "allow_deletions=true (el canal se podria borrar)"          '.allow_deletions.enabled = true' 1
-probe "enforce_admins=true (dejaria el rollback sin salida)"      '.enforce_admins.enabled = true' 1
+echo "== Every declared field, deviated one at a time -> 1"
+probe "allow_force_pushes=true (the channel could be rewritten)" '.allow_force_pushes.enabled = true' 1
+probe "allow_deletions=true (the channel could be deleted)"       '.allow_deletions.enabled = true' 1
+probe "enforce_admins=true (would leave rollback with no way out)" '.enforce_admins.enabled = true' 1
 probe "required_linear_history=false"                             '.required_linear_history.enabled = false' 1
 probe "required_conversation_resolution=false"                    '.required_conversation_resolution.enabled = false' 1
 probe "lock_branch=true"                                          '.lock_branch.enabled = true' 1
 probe "block_creations=true"                                      '.block_creations.enabled = true' 1
 probe "allow_fork_syncing=true"                                   '.allow_fork_syncing.enabled = true' 1
-probe "check requerido reportable por OTRA app (app_id 99999)"    '.required_status_checks.checks = [{context:"gates",app_id:99999}]' 1
-probe "check requerido borrado del estado real"                   '.required_status_checks.checks = []' 1
-probe "strict cambiado"                                           '.required_status_checks.strict = true' 1
-probe "el camino del PR deja de ser obligatorio"                  'del(.required_pull_request_reviews)' 1
-probe "required_approving_review_count subido a 1"                '.required_pull_request_reviews.required_approving_review_count = 1' 1
-probe "require_code_owner_reviews activado por la espalda"        '.required_pull_request_reviews.require_code_owner_reviews = true' 1
+probe "required check reportable by ANOTHER app (app_id 99999)"   '.required_status_checks.checks = [{context:"gates",app_id:99999}]' 1
+probe "required check deleted from the real state"                '.required_status_checks.checks = []' 1
+probe "strict changed"                                            '.required_status_checks.strict = true' 1
+probe "the PR path stops being mandatory"                         'del(.required_pull_request_reviews)' 1
+probe "required_approving_review_count raised to 1"               '.required_pull_request_reviews.required_approving_review_count = 1' 1
+probe "require_code_owner_reviews enabled behind our back"        '.required_pull_request_reviews.require_code_owner_reviews = true' 1
 
 echo ""
 echo "  $PASS PASS / $FAIL FAIL"

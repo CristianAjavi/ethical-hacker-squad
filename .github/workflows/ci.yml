@@ -1,19 +1,19 @@
 # .github/workflows/ci.yml
 #
-# CI del repo. Ejecuta TODOS los gates de scripts/gates/ y distingue los tres
-# resultados posibles: 0 medido/OK, 1 medido/FALLA, 2 NO PUDE MEDIR.
-# Un gate en 2 NO se da por bueno: el paso termina en rojo igual que un 1, pero
-# el resumen del run los separa para que se vea que una comprobacion no llego a
-# hacerse (no es lo mismo "revisado y correcto" que "no revisado").
+# CI for the repo. Runs EVERY gate in scripts/gates/ and distinguishes the three
+# possible outcomes: 0 measured/OK, 1 measured/FAILS, 2 COULD NOT MEASURE.
+# A gate at 2 is NOT taken as good: the step ends red just like a 1, but the run
+# summary separates them so it is visible that a check never actually happened
+# ("reviewed and correct" is not the same as "not reviewed").
 #
-# Disparadores: solo eventos del propio repositorio. Nada de pull_request_target,
-# issues, issue_comment ni workflow_run: son las vias por las que un tercero
-# mete texto en un contexto privilegiado.
+# Triggers: only events from this repository. No pull_request_target, issues,
+# issue_comment or workflow_run: those are the paths by which a third party gets
+# text into a privileged context.
 #
-# Nota sobre `push`: un push hecho por un workflow con GITHUB_TOKEN NO crea un
-# workflow run (documentado por GitHub). Es decir, si la promocion automatica a
-# `stable` empuja con GITHUB_TOKEN, este CI no se disparara sobre ese push; la
-# puerta de calidad tiene que haberse cerrado ANTES, en el run que promueve.
+# Note on `push`: a push made by a workflow using GITHUB_TOKEN does NOT create a
+# workflow run (documented by GitHub). That is, if the automatic promotion to
+# `stable` pushes with GITHUB_TOKEN, this CI will not trigger on that push; the
+# quality gate has to have been closed BEFORE, in the run that promotes.
 name: CI
 
 on:
@@ -26,7 +26,7 @@ on:
       - main
       - stable
 
-# Ningun permiso por defecto: cada trabajo pide lo minimo que necesita.
+# No default permissions: each job asks for the minimum it needs.
 permissions: {}
 
 concurrency:
@@ -35,7 +35,13 @@ concurrency:
 
 jobs:
   gates:
-    name: Gates deterministas (sin herramientas externas)
+    # The job NAME is what becomes the check-run name, and that string is what
+    # scripts/gh/governance.json lists in promotion.required_contexts and what
+    # branch protection would require. A prose name ("Deterministic gates (no
+    # external tools)") makes that contract fragile and unreadable, so the name
+    # is kept identical to the job id. apply-governance.sh fails if the two ever
+    # drift apart.
+    name: gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -46,14 +52,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Inventario de gates
+      - name: Gate inventory
         run: ./scripts/gates/run-all.sh --list
 
-      - name: Ejecutar gates que no dependen de herramientas externas
+      - name: Run the gates that do not depend on external tools
         run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
 
   workflow-hardening:
-    name: Endurecimiento de workflows (zizmor + actionlint)
+    # Same rule as above: the name IS the required-context string.
+    name: workflow-hardening
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -64,18 +71,19 @@ jobs:
         with:
           persist-credentials: false
 
-      # Sin token: este trabajo analiza el contenido del PR, que en un fork es
-      # contenido no confiable. Las auditorias de zizmor que necesitan red van
-      # en supply-chain-audit.yml, que no se dispara desde forks.
+      # No token: this job analyzes the content of the PR, which on a fork is
+      # untrusted content. The zizmor audits that need network access live in
+      # supply-chain-audit.yml, which is not triggered from forks.
       #
-      # actionlint delega el analisis de los bloques `run:` en shellcheck. Si el
-      # runner no lo trae, el gate lo dice y devuelve 2 (NO PUDE MEDIR) y este
-      # paso queda en rojo A PROPOSITO: "no lo revise" no puede parecer verde.
-      - name: zizmor + actionlint sobre los workflows
+      # actionlint delegates the analysis of `run:` blocks to shellcheck. If the
+      # runner does not ship it, the gate says so and returns 2 (COULD NOT
+      # MEASURE) and this step stays red ON PURPOSE: "I did not review it"
+      # cannot look green.
+      - name: zizmor + actionlint over the workflows
         env:
-          # Cache de herramientas fuera del arbol de trabajo: el gate instala
-          # zizmor y actionlint en versiones fijas y verifica el SHA-256 del
-          # binario descargado. (`runner.*` solo esta disponible a nivel de
-          # paso, no a nivel de trabajo.)
+          # Tool cache outside the work tree: the gate installs zizmor and
+          # actionlint at pinned versions and verifies the SHA-256 of the
+          # downloaded binary. (`runner.*` is only available at step level,
+          # not at job level.)
           GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
         run: ./scripts/gates/run-all.sh --only 'gate-actions-lint.sh'

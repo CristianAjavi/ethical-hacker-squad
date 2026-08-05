@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# apply-governance.sh - comparador declarativo del gobierno del repositorio.
+# apply-governance.sh - declarative comparator for repository governance.
 #
-# Lee scripts/gh/governance.json (estado DESEADO), lee el estado REAL via GET
-# de la API de GitHub, e informa cada diferencia. Con --apply, y solo con
-# --apply, muta. Por defecto es --dry-run: no toca nada.
+# It reads scripts/gh/governance.json (DESIRED state), reads the REAL state via
+# GET from the GitHub API, and reports every difference. With --apply, and only
+# with --apply, it mutates. By default it is --dry-run: it touches nothing.
 #
-# Doble uso: es a la vez el aplicador y el GATE DE DERIVA. Corrido sin flags
-# responde "el gobierno real coincide con el declarado?" con codigo de salida.
+# Dual purpose: it is both the applier and the DRIFT GATE. Run without flags it
+# answers "does the real governance match the declared one?" with an exit code.
 #
-# CODIGOS DE SALIDA (doctrina: un rc=0 nunca puede significar "no lo revise")
-#   0  Medi todo lo que declare y coincide (o, con --apply, quedo aplicado).
-#   1  Medi y HAY DERIVA / una mutacion fallo. Estado real != estado deseado.
-#   2  NO PUDE MEDIR alguna parte (falta gh/jq/jq-version, sin sesion, sin
-#      permiso admin, la rama stable aun no existe, endpoint no disponible).
-#      Nunca se degrada a 0: "no pude comprobarlo" no es "esta bien".
+# EXIT CODES (doctrine: an rc=0 can never mean "I did not review it")
+#   0  I measured everything I declared and it matches (or, with --apply, it was applied).
+#   1  I measured and there IS DRIFT / a mutation failed. Real state != desired state.
+#   2  I COULD NOT MEASURE some part (gh/jq missing, no session, no admin
+#      permission, the stable branch does not exist yet, endpoint unavailable).
+#      It never degrades to 0: "I could not check it" is not "it is fine".
 #
-# Precedencia: si hay algo sin medir Y algo con deriva, gana 2, porque el
-# veredicto honesto es "no se el estado completo".
+# Precedence: if something is unmeasured AND something has drifted, 2 wins,
+# because the honest verdict is "I do not know the full state".
 #
-# NO ejecuta ninguna mutacion sin --apply. NO acepta tokens por argumento.
+# It runs NO mutation without --apply. It accepts NO tokens as arguments.
 # ---------------------------------------------------------------------------
 set -Eeuo pipefail
 
@@ -37,12 +37,12 @@ SKIP_STABLE=0
 DISCOVER_ONLY=0
 OPT_NO_COLOR=0
 
-# Compatible con bash 3.2 (el unico que trae macOS): sin ${x,,}, sin arrays
-# asociativos, sin mapfile.
+# Compatible with bash 3.2 (the only one macOS ships): no ${x,,}, no associative
+# arrays, no mapfile.
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 # ---------------------------------------------------------------------------
-# Presentacion
+# Presentation
 # ---------------------------------------------------------------------------
 c_reset=""; c_red=""; c_grn=""; c_yel=""; c_blu=""; c_dim=""
 setup_colors() {
@@ -52,48 +52,48 @@ setup_colors() {
 }
 
 section() { printf '\n%s== %s%s\n' "$c_blu" "$1" "$c_reset"; }
-ok()      { printf '   %sOK%s        %s\n' "$c_grn" "$c_reset" "$1"; N_OK=$((N_OK+1)); }
-drift()   { printf '   %sDERIVA%s    %s\n' "$c_red" "$c_reset" "$1"; N_DRIFT=$((N_DRIFT+1)); }
-applied() { printf '   %sAPLICADO%s  %s\n' "$c_grn" "$c_reset" "$1"; N_APPLIED=$((N_APPLIED+1)); }
-failed()  { printf '   %sFALLO%s     %s\n' "$c_red" "$c_reset" "$1"; N_FAILED=$((N_FAILED+1)); }
-unmeas()  { printf '   %sSIN MEDIR%s %s\n' "$c_yel" "$c_reset" "$1"; N_UNMEASURED=$((N_UNMEASURED+1)); }
-info()    { printf '   %sinfo%s      %s\n' "$c_dim" "$c_reset" "$1"; }
-plan()    { printf '   %splan%s      %s\n' "$c_dim" "$c_reset" "$1"; }
+ok()      { printf '   %sOK%s         %s\n' "$c_grn" "$c_reset" "$1"; N_OK=$((N_OK+1)); }
+drift()   { printf '   %sDRIFT%s      %s\n' "$c_red" "$c_reset" "$1"; N_DRIFT=$((N_DRIFT+1)); }
+applied() { printf '   %sAPPLIED%s    %s\n' "$c_grn" "$c_reset" "$1"; N_APPLIED=$((N_APPLIED+1)); }
+failed()  { printf '   %sFAILED%s     %s\n' "$c_red" "$c_reset" "$1"; N_FAILED=$((N_FAILED+1)); }
+unmeas()  { printf '   %sUNMEASURED%s %s\n' "$c_yel" "$c_reset" "$1"; N_UNMEASURED=$((N_UNMEASURED+1)); }
+info()    { printf '   %sinfo%s       %s\n' "$c_dim" "$c_reset" "$1"; }
+plan()    { printf '   %splan%s       %s\n' "$c_dim" "$c_reset" "$1"; }
 
 N_OK=0; N_DRIFT=0; N_APPLIED=0; N_FAILED=0; N_UNMEASURED=0
 
 fatal() {
-  printf '\n%sABORTA%s %s\n' "$c_red" "$c_reset" "$1" >&2
+  printf '\n%sABORT%s %s\n' "$c_red" "$c_reset" "$1" >&2
   exit "${2:-$RC_UNMEASURED}"
 }
 
 usage() {
   cat <<'EOF'
-Uso: scripts/gh/apply-governance.sh [opciones]
+Usage: scripts/gh/apply-governance.sh [options]
 
-  (sin opciones)            DRY-RUN. Compara e informa. No muta nada.
-  --apply                   Ejecuta las mutaciones necesarias. Explicito a proposito.
-  --dry-run                 Explicito, es el valor por defecto.
-  --discover-contexts       Solo lista los check contexts realmente observados en
-                            los ultimos commits de main. Util para rellenar
-                            promotion.required_contexts sin adivinar. No muta.
+  (no options)              DRY-RUN. Compares and reports. Mutates nothing.
+  --apply                   Runs the required mutations. Explicit on purpose.
+  --dry-run                 Explicit, this is the default.
+  --discover-contexts       Only lists the check contexts actually observed in
+                            the most recent commits of main. Useful to fill in
+                            promotion.required_contexts without guessing. No mutation.
   --allow-unobserved-contexts
-                            Permite declarar como requerido un context que nunca
-                            se ha observado. PELIGROSO: un nombre mal escrito deja
-                            main imposible de fusionar para siempre.
-  --skip-stable             Reconoce que la rama stable aun no existe y no cuenta
-                            su ausencia como "sin medir".
-  --state <ruta>            Usa otro fichero de estado deseado (por defecto
+                            Allows declaring as required a context that has never
+                            been observed. DANGEROUS: a misspelled name leaves main
+                            impossible to merge forever.
+  --skip-stable             Acknowledges that the stable branch does not exist yet
+                            and does not count its absence as "unmeasured".
+  --state <path>            Uses another desired-state file (default
                             scripts/gh/governance.json).
-  --no-color                Sin colores ANSI.
-  -h, --help                Esta ayuda.
+  --no-color                No ANSI colors.
+  -h, --help                This help.
 
-Codigos de salida: 0 coincide / 1 hay deriva o fallo una mutacion / 2 no pude medir.
+Exit codes: 0 matches / 1 there is drift or a mutation failed / 2 could not measure.
 EOF
 }
 
 # ---------------------------------------------------------------------------
-# Parseo de argumentos
+# Argument parsing
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -105,19 +105,19 @@ while [[ $# -gt 0 ]]; do
     --state) STATE_FILE="${2:-}"; shift ;;
     --no-color) OPT_NO_COLOR=1 ;;
     -h|--help) usage; exit "$RC_OK" ;;
-    *) usage >&2; fatal "argumento desconocido: $1" "$RC_UNMEASURED" ;;
+    *) usage >&2; fatal "unknown argument: $1" "$RC_UNMEASURED" ;;
   esac
   shift
 done
 setup_colors
 
 # ---------------------------------------------------------------------------
-# Precondiciones. Cualquier fallo aqui es rc=2: no puedo medir, no "esta bien".
+# Preconditions. Any failure here is rc=2: I cannot measure, not "it is fine".
 # ---------------------------------------------------------------------------
-command -v gh >/dev/null 2>&1 || fatal "falta la CLI 'gh'. Sin ella no puedo leer ni el estado real ni el deseado."
-command -v jq >/dev/null 2>&1 || fatal "falta 'jq'. Sin el no puedo comparar estructuras."
-[[ -f "$STATE_FILE" ]] || fatal "no existe el fichero de estado deseado: $STATE_FILE"
-jq -e . "$STATE_FILE" >/dev/null 2>&1 || fatal "$STATE_FILE no es JSON valido."
+command -v gh >/dev/null 2>&1 || fatal "the 'gh' CLI is missing. Without it I can read neither the real nor the desired state."
+command -v jq >/dev/null 2>&1 || fatal "'jq' is missing. Without it I cannot compare structures."
+[[ -f "$STATE_FILE" ]] || fatal "the desired-state file does not exist: $STATE_FILE"
+jq -e . "$STATE_FILE" >/dev/null 2>&1 || fatal "$STATE_FILE is not valid JSON."
 
 STATE="$(cat "$STATE_FILE")"
 REPO="$(jq -r '.repo' <<<"$STATE")"
@@ -126,50 +126,49 @@ ACTIONS_APP_ID="$(jq -r '.actions_app_id' <<<"$STATE")"
 STABLE_BRANCH="$(jq -r '.promotion.stable_branch' <<<"$STATE")"
 SOURCE_BRANCH="$(jq -r '.promotion.source_branch' <<<"$STATE")"
 
-[[ "$REPO" == */* ]] || fatal "campo .repo invalido en $STATE_FILE: '$REPO'"
+[[ "$REPO" == */* ]] || fatal "invalid .repo field in $STATE_FILE: '$REPO'"
 
 MODE_NOTE=""
-if [[ "$MODE" == "dry-run" ]]; then MODE_NOTE="(no se muta nada)"; fi
+if [[ "$MODE" == "dry-run" ]]; then MODE_NOTE="(nothing is mutated)"; fi
 printf '%s' "$c_dim"
 cat <<EOF
 repo            : $REPO
-estado deseado  : $STATE_FILE
-modo            : $MODE $MODE_NOTE
+desired state   : $STATE_FILE
+mode            : $MODE $MODE_NOTE
 EOF
 printf '%s' "$c_reset"
 
-# --- Guardia de identidad: la cuenta gh activa DEBE ser la esperada ---------
-section "Identidad de la sesion gh"
+# --- Identity guard: the active gh account MUST be the expected one ---------
+section "gh session identity"
 if ! ACTIVE_LOGIN="$(gh api user --jq '.login' 2>/dev/null)"; then
-  fatal "no hay sesion gh utilizable (gh api user fallo). Corre: gh auth login"
+  fatal "there is no usable gh session (gh api user failed). Run: gh auth login"
 fi
 if [[ "$ACTIVE_LOGIN" != "$EXPECTED_ACCOUNT" ]]; then
-  fatal "la cuenta gh ACTIVA es '$ACTIVE_LOGIN' y este repo exige '$EXPECTED_ACCOUNT'.
-       Este Mac tiene varias cuentas gh y empujar/mutar con la equivocada es un error
-       conocido y caro. Corrige con:  gh auth switch --user $EXPECTED_ACCOUNT
-       No sigo: prefiero no medir a medir contra la identidad equivocada."
+  fatal "the ACTIVE gh account is '$ACTIVE_LOGIN' and this repo requires '$EXPECTED_ACCOUNT'.
+       This Mac has several gh accounts and pushing/mutating with the wrong one is a
+       known and expensive mistake. Fix it with:  gh auth switch --user $EXPECTED_ACCOUNT
+       I stop here: I would rather not measure than measure against the wrong identity."
 fi
-ok "cuenta gh activa = $ACTIVE_LOGIN (coincide con expected_account)"
+ok "active gh account = $ACTIVE_LOGIN (matches expected_account)"
 
-# --- Acceso y permisos ------------------------------------------------------
+# --- Access and permissions -------------------------------------------------
 if ! REPO_JSON="$(gh api "repos/$REPO" 2>/dev/null)"; then
-  fatal "no puedo leer repos/$REPO (repo inexistente, sin acceso, o token sin scope 'repo')."
+  fatal "I cannot read repos/$REPO (repo missing, no access, or token without the 'repo' scope)."
 fi
 IS_ADMIN="$(jq -r '.permissions.admin // false' <<<"$REPO_JSON")"
 OWNER_TYPE="$(jq -r '.owner.type' <<<"$REPO_JSON")"
 if [[ "$IS_ADMIN" != "true" ]]; then
-  fatal "el token activo no tiene permiso ADMIN sobre $REPO. La proteccion de ramas y los
-       ajustes del repo no son ni siquiera LEGIBLES sin admin, asi que cualquier veredicto
-       seria falso. rc=2."
+  fatal "the active token has no ADMIN permission over $REPO. Branch protection and repo
+       settings are not even READABLE without admin, so any verdict would be false. rc=2."
 fi
-ok "permiso admin sobre $REPO (owner.type=$OWNER_TYPE)"
+ok "admin permission over $REPO (owner.type=$OWNER_TYPE)"
 if [[ "$OWNER_TYPE" != "Organization" ]]; then
-  info "repo de cuenta personal: 'restrictions' (quien puede pushear) es org-only y va en null."
+  info "personal-account repo: 'restrictions' (who can push) is org-only and goes as null."
 fi
 
 # ---------------------------------------------------------------------------
-# Helper de mutacion. UNICO punto por el que pasa cualquier escritura.
-#   run_mutation "<descripcion>" gh <args...>
+# Mutation helper. The ONLY point through which any write passes.
+#   run_mutation "<description>" gh <args...>
 # ---------------------------------------------------------------------------
 run_mutation() {
   local desc="$1"; shift
@@ -190,19 +189,19 @@ run_mutation() {
 }
 
 # ---------------------------------------------------------------------------
-# --discover-contexts: mira que check runs se han observado de verdad.
+# --discover-contexts: looks at which check runs have actually been observed.
 # ---------------------------------------------------------------------------
 discover_contexts() {
-  section "Check contexts observados en $SOURCE_BRANCH (ultimos 20 commits)"
+  section "Check contexts observed on $SOURCE_BRANCH (last 20 commits)"
   local shas
   if ! shas="$(gh api "repos/$REPO/commits?sha=$SOURCE_BRANCH&per_page=20" --jq '.[].sha' 2>/dev/null)"; then
-    unmeas "no pude listar commits de $SOURCE_BRANCH"
+    unmeas "I could not list the commits of $SOURCE_BRANCH"
     return
   fi
   local tmp; tmp="$(mktemp)"
   local sha
-  # FD 3 + </dev/null: si 'gh' consumiese stdin se comeria el resto de la lista
-  # de commits y el descubrimiento saldria corto sin decirlo.
+  # FD 3 + </dev/null: if 'gh' consumed stdin it would eat the rest of the commit
+  # list and the discovery would come out short without saying so.
   while IFS= read -r sha <&3; do
     [[ -n "$sha" ]] || continue
     gh api "repos/$REPO/commits/$sha/check-runs" \
@@ -214,13 +213,13 @@ discover_contexts() {
       found=1
     done
   else
-    info "ningun check run observado. Todavia no hay CI que reportar, o el CI no ha corrido en main."
+    info "no check run observed. There is no CI to report yet, or CI has not run on main."
   fi
   rm -f "$tmp"
 }
 
 observed_contexts() {
-  # imprime, una por linea, "nombre\tapp_id" de los checks vistos en main
+  # prints, one per line, "name\tapp_id" of the checks seen on main
   local shas sha
   shas="$(gh api "repos/$REPO/commits?sha=$SOURCE_BRANCH&per_page=20" --jq '.[].sha' 2>/dev/null)" || return 1
   while IFS= read -r sha <&3; do
@@ -235,11 +234,11 @@ if [[ $DISCOVER_ONLY -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1) PROTECCION DE RAMAS
-#    Se hace ANTES que los ajustes del repo a proposito: auto-merge no es un
-#    gate sino un disparador, y solo aparece cuando ya hay un requisito
-#    pendiente. Activar allow_auto_merge antes de declarar los checks
-#    requeridos produce merges instantaneos sin gate.
+# 1) BRANCH PROTECTION
+#    It is done BEFORE the repo settings on purpose: auto-merge is not a gate
+#    but a trigger, and it only shows up when there is already a pending
+#    requirement. Enabling allow_auto_merge before declaring the required
+#    checks produces instant merges with no gate.
 # ---------------------------------------------------------------------------
 readonly NORM_FROM_PUT='{
   strict:              (.required_status_checks.strict // false),
@@ -277,8 +276,8 @@ readonly NORM_FROM_GET='{
   fork_syncing:        (.allow_fork_syncing.enabled // false)
 }'
 
-# Inyecta actions_app_id en cada check requerido: el JSON declarativo solo
-# lleva el nombre del context, el app_id es politica global y va en un sitio.
+# Injects actions_app_id into every required check: the declarative JSON only
+# carries the context name, the app_id is global policy and lives in one place.
 desired_protection() {
   local branch="$1"
   jq -c --argjson app "$ACTIONS_APP_ID" --arg b "$branch" '
@@ -294,15 +293,15 @@ check_branch_exists() {
   gh api "repos/$REPO/branches/$1" --jq '.name' >/dev/null 2>&1
 }
 
-# Salvaguarda anti-auto-DoS: nunca declares como requerido un context que
-# jamas se ha visto. Un nombre mal escrito deja main imposible de fusionar y
-# el token de Actions NO es admin, asi que no hay quien lo desatasque solo.
+# Anti self-DoS safeguard: never declare as required a context that has never
+# been seen. A misspelled name leaves main impossible to merge and the Actions
+# token is NOT admin, so nobody can unblock it on its own.
 verify_contexts_observed() {
-  local want="$1"   # lista "ctx@appid" separada por saltos de linea
+  local want="$1"   # newline-separated list of "ctx@appid"
   [[ -z "$want" ]] && return 0
   local obs rc=0
   if ! obs="$(observed_contexts)"; then
-    unmeas "no pude listar los check runs de $SOURCE_BRANCH para validar los contextos requeridos"
+    unmeas "I could not list the check runs of $SOURCE_BRANCH to validate the required contexts"
     return 2
   fi
   local entry ctx app
@@ -310,18 +309,18 @@ verify_contexts_observed() {
     [[ -n "$entry" ]] || continue
     ctx="${entry%@*}"; app="${entry##*@}"
     if grep -qF "$(printf '%s\t%s' "$ctx" "$app")" <<<"$obs"; then
-      ok "context requerido '$ctx' (app_id=$app) OBSERVADO en $SOURCE_BRANCH"
+      ok "required context '$ctx' (app_id=$app) OBSERVED on $SOURCE_BRANCH"
     else
       rc=1
       if [[ $ALLOW_UNOBSERVED -eq 1 ]]; then
-        info "context '$ctx' (app_id=$app) NUNCA observado, pero --allow-unobserved-contexts esta activo"
+        info "context '$ctx' (app_id=$app) NEVER observed, but --allow-unobserved-contexts is on"
         rc=0
       else
-        drift "context requerido '$ctx' (app_id=$app) NUNCA se ha observado en $SOURCE_BRANCH.
-             Declararlo dejaria $SOURCE_BRANCH imposible de fusionar. Corre
-             --discover-contexts para ver los nombres reales, corrige
-             promotion.required_contexts / branches.$SOURCE_BRANCH en el JSON, o
-             pasa --allow-unobserved-contexts si sabes lo que haces."
+        drift "required context '$ctx' (app_id=$app) has NEVER been observed on $SOURCE_BRANCH.
+             Declaring it would leave $SOURCE_BRANCH impossible to merge. Run
+             --discover-contexts to see the real names, fix
+             promotion.required_contexts / branches.$SOURCE_BRANCH in the JSON, or
+             pass --allow-unobserved-contexts if you know what you are doing."
       fi
     fi
   done <<<"$want"
@@ -330,21 +329,21 @@ verify_contexts_observed() {
 
 reconcile_branch_protection() {
   local branch="$1"
-  section "Proteccion de rama: $branch"
+  section "Branch protection: $branch"
 
   local want; want="$(desired_protection "$branch")"
   if [[ -z "$want" || "$want" == "null" ]]; then
-    unmeas "no hay proteccion declarada para '$branch' en $STATE_FILE"
+    unmeas "there is no protection declared for '$branch' in $STATE_FILE"
     return
   fi
 
   if ! check_branch_exists "$branch"; then
     if [[ $SKIP_STABLE -eq 1 && "$branch" == "$STABLE_BRANCH" ]]; then
-      info "la rama '$branch' aun no existe; omitida por --skip-stable (reconocido explicitamente)"
+      info "branch '$branch' does not exist yet; skipped by --skip-stable (explicitly acknowledged)"
     else
-      unmeas "la rama '$branch' NO EXISTE todavia, asi que no puedo verificar ni aplicar su proteccion.
-             La crea la primera promocion (.github/workflows/promote-stable.yml). Vuelve a correr
-             este script DESPUES de esa primera promocion. rc=2 = 'no lo revise', no 'esta bien'."
+      unmeas "branch '$branch' DOES NOT EXIST yet, so I can neither verify nor apply its protection.
+             The first promotion creates it (.github/workflows/release.yml). Run this
+             script again AFTER that first promotion. rc=2 = 'I did not review it', not 'it is fine'."
     fi
     return
   fi
@@ -355,7 +354,7 @@ reconcile_branch_protection() {
   local ctx_rc=0
   verify_contexts_observed "$want_ctx" || ctx_rc=$?
   if [[ $ctx_rc -ne 0 ]]; then
-    info "no aplico la proteccion de '$branch' hasta que los contextos requeridos sean validos"
+    info "I am not applying the protection of '$branch' until the required contexts are valid"
     return
   fi
 
@@ -364,16 +363,16 @@ reconcile_branch_protection() {
     have_norm="$(jq -S "$NORM_FROM_GET" <<<"$have")"
   else
     have_norm='null'
-    info "la rama '$branch' no tiene ninguna proteccion activa (GET -> 404 Branch not protected)"
+    info "branch '$branch' has no protection at all (GET -> 404 Branch not protected)"
   fi
 
   if [[ "$have_norm" == "$want_norm" ]]; then
-    ok "$branch: la proteccion real coincide con la declarada"
+    ok "$branch: the real protection matches the declared one"
     jq -r 'to_entries[] | "             \(.key) = \(.value|tostring)"' <<<"$want_norm"
     return
   fi
 
-  drift "$branch: la proteccion real NO coincide con la declarada"
+  drift "$branch: the real protection does NOT match the declared one"
   if [[ "$have_norm" == "null" ]]; then
     jq -r 'to_entries[] | "             + \(.key) = \(.value|tostring)"' <<<"$want_norm"
   else
@@ -382,12 +381,12 @@ reconcile_branch_protection() {
       hv="$(jq -r --arg k "$k" '.[$k]|tostring' <<<"$have_norm")"
       wv="$(jq -r --arg k "$k" '.[$k]|tostring' <<<"$want_norm")"
       [[ "$hv" == "$wv" ]] && continue
-      printf '             %-20s real=%-28s deseado=%s\n' "$k" "$hv" "$wv"
+      printf '             %-20s actual=%-28s desired=%s\n' "$k" "$hv" "$wv"
     done < <(jq -r 'keys[]' <<<"$want_norm")
   fi
 
   local tmp; tmp="$(mktemp)"; printf '%s' "$want" >"$tmp"
-  run_mutation "$branch: PUT /repos/$REPO/branches/$branch/protection (reemplazo total, idempotente)" \
+  run_mutation "$branch: PUT /repos/$REPO/branches/$branch/protection (full replacement, idempotent)" \
     gh api --method PUT "repos/$REPO/branches/$branch/protection" --input "$tmp" || true
   rm -f "$tmp"
 }
@@ -396,9 +395,9 @@ reconcile_branch_protection "$SOURCE_BRANCH"
 reconcile_branch_protection "$STABLE_BRANCH"
 
 # ---------------------------------------------------------------------------
-# 2) AJUSTES DEL REPO
+# 2) REPO SETTINGS
 # ---------------------------------------------------------------------------
-section "Ajustes del repositorio"
+section "Repository settings"
 SETTING_KEYS="$(jq -r '.settings | keys[]' <<<"$STATE")"
 
 settings_patch='{}'
@@ -408,7 +407,7 @@ for k in $SETTING_KEYS; do
   if [[ "$have" == "$want" ]]; then
     ok "$k = $have"
   else
-    drift "$k: real=$have deseado=$want"
+    drift "$k: actual=$have desired=$want"
     settings_patch="$(jq -c --arg k "$k" --argjson v "$(jq -c --arg k "$k" '.settings[$k]' <<<"$STATE")" \
       '. + {($k): $v}' <<<"$settings_patch")"
   fi
@@ -422,7 +421,7 @@ if [[ "$settings_patch" != '{}' ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3) TOPICS (PUT reemplaza el conjunto completo -> declarativo e idempotente)
+# 3) TOPICS (PUT replaces the whole set -> declarative and idempotent)
 # ---------------------------------------------------------------------------
 section "Topics"
 if have_topics="$(gh api "repos/$REPO/topics" --jq '.names|sort|join(",")' 2>/dev/null)"; then
@@ -430,60 +429,47 @@ if have_topics="$(gh api "repos/$REPO/topics" --jq '.names|sort|join(",")' 2>/de
   if [[ "$have_topics" == "$want_topics" ]]; then
     ok "topics = $have_topics"
   else
-    drift "topics: real=[$have_topics] deseado=[$want_topics]"
+    drift "topics: actual=[$have_topics] desired=[$want_topics]"
     tmp="$(mktemp)"; jq -c '{names: .topics}' <<<"$STATE" >"$tmp"
     run_mutation "PUT /repos/$REPO/topics" gh api --method PUT "repos/$REPO/topics" --input "$tmp" || true
     rm -f "$tmp"
   fi
 else
-  unmeas "no pude leer repos/$REPO/topics"
+  unmeas "I could not read repos/$REPO/topics"
 fi
 
 # ---------------------------------------------------------------------------
-# 4) LABELS. Crear las que faltan, corregir color/descripcion.
-#    NUNCA borra labels no declaradas: destruir metadatos ajenos no es gobierno.
+# 4) LABELS. DELEGATED, not duplicated.
+#    This block used to apply its own list of 6 labels from governance.json
+#    while scripts/gh/labels.sh applied ANOTHER one. Two authorities over the
+#    same resource: each saw the other's labels as "undeclared" and the leftover
+#    label warning was permanent noise. The real taxonomy is the one in
+#    labels.sh, because that is the one consumed by the issue forms,
+#    gate-issue-closure.sh and gate-labels-taxonomy.sh, and the only one with a
+#    --check mode with teeth. Here it is only checked, and the delegate's rc is
+#    folded into the global verdict: a failure of the delegate can NEVER be left
+#    as "I did not review it".
 # ---------------------------------------------------------------------------
-section "Labels"
-if ! labels_json="$(gh api "repos/$REPO/labels?per_page=100" 2>/dev/null)"; then
-  unmeas "no pude listar las labels de $REPO"
+section "Labels (delegated to scripts/gh/labels.sh)"
+LABELS_SH="${REPO_ROOT:-$(cd -- "${SCRIPT_DIR}/../.." && pwd)}/scripts/gh/labels.sh"
+if [[ ! -x "$LABELS_SH" ]]; then
+  unmeas "I cannot find an executable scripts/gh/labels.sh: the taxonomy has not been reviewed"
 else
-  n_labels="$(jq -r '.labels|length' <<<"$STATE")"
-  for ((i=0; i<n_labels; i++)); do
-    lname="$(jq -r --argjson i "$i" '.labels[$i].name' <<<"$STATE")"
-    lcolor="$(jq -r --argjson i "$i" '.labels[$i].color' <<<"$STATE")"
-    ldesc="$(jq -r --argjson i "$i" '.labels[$i].description' <<<"$STATE")"
-
-    existing="$(jq -c --arg n "$lname" '.[] | select(.name == $n)' <<<"$labels_json")"
-    if [[ -z "$existing" ]]; then
-      drift "falta la label '$lname'"
-      run_mutation "crear label '$lname'" \
-        gh api --method POST "repos/$REPO/labels" \
-          -f "name=$lname" -f "color=$lcolor" -f "description=$ldesc" || true
-      continue
-    fi
-    ecolor="$(jq -r '.color' <<<"$existing")"
-    edesc="$(jq -r '.description // ""' <<<"$existing")"
-    if [[ "$(lower "$ecolor")" == "$(lower "$lcolor")" && "$edesc" == "$ldesc" ]]; then
-      ok "label '$lname'"
-    else
-      drift "label '$lname': color real=$ecolor deseado=$lcolor | desc real='$edesc' deseado='$ldesc'"
-      run_mutation "actualizar label '$lname'" \
-        gh api --method PATCH "repos/$REPO/labels/$lname" \
-          -f "new_name=$lname" -f "color=$lcolor" -f "description=$ldesc" || true
-    fi
-  done
-  extra="$(jq -r --argjson want "$(jq -c '[.labels[].name]' <<<"$STATE")" \
-    '[.[].name] - $want | join(", ")' <<<"$labels_json")"
-  if [[ -n "$extra" ]]; then
-    info "labels no declaradas (se dejan intactas a proposito): $extra"
-  fi
+  labels_rc=0
+  labels_out="$("$LABELS_SH" --repo "$REPO" --check 2>&1)" || labels_rc=$?
+  printf '%s\n' "$labels_out" | sed 's/^/             /'
+  case "$labels_rc" in
+    0) ok "labels.sh --check: taxonomy complete and free of drift" ;;
+    1) drift "labels.sh --check: the taxonomy has drifted. Fix it with 'scripts/gh/labels.sh --apply' (this script does NOT apply it: one owner per resource)" ;;
+    *) unmeas "labels.sh --check could not measure (rc=$labels_rc)" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
-# 5) ALERTAS DE VULNERABILIDAD (Dependabot)
-#    GET /vulnerability-alerts -> 204 activado, 404 desactivado.
+# 5) VULNERABILITY ALERTS (Dependabot)
+#    GET /vulnerability-alerts -> 204 enabled, 404 disabled.
 # ---------------------------------------------------------------------------
-section "Alertas de vulnerabilidad"
+section "Vulnerability alerts"
 want_va="$(jq -r '.vulnerability_alerts' <<<"$STATE")"
 va_rc=0
 gh api "repos/$REPO/vulnerability-alerts" >/dev/null 2>&1 || va_rc=$?
@@ -491,35 +477,35 @@ if [[ $va_rc -eq 0 ]]; then have_va="true"; else have_va="false"; fi
 if [[ "$have_va" == "$want_va" ]]; then
   ok "vulnerability_alerts = $have_va"
 else
-  drift "vulnerability_alerts: real=$have_va deseado=$want_va"
+  drift "vulnerability_alerts: actual=$have_va desired=$want_va"
   if [[ "$want_va" == "true" ]]; then
-    run_mutation "activar alertas de vulnerabilidad" gh api --method PUT "repos/$REPO/vulnerability-alerts" || true
+    run_mutation "enable vulnerability alerts" gh api --method PUT "repos/$REPO/vulnerability-alerts" || true
   else
-    run_mutation "desactivar alertas de vulnerabilidad" gh api --method DELETE "repos/$REPO/vulnerability-alerts" || true
+    run_mutation "disable vulnerability alerts" gh api --method DELETE "repos/$REPO/vulnerability-alerts" || true
   fi
 fi
 
 # ---------------------------------------------------------------------------
 # 6) SECRET SCANNING + PUSH PROTECTION
-#    Disponibilidad por API en repo publico de cuenta personal Free: NO
-#    VERIFICADA. Por eso un fallo aqui cuenta como SIN MEDIR, no como exito.
+#    API availability on a public repo of a personal Free account: NOT
+#    VERIFIED. That is why a failure here counts as UNMEASURED, not as success.
 # ---------------------------------------------------------------------------
 section "Secret scanning"
 want_ss="$(jq -r '.secret_scanning.enabled' <<<"$STATE")"
 want_pp="$(jq -r '.secret_scanning.push_protection' <<<"$STATE")"
-have_ss="$(jq -r '.security_and_analysis.secret_scanning.status // "desconocido"' <<<"$REPO_JSON")"
-have_pp="$(jq -r '.security_and_analysis.secret_scanning_push_protection.status // "desconocido"' <<<"$REPO_JSON")"
+have_ss="$(jq -r '.security_and_analysis.secret_scanning.status // "unknown"' <<<"$REPO_JSON")"
+have_pp="$(jq -r '.security_and_analysis.secret_scanning_push_protection.status // "unknown"' <<<"$REPO_JSON")"
 want_ss_s=$([[ "$want_ss" == "true" ]] && echo enabled || echo disabled)
 want_pp_s=$([[ "$want_pp" == "true" ]] && echo enabled || echo disabled)
 
-if [[ "$have_ss" == "desconocido" || "$have_pp" == "desconocido" ]]; then
-  unmeas "la respuesta de repos/$REPO no trae security_and_analysis (secret_scanning=$have_ss push_protection=$have_pp).
-         Disponibilidad en repo publico de cuenta personal Free NO verificada con doc oficial.
-         Lo cuento como SIN MEDIR, nunca como correcto."
+if [[ "$have_ss" == "unknown" || "$have_pp" == "unknown" ]]; then
+  unmeas "the response of repos/$REPO does not carry security_and_analysis (secret_scanning=$have_ss push_protection=$have_pp).
+         Availability on a public repo of a personal Free account is NOT verified against official docs.
+         I count it as UNMEASURED, never as correct."
 elif [[ "$have_ss" == "$want_ss_s" && "$have_pp" == "$want_pp_s" ]]; then
   ok "secret_scanning=$have_ss push_protection=$have_pp"
 else
-  drift "secret_scanning: real=$have_ss deseado=$want_ss_s | push_protection: real=$have_pp deseado=$want_pp_s"
+  drift "secret_scanning: actual=$have_ss desired=$want_ss_s | push_protection: actual=$have_pp desired=$want_pp_s"
   tmp="$(mktemp)"
   jq -nc --arg ss "$want_ss_s" --arg pp "$want_pp_s" \
     '{security_and_analysis:{secret_scanning:{status:$ss},secret_scanning_push_protection:{status:$pp}}}' >"$tmp"
@@ -529,68 +515,125 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7) COHERENCIA: lo declarado aqui vs lo que consume promote-stable.yml
+# 7) COHERENCE: what is declared here vs what the promotion workflow consumes
 # ---------------------------------------------------------------------------
-section "Coherencia con el workflow de promocion"
+section "Coherence with the promotion workflow"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
-WF="${REPO_ROOT}/.github/workflows/promote-stable.yml"
+# The promotion lives in release.yml. promote-stable.yml existed on the
+# wf/governance branch and was removed during the integration: there were TWO
+# workflows promoting to stable, on the same cron, and on top of that with
+# incompatible version models (one required semver in main's plugin.json, which
+# is exactly what gate-plugin-version.sh forbids on the latest channel, so that
+# one would have blocked forever).
+WF="${REPO_ROOT}/.github/workflows/release.yml"
+CI="${REPO_ROOT}/.github/workflows/ci.yml"
 if [[ ! -f "$WF" ]]; then
-  unmeas "no encuentro $WF: no puedo comprobar que el workflow y este JSON hablen de lo mismo"
+  unmeas "I cannot find $WF: I cannot check that the workflow and this JSON talk about the same thing"
 else
   if grep -q 'scripts/gh/governance.json' "$WF"; then
-    ok "promote-stable.yml lee scripts/gh/governance.json (una sola fuente de verdad)"
+    ok "release.yml reads scripts/gh/governance.json (a single source of truth)"
   else
-    drift "promote-stable.yml NO lee governance.json: los nombres de labels/ramas estarian duplicados"
+    drift "release.yml does NOT read governance.json: branch/label/cooldown names would be duplicated"
   fi
+
+  # required_contexts are CHECK RUN NAMES, and a check run is named after the job's
+  # 'name:' field. If they do not match ci.yml, the promotion waits forever for a
+  # context that will never exist (or worse: --apply declares an impossible required
+  # check and leaves main unmergeable). It is checked here, where it is declared.
+  if [[ ! -f "$CI" ]]; then
+    unmeas "I cannot find $CI: I cannot check that required_contexts exist as jobs"
+  elif ! command -v python3 >/dev/null 2>&1; then
+    unmeas "python3 is missing: I cannot parse $CI to check required_contexts"
+  else
+    # The checking script is written to a file: a heredoc INSIDE a command
+    # substitution closes the parenthesis before the body and bash rejects it.
+    ctx_py="$(mktemp)" || ctx_py=""
+    if [[ -z "$ctx_py" ]]; then
+      unmeas "I could not create a temp file to check required_contexts"
+    else
+      cat >"$ctx_py" <<'PYEOF'
+import json, os, sys
+try:
+    import yaml
+except ImportError:
+    print("NOYAML"); sys.exit(3)
+ci = yaml.safe_load(open(os.environ["CI_FILE"]).read())
+names = {j.get("name") for j in (ci.get("jobs") or {}).values() if isinstance(j, dict)}
+want = json.loads(os.environ["STATE_JSON"])["promotion"]["required_contexts"]
+missing = [c for c in want if c not in names]
+if missing:
+    print("MISSING:" + ",".join(missing))
+else:
+    print("ALLPRESENT:" + ",".join(sorted(n for n in names if n)))
+PYEOF
+      ctx_rc=0
+      ctx_out="$(CI_FILE="$CI" STATE_JSON="$STATE" python3 "$ctx_py" 2>&1)" || ctx_rc=$?
+      rm -f "$ctx_py"
+      case "$ctx_out" in
+        *NOYAML*)     unmeas "PyYAML is missing: I did not check that required_contexts exist as jobs of ci.yml" ;;
+        ALLPRESENT:*) ok "required_contexts exist as a job 'name:' in ci.yml (jobs: ${ctx_out#ALLPRESENT:})" ;;
+        MISSING:*)    drift "required_contexts that NO job of ci.yml produces: ${ctx_out#MISSING:}. The promotion would wait for a check that does not exist" ;;
+        *)            unmeas "I could not check required_contexts against ci.yml (rc=$ctx_rc): $ctx_out" ;;
+      esac
+    fi
+  fi
+
   gates_dir="${REPO_ROOT}/$(jq -r '.promotion.gates_dir' <<<"$STATE")"
   if [[ -d "$gates_dir" ]]; then
-    n_gates="$(find "$gates_dir" -maxdepth 1 -type f -name '*.sh' | wc -l | tr -d ' ')"
+    # Recursive and not filtered by extension, exactly like scripts/gates/run-all.sh:
+    # counting only '*.sh' at one level would leave out gates written in another
+    # language or living in a subdirectory, and this 'OK' would speak of fewer gates
+    # than there really are.
+    n_gates="$(find "$gates_dir" -type f ! -name '.*' ! -name '*.md' ! -name '*.txt' \
+                 ! -name '*.json' ! -name '*.yml' ! -name '*.yaml' ! -name '*.awk' \
+                 ! -name 'run-all.sh' ! -path "$gates_dir/lib/*" ! -path "$gates_dir/fixtures/*" \
+                 | wc -l | tr -d ' ')"
     if [[ "$n_gates" -gt 0 ]]; then
-      ok "$gates_dir contiene $n_gates gate(s) ejecutables"
+      ok "$gates_dir contains $n_gates gate(s)"
     else
-      drift "$gates_dir existe pero esta VACIO: la promocion se bloqueara (correcto: fail-safe)"
+      drift "$gates_dir exists but is EMPTY: promotion will be blocked (correct: fail-safe)"
     fi
   else
-    unmeas "$gates_dir no existe todavia (lo construye el area de gates). La promocion se bloqueara hasta entonces."
+    unmeas "$gates_dir does not exist yet. Promotion will be blocked until then."
   fi
 fi
 
 # ---------------------------------------------------------------------------
-# Veredicto
+# Verdict
 # ---------------------------------------------------------------------------
-section "Resumen"
-printf '   revisado OK : %d\n' "$N_OK"
-printf '   deriva      : %d\n' "$N_DRIFT"
-printf '   aplicado    : %d\n' "$N_APPLIED"
-printf '   fallos      : %d\n' "$N_FAILED"
-printf '   SIN MEDIR   : %d\n' "$N_UNMEASURED"
+section "Summary"
+printf '   reviewed OK : %d\n' "$N_OK"
+printf '   drift       : %d\n' "$N_DRIFT"
+printf '   applied     : %d\n' "$N_APPLIED"
+printf '   failures    : %d\n' "$N_FAILED"
+printf '   UNMEASURED  : %d\n' "$N_UNMEASURED"
 
 cat <<EOF
 
-   Lo que este script NO revisa (dilo en voz alta en vez de fingir cobertura):
-     - Quien puede pushear a una rama. En repo de cuenta personal 'restrictions' es
-       org-only; es INEXPRESABLE. La garantia real la dan los gates, no la rama.
-     - Rulesets. Este repo usa proteccion clasica a proposito; si algun dia se crea un
-       ruleset, se apilaria con la clasica y ganaria lo mas restrictivo.
-       Deteccion manual: gh api repos/$REPO/rules/branches/$SOURCE_BRANCH
-     - El contenido de los gates. Aqui solo se comprueba que existan y esten declarados.
+   What this script does NOT review (say it out loud instead of faking coverage):
+     - Who can push to a branch. On a personal-account repo 'restrictions' is
+       org-only; it is INEXPRESSIBLE. The real guarantee comes from the gates, not the branch.
+     - Rulesets. This repo uses classic protection on purpose; if a ruleset were ever
+       created, it would stack with the classic one and the most restrictive would win.
+       Manual detection: gh api repos/$REPO/rules/branches/$SOURCE_BRANCH
+     - The content of the gates. Here it only checks that they exist and are declared.
 EOF
 
 if [[ $N_UNMEASURED -gt 0 ]]; then
-  printf '\n%sVEREDICTO: rc=2 NO PUDE MEDIRLO TODO.%s Hay partes del gobierno cuyo estado desconozco.\n' "$c_yel" "$c_reset"
+  printf '\n%sVERDICT: rc=2 I COULD NOT MEASURE EVERYTHING.%s There are parts of the governance whose state I do not know.\n' "$c_yel" "$c_reset"
   exit "$RC_UNMEASURED"
 fi
 if [[ $N_FAILED -gt 0 ]]; then
-  printf '\n%sVEREDICTO: rc=1 alguna mutacion FALLO.%s\n' "$c_red" "$c_reset"
+  printf '\n%sVERDICT: rc=1 some mutation FAILED.%s\n' "$c_red" "$c_reset"
   exit "$RC_DRIFT"
 fi
 if [[ $N_DRIFT -gt 0 && "$MODE" != "apply" ]]; then
-  printf '\n%sVEREDICTO: rc=1 HAY DERIVA.%s El estado real no coincide con el declarado. Revisa el plan y corre --apply.\n' "$c_red" "$c_reset"
+  printf '\n%sVERDICT: rc=1 THERE IS DRIFT.%s The real state does not match the declared one. Review the plan and run --apply.\n' "$c_red" "$c_reset"
   exit "$RC_DRIFT"
 fi
 if [[ $N_DRIFT -gt 0 && $N_APPLIED -eq 0 ]]; then
-  printf '\n%sVEREDICTO: rc=1 habia deriva y no se aplico nada.%s\n' "$c_red" "$c_reset"
+  printf '\n%sVERDICT: rc=1 there was drift and nothing was applied.%s\n' "$c_red" "$c_reset"
   exit "$RC_DRIFT"
 fi
-printf '\n%sVEREDICTO: rc=0 medido y conforme.%s\n' "$c_grn" "$c_reset"
+printf '\n%sVERDICT: rc=0 measured and conformant.%s\n' "$c_grn" "$c_reset"
 exit "$RC_OK"

@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
-# labels.sh — taxonomia de labels del repositorio, idempotente y en seco por defecto.
+# labels.sh - repository label taxonomy, idempotent and dry by default.
 #
-# POR QUE EXISTE: los issue forms de .github/ISSUE_TEMPLATE aplican labels cableados
-# (`tipo/*`, `origen/*`, `estado/needs-triage`). Si un label no existe en el repo,
-# GitHub simplemente no lo aplica y el triaje determinista se rompe en silencio.
-# Este script es la fuente de verdad de esa taxonomia y el gate que detecta la deriva.
+# WHY IT EXISTS: the issue forms in .github/ISSUE_TEMPLATE apply hardcoded labels
+# (`type/*`, `origin/*`, `status/needs-triage`). If a label does not exist in the
+# repo, GitHub simply does not apply it and deterministic triage breaks silently.
+# This script is the source of truth for that taxonomy and the gate that detects
+# drift.
 #
-# MODOS:
-#   (por defecto)  dry-run: imprime el plan (crear / actualizar / sin cambios). No muta nada.
-#   --check        gate de solo lectura: falla si falta algun label o si difiere color/descripcion.
-#   --apply        aplica los cambios (POST/PATCH). Requiere confirmacion explicita.
+# MODES:
+#   (default)      dry-run: prints the plan (create / update / unchanged). Mutates nothing.
+#   --check        read-only gate: fails if a label is missing or color/description differ.
+#   --apply        applies the changes (POST/PATCH). Requires explicit confirmation.
 #
-# CODIGOS DE SALIDA:
-#   0 = MEDI y esta bien
-#       (dry-run: el plan se calculo entero | --check: la taxonomia esta completa y sin deriva
-#        | --apply: se aplicaron todos los cambios)
-#   1 = MEDI y FALLA
-#       (--check: falta algun label o hay deriva | --apply: alguna mutacion fallo)
-#   2 = NO PUDE MEDIR
-#       (no hay gh, no hay sesion, no se conoce el repo, o la API no respondio)
+# EXIT CODES:
+#   0 = MEASURED and it is fine
+#       (dry-run: the whole plan was computed | --check: the taxonomy is complete and free of drift
+#        | --apply: every change was applied)
+#   1 = MEASURED and it FAILS
+#       (--check: a label is missing or there is drift | --apply: some mutation failed)
+#   2 = COULD NOT MEASURE
+#       (no gh, no session, the repo is unknown, or the API did not answer)
 #
-# NUNCA borra labels: renombrar o eliminar un label mueve issues historicos y eso se
-# decide a mano. Los labels sobrantes se listan como aviso, no se tocan.
+# IT NEVER DELETES LABELS: renaming or removing a label moves historical issues and
+# that is decided by hand. Leftover labels are listed as a warning, never touched.
 #
-# Uso:
+# Usage:
 #   scripts/gh/labels.sh [--repo OWNER/REPO] [--check | --apply] [--json] [-h]
 
 set -uo pipefail
@@ -46,60 +47,61 @@ while [ $# -gt 0 ]; do
     --dry-run) MODE="dry-run"; shift ;;
     --json)  JSON_OUT=1; shift ;;
     -h|--help) usage; exit "$RC_OK" ;;
-    *) printf 'opcion desconocida: %s\n' "$1" >&2; usage >&2; exit "$RC_UNMEASURABLE" ;;
+    *) printf 'unknown option: %s\n' "$1" >&2; usage >&2; exit "$RC_UNMEASURABLE" ;;
   esac
 done
 
 # ---------------------------------------------------------------------------
-# TAXONOMIA  —  "nombre|color|descripcion"
-# Sin acentos en los nombres: viajan en la ruta de la URL de la API.
+# TAXONOMY  -  "name|color|description"
+# No accents in the names: they travel inside the API URL path.
 # ---------------------------------------------------------------------------
 LABELS='
-tipo/falso-positivo|d93f0b|El escuadron reporto algo que no es explotable
-tipo/falso-negativo|b60205|El escuadron no vio un hallazgo real
-tipo/knowledge-gap|0e8a16|Falta cobertura, tecnica o estandar en el corpus
-tipo/bug|d73a4a|El plugin no hace lo que dice (instalacion, flujo, formato)
-tipo/mejora|a2eeef|Mejora de una capacidad existente
-tipo/documentacion|0075ca|Solo documentacion o textos de la skill
-tipo/mantenimiento|ededed|Infraestructura del repo, CI, dependencias
-area/security-lead|5319e7|Orquestacion, seleccion de roles, informe final
-area/web-api|5319e7|AppSec web, backend y API
-area/mobile|5319e7|Android, iOS y APK
-area/infra-cloud|5319e7|Infraestructura, nube, contenedores
-area/supply-chain|5319e7|Dependencias, secretos y cadena de suministro
-area/ai-safety|5319e7|IA, agentes, LLM y chatbots
-area/privacy-abuse|5319e7|Privacidad, datos personales y abuso de logica
-area/remediator|5319e7|Reparacion de hallazgos confirmados
-area/verifier|5319e7|Verificacion independiente de correcciones
-area/plugin|1d76db|Empaquetado, marketplace y versionado
-area/ci|1d76db|Workflows, gates y scripts del repositorio
-origen/humano|c5def5|Lo abrio una persona
-origen/loop|c5def5|Lo abrio el loop automatico de conocimiento
-severidad/critica|b60205|Impacto critico
-severidad/alta|d93f0b|Impacto alto
-severidad/media|fbca04|Impacto medio
-severidad/baja|c2e0c6|Impacto bajo
-severidad/informativa|ededed|Sin impacto directo, informativo
-estado/needs-triage|fef2c0|Sin clasificar todavia
-estado/confirmado|0e8a16|Reproducido y aceptado
-estado/no-reproducible|ededed|No se pudo reproducir con lo aportado
-estado/necesita-info|fbca04|Falta informacion de quien lo reporto
-estado/rechazado|ededed|Fuera de alcance o no se va a arreglar
-estado/en-reposo|c5def5|En periodo de reposo antes de promocionar a stable
-estado/bloqueado|d4c5f9|Depende de algo externo
-canal/latest|bfd4f2|Afecta al canal latest (rama main)
-canal/stable|bfd4f2|Afecta al canal stable (rama stable)
+type/false-positive|d93f0b|The squad reported something that is not exploitable
+type/false-negative|b60205|The squad missed a real finding
+type/knowledge-gap|0e8a16|Missing coverage, technique or standard in the corpus
+type/bug|d73a4a|The plugin does not do what it claims (install, flow, format)
+type/enhancement|a2eeef|Improvement to an existing capability
+type/documentation|0075ca|Documentation or skill copy only
+type/maintenance|ededed|Repo infrastructure, CI, dependencies
+area/security-lead|5319e7|Orchestration, role selection, final report
+area/web-api|5319e7|Web AppSec, backend and API
+area/mobile|5319e7|Android, iOS and APK
+area/infra-cloud|5319e7|Infrastructure, cloud, containers
+area/supply-chain|5319e7|Dependencies, secrets and supply chain
+area/ai-safety|5319e7|AI, agents, LLM and chatbots
+area/privacy-abuse|5319e7|Privacy, personal data and logic abuse
+area/remediator|5319e7|Repair of confirmed findings
+area/verifier|5319e7|Independent verification of fixes
+area/plugin|1d76db|Packaging, marketplace and versioning
+area/ci|1d76db|Workflows, gates and repository scripts
+origin/human|c5def5|Opened by a person
+origin/loop|c5def5|Opened by the automated knowledge loop
+severity/critical|b60205|Critical impact
+severity/high|d93f0b|High impact
+severity/medium|fbca04|Medium impact
+severity/low|c2e0c6|Low impact
+severity/info|ededed|No direct impact, informational
+status/needs-triage|fef2c0|Not classified yet
+status/confirmed|0e8a16|Reproduced and accepted
+status/not-reproducible|ededed|Could not be reproduced with what was provided
+status/needs-info|fbca04|Missing information from the reporter
+status/rejected|ededed|Out of scope or will not be fixed
+status/resting|c5def5|In the cooldown period before promoting to stable
+status/blocked|d4c5f9|Depends on something external
+channel/latest|bfd4f2|Affects the latest channel (main branch)
+channel/stable|bfd4f2|Affects the stable channel (stable branch)
+channel/stable-blocked|b60205|Freezes automatic promotion to stable while it stays open
 '
 
 # ---------------------------------------------------------------------------
-# Prerrequisitos
+# Prerequisites
 # ---------------------------------------------------------------------------
 if ! command -v gh >/dev/null 2>&1; then
-  printf 'NO PUDE MEDIR: falta el binario gh (https://cli.github.com).\n' >&2
+  printf 'COULD NOT MEASURE: the gh binary is missing (https://cli.github.com).\n' >&2
   exit "$RC_UNMEASURABLE"
 fi
 if ! command -v jq >/dev/null 2>&1; then
-  printf 'NO PUDE MEDIR: falta jq.\n' >&2
+  printf 'COULD NOT MEASURE: jq is missing.\n' >&2
   exit "$RC_UNMEASURABLE"
 fi
 
@@ -111,31 +113,31 @@ if [ -z "$REPO" ]; then
   esac
 fi
 if [ -z "$REPO" ]; then
-  printf 'NO PUDE MEDIR: no se cual es el repositorio. Pasa --repo OWNER/REPO.\n' >&2
+  printf 'COULD NOT MEASURE: I do not know which repository this is. Pass --repo OWNER/REPO.\n' >&2
   exit "$RC_UNMEASURABLE"
 fi
 
-# Una taxonomia vacia hacia que --check dijera "OK. Taxonomia completa y sin deriva"
-# con rc=0 habiendo comprobado CERO labels: un rc=0 que significaba "no revise nada".
-# Sin declaraciones no hay nada que medir, y eso es NO PUDE MEDIR.
+# An empty taxonomy used to make --check say "OK. Taxonomy complete and free of drift"
+# with rc=0 after checking ZERO labels: an rc=0 that meant "I reviewed nothing".
+# With no declarations there is nothing to measure, and that is COULD NOT MEASURE.
 N_DECLARED="$(printf '%s\n' "$LABELS" | grep -c '|')"
 if [ "$N_DECLARED" -eq 0 ]; then
-  printf 'NO PUDE MEDIR: la taxonomia LABELS esta vacia (0 labels declarados).\n' >&2
-  printf 'Un "sin deriva" sobre cero labels no es una medicion.\n' >&2
+  printf 'COULD NOT MEASURE: the LABELS taxonomy is empty (0 labels declared).\n' >&2
+  printf 'A "no drift" verdict over zero labels is not a measurement.\n' >&2
   exit "$RC_UNMEASURABLE"
 fi
 
-TMPD="$(mktemp -d)" || { printf 'NO PUDE MEDIR: no pude crear temporal.\n' >&2; exit "$RC_UNMEASURABLE"; }
+TMPD="$(mktemp -d)" || { printf 'COULD NOT MEASURE: could not create a temp dir.\n' >&2; exit "$RC_UNMEASURABLE"; }
 trap 'rm -rf "$TMPD"' EXIT
 
-# Estado actual del repo: una sola llamada paginada. Si falla, NO PUDE MEDIR.
+# Current state of the repo: a single paginated call. If it fails, COULD NOT MEASURE.
 if ! gh api --paginate "repos/$REPO/labels" --jq '.[] | [.name, .color, (.description // "")] | @tsv' \
      > "$TMPD/actual.tsv" 2>"$TMPD/api.err"; then
-  printf 'NO PUDE MEDIR: la API de labels no respondio para %s:\n%s\n' "$REPO" "$(cat "$TMPD/api.err")" >&2
+  printf 'COULD NOT MEASURE: the labels API did not answer for %s:\n%s\n' "$REPO" "$(cat "$TMPD/api.err")" >&2
   exit "$RC_UNMEASURABLE"
 fi
 
-lookup() { # $1 nombre -> imprime "color\tdescripcion", rc 1 si no existe
+lookup() { # $1 name -> prints "color\tdescription", rc 1 if it does not exist
   awk -F'\t' -v n="$1" '$1 == n { print $2 "\t" $3; found=1 } END { exit(found ? 0 : 1) }' "$TMPD/actual.tsv"
 }
 
@@ -145,9 +147,9 @@ n_create=0; n_update=0; n_same=0; n_err=0
 : > "$TMPD/plan.txt"
 
 printf 'labels.sh\n=========\n'
-printf 'Repositorio : %s\n' "$REPO"
-printf 'Modo        : %s\n' "$MODE"
-printf 'Taxonomia   : %s labels declarados\n\n' "$N_DECLARED"
+printf 'Repository : %s\n' "$REPO"
+printf 'Mode       : %s\n' "$MODE"
+printf 'Taxonomy   : %s labels declared\n\n' "$N_DECLARED"
 
 while IFS='|' read -r name color desc; do
   [ -n "${name:-}" ] || continue
@@ -158,36 +160,36 @@ while IFS='|' read -r name color desc; do
     cur_desc="${cur#*	}"
     if [ "$cur_color" = "$color" ] && [ "$cur_desc" = "$desc" ]; then
       n_same=$((n_same + 1))
-      printf '  =  %-28s sin cambios\n' "$name"
+      printf '  =  %-28s unchanged\n' "$name"
       continue
     fi
     n_update=$((n_update + 1))
-    printf '  ~  %-28s ACTUALIZAR color %s->%s | descripcion "%s"->"%s"\n' \
+    printf '  ~  %-28s UPDATE color %s->%s | description "%s"->"%s"\n' \
       "$name" "$cur_color" "$color" "$cur_desc" "$desc"
     printf 'update\t%s\t%s\t%s\n' "$name" "$color" "$desc" >> "$TMPD/plan.txt"
   else
     n_create=$((n_create + 1))
-    printf '  +  %-28s CREAR (color %s)\n' "$name" "$color"
+    printf '  +  %-28s CREATE (color %s)\n' "$name" "$color"
     printf 'create\t%s\t%s\t%s\n' "$name" "$color" "$desc" >> "$TMPD/plan.txt"
   fi
 done <<EOF
 $LABELS
 EOF
 
-# Labels que existen en el repo y no estan declarados: se avisan, no se tocan.
+# Labels that exist in the repo and are not declared: they are reported, not touched.
 : > "$TMPD/extra.txt"
 while IFS=$'\t' read -r name _color _desc; do
   [ -n "${name:-}" ] || continue
-  # Comparacion EXACTA del nombre: con grep -F "$name|" el label por defecto "bug"
-  # casaria contra la linea "tipo/bug|..." y quedaria oculto.
+  # EXACT name comparison: with grep -F "$name|" the default label "bug" would
+  # match the line "type/bug|..." and stay hidden.
   if ! printf '%s\n' "$LABELS" | awk -F'|' -v n="$name" '$1 == n { found=1 } END { exit(found?0:1) }'; then
     printf '%s\n' "$name" >> "$TMPD/extra.txt"
   fi
 done < "$TMPD/actual.tsv"
 
-printf '\nResumen: crear=%d actualizar=%d sin_cambios=%d\n' "$n_create" "$n_update" "$n_same"
+printf '\nSummary: create=%d update=%d unchanged=%d\n' "$n_create" "$n_update" "$n_same"
 if [ -s "$TMPD/extra.txt" ]; then
-  printf 'AVISO (no se tocan, se borran a mano si procede): labels no declarados en la taxonomia:\n'
+  printf 'WARNING (not touched, delete them by hand if appropriate): labels not declared in the taxonomy:\n'
   while IFS= read -r e; do printf '  ?  %s\n' "$e"; done < "$TMPD/extra.txt"
 fi
 
@@ -199,55 +201,55 @@ fi
 
 case "$MODE" in
   check)
-    printf '\nREVISADO: existencia, color y descripcion de los %d labels declarados.\n' \
+    printf '\nREVIEWED: existence, color and description of the %d declared labels.\n' \
       "$N_DECLARED"
-    printf 'NO REVISADO: labels no declarados (listados arriba como aviso).\n'
+    printf 'NOT REVIEWED: undeclared labels (listed above as a warning).\n'
     if [ "$n_create" -gt 0 ] || [ "$n_update" -gt 0 ]; then
-      printf '\nResultado: FALLA. La taxonomia del repo no coincide con scripts/gh/labels.sh.\n'
-      printf 'Arreglalo con: scripts/gh/labels.sh --apply\n'
+      printf '\nResult: FAIL. The repo taxonomy does not match scripts/gh/labels.sh.\n'
+      printf 'Fix it with: scripts/gh/labels.sh --apply\n'
       exit "$RC_FAIL"
     fi
-    printf '\nResultado: OK. Taxonomia completa y sin deriva.\n'
+    printf '\nResult: OK. Taxonomy complete and free of drift.\n'
     exit "$RC_OK"
     ;;
   dry-run)
-    printf '\nEsto ha sido un DRY-RUN: no se ha mutado nada.\n'
-    printf 'Para aplicarlo: scripts/gh/labels.sh --apply   (requiere permiso de escritura en el repo)\n'
-    printf 'Para usarlo como gate: scripts/gh/labels.sh --check\n'
+    printf '\nThis was a DRY-RUN: nothing has been mutated.\n'
+    printf 'To apply it: scripts/gh/labels.sh --apply   (requires write access to the repo)\n'
+    printf 'To use it as a gate: scripts/gh/labels.sh --check\n'
     exit "$RC_OK"
     ;;
   apply)
     if [ ! -s "$TMPD/plan.txt" ]; then
-      printf '\nNada que aplicar. Resultado: OK.\n'
+      printf '\nNothing to apply. Result: OK.\n'
       exit "$RC_OK"
     fi
-    printf '\nAplicando %d cambios...\n' "$(wc -l < "$TMPD/plan.txt" | tr -d ' ')"
+    printf '\nApplying %d changes...\n' "$(wc -l < "$TMPD/plan.txt" | tr -d ' ')"
     while IFS=$'\t' read -r action name color desc; do
       [ -n "${action:-}" ] || continue
       if [ "$action" = "create" ]; then
         if gh api -X POST "repos/$REPO/labels" \
              -f name="$name" -f color="$color" -f description="$desc" >/dev/null 2>"$TMPD/err"; then
-          printf '  +  %s creado\n' "$name"
+          printf '  +  %s created\n' "$name"
         else
-          n_err=$((n_err + 1)); printf '  !  %s FALLO: %s\n' "$name" "$(cat "$TMPD/err")" >&2
+          n_err=$((n_err + 1)); printf '  !  %s FAILED: %s\n' "$name" "$(cat "$TMPD/err")" >&2
         fi
       else
         if gh api -X PATCH "repos/$REPO/labels/$(urlenc_name "$name")" \
              -f new_name="$name" -f color="$color" -f description="$desc" >/dev/null 2>"$TMPD/err"; then
-          printf '  ~  %s actualizado\n' "$name"
+          printf '  ~  %s updated\n' "$name"
         else
-          n_err=$((n_err + 1)); printf '  !  %s FALLO: %s\n' "$name" "$(cat "$TMPD/err")" >&2
+          n_err=$((n_err + 1)); printf '  !  %s FAILED: %s\n' "$name" "$(cat "$TMPD/err")" >&2
         fi
       fi
     done < "$TMPD/plan.txt"
     if [ "$n_err" -gt 0 ]; then
-      printf '\nResultado: FALLA. %d mutaciones fallaron. Es idempotente: puedes reejecutarlo.\n' "$n_err"
+      printf '\nResult: FAIL. %d mutations failed. It is idempotent: you can re-run it.\n' "$n_err"
       exit "$RC_FAIL"
     fi
-    printf '\nResultado: OK. Reejecutalo con --check para confirmar que no queda deriva.\n'
+    printf '\nResult: OK. Re-run it with --check to confirm no drift is left.\n'
     exit "$RC_OK"
     ;;
 esac
 
-printf 'NO PUDE MEDIR: modo desconocido "%s".\n' "$MODE" >&2
+printf 'COULD NOT MEASURE: unknown mode "%s".\n' "$MODE" >&2
 exit "$RC_UNMEASURABLE"

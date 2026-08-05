@@ -1,48 +1,48 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# gate-plugin-version.sh — gate CRITICO de distribucion del plugin.
+# gate-plugin-version.sh — CRITICAL gate for plugin distribution.
 #
-# QUE PROBLEMA IMPIDE
-#   Claude Code resuelve la version de un plugin en este orden:
-#     1) `version` en .claude-plugin/plugin.json
-#     2) `version` en la entrada del marketplace
-#     3) el SHA del commit del source
-#   y "if the resolved version matches what a user already has, /plugin update
+# WHAT PROBLEM IT PREVENTS
+#   Claude Code resolves a plugin version in this order:
+#     1) `version` in .claude-plugin/plugin.json
+#     2) `version` in the marketplace entry
+#     3) the SHA of the source commit
+#   and "if the resolved version matches what a user already has, /plugin update
 #   and auto-update skip the plugin".
-#   Consecuencia: si plugin.json fija un `version` congelado, se pueden mergear
-#   commits durante meses y NINGUN usuario instalado los recibe. El fallo es
-#   SILENCIOSO: no hay error, no hay warning, simplemente no llega nada.
-#   Fuente: https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels
+#   Consequence: if plugin.json pins a frozen `version`, commits can be merged
+#   for months and NO installed user receives them. The failure is SILENT: no
+#   error, no warning, simply nothing arrives.
+#   Source: https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels
 #
-# DISENO DE CANALES QUE ESTE GATE HACE CUMPLIR
-#   - canal `latest`  (rama main)   -> plugin.json OMITE `version`.
-#                                      Cada commit = version nueva por SHA.
-#   - canal `stable`  (rama stable) -> plugin.json DECLARA semver explicito.
-#   - la entrada del marketplace NUNCA declara `version` (plugin.json gana en
-#     silencio; declararlo en ambos sitios solo crea desalineacion).
+# CHANNEL DESIGN THIS GATE ENFORCES
+#   - channel `latest`  (main branch)   -> plugin.json OMITS `version`.
+#                                          Every commit = a new version by SHA.
+#   - channel `stable`  (stable branch) -> plugin.json DECLARES explicit semver.
+#   - the marketplace entry NEVER declares `version` (plugin.json wins silently;
+#     declaring it in both places only creates drift).
 #
-#   Mientras main todavia declare `version` (estado de transicion del repo), el
-#   gate NO deja pasar el fallo silencioso: exige que todo commit que toque
-#   rutas servidas al usuario bumpee esa version.
+#   While main still declares `version` (the repo's transition state), the gate
+#   does not let the silent failure through: it requires every commit that
+#   touches user-served paths to bump that version.
 #
-# EXIT CODES (contrato del repo: un rc=0 nunca significa "no lo revise")
-#   0 = MEDI y esta bien
-#   1 = MEDI y FALLA
-#   2 = NO PUDE MEDIR (falta herramienta, falta entrada, falta ref base)
+# EXIT CODES (repo contract: an rc=0 never means "I did not check it")
+#   0 = I MEASURED and it is fine
+#   1 = I MEASURED and it FAILS
+#   2 = I COULD NOT MEASURE (missing tool, missing input, missing base ref)
 #
-# VARIABLES DE ENTORNO
-#   EHS_CHANNEL            latest|stable  (por defecto se deduce de la rama)
-#   EHS_BASE_REF           ref base para el diff (por defecto GITHUB_BASE_REF,
-#                          luego origin/main, luego main)
-#   EHS_REQUIRE_CLAUDE_CLI 1 => si falta el binario `claude`, rc=2 en vez de SKIP
-#   EHS_REPO_ROOT          raiz del repo (por defecto: git rev-parse, luego cwd)
+# ENVIRONMENT VARIABLES
+#   EHS_CHANNEL            latest|stable  (by default derived from the branch)
+#   EHS_BASE_REF           base ref for the diff (default GITHUB_BASE_REF,
+#                          then origin/main, then main)
+#   EHS_REQUIRE_CLAUDE_CLI 1 => if the `claude` binary is missing, rc=2 instead of SKIP
+#   EHS_REPO_ROOT          repo root (default: git rev-parse, then cwd)
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
 SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
 
-# Rutas cuyo contenido se copia al cache del usuario al instalar/actualizar.
-# Un cambio aqui SI cambia lo que el usuario ejecuta => obliga version nueva.
+# Paths whose content is copied into the user cache on install/update.
+# A change here DOES change what the user runs => it forces a new version.
 USER_SERVED_PATHS=(
   "skills/"
   "agents/"
@@ -61,21 +61,21 @@ skip()    { printf '  [SKIP] %s\n' "$*"; SKIPPED+=("$*"); }
 info()    { printf '         %s\n' "$*"; }
 section() { printf '\n== %s\n' "$*"; }
 
-# rc=2 inmediato: no se pudo medir. Nunca degrada a 0.
+# Immediate rc=2: it could not be measured. Never degrades to 0.
 unmeasurable() {
-  printf '\n[NO PUDE MEDIR] %s\n' "$*" >&2
-  printf 'gate-plugin-version: rc=2 (no es un pase; es ausencia de medicion)\n' >&2
+  printf '\n[COULD NOT MEASURE] %s\n' "$*" >&2
+  printf 'gate-plugin-version: rc=2 (not a pass; it is absence of measurement)\n' >&2
   exit 2
 }
 
-# --- 0. herramientas -------------------------------------------------------
-section "herramientas"
+# --- 0. tools --------------------------------------------------------------
+section "tools"
 for tool in jq git; do
-  command -v "$tool" >/dev/null 2>&1 || unmeasurable "falta la herramienta '$tool'"
+  command -v "$tool" >/dev/null 2>&1 || unmeasurable "the tool '$tool' is missing"
 done
-ok "jq y git disponibles"
+ok "jq and git available"
 
-# --- 1. raiz del repo ------------------------------------------------------
+# --- 1. repo root ----------------------------------------------------------
 if [[ -n "${EHS_REPO_ROOT:-}" ]]; then
   ROOT="$EHS_REPO_ROOT"
 elif ROOT=$(git rev-parse --show-toplevel 2>/dev/null); then
@@ -84,28 +84,28 @@ else
   ROOT="$PWD"
 fi
 [[ -d "$ROOT/.claude-plugin" ]] || unmeasurable \
-  "no encuentro .claude-plugin/ bajo '$ROOT' (¿cwd equivocado? esto no es el repo del plugin)"
+  "I cannot find .claude-plugin/ under '$ROOT' (wrong cwd? this is not the plugin repo)"
 
 PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
 MARKET_JSON="$ROOT/.claude-plugin/marketplace.json"
-info "raiz: $ROOT"
+info "root: $ROOT"
 
-# --- 2. los dos JSON existen y parsean -------------------------------------
-section "manifiestos"
+# --- 2. both JSON files exist and parse ------------------------------------
+section "manifests"
 for f in "$PLUGIN_JSON" "$MARKET_JSON"; do
   if [[ ! -f "$f" ]]; then
-    fail "falta $(basename "$f") en .claude-plugin/ (el plugin no es instalable sin el)"
+    fail "$(basename "$f") is missing from .claude-plugin/ (the plugin is not installable without it)"
     continue
   fi
   if jq -e . "$f" >/dev/null 2>&1; then
-    ok "$(basename "$f") parsea como JSON valido"
+    ok "$(basename "$f") parses as valid JSON"
   else
-    fail "$(basename "$f") NO parsea como JSON: $(jq . "$f" 2>&1 | head -3 | tr '\n' ' ')"
+    fail "$(basename "$f") does NOT parse as JSON: $(jq . "$f" 2>&1 | head -3 | tr '\n' ' ')"
   fi
 done
-# Sin JSON parseable no hay nada mas que medir de forma fiable.
+# Without parseable JSON there is nothing else that can be measured reliably.
 if (( FAILURES > 0 )); then
-  printf '\ngate-plugin-version: rc=1 (manifiestos rotos; el resto no se pudo evaluar)\n' >&2
+  printf '\ngate-plugin-version: rc=1 (broken manifests; the rest could not be evaluated)\n' >&2
   exit 1
 fi
 
@@ -114,104 +114,105 @@ PLUGIN_VERSION=$(jq -r 'if has("version") then (.version|tostring) else "" end' 
 HAS_VERSION=$(jq -r 'has("version")' "$PLUGIN_JSON")
 
 if [[ -z "$PLUGIN_NAME" ]]; then
-  fail "plugin.json no declara 'name' (es el UNICO campo obligatorio)"
+  fail "plugin.json does not declare 'name' (it is the ONLY mandatory field)"
 else
   ok "plugin.json name='$PLUGIN_NAME'"
 fi
 
-# --- 3. la entrada del marketplace NO debe declarar version ----------------
-section "doble declaracion de version"
+# --- 3. the marketplace entry must NOT declare version ---------------------
+section "double version declaration"
 ENTRIES_WITH_VERSION=$(jq -r '[.plugins[]? | select(has("version")) | .name] | join(", ")' "$MARKET_JSON")
 if [[ -n "$ENTRIES_WITH_VERSION" ]]; then
-  fail "marketplace.json declara 'version' en: $ENTRIES_WITH_VERSION"
-  info "plugin.json SIEMPRE gana y la entrada se ignora en silencio; declarar en"
-  info "ambos sitios solo produce un manifiesto obsoleto que enmascara la version real."
-  info "Arreglo: borrar 'version' de la entrada del marketplace."
+  fail "marketplace.json declares 'version' in: $ENTRIES_WITH_VERSION"
+  info "plugin.json ALWAYS wins and the entry is ignored silently; declaring it in"
+  info "both places only produces a stale manifest that masks the real version."
+  info "Fix: delete 'version' from the marketplace entry."
 else
-  ok "ninguna entrada del marketplace declara 'version' (plugin.json es fuente unica)"
+  ok "no marketplace entry declares 'version' (plugin.json is the single source)"
 fi
 
-# --- 4. la entrada del marketplace describe ESTE plugin --------------------
+# --- 4. the marketplace entry describes THIS plugin ------------------------
 LOCAL_ENTRY_NAMES=$(jq -r '[.plugins[]? | select((.source|type=="string") and (.source|test("^\\./|^\\.$"))) | .name] | join("\n")' "$MARKET_JSON")
 if [[ -z "$LOCAL_ENTRY_NAMES" ]]; then
-  skip "ninguna entrada del marketplace usa source local './' — no hay cruce de nombre que verificar"
+  skip "no marketplace entry uses the local source './' - there is no name cross-check to do"
 elif grep -qxF "$PLUGIN_NAME" <<<"$LOCAL_ENTRY_NAMES"; then
-  ok "la entrada local './' se llama igual que plugin.json ('$PLUGIN_NAME')"
+  ok "the local './' entry is named the same as plugin.json ('$PLUGIN_NAME')"
 else
-  fail "la entrada con source './' se llama '$(tr '\n' ' ' <<<"$LOCAL_ENTRY_NAMES")' pero plugin.json dice '$PLUGIN_NAME'"
+  fail "the entry with source './' is named '$(tr '\n' ' ' <<<"$LOCAL_ENTRY_NAMES")' but plugin.json says '$PLUGIN_NAME'"
 fi
 
-# Nombres duplicados en el catalogo: el validador oficial ya lo rechaza, pero
-# lo medimos aqui para no depender de que `claude` este instalado.
+# Duplicate names in the catalogue: the official validator already rejects this,
+# but we measure it here so we do not depend on `claude` being installed.
 DUPES=$(jq -r '[.plugins[]?.name] | group_by(.) | map(select(length>1) | .[0]) | join(", ")' "$MARKET_JSON")
 if [[ -n "$DUPES" ]]; then
-  fail "nombres de plugin duplicados en marketplace.json: $DUPES"
+  fail "duplicate plugin names in marketplace.json: $DUPES"
 else
-  ok "sin nombres de plugin duplicados en el catalogo"
+  ok "no duplicate plugin names in the catalogue"
 fi
 
-# --- 5. canal --------------------------------------------------------------
-section "canal"
+# --- 5. channel ------------------------------------------------------------
+section "channel"
 CHANNEL="${EHS_CHANNEL:-}"
 if [[ -z "$CHANNEL" ]]; then
   BRANCH="${GITHUB_REF_NAME:-}"
   [[ -n "$BRANCH" ]] || BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
   if [[ "$BRANCH" == "stable" ]]; then CHANNEL="stable"; else CHANNEL="latest"; fi
-  info "canal deducido de la rama '${BRANCH:-<desconocida>}'"
+  info "channel derived from branch '${BRANCH:-<unknown>}'"
 fi
 case "$CHANNEL" in
-  latest|stable) ok "canal = $CHANNEL" ;;
-  *) unmeasurable "EHS_CHANNEL='$CHANNEL' no es 'latest' ni 'stable'" ;;
+  latest|stable) ok "channel = $CHANNEL" ;;
+  *) unmeasurable "EHS_CHANNEL='$CHANNEL' is neither 'latest' nor 'stable'" ;;
 esac
 
-# --- 6. politica por canal -------------------------------------------------
-section "politica de version del canal '$CHANNEL'"
+# --- 6. per-channel policy -------------------------------------------------
+section "version policy for channel '$CHANNEL'"
 
 if [[ "$CHANNEL" == "stable" ]]; then
-  # stable DEBE llevar semver explicito: es lo que distingue este canal de
-  # latest. Si stable no declarara version, resolveria por SHA igual que
-  # latest y no habria dos canales distinguibles.
+  # stable MUST carry explicit semver: that is what distinguishes this channel
+  # from latest. If stable declared no version, it would resolve by SHA just like
+  # latest and there would be no two distinguishable channels.
   if [[ "$HAS_VERSION" != "true" ]]; then
-    fail "stable NO declara 'version' en plugin.json"
-    info "sin semver explicito, stable resuelve por SHA igual que latest y deja de ser un canal distinto"
+    fail "stable does NOT declare 'version' in plugin.json"
+    info "without explicit semver, stable resolves by SHA just like latest and stops being a separate channel"
   elif [[ ! "$PLUGIN_VERSION" =~ $SEMVER_RE ]]; then
-    fail "version='$PLUGIN_VERSION' no es semver valido"
+    fail "version='$PLUGIN_VERSION' is not valid semver"
   else
-    ok "stable declara semver '$PLUGIN_VERSION'"
-    # Re-publicar una version ya taggeada = update saltado en silencio.
+    ok "stable declares semver '$PLUGIN_VERSION'"
+    # Re-publishing an already tagged version = a silently skipped update.
     TAG="${PLUGIN_NAME}--v${PLUGIN_VERSION}"
     if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-      skip "no es un repo git: no puedo comprobar si el tag '$TAG' ya existe"
+      skip "not a git repo: I cannot check whether the tag '$TAG' already exists"
     elif git -C "$ROOT" rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
       TAGGED_SHA=$(git -C "$ROOT" rev-list -n1 "refs/tags/$TAG")
       HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
       if [[ "$TAGGED_SHA" == "$HEAD_SHA" ]]; then
-        ok "el tag '$TAG' ya apunta a este mismo commit (re-ejecucion idempotente)"
+        ok "the tag '$TAG' already points at this very commit (idempotent re-run)"
       else
-        fail "el tag '$TAG' ya existe apuntando a $TAGGED_SHA, distinto de HEAD ($HEAD_SHA)"
-        info "publicar contenido nuevo con una version ya usada = los usuarios NO reciben la actualizacion"
+        fail "the tag '$TAG' already exists pointing at $TAGGED_SHA, different from HEAD ($HEAD_SHA)"
+        info "publishing new content with an already used version = users do NOT receive the update"
       fi
     else
-      ok "el tag '$TAG' aun no existe: la version es nueva"
+      ok "the tag '$TAG' does not exist yet: the version is new"
     fi
   fi
 
 else # latest
   if [[ "$HAS_VERSION" != "true" ]]; then
-    ok "latest OMITE 'version': cada commit resuelve a una version nueva por su SHA"
-    info "esto es el diseno objetivo; no hay bump que mantener y CI nunca escribe en main"
+    ok "latest OMITS 'version': every commit resolves to a new version by its SHA"
+    info "this is the target design; there is no bump to maintain and CI never writes to main"
   else
-    # Estado de transicion: main todavia declara version. No la damos por buena,
-    # pero tampoco dejamos pasar el fallo silencioso: exigimos el bump.
-    fail "latest declara version='$PLUGIN_VERSION' — el diseno pide OMITIRLA en main"
-    info "con version fija, ningun commit de main llega a los usuarios instalados hasta que alguien la bumpee a mano"
-    info "arreglo: borrar la clave 'version' de .claude-plugin/plugin.json en main"
+    # Transition state: main still declares a version. We do not accept it as
+    # correct, but we do not let the silent failure through either: we require
+    # the bump.
+    fail "latest declares version='$PLUGIN_VERSION' - the design asks for it to be OMITTED on main"
+    info "with a fixed version, no commit on main reaches installed users until somebody bumps it by hand"
+    info "fix: delete the 'version' key from .claude-plugin/plugin.json on main"
 
     if [[ ! "$PLUGIN_VERSION" =~ $SEMVER_RE ]]; then
-      fail "ademas, version='$PLUGIN_VERSION' no es semver valido"
+      fail "on top of that, version='$PLUGIN_VERSION' is not valid semver"
     fi
 
-    # Regla de bump mientras la version siga ahi.
+    # Bump rule, for as long as the version stays there.
     BASE_REF="${EHS_BASE_REF:-}"
     if [[ -z "$BASE_REF" && -n "${GITHUB_BASE_REF:-}" ]]; then BASE_REF="origin/${GITHUB_BASE_REF}"; fi
     if [[ -z "$BASE_REF" ]]; then
@@ -220,18 +221,18 @@ else # latest
       done
     fi
     if [[ -z "$BASE_REF" ]] || ! git -C "$ROOT" rev-parse -q --verify "$BASE_REF" >/dev/null 2>&1; then
-      unmeasurable "no puedo resolver un ref base para el diff (probé EHS_BASE_REF, GITHUB_BASE_REF, origin/main, main). Sin base no puedo comprobar la regla de bump."
+      unmeasurable "I cannot resolve a base ref for the diff (tried EHS_BASE_REF, GITHUB_BASE_REF, origin/main, main). Without a base I cannot check the bump rule."
     fi
     BASE_SHA=$(git -C "$ROOT" rev-parse "$BASE_REF")
     HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
     info "base=$BASE_REF ($BASE_SHA)  head=$HEAD_SHA"
 
     if [[ "$BASE_SHA" == "$HEAD_SHA" ]]; then
-      ok "HEAD == base: no hay cambios que exijan bump"
+      ok "HEAD == base: there are no changes that demand a bump"
     else
       CHANGED=$(git -C "$ROOT" diff --name-only "$BASE_SHA" "$HEAD_SHA" 2>/dev/null)
       if [[ -z "$CHANGED" ]]; then
-        ok "diff vacio frente a la base: no hay cambios que exijan bump"
+        ok "empty diff against the base: there are no changes that demand a bump"
       else
         TOUCHED=""
         while IFS= read -r f; do
@@ -242,16 +243,16 @@ else # latest
         done <<<"$CHANGED"
 
         if [[ -z "$TOUCHED" ]]; then
-          ok "ningun cambio toca rutas servidas al usuario (${USER_SERVED_PATHS[*]}): no hace falta bump"
+          ok "no change touches user-served paths (${USER_SERVED_PATHS[*]}): no bump needed"
         else
           BASE_VERSION=$(git -C "$ROOT" show "$BASE_SHA:.claude-plugin/plugin.json" 2>/dev/null \
             | jq -r 'if has("version") then (.version|tostring) else "" end' 2>/dev/null)
-          info "cambios servidos al usuario: $(tr '\n' ' ' <<<"$TOUCHED")"
+          info "user-served changes: $(tr '\n' ' ' <<<"$TOUCHED")"
           if [[ "$BASE_VERSION" == "$PLUGIN_VERSION" ]]; then
-            fail "se tocaron rutas servidas al usuario pero version sigue en '$PLUGIN_VERSION' (igual que en la base)"
-            info "FALLO SILENCIOSO DE DISTRIBUCION: /plugin update saltara este plugin porque la version resuelta no cambio"
+            fail "user-served paths were touched but version is still '$PLUGIN_VERSION' (same as on the base)"
+            info "SILENT DISTRIBUTION FAILURE: /plugin update will skip this plugin because the resolved version did not change"
           else
-            ok "version cambio de '${BASE_VERSION:-<ausente>}' a '$PLUGIN_VERSION' junto con los cambios servidos"
+            ok "version changed from '${BASE_VERSION:-<absent>}' to '$PLUGIN_VERSION' together with the served changes"
           fi
         fi
       fi
@@ -259,41 +260,42 @@ else # latest
   fi
 fi
 
-# --- 7. validador oficial (opcional, con teeth si CI lo exige) -------------
-section "validador oficial de Anthropic"
-# MEDIDO en 2.1.221: `claude plugin validate <dir>` con marketplace.json presente
-# valida SOLO el manifiesto del marketplace y NO reporta el warning de version
-# del plugin. Para auditar plugin.json hay que apuntar al ARCHIVO.
-# MEDIDO tambien: devuelve rc=1 tanto si midio y fallo como si el path no existe
-# => por eso este wrapper pre-verifica y nunca delega su exit code a la herramienta.
+# --- 7. official validator (optional, with teeth if CI demands it) ---------
+section "official Anthropic validator"
+# MEASURED on 2.1.221: `claude plugin validate <dir>` with marketplace.json present
+# validates ONLY the marketplace manifest and does NOT report the plugin version
+# warning. To audit plugin.json you have to point at the FILE.
+# ALSO MEASURED: it returns rc=1 both when it measured and failed and when the path
+# does not exist => that is why this wrapper pre-checks and never delegates its exit
+# code to the tool.
 if ! command -v claude >/dev/null 2>&1; then
   if [[ "${EHS_REQUIRE_CLAUDE_CLI:-0}" == "1" ]]; then
-    unmeasurable "EHS_REQUIRE_CLAUDE_CLI=1 pero el binario 'claude' no esta en PATH"
+    unmeasurable "EHS_REQUIRE_CLAUDE_CLI=1 but the 'claude' binary is not in PATH"
   fi
-  skip "binario 'claude' no disponible: no se corrio validate (poner EHS_REQUIRE_CLAUDE_CLI=1 para exigirlo)"
+  skip "'claude' binary not available: validate was not run (set EHS_REQUIRE_CLAUDE_CLI=1 to demand it)"
 else
-  # En latest, la UNICA queja legitima de --strict es "No version specified":
-  # es intencional. En vez de renunciar a --strict (perder cobertura) o de
-  # tragarnoslo entero (aprobar a ciegas), se corre --strict y se comprueba que
-  # TODA queja sea exactamente esa. Cualquier otra advertencia sigue fallando.
+  # On latest, the ONLY legitimate complaint from --strict is "No version
+  # specified": that is intentional. Rather than giving up --strict (losing
+  # coverage) or swallowing it whole (approving blindly), --strict is run and we
+  # check that EVERY complaint is exactly that one. Any other warning still fails.
   EXPECTED_WARN='version: No version specified'
 
-  validate_target() { # $1=path  $2=etiqueta
+  validate_target() { # $1=path  $2=label
     local target="$1" label="$2" out rc n_warn n_expected
     out=$(claude plugin validate "$target" --strict 2>&1); rc=$?
     if (( rc == 0 )); then
-      ok "claude plugin validate --strict sobre $label"
+      ok "claude plugin validate --strict over $label"
       return 0
     fi
     if [[ "$CHANNEL" == "latest" ]]; then
       n_warn=$(grep -c '❯ ' <<<"$out")
       n_expected=$(grep -c "❯ .*$EXPECTED_WARN" <<<"$out")
       if (( n_warn > 0 && n_warn == n_expected )) && ! grep -q 'Found .* error' <<<"$out"; then
-        ok "claude plugin validate --strict sobre $label: la unica queja es la ausencia de 'version', que en latest es intencional ($n_warn advertencia(s), todas esperadas)"
+        ok "claude plugin validate --strict over $label: the only complaint is the absence of 'version', which is intentional on latest ($n_warn warning(s), all expected)"
         return 0
       fi
     fi
-    fail "claude plugin validate --strict fallo sobre $label"
+    fail "claude plugin validate --strict failed over $label"
     sed 's/^/         | /' <<<"$out" >&2
     return 1
   }
@@ -302,19 +304,19 @@ else
   validate_target "$PLUGIN_JSON" "plugin.json"
 fi
 
-# --- resumen ---------------------------------------------------------------
-section "resumen"
-printf '  revisado: %d comprobacion(es)\n' "${#CHECKED[@]}"
+# --- summary ---------------------------------------------------------------
+section "summary"
+printf '  checked: %d check(s)\n' "${#CHECKED[@]}"
 if ((${#SKIPPED[@]} > 0)); then
-  printf '  NO revisado: %d\n' "${#SKIPPED[@]}"
+  printf '  NOT checked: %d\n' "${#SKIPPED[@]}"
   for s in "${SKIPPED[@]}"; do printf '    - %s\n' "$s"; done
 else
-  printf '  NO revisado: 0\n'
+  printf '  NOT checked: 0\n'
 fi
 
 if (( FAILURES > 0 )); then
-  printf '\ngate-plugin-version: rc=1 — %d fallo(s) MEDIDO(s)\n' "$FAILURES" >&2
+  printf '\ngate-plugin-version: rc=1 — %d MEASURED failure(s)\n' "$FAILURES" >&2
   exit 1
 fi
-printf '\ngate-plugin-version: rc=0 — medido y correcto\n'
+printf '\ngate-plugin-version: rc=0 — measured and correct\n'
 exit 0

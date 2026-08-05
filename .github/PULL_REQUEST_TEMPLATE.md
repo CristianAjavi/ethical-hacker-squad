@@ -1,85 +1,85 @@
 <!--
-  No borres las secciones. Los apartados se rellenan; los que no apliquen se marcan
-  "no aplica" con una razon.
+  Do not delete the sections. Fill them in; mark the ones that do not apply as
+  "not applicable" with a reason.
 
-  QUE BLOQUEA DE VERDAD (scripts/gates/gate-issue-closure.sh, en cada PR):
-  si este PR declara cerrar un issue etiquetado tipo/falso-positivo o tipo/falso-negativo
-  y NO toca ningun fichero de scripts/gates/, tests/ o
-  skills/*/references/knowledge/ (el contrato G8 de docs/gate-requirements.md),
-  el gate falla (rc=1).
-  Borrar ese fichero tampoco cuenta: el gate descarta los ficheros que el PR elimina.
+  WHAT ACTUALLY BLOCKS (scripts/gates/gate-issue-closure.sh, on every PR):
+  if this PR declares that it closes an issue labeled type/false-positive or type/false-negative
+  and does NOT touch any file under scripts/gates/, tests/ or
+  skills/*/references/knowledge/ (contract G8 of docs/gate-requirements.md),
+  the gate fails (rc=1).
+  Deleting that file does not count either: the gate discards the files the PR removes.
 
-  QUE NO BLOQUEA (lo revisa una persona): no declarar ningun issue no falla el gate,
-  porque hay PRs legitimos sin issue (infraestructura, el loop de conocimiento).
-  Tampoco puede comprobar que el fichero tocado contenga DE VERDAD el caso de esta
-  regresion. Eso es lo que se revisa leyendo las secciones de abajo.
+  WHAT DOES NOT BLOCK (a human reviews it): declaring no issue does not fail the gate,
+  because there are legitimate PRs with no issue (infrastructure, the knowledge loop).
+  It also cannot check that the touched file REALLY contains the case for this
+  regression. That is what gets reviewed by reading the sections below.
 -->
 
-## Que cierra
+## What it closes
 
 <!--
-  OBLIGATORIO. Una palabra clave de cierre por issue, en el CUERPO de este PR:
+  REQUIRED. One closing keyword per issue, in the BODY of this PR:
   Fixes #N   |   Closes #N   |   Resolves #N
-  (GitHub solo enlaza si el PR apunta a la rama por defecto del repo.)
-  Si este PR no cierra ningun issue, escribe: "No cierra ningun issue porque <razon>"
-  y abre el issue antes si el cambio corrige un comportamiento observado.
+  (GitHub only links it if the PR targets the default branch of the repo.)
+  If this PR closes no issue, write: "Closes no issue because <reason>"
+  and open the issue first if the change fixes an observed behavior.
 -->
 
 Fixes #
 
-## Que quedo vigilando la regresion
+## What is now watching the regression
 
 <!--
-  OBLIGATORIO cuando se cierra un issue de tipo/falso-positivo o tipo/falso-negativo.
-  Doctrina del repo: un issue no se cierra con el arreglo, se cierra con el arreglo
-  MAS el check que impide que reaparezca. Un arreglo sin check es una recaida programada.
+  REQUIRED when closing an issue of type/false-positive or type/false-negative.
+  Repo doctrine: an issue is not closed with the fix, it is closed with the fix
+  PLUS the check that keeps it from coming back. A fix without a check is a scheduled relapse.
 
-  Rellena las tres lineas. El gate exige que el PR toque de verdad un gate o el corpus de casos.
+  Fill in the three lines. The gate requires the PR to really touch a gate or the case corpus.
 -->
 
-- **Gate o caso:** <!-- ruta exacta: scripts/gates/<x>.sh, tests/fixtures/<x>, o el caso añadido a skills/*/references/knowledge/<x>.md -->
-- **Que detecta:** <!-- la entrada concreta que antes pasaba y ahora falla -->
-- **Como falla si la regresion vuelve:** <!-- salida y codigo de salida esperados: 1 = medi y falla -->
+- **Gate or case:** <!-- exact path: scripts/gates/<x>.sh, tests/fixtures/<x>, or the case added to skills/*/references/knowledge/<x>.md -->
+- **What it detects:** <!-- the concrete input that used to pass and now fails -->
+- **How it fails if the regression returns:** <!-- expected output and exit code: 1 = measured and failing -->
 
-Verificacion en negativo (obligatoria para gates nuevos o modificados):
+Negative verification (required for new or modified gates):
 
 ```
-# pega el comando y su salida: primero con el defecto presente (debe dar rc=1),
-# luego con el arreglo aplicado (debe dar rc=0)
+# paste the command and its output: first with the defect present (must give rc=1),
+# then with the fix applied (must give rc=0)
 ```
 
-## Cambio
+## Change
 
-<!-- Que cambia y por que. Si toca las instrucciones de la skill, di que rol afecta. -->
+<!-- What changes and why. If it touches the skill instructions, say which role it affects. -->
 
-## Impacto en la distribucion
+## Distribution impact
 
-<!-- Marca lo que corresponda -->
+<!-- Check what applies -->
 
-- [ ] Toca `skills/**` o `.claude-plugin/**` (afecta a lo que reciben los usuarios instalados)
-- [ ] Requiere subir `version` en `.claude-plugin/plugin.json` (sin bump, los usuarios NO reciben nada)
-- [ ] Solo toca infraestructura del repo (`.github/**`, `scripts/**`): no requiere bump
+- [ ] Touches `skills/**` or `.claude-plugin/**` (affects what installed users receive)
+- [ ] Requires bumping `version` in `.claude-plugin/plugin.json` (without a bump, users receive NOTHING)
+- [ ] Only touches repo infrastructure (`.github/**`, `scripts/**`): no bump required
 
-## Origen
+## Origin
 
-- [ ] `origen/humano` — lo escribio una persona
-- [ ] `origen/loop` — lo abrio el loop de conocimiento (rama `bot/knowledge-YYYY-WW`)
+- [ ] `origin/human` — a person wrote it
+- [ ] `origin/loop` — the knowledge loop opened it (branch `bot/knowledge-YYYY-WW`)
 
-Si es `origen/loop`, ademas:
+If it is `origin/loop`, additionally:
 
-- [ ] Cada afirmacion nueva del corpus cita una **fuente publica primaria** enlazada
-- [ ] Ninguna fuente introduce instrucciones dirigidas al agente (revisado como texto, no ejecutado)
+- [ ] Every new claim in the corpus cites a linked **primary public source**
+- [ ] No source introduces instructions aimed at the agent (reviewed as text, not executed)
 
-## Reglas duras (marcar solo lo que se verifico, no lo que se supone)
+## Hard rules (check only what was verified, not what is assumed)
 
-- [ ] Ningun workflow nuevo o modificado usa `pull_request_target`, `issues`, `issue_comment` ni `discussion`
-- [ ] Ningun job que procese contenido no confiable recibe secretos
-- [ ] `permissions:` declarado **por job**, con el minimo necesario
-- [ ] Toda accion de terceros fijada por SHA de 40 caracteres, con el tag en comentario
-- [ ] Ningun `${{ github.event.* }}` interpolado dentro de un bloque `run:`
-- [ ] Ningun secreto real, credencial ni dato personal en el diff (incluidos ficheros de prueba)
+- [ ] No new or modified workflow uses `pull_request_target`, `issues`, `issue_comment` or `discussion`
+- [ ] No job that processes untrusted content receives secrets
+- [ ] `permissions:` declared **per job**, with the minimum needed
+- [ ] Every third-party action pinned by 40-character SHA, with the tag in a comment
+- [ ] No `${{ github.event.* }}` interpolated inside a `run:` block
+- [ ] No real secret, credential or personal data in the diff (test files included)
 
-## Alcance etico
+## Ethical scope
 
-- [ ] Este cambio no añade capacidad de ataque contra sistemas de terceros ni payloads armados
-- [ ] Los ejemplos y casos usan datos sinteticos
+- [ ] This change adds no attack capability against third-party systems and no weaponized payloads
+- [ ] Examples and cases use synthetic data

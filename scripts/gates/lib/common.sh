@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # scripts/gates/lib/common.sh
 #
-# Utilidades comunes a todos los gates del repo.
+# Helpers shared by every gate in this repo.
 #
-# DOCTRINA DE CODIGOS DE SALIDA (no negociable):
-#   0 = MEDI y esta BIEN
-#   1 = MEDI y FALLA
-#   2 = NO PUDE MEDIR (falta herramienta, falta entrada, fichero ilegible)
+# EXIT CODE DOCTRINE (non-negotiable):
+#   0 = I MEASURED and it is FINE
+#   1 = I MEASURED and it FAILS
+#   2 = I COULD NOT MEASURE (missing tool, missing input, unreadable file)
 #
-# Un rc=0 NUNCA puede significar "no lo revise". Todo gate imprime, ademas,
-# que reviso y que NO reviso.
+# An rc=0 can NEVER mean "I did not check it". Every gate also prints what it
+# did check and what it did NOT check.
 #
-# Este fichero se hace `source`, no se ejecuta.
+# This file is meant to be sourced, not executed.
 
 # shellcheck shell=bash
 
@@ -20,7 +20,7 @@ GATE_FAIL=1
 GATE_UNMEASURABLE=2
 export GATE_OK GATE_FAIL GATE_UNMEASURABLE
 
-# Colores solo si hay TTY y no estamos en CI.
+# Colors only when attached to a TTY and not running in CI.
 if [ -t 1 ] && [ -z "${CI:-}" ]; then
   _C_RED=$'\033[31m'; _C_YEL=$'\033[33m'; _C_GRN=$'\033[32m'
   _C_DIM=$'\033[2m'; _C_OFF=$'\033[0m'
@@ -31,11 +31,12 @@ fi
 gate_log()  { printf '%s\n' "$*"; }
 gate_info() { printf '%s\n' "${_C_DIM}· $*${_C_OFF}"; }
 gate_ok()   { printf '%s\n' "${_C_GRN}OK${_C_OFF}   $*"; }
-gate_fail() { printf '%s\n' "${_C_RED}FALLA${_C_OFF} $*"; }
-gate_warn() { printf '%s\n' "${_C_YEL}NO MEDIBLE${_C_OFF} $*"; }
+gate_fail() { printf '%s\n' "${_C_RED}FAIL${_C_OFF}  $*"; }
+gate_warn() { printf '%s\n' "${_C_YEL}UNMEASURABLE${_C_OFF} $*"; }
 
-# gate_root: raiz del repo (o del arbol de trabajo). No depende de git estando
-# disponible; cae al directorio padre de scripts/ si git no responde.
+# gate_root: repository (or work tree) root. Does not depend on git being
+# available; falls back to the parent directory of scripts/ if git does not
+# answer.
 gate_root() {
   local here
   here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -49,21 +50,21 @@ gate_root() {
   printf '%s\n' "$here"
 }
 
-# gate_header <nombre> — cabecera legible del gate.
+# gate_header <name> — readable header for the gate.
 gate_header() {
   printf '\n=== gate: %s ===\n' "$1"
 }
 
-# gate_scope <lo que SI reviso> / gate_out_of_scope <lo que NO reviso>
-gate_scope()        { printf 'ALCANCE   : %s\n' "$1"; }
-gate_out_of_scope() { printf 'FUERA     : %s\n' "$1"; }
+# gate_scope <what I DO check> / gate_out_of_scope <what I do NOT check>
+gate_scope()        { printf 'SCOPE     : %s\n' "$1"; }
+gate_out_of_scope() { printf 'OUT       : %s\n' "$1"; }
 
-# gate_verdict <rc> — imprime el veredicto textual asociado al codigo.
+# gate_verdict <rc> — prints the textual verdict tied to the exit code.
 gate_verdict() {
   case "$1" in
-    0) printf 'VEREDICTO : 0 (medido, sin hallazgos)\n' ;;
-    1) printf 'VEREDICTO : 1 (medido, FALLA)\n' ;;
-    2) printf 'VEREDICTO : 2 (NO PUDE MEDIR — no cuenta como aprobado)\n' ;;
-    *) printf 'VEREDICTO : %s (codigo inesperado — se trata como NO MEDIBLE)\n' "$1" ;;
+    0) printf 'VERDICT   : 0 (measured, no findings)\n' ;;
+    1) printf 'VERDICT   : 1 (measured, FAILS)\n' ;;
+    2) printf 'VERDICT   : 2 (COULD NOT MEASURE - does not count as a pass)\n' ;;
+    *) printf 'VERDICT   : %s (unexpected code - treated as UNMEASURABLE)\n' "$1" ;;
   esac
 }

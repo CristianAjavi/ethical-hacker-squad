@@ -1,76 +1,77 @@
 # ===========================================================================
-# release-stable — promocion automatica del canal `stable`.
+# release-stable — automatic promotion of the `stable` channel.
 #
-# QUE HACE
-#   Toma un commit de `main` que ya reposo SOAK_DAYS dias sin issues en contra,
-#   verifica su arbol con los gates del repo, y publica el canal `stable`:
-#     - rama `stable` = arbol identico al de main + `version` semver en
+# WHAT IT DOES
+#   Takes a commit from `main` that has already rested SOAK_DAYS days with no
+#   issues against it, verifies its tree with the repo gates, and publishes the
+#   `stable` channel:
+#     - branch `stable` = tree identical to main + semver `version` in
 #       .claude-plugin/plugin.json + CHANGELOG.md
-#     - tag anotado `ethical-hacker-squad--vX.Y.Z` (convencion de `claude plugin tag`)
+#     - annotated tag `ethical-hacker-squad--vX.Y.Z` (the convention of `claude plugin tag`)
 #
-# MODELO DE CANALES (por que la rama y no un segundo marketplace)
-#   marketplace.json tiene UNA entrada con "source": "./". El canal lo elige el
-#   usuario al agregar el marketplace:
+# CHANNEL MODEL (why a branch and not a second marketplace)
+#   marketplace.json has ONE entry with "source": "./". The channel is chosen by
+#   the user when adding the marketplace:
 #     /plugin marketplace add CristianAjavi/ethical-hacker-squad          -> latest (main)
 #     /plugin marketplace add CristianAjavi/ethical-hacker-squad@stable   -> stable
-#   Asi el usuario de stable lee el CATALOGO y el PLUGIN desde la rama stable, y
-#   su Claude Code nunca toca main. Con dos entradas apuntando a refs distintos,
-#   el catalogo seguiria viviendo en main y un commit malicioso alli podria
-#   redirigir a los usuarios de stable sin tocar jamas la rama stable.
-#   main OMITE `version` (cada commit = version nueva por SHA); stable la declara.
-#   Doc: https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels
+#   That way a stable user reads the CATALOG and the PLUGIN from the stable branch,
+#   and their Claude Code never touches main. With two entries pointing at different
+#   refs, the catalog would still live in main and a malicious commit there could
+#   redirect stable users without ever touching the stable branch.
+#   main OMITS `version` (every commit = a new version by SHA); stable declares it.
+#   Docs: https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels
 #
-# POSTURA DE SEGURIDAD DEL WORKFLOW
-#   - Disparadores: solo `schedule` y `workflow_dispatch`. Nunca
-#     pull_request_target, nunca `issues`/`issue_comment`: ningun tercero puede
-#     provocar una ejecucion.
-#   - `permissions: {}` a nivel de workflow (deny-all) y permisos minimos
-#     declarados POR JOB.
-#   - Acciones de terceros fijadas por SHA de 40 caracteres (el SHA del COMMIT,
-#     desreferenciado; los tags anotados apuntan a un objeto tag, no al arbol
-#     que se ejecuta).
-#   - El unico contenido no confiable que toca este workflow son los ASUNTOS de
-#     commit que van al CHANGELOG; se sanean a texto plano en build-changelog.sh
-#     y ningun LLM los lee ni decide con ellos.
-#   - El bloqueo por issues es DETERMINISTA: se cuenta cuantas issues abiertas
-#     llevan una etiqueta que solo puede poner alguien con permiso de triage.
-#     Nunca se lee el titulo ni el cuerpo de una issue.
+# SECURITY POSTURE OF THIS WORKFLOW
+#   - Triggers: only `schedule` and `workflow_dispatch`. Never
+#     pull_request_target, never `issues`/`issue_comment`: no third party can
+#     cause a run.
+#   - `permissions: {}` at workflow level (deny-all) and minimal permissions
+#     declared PER JOB.
+#   - Third-party actions pinned by 40-character SHA (the COMMIT SHA,
+#     dereferenced; annotated tags point at a tag object, not at the tree that
+#     gets executed).
+#   - The only untrusted content this workflow touches are the commit SUBJECTS
+#     that go into the CHANGELOG; they are sanitized to plain text in
+#     build-changelog.sh and no LLM reads them or decides with them.
+#   - The issue-based block is DETERMINISTIC: it counts how many open issues
+#     carry a label that only someone with triage permission can apply.
+#     The title and the body of an issue are never read.
 #
-# LIMITACION DECLARADA (no la escondemos)
-#   Los tags son ANOTADOS pero NO FIRMADOS. Firmarlos exigiria darle una clave
-#   privada a un job automatico, que es peor riesgo que la firma que aporta.
-#   La procedencia auditable aqui es: el trailer `Source-Commit:` del commit de
-#   stable + el gate de diff que prueba que el arbol de stable es el de main.
-#   Un mantenedor puede re-firmar el tag a mano si quiere firma humana.
-#   Tampoco se emiten artifact attestations: Claude Code instala clonando el
-#   repo y nunca ejecuta `gh attestation verify`, asi que serian teatro.
+# DECLARED LIMITATION (not hidden)
+#   The tags are ANNOTATED but NOT SIGNED. Signing them would mean handing a
+#   private key to an automated job, which is a worse risk than the signature
+#   provides. The auditable provenance here is: the `Source-Commit:` trailer of
+#   the stable commit plus the diff gate proving that the stable tree is main's.
+#   A maintainer can re-sign the tag by hand if a human signature is wanted.
+#   No artifact attestations are emitted either: Claude Code installs by cloning
+#   the repo and never runs `gh attestation verify`, so they would be theater.
 # ===========================================================================
 name: release-stable
 
 on:
   schedule:
-    # Lunes 06:17 UTC. Minuto no redondo a proposito: la cola de cron de
-    # GitHub se satura en los minutos :00.
+    # Monday 06:17 UTC. A non-round minute on purpose: GitHub's cron queue
+    # saturates on the :00 minutes.
     - cron: '17 6 * * 1'
   workflow_dispatch:
     inputs:
       source_sha:
-        description: 'Commit de main a promover (vacio = el mas reciente que ya reposo)'
+        description: 'Commit of main to promote (empty = the most recent one that already rested)'
         required: false
         type: string
       bump:
-        description: 'Salto de version'
+        description: 'Version bump'
         required: false
         default: auto
         type: choice
         options: [auto, patch, minor, major]
       dry_run:
-        description: 'Solo simular: no empuja rama ni tag'
+        description: 'Simulate only: push neither branch nor tag'
         required: false
         default: true
         type: boolean
 
-# Deny-all. Cada job pide lo suyo y nada mas.
+# Deny-all. Each job asks for its own and nothing else.
 permissions: {}
 
 concurrency:
@@ -78,23 +79,31 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Version pineada del CLI que aporta los dos gates de primera parte
-  # (`plugin validate --strict` y `plugin tag --dry-run`). Verificada como
-  # publicada en npm el 2026-08-04.
+  # Pinned version of the CLI that provides the two first-party gates
+  # (`plugin validate --strict` and `plugin tag --dry-run`). Verified as
+  # published on npm on 2026-08-04.
   CLAUDE_CODE_VERSION: '2.1.221'
-  SOAK_DAYS: '7'
-  BLOCK_LABEL: 'channel-stable-block'
   PLUGIN_NAME: 'ethical-hacker-squad'
+  # SOAK_DAYS, BLOCK_LABEL, the branch names and the tag prefix are NOT declared
+  # here. They live in scripts/gh/governance.json, which is the single source of
+  # truth that scripts/gh/apply-governance.sh also enforces against the real
+  # repository. Duplicating them here is how they drift: the value this workflow
+  # obeyed and the value the governance script asserted would be different
+  # strings, both looking authoritative. Measured during integration: this file
+  # said BLOCK_LABEL 'channel-stable-block' while the taxonomy declares
+  # 'channel/stable-blocked' -- GitHub silently ignores a label that does not
+  # exist, so the channel brake was decoration and the query always returned 0.
+  GOVERNANCE_FILE: scripts/gh/governance.json
 
 jobs:
   # -------------------------------------------------------------------------
   resolve:
-    name: Resolver candidato y version
+    name: Resolve candidate and version
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read   # leer historia de main y de stable
-      issues: read     # SOLO contar issues con la etiqueta de bloqueo
+      contents: read   # read the history of main and of stable
+      issues: read     # ONLY to count issues with the blocking label
     outputs:
       should_release: ${{ steps.decide.outputs.should_release }}
       source_sha: ${{ steps.candidate.outputs.sha }}
@@ -103,26 +112,97 @@ jobs:
       bump: ${{ steps.ver.outputs.bump }}
       stable_exists: ${{ steps.candidate.outputs.stable_exists }}
       last_source: ${{ steps.candidate.outputs.last_source }}
+      tag_prefix: ${{ steps.gov.outputs.tag_prefix }}
+      stable_branch: ${{ steps.gov.outputs.stable_branch }}
     steps:
-      - name: Checkout (historia completa, sin dejar credenciales en el disco)
+      - name: Checkout (full history, leaving no credentials on disk)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Traer main y stable
+      # The contract is read from the DEFAULT BRANCH checkout, never from the
+      # candidate tree. Reading it from the candidate would let the very commit
+      # being promoted choose its own destination branch and its own blocking
+      # label -- configuration controlled by the thing under judgement.
+      - name: Read the governance contract
+        id: gov
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || { echo "::error::jq is missing"; exit 1; }
+          jq -e . "$GOVERNANCE_FILE" >/dev/null \
+            || { echo "::error::$GOVERNANCE_FILE is not valid JSON"; exit 1; }
+
+          SOAK_DAYS=$(jq -r '.promotion.cooldown_days'          "$GOVERNANCE_FILE")
+          STABLE_BRANCH=$(jq -r '.promotion.stable_branch'      "$GOVERNANCE_FILE")
+          SOURCE_BRANCH=$(jq -r '.promotion.source_branch'      "$GOVERNANCE_FILE")
+          TAG_PREFIX=$(jq -r '.promotion.tag_prefix'            "$GOVERNANCE_FILE")
+          BLOCK_LABEL=$(jq -r '.promotion.blocking_issue_labels[0] // empty' "$GOVERNANCE_FILE")
+          N_BLOCK=$(jq -r '.promotion.blocking_issue_labels | length' "$GOVERNANCE_FILE")
+
+          # Fail closed on every one of them. An empty or absurd value here does
+          # not degrade gracefully: it would silently mean "no rest window" or
+          # "nothing blocks", which is the failure mode that publishes.
+          case "$SOAK_DAYS" in
+            ''|*[!0-9]*) echo "::error::cooldown_days is not a whole number: '$SOAK_DAYS'"; exit 1 ;;
+          esac
+          [ "$SOAK_DAYS" -ge 1 ] || { echo "::error::cooldown_days must be >= 1, it is '$SOAK_DAYS'"; exit 1; }
+          [ -n "$STABLE_BRANCH" ] && [ "$STABLE_BRANCH" != "null" ] || { echo "::error::stable_branch is empty"; exit 1; }
+          [ -n "$SOURCE_BRANCH" ] && [ "$SOURCE_BRANCH" != "null" ] || { echo "::error::source_branch is empty"; exit 1; }
+          [ -n "$TAG_PREFIX" ]    && [ "$TAG_PREFIX" != "null" ]    || { echo "::error::tag_prefix is empty"; exit 1; }
+          [ "$N_BLOCK" -ge 1 ] || { echo "::error::blocking_issue_labels is empty: nothing could freeze the channel"; exit 1; }
+          [ -n "$BLOCK_LABEL" ] || { echo "::error::the first blocking label is empty"; exit 1; }
+
+          # The tag this workflow builds is "${PLUGIN_NAME}--v${VERSION}" because
+          # that is the convention `claude plugin tag` validates. If the declared
+          # prefix says something else, the two would disagree and the tag that
+          # ends up published would not be the one governance describes.
+          EXPECTED="${PLUGIN_NAME}--v"
+          [ "$TAG_PREFIX" = "$EXPECTED" ] || {
+            echo "::error::tag_prefix '$TAG_PREFIX' != '$EXPECTED', which is what this workflow creates"; exit 1; }
+
+          # Only ONE blocking label is honoured today; declaring more would look
+          # like they are all enforced. Say so instead of pretending.
+          [ "$N_BLOCK" -eq 1 ] || echo "::warning::$N_BLOCK blocking labels declared; this workflow only queries the first ('$BLOCK_LABEL')"
+
+          # DECLARED LIMIT, asserted instead of assumed. The git plumbing below
+          # (fetch refspecs, `git branch -f`, the tree-identity gate) names the
+          # branches literally. Rather than half-parameterise it and leave a
+          # silent divergence -- governance saying one branch, the workflow
+          # pushing another -- the assumption is checked here and the run stops
+          # if governance ever declares different names. Renaming a channel is a
+          # deliberate act that must touch this file too.
+          [ "$STABLE_BRANCH" = "stable" ] || {
+            echo "::error::governance declares stable_branch='$STABLE_BRANCH' but this workflow implements 'stable' literally. Update the workflow in the same change."; exit 1; }
+          [ "$SOURCE_BRANCH" = "main" ] || {
+            echo "::error::governance declares source_branch='$SOURCE_BRANCH' but this workflow implements 'main' literally. Update the workflow in the same change."; exit 1; }
+
+          {
+            echo "SOAK_DAYS=$SOAK_DAYS"
+            echo "BLOCK_LABEL=$BLOCK_LABEL"
+            echo "STABLE_BRANCH=$STABLE_BRANCH"
+            echo "SOURCE_BRANCH=$SOURCE_BRANCH"
+            echo "TAG_PREFIX=$TAG_PREFIX"
+          } >>"$GITHUB_ENV"
+          {
+            echo "tag_prefix=$TAG_PREFIX"
+            echo "stable_branch=$STABLE_BRANCH"
+          } >>"$GITHUB_OUTPUT"
+          echo "contract: soak=${SOAK_DAYS}d source=$SOURCE_BRANCH stable=$STABLE_BRANCH block='$BLOCK_LABEL' tag_prefix='$TAG_PREFIX'"
+
+      - name: Fetch main and stable
         run: |
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git fetch --tags origin
           if git ls-remote --exit-code --heads origin stable >/dev/null 2>&1; then
             git fetch --no-tags origin +refs/heads/stable:refs/remotes/origin/stable
-            echo "stable existe"
+            echo "stable exists"
           else
-            echo "stable NO existe todavia (primer release)"
+            echo "stable does NOT exist yet (first release)"
           fi
 
-      - name: Elegir el commit candidato
+      - name: Pick the candidate commit
         id: candidate
         env:
           INPUT_SHA: ${{ inputs.source_sha }}
@@ -140,45 +220,45 @@ jobs:
           echo "stable_exists=$STABLE_EXISTS" >> "$GITHUB_OUTPUT"
           echo "last_source=$LAST_SOURCE" >> "$GITHUB_OUTPUT"
 
-          # --first-parent NO es cosmetico: es la ventana de reposo.
-          # `git rev-list --before` filtra por FECHA DE COMMIT, y esa fecha la
-          # elige quien escribe el commit (GIT_COMMITTER_DATE). Sin
-          # --first-parent, el recorrido entra en las ramas mergeadas, asi que
-          # un PR del loop de conocimiento con un commit retrofechado se
-          # promueve el mismo dia en que se mergea. MEDIDO en un repo de
-          # prueba: commit retrofechado a 8 dias, mergeado hoy -> era el
-          # candidato elegido, con 0 dias de reposo real.
-          # Con --first-parent solo se miran los commits que GitHub crea al
-          # mergear (fecha del servidor) y que fueron de verdad un estado de
-          # main. Ademas se exige pertenencia a esa cadena de forma explicita.
+          # --first-parent is NOT cosmetic: it is the rest window.
+          # `git rev-list --before` filters by COMMIT DATE, and that date is
+          # chosen by whoever writes the commit (GIT_COMMITTER_DATE). Without
+          # --first-parent, the walk enters the merged branches, so a PR from
+          # the knowledge loop with a backdated commit gets promoted the same
+          # day it is merged. MEASURED in a test repo: a commit backdated 8
+          # days, merged today -> it was the chosen candidate, with 0 days of
+          # real rest.
+          # With --first-parent only the commits GitHub creates on merge are
+          # considered (server date) and those really were a state of main.
+          # Membership in that chain is also required explicitly.
           FP_CHAIN=$(git rev-list --first-parent origin/main)
 
           if [ -n "${INPUT_SHA:-}" ]; then
             SHA=$(git rev-parse --verify "${INPUT_SHA}^{commit}")
-            echo "candidato manual: $SHA"
+            echo "manual candidate: $SHA"
           else
             SHA=$(git rev-list -1 --first-parent --before="${SOAK_DAYS} days ago" origin/main || true)
             if [ -z "$SHA" ]; then
-              echo "::notice::Ningun commit de la cadena first-parent de main tiene mas de ${SOAK_DAYS} dias. Nada que promover."
+              echo "::notice::No commit on main's first-parent chain is older than ${SOAK_DAYS} days. Nothing to promote."
               echo "sha=" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "candidato por reposo (>= ${SOAK_DAYS} dias): $SHA"
+            echo "candidate by rest window (>= ${SOAK_DAYS} days): $SHA"
           fi
 
-          # INVARIANTE DURA, para los dos caminos: el candidato tiene que ser
-          # un estado por el que main paso de verdad. Un commit que solo vive
-          # dentro de una rama mergeada es un arbol intermedio que nunca fue
-          # main y que ningun CI de main evaluo.
+          # HARD INVARIANT, for both paths: the candidate has to be a state
+          # main really went through. A commit that only lives inside a merged
+          # branch is an intermediate tree that never was main and that no CI
+          # on main ever evaluated.
           if ! printf '%s\n' "$FP_CHAIN" | grep -qxF "$SHA"; then
-            echo "::error::$SHA no esta en la cadena first-parent de origin/main: nunca fue un estado de main." >&2
+            echo "::error::$SHA is not on the first-parent chain of origin/main: it never was a state of main." >&2
             exit 1
           fi
-          echo "  [OK] $SHA pertenece a la cadena first-parent de main"
-          echo "  fecha de commit: $(git show -s --format=%cI "$SHA")"
+          echo "  [OK] $SHA belongs to main's first-parent chain"
+          echo "  commit date: $(git show -s --format=%cI "$SHA")"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Comprobar la ventana de reposo (bloqueo determinista por etiqueta)
+      - name: Check the rest window (deterministic block by label)
         id: soak
         if: steps.candidate.outputs.sha != ''
         env:
@@ -186,20 +266,20 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Solo se cuenta. Ni el titulo ni el cuerpo de ninguna issue entran en
-          # la decision: eso seria darle el volante a texto de terceros.
+          # It only counts. Neither the title nor the body of any issue enters
+          # the decision: that would be handing the wheel to third-party text.
           COUNT=$(gh api -X GET "repos/${REPO}/issues" \
                     -f state=open -f labels="${BLOCK_LABEL}" -f per_page=100 \
                     --jq 'length')
-          echo "issues abiertas con la etiqueta '${BLOCK_LABEL}': $COUNT"
+          echo "open issues with the '${BLOCK_LABEL}' label: $COUNT"
           if [ "$COUNT" -gt 0 ]; then
-            echo "::error::Hay $COUNT issue(s) abiertas con '${BLOCK_LABEL}'. Promocion bloqueada." >&2
+            echo "::error::There are $COUNT open issue(s) with '${BLOCK_LABEL}'. Promotion blocked." >&2
             echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "blocked=false" >> "$GITHUB_OUTPUT"
 
-      - name: Calcular la version siguiente
+      - name: Compute the next version
         id: ver
         if: steps.candidate.outputs.sha != ''
         env:
@@ -217,7 +297,7 @@ jobs:
             CURRENT="0.0.0"
             FROM=""
           fi
-          echo "version actual en stable: $CURRENT ; base del diff: ${FROM:-<historia completa>}"
+          echo "current version on stable: $CURRENT ; diff base: ${FROM:-<full history>}"
 
           set +e
           OUT=$(scripts/gh/next-version.sh --current "$CURRENT" --from "$FROM" --to "$SHA" --bump "$BUMP")
@@ -226,12 +306,12 @@ jobs:
           printf '%s\n' "$OUT"
           case "$RC" in
             0) : ;;
-            1) echo "::notice::Nada que publicar."; echo "current_version=$CURRENT" >> "$GITHUB_OUTPUT"; exit 0 ;;
-            *) echo "::error::next-version.sh no pudo medir (rc=$RC)"; exit 1 ;;
+            1) echo "::notice::Nothing to publish."; echo "current_version=$CURRENT" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            *) echo "::error::next-version.sh could not measure (rc=$RC)"; exit 1 ;;
           esac
           printf '%s\n' "$OUT" >> "$GITHUB_OUTPUT"
 
-      - name: Decidir
+      - name: Decide
         id: decide
         env:
           SHA: ${{ steps.candidate.outputs.sha }}
@@ -241,39 +321,39 @@ jobs:
           set -euo pipefail
           if [ -z "${SHA:-}" ] || [ -z "${NEXT:-}" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Sin candidato o sin version nueva."
+            echo "::notice::No candidate or no new version."
             exit 0
           fi
           if [ "${LAST_SOURCE:-}" = "$SHA" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::stable ya apunta a $SHA. Idempotente: no se hace nada."
+            echo "::notice::stable already points at $SHA. Idempotent: nothing is done."
             exit 0
           fi
           echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "Se promovera $SHA como $NEXT"
+          echo "Will promote $SHA as $NEXT"
 
   # -------------------------------------------------------------------------
   verify:
-    name: Gates sobre el arbol candidato
+    name: Gates over the candidate tree
     needs: resolve
     if: needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read   # nada mas: este job no publica
+      contents: read   # nothing else: this job does not publish
     steps:
-      # Dos checkouts a proposito:
-      #   tools/  = la punta de main -> el codigo que JUZGA
-      #   source/ = el commit candidato -> el contenido JUZGADO
-      # Nunca se corren los gates que trae el propio candidato: si un commit
-      # comprometido pudiera aportar sus gates, se estaria auto-aprobando.
-      - name: Checkout de los gates (punta de main)
+      # Two checkouts on purpose:
+      #   tools/  = the tip of main -> the code that JUDGES
+      #   source/ = the candidate commit -> the content BEING JUDGED
+      # The gates the candidate itself ships are never run: if a compromised
+      # commit could supply its own gates, it would be approving itself.
+      - name: Checkout of the gates (tip of main)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: tools
           persist-credentials: false
 
-      - name: Checkout del commit candidato
+      - name: Checkout of the candidate commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ needs.resolve.outputs.source_sha }}
@@ -286,39 +366,73 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Instalar el CLI de Claude Code (version pineada)
+      - name: Install the Claude Code CLI (pinned version)
+        # zizmor: ignore[adhoc-packages] pinned to an exact version in CLAUDE_CODE_VERSION; there is no package.json in this repo to lock against, and this is a first-party tool used only to run `plugin validate`/`plugin tag`
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
-      - name: gate-plugin-integrity
-        env:
-          EHS_REPO_ROOT: ${{ github.workspace }}/source
-        run: bash tools/scripts/gates/gate-plugin-integrity.sh
+      # Naming two gates by hand meant exactly two gates ran against the tree
+      # about to be published, and nobody noticed the other four. Adding a gate
+      # to scripts/gates/ would silently not protect the release channel.
+      # The whole suite runs instead, discovered by the same runner CI uses.
+      #
+      # The gates come from tools/ (the tip of main) and are copied OVER the
+      # candidate's own, replacing that directory wholesale rather than merging
+      # into it. Merging would let the candidate contribute extra gate files;
+      # running the candidate's copy in place would let it rewrite its own
+      # judges. What is judged is the candidate TREE; who judges is always main.
+      - name: Put main's gates over the candidate tree
+        run: |
+          set -euo pipefail
+          rm -rf source/scripts/gates
+          mkdir -p source/scripts
+          cp -R tools/scripts/gates source/scripts/gates
+          # Proof, not assumption: the runner about to execute must be byte-identical
+          # to main's. If the copy silently failed, the next step would be judging
+          # the candidate with the candidate's own gates.
+          for f in run-all.sh lib/common.sh; do
+            cmp -s "tools/scripts/gates/$f" "source/scripts/gates/$f" \
+              || { echo "::error::source/scripts/gates/$f is not main's copy"; exit 1; }
+          done
+          echo "[OK] the gates that will judge come from the tip of main"
 
-      - name: gate-plugin-version (canal latest = el arbol tal cual esta en main)
+      - name: All the gates, over the candidate tree
+        working-directory: source
         env:
           EHS_REPO_ROOT: ${{ github.workspace }}/source
-          EHS_CHANNEL: latest
-          EHS_REQUIRE_CLAUDE_CLI: '1'   # sin el CLI, rc=2: no se aprueba a ciegas
-        run: bash tools/scripts/gates/gate-plugin-version.sh
+          EHS_CHANNEL: latest          # the candidate is still main: it must OMIT version
+          EHS_REQUIRE_CLAUDE_CLI: '1'  # without the CLI, rc=2: nothing is approved blind
+          GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gates/run-all.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice::every gate measured and passed over the candidate" ;;
+            1) echo "::error::a gate FAILS over the candidate: it is not promoted" ;;
+            2) echo "::error::a gate COULD NOT MEASURE over the candidate. Promoting on an incomplete verification is publishing blind, so it is not promoted either" ;;
+            *) echo "::error::the runner returned an unexpected code $rc" ;;
+          esac
+          exit "$rc"
 
   # -------------------------------------------------------------------------
   promote:
-    name: Publicar stable
+    name: Publish stable
     needs: [resolve, verify]
     if: needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write   # unico job con escritura: empuja rama stable y el tag
+      contents: write   # the only job with write access: pushes the stable branch and the tag
     env:
       SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
       NEXT_VERSION: ${{ needs.resolve.outputs.next_version }}
       LAST_SOURCE: ${{ needs.resolve.outputs.last_source }}
       STABLE_EXISTS: ${{ needs.resolve.outputs.stable_exists }}
+      STABLE_BRANCH: ${{ needs.resolve.outputs.stable_branch }}
       DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
     steps:
-      # Mismo reparto que en `verify`: tools/ juzga, source/ es lo juzgado.
-      - name: Checkout de los scripts de release (punta de main)
+      # Same split as in `verify`: tools/ judges, source/ is what is judged.
+      - name: Checkout of the release scripts (tip of main)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: tools
@@ -329,20 +443,23 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Instalar el CLI de Claude Code (version pineada)
+      - name: Install the Claude Code CLI (pinned version)
+        # zizmor: ignore[adhoc-packages] pinned to an exact version in CLAUDE_CODE_VERSION; there is no package.json in this repo to lock against, and this is a first-party tool used only to run `plugin validate`/`plugin tag`
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
-      # Este checkout va DESPUES del npm install a proposito: es el unico del
-      # workflow que deja el token con contents:write escrito en .git/config, y
-      # `npm install` ejecuta scripts de terceros. Instalar primero reduce la
-      # ventana en que ese token esta en disco junto a codigo que no es nuestro.
-      - name: Checkout del repo para publicar (historia completa)
+      # This checkout comes AFTER the npm install on purpose: it is the only one
+      # in the workflow that leaves the contents:write token written into
+      # .git/config, and `npm install` runs third-party scripts. Installing
+      # first shrinks the window in which that token sits on disk next to code
+      # that is not ours.
+      - name: Checkout of the repo for publishing (full history)
+        # zizmor: ignore[artipacked] deliberate: this is the only checkout that must keep the token, because this job is the one that pushes the branch and the tag. This job uploads no artifacts, so the credential cannot leak that way, and every other checkout in the workflow sets persist-credentials: false.
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           path: source
 
-      - name: Construir el arbol de stable
+      - name: Build the stable tree
         working-directory: source
         run: |
           set -euo pipefail
@@ -351,11 +468,11 @@ jobs:
 
           WORK="${RUNNER_TEMP}"
 
-          # El arbol de stable ES el de main. Se parte del candidato exacto.
+          # The stable tree IS main's. It starts from the exact candidate.
           git checkout --detach "$SOURCE_SHA"
           if [ "$STABLE_EXISTS" = "true" ]; then
             git fetch --no-tags origin +refs/heads/stable:refs/remotes/origin/stable
-            # Solo se arrastra el CHANGELOG anterior; nada mas de stable.
+            # Only the previous CHANGELOG is carried over; nothing else from stable.
             if git cat-file -e "origin/stable:CHANGELOG.md" 2>/dev/null; then
               git show "origin/stable:CHANGELOG.md" > "$WORK/prev-changelog.md"
             else
@@ -367,37 +484,37 @@ jobs:
             FROM=""
           fi
 
-          # 1) unica diferencia funcional frente a main: el semver explicito.
+          # 1) the only functional difference against main: the explicit semver.
           tmp=$(mktemp)
           jq --arg v "$NEXT_VERSION" '.version = $v' .claude-plugin/plugin.json > "$tmp"
           mv "$tmp" .claude-plugin/plugin.json
 
-          # 2) CHANGELOG (asuntos de commit saneados a texto plano).
+          # 2) CHANGELOG (commit subjects sanitized to plain text).
           "${GITHUB_WORKSPACE}/tools/scripts/gh/build-changelog.sh" \
             --version "$NEXT_VERSION" --from "$FROM" --to "$SOURCE_SHA" \
             --repo "${GITHUB_REPOSITORY}" > "$WORK/section.md"
 
           {
-            echo "# Changelog — canal stable"
+            echo "# Changelog — stable channel"
             echo
             cat "$WORK/section.md"
             echo
             sed '1{/^# Changelog/d;}' "$WORK/prev-changelog.md" | sed '/./,$!d'
           } > CHANGELOG.md
 
-          # 3) El commit de stable se cuelga del ANTERIOR commit de stable, no
-          #    del candidato de main.
-          #    Por que: `git commit` aqui dejaria como padre a $SOURCE_SHA, y
-          #    ese commit NO desciende del stable anterior (el stable anterior
-          #    nunca se mergeo a main). MEDIDO en un repo de prueba: el commit
-          #    del segundo release no es descendiente del primero, asi que
-          #    `git push origin refs/heads/stable:refs/heads/stable` se rechaza
-          #    por non-fast-forward. Tal como estaba, la promocion funcionaba
-          #    exactamente UNA vez y despues fallaba para siempre.
-          #    Con commit-tree el ARBOL sigue siendo el de main (que es lo que
-          #    el GATE de diff comprueba) y la rama stable queda append-only:
-          #    cada release avanza en fast-forward y nadie tiene que
-          #    force-pushear una rama que los usuarios ya clonaron.
+          # 3) The stable commit hangs off the PREVIOUS stable commit, not off
+          #    the candidate from main.
+          #    Why: `git commit` here would leave $SOURCE_SHA as the parent, and
+          #    that commit does NOT descend from the previous stable (the
+          #    previous stable was never merged into main). MEASURED in a test
+          #    repo: the commit of the second release is not a descendant of the
+          #    first, so `git push origin refs/heads/stable:refs/heads/stable`
+          #    is rejected as non-fast-forward. As it stood, promotion worked
+          #    exactly ONCE and failed forever after.
+          #    With commit-tree the TREE is still main's (which is what the diff
+          #    GATE checks) and the stable branch stays append-only: every
+          #    release advances fast-forward and nobody has to force-push a
+          #    branch users have already cloned.
           git add .claude-plugin/plugin.json CHANGELOG.md
           TREE=$(git write-tree)
           if [ "$STABLE_EXISTS" = "true" ]; then
@@ -408,52 +525,53 @@ jobs:
           NEW=$(git commit-tree "$TREE" -p "$PARENT" \
                   -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
                   -m "Source-Commit: ${SOURCE_SHA}" \
-                  -m "Promocion automatica del canal stable. El arbol es identico a main@${SOURCE_SHA} salvo .claude-plugin/plugin.json (semver) y CHANGELOG.md.")
+                  -m "Automatic promotion of the stable channel. The tree is identical to main@${SOURCE_SHA} except for .claude-plugin/plugin.json (semver) and CHANGELOG.md.")
           git branch -f stable "$NEW"
           git reset -q --hard "$NEW"
-          echo "commit de stable: $NEW (padre: $PARENT)"
+          echo "stable commit: $NEW (parent: $PARENT)"
 
           if [ "$STABLE_EXISTS" = "true" ]; then
             if git merge-base --is-ancestor refs/remotes/origin/stable "$NEW"; then
-              echo "  [OK] avanza en fast-forward sobre el stable publicado"
+              echo "  [OK] advances fast-forward over the published stable"
             else
-              echo "::error::el commit nuevo no desciende de origin/stable: el push seria non-fast-forward" >&2
+              echo "::error::the new commit does not descend from origin/stable: the push would be non-fast-forward" >&2
               exit 1
             fi
           fi
 
-      - name: 'GATE: el arbol de stable es el de main salvo dos archivos'
+      - name: 'GATE: the stable tree is main''s except for two files'
         working-directory: source
         run: |
           set -euo pipefail
-          # Este es el gate que sostiene todo el modelo: prueba que la promocion
-          # no introdujo NADA que no haya pasado por main y por los gates.
+          # This is the gate that holds up the whole model: it proves the
+          # promotion introduced NOTHING that did not go through main and
+          # through the gates.
           if ! git diff --quiet "$SOURCE_SHA" stable -- . \
               ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md'; then
-            echo "::error::stable difiere de main@${SOURCE_SHA} fuera de plugin.json y CHANGELOG.md" >&2
+            echo "::error::stable differs from main@${SOURCE_SHA} outside plugin.json and CHANGELOG.md" >&2
             git diff --stat "$SOURCE_SHA" stable -- . \
               ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md' >&2
             exit 1
           fi
-          echo "[OK] arbol identico salvo los dos archivos esperados"
+          echo "[OK] identical tree except for the two expected files"
 
-          # Y dentro de plugin.json, la unica diferencia permitida es `version`.
+          # And inside plugin.json, the only allowed difference is `version`.
           git show "${SOURCE_SHA}:.claude-plugin/plugin.json" | jq -S 'del(.version)' > "${RUNNER_TEMP}/a.json"
           git show "stable:.claude-plugin/plugin.json"        | jq -S 'del(.version)' > "${RUNNER_TEMP}/b.json"
           if ! diff -u "${RUNNER_TEMP}/a.json" "${RUNNER_TEMP}/b.json"; then
-            echo "::error::plugin.json cambio en algo mas que 'version'" >&2
+            echo "::error::plugin.json changed in something other than 'version'" >&2
             exit 1
           fi
-          echo "[OK] plugin.json solo cambia en 'version'"
+          echo "[OK] plugin.json only changes in 'version'"
 
-      - name: gate-plugin-version (canal stable)
+      - name: gate-plugin-version (stable channel)
         env:
           EHS_REPO_ROOT: ${{ github.workspace }}/source
           EHS_CHANNEL: stable
           EHS_REQUIRE_CLAUDE_CLI: '1'
         run: bash tools/scripts/gates/gate-plugin-version.sh
 
-      - name: gate-plugin-integrity (arbol final)
+      - name: gate-plugin-integrity (final tree)
         env:
           EHS_REPO_ROOT: ${{ github.workspace }}/source
         run: bash tools/scripts/gates/gate-plugin-integrity.sh
@@ -462,41 +580,77 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          # Comprueba que plugin.json y la entrada del marketplace concuerdan
-          # ANTES de crear el tag. Sin pipes: el rc de un pipeline seria el del
-          # ultimo comando y enmascararia el fallo.
+          # Checks that plugin.json and the marketplace entry agree BEFORE
+          # creating the tag. No pipes: the rc of a pipeline would be the rc of
+          # the last command and would mask the failure.
           claude plugin tag --dry-run .
 
-      - name: Crear tag anotado y empujar
+      # GUARD AGAINST TIME-OF-CHECK / TIME-OF-USE.
+      # Minutes pass between `resolve` reading stable and this step pushing over
+      # it. If stable moved in between -- another run, a manual push, a rollback
+      # by the owner -- then what was verified no longer describes the branch
+      # being overwritten, and the CHANGELOG we built sits on top of a parent
+      # that is no longer the tip. Refusing is cheap; the next scheduled run
+      # picks it up again from a coherent state.
+      - name: 'GATE: stable has not moved since it was verified'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/${STABLE_BRANCH}:refs/remotes/origin/${STABLE_BRANCH}" 2>/dev/null || true
+          if git show-ref -q --verify "refs/remotes/origin/${STABLE_BRANCH}"; then
+            NOW="$(git rev-parse "refs/remotes/origin/${STABLE_BRANCH}")"
+            NOW_SOURCE="$(git log -1 --format=%B "refs/remotes/origin/${STABLE_BRANCH}" \
+                          | sed -n 's/^Source-Commit:[[:space:]]*//p' | head -n1)"
+          else
+            NOW=""; NOW_SOURCE=""
+          fi
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            if [ -z "$NOW" ]; then
+              echo "::error::${STABLE_BRANCH} existed when it was verified and does not now. Aborting." >&2
+              exit 1
+            fi
+            if [ "$NOW_SOURCE" != "$LAST_SOURCE" ]; then
+              echo "::error::${STABLE_BRANCH} moved during verification (Source-Commit seen '${LAST_SOURCE}', now '${NOW_SOURCE}'). What was verified is no longer the current state." >&2
+              exit 1
+            fi
+          elif [ -n "$NOW" ]; then
+            echo "::error::${STABLE_BRANCH} did not exist when it was verified and now does ($NOW). Another run got there first." >&2
+            exit 1
+          fi
+          echo "[OK] ${STABLE_BRANCH} is where it was when it was verified"
+
+      - name: Create the annotated tag and push
         if: env.DRY_RUN != 'true'
         working-directory: source
         run: |
           set -euo pipefail
           TAG="${PLUGIN_NAME}--v${NEXT_VERSION}"
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "::error::el tag $TAG ya existe" >&2
+            echo "::error::the tag $TAG already exists" >&2
             exit 1
           fi
-          # Tag ANOTADO, no firmado: ver la limitacion declarada arriba.
+          # ANNOTATED tag, not signed: see the declared limitation above.
           git tag -a "$TAG" -m "${PLUGIN_NAME} ${NEXT_VERSION} (source ${SOURCE_SHA})"
-          git push origin "refs/heads/stable:refs/heads/stable"
+          # No --force, ever. If for any reason this were not a fast-forward,
+          # GitHub rejects it and the job fails: last safety net, never disabled.
+          git push origin "refs/heads/${STABLE_BRANCH}:refs/heads/${STABLE_BRANCH}"
           git push origin "refs/tags/${TAG}"
-          echo "publicado $TAG -> stable"
+          echo "published $TAG -> ${STABLE_BRANCH}"
 
-      - name: Resumen
+      - name: Summary
         if: always()
         run: |
           {
             echo "## release-stable"
             echo
-            echo "| campo | valor |"
+            echo "| field | value |"
             echo "|---|---|"
-            echo "| commit de origen | \`${SOURCE_SHA}\` |"
+            echo "| source commit | \`${SOURCE_SHA}\` |"
             echo "| version | \`${NEXT_VERSION}\` |"
             echo "| tag | \`${PLUGIN_NAME}--v${NEXT_VERSION}\` |"
             echo "| dry run | \`${DRY_RUN}\` |"
             echo
-            echo "Instalacion del canal stable:"
+            echo "Installing the stable channel:"
             echo
             echo '```'
             echo "/plugin marketplace add ${GITHUB_REPOSITORY}@stable"

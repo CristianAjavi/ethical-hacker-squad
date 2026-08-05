@@ -1,25 +1,26 @@
 # scripts/gates/lib/workflow-hardening.awk
 #
-# Escaner estructural de un workflow de GitHub Actions, en awk POSIX.
-# No requiere PyYAML, ni zizmor, ni actionlint, ni red: es el gate de ultima
-# instancia, el que sigue midiendo cuando no hay herramientas instaladas.
+# Structural scanner for a GitHub Actions workflow, written in POSIX awk.
+# It needs no PyYAML, no zizmor, no actionlint and no network: it is the gate
+# of last resort, the one that keeps measuring when no tooling is installed.
 #
-# Lo invoca scripts/gates/gate-workflow-hardening.sh con -v FILE=<ruta>.
+# Invoked by scripts/gates/gate-workflow-hardening.sh with -v FILE=<path>.
 #
-# Protocolo de salida (una linea por hallazgo):
-#   FAIL|<fichero>|<linea>|<regla>|<mensaje>
-#   UNMEAS|<fichero>|<linea>|<regla>|<mensaje>
-#   STAT|<clave>|<valor>
+# Output protocol (one line per finding):
+#   FAIL|<file>|<line>|<rule>|<message>
+#   UNMEAS|<file>|<line>|<rule>|<message>
+#   STAT|<key>|<value>
 #
-# Limitaciones conocidas (se declaran, no se ocultan):
-#   - Es un analisis lexico guiado por indentacion, no un parser YAML. Por eso,
-#     ante cualquier cosa que no sepa interpretar con seguridad (tabuladores,
-#     ausencia de `on:` o de `jobs:`, `uses:` cuyo valor esta en otra linea),
-#     emite UNMEAS y NUNCA silencio.
-#   - No entiende anclas/alias YAML (&x / *x). Si aparecen, emite UNMEAS.
-#   - No evalua `if:` de trabajo: la regla 4 (secretos) se aplica a nivel de
-#     workflow, que es la lectura estricta y la que no se puede eludir con un
-#     condicional mal razonado.
+# Known limitations (declared, not hidden):
+#   - This is a lexical analysis driven by indentation, not a YAML parser. So
+#     for anything it cannot interpret safely (tabs, a missing `on:` or
+#     `jobs:`, a `uses:` whose value lives on another line) it emits UNMEAS and
+#     NEVER silence.
+#   - It does not understand YAML anchors/aliases (&x / *x). If they show up,
+#     it emits UNMEAS.
+#   - It does not evaluate job-level `if:`: rule 4 (secrets) is applied at the
+#     workflow level, which is the strict reading and the one that cannot be
+#     dodged with a badly reasoned conditional.
 
 function ind(l,   n) {
     n = 0
@@ -39,10 +40,10 @@ function unq(s) {
     return s
 }
 
-# Los hallazgos se acumulan y se imprimen en END: si al final resulta que el
-# fichero no era interpretable con garantias (tabuladores, anclas), los FAIL
-# estructurales se DESCARTAN y el fichero pasa a "no pude medir". Afirmar un
-# fallo concreto a partir de una indentacion que no entiendo seria mentir.
+# Findings are buffered and printed in END: if the file turns out not to be
+# safely interpretable (tabs, anchors), the structural FAILs are DISCARDED and
+# the file becomes "I could not measure". Asserting a concrete failure from an
+# indentation I do not understand would be lying.
 function fail(rule, msg, ln) {
     nfail++
     Fbuf[nfail] = sprintf("FAIL|%s|%d|%s|%s", FILE, ln, rule, msg)
@@ -85,28 +86,28 @@ function ishex(s, want,   i, c) {
     return 1
 }
 
-# ---- regla 3: `uses:` fijado por SHA de 40 caracteres -----------------------
+# ---- rule 3: `uses:` pinned to a 40-character SHA --------------------------
 function check_uses(u, ln,   v, c, cpos, ref, at, digest) {
     v = trim(substr(u, 6))
     if (v == "") {
-        unmeas("uses-pin", "`uses:` sin valor en la misma linea; el escaner lexico no puede resolverlo", ln)
+        unmeas("uses-pin", "`uses:` with no value on the same line; the lexical scanner cannot resolve it", ln)
         return
     }
     cpos = index(v, "#")
     if (cpos > 0) { c = substr(v, cpos); v = trim(substr(v, 1, cpos - 1)) } else { c = "" }
     v = unq(v)
-    if (v == "") { unmeas("uses-pin", "`uses:` con valor vacio", ln); return }
+    if (v == "") { unmeas("uses-pin", "`uses:` with an empty value", ln); return }
 
-    # Referencias locales: no son codigo de tercero, viven en este repo.
+    # Local references: not third-party code, they live in this repo.
     if (substr(v, 1, 2) == "./" || substr(v, 1, 3) == "../") { nlocal++; return }
 
     if (substr(v, 1, 9) == "docker://") {
         at = index(v, "@sha256:")
         if (at == 0) {
-            fail("uses-pin", "imagen docker sin digest inmutable (@sha256:...): " v, ln)
+            fail("uses-pin", "docker image without an immutable digest (@sha256:...): " v, ln)
         } else {
             digest = substr(v, at + 8)
-            if (!ishex(digest, 64)) fail("uses-pin", "digest sha256 malformado: " v, ln)
+            if (!ishex(digest, 64)) fail("uses-pin", "malformed sha256 digest: " v, ln)
             else npinned++
         }
         return
@@ -114,30 +115,30 @@ function check_uses(u, ln,   v, c, cpos, ref, at, digest) {
 
     at = index(v, "@")
     if (at == 0) {
-        fail("uses-pin", "`uses:` sin `@ref`; una accion sin referencia no es reproducible: " v, ln)
+        fail("uses-pin", "`uses:` without `@ref`; an action with no reference is not reproducible: " v, ln)
         return
     }
     ref = substr(v, at + 1)
     if (!ishex40(ref)) {
-        fail("uses-pin", "accion de tercero NO fijada por SHA de 40 caracteres (`" ref "`): " v, ln)
+        fail("uses-pin", "third-party action NOT pinned to a 40-character SHA (`" ref "`): " v, ln)
         return
     }
-    # El comentario tiene que parecerse a una VERSION (`v7`, `v7.0.1`, `1.7.12`).
-    # Un `# 0` o un `# ver luego` colaban con la regla anterior y dejaban el pin
-    # sin la etiqueta que Dependabot necesita para actualizarlo.
+    # The comment has to look like a VERSION (`v7`, `v7.0.1`, `1.7.12`).
+    # A `# 0` or a `# check later` used to slip through the previous rule and
+    # left the pin without the tag Dependabot needs to update it.
     if (c !~ /v[0-9]/ && c !~ /[0-9]+\.[0-9]+/) {
-        fail("uses-comment", "SHA sin comentario de version (`# vX.Y.Z`); Dependabot usa ese comentario para reportar y actualizar el pin: " v, ln)
+        fail("uses-comment", "SHA without a version comment (`# vX.Y.Z`); Dependabot uses that comment to report and update the pin: " v, ln)
         return
     }
     npinned++
 }
 
-# ---- regla 4 (recoleccion): referencias al contexto `secrets` ---------------
-# GitHub documenta DOS sintaxis para leer un contexto, y ambas dan el mismo
-# secreto: `secrets.NOMBRE` (property dereference) y `secrets['NOMBRE']` (index).
-# Ademas, `toJSON(secrets)` vuelca el contexto ENTERO. Mirar solo la primera
-# forma dejaba una via limpia para colar un secreto en un workflow alcanzable
-# desde un fork, que es justo lo que esta regla existe para impedir.
+# ---- rule 4 (collection): references to the `secrets` context --------------
+# GitHub documents TWO syntaxes for reading a context, and both hand back the
+# same secret: `secrets.NAME` (property dereference) and `secrets['NAME']`
+# (index). On top of that, `toJSON(secrets)` dumps the WHOLE context. Looking
+# only at the first form left a clean path to smuggle a secret into a workflow
+# reachable from a fork, which is exactly what this rule exists to prevent.
 function record_secret(nm, ln) {
     if (nm == "GITHUB_TOKEN") return
     if (!(nm in secretref)) { secretref[nm] = ln; nsecret++ }
@@ -148,7 +149,7 @@ function scan_secrets(s, ln,   i, j, prev, c, q, nm, inexpr) {
     while (1) {
         j = index(substr(s, i), "secrets")
         if (j == 0) return
-        i = i + j - 1                       # posicion absoluta de la palabra
+        i = i + j - 1                       # absolute position of the word
         prev = (i > 1) ? substr(s, i - 1, 1) : ""
         if (prev != "" && prev ~ /[A-Za-z0-9_]/) { i = i + 7; continue }
 
@@ -156,12 +157,12 @@ function scan_secrets(s, ln,   i, j, prev, c, q, nm, inexpr) {
         while (substr(s, j, 1) == " ") j++
         c = substr(s, j, 1)
 
-        if (c == ".") {                     # secrets.NOMBRE
+        if (c == ".") {                     # secrets.NAME
             j++
             nm = ""
             while (substr(s, j, 1) ~ /[A-Za-z0-9_-]/) { nm = nm substr(s, j, 1); j++ }
             if (nm != "") record_secret(nm, ln)
-        } else if (c == "[") {              # secrets['NOMBRE'] / secrets["NOMBRE"]
+        } else if (c == "[") {              # secrets['NAME'] / secrets["NAME"]
             j++
             while (substr(s, j, 1) == " ") j++
             q = substr(s, j, 1)
@@ -171,16 +172,16 @@ function scan_secrets(s, ln,   i, j, prev, c, q, nm, inexpr) {
                 while (substr(s, j, 1) != q && substr(s, j, 1) != "") { nm = nm substr(s, j, 1); j++ }
                 if (nm != "") record_secret(nm, ln)
             } else {
-                record_secret("<indice calculado>", ln)
+                record_secret("<computed index>", ln)
             }
         } else if (c == ":") {
-            # es la clave YAML `secrets:`, no una lectura del contexto.
+            # this is the YAML key `secrets:`, not a read of the context.
         } else {
-            # `secrets` a secas: solo cuenta dentro de una expresion ${{ ... }},
-            # para no confundirlo con la palabra suelta en un `name:` o un
-            # comentario. Cubre toJSON(secrets), que vuelca todos los secretos.
+            # bare `secrets`: only counts inside a `${{ ... }}` expression, so
+            # it is not confused with the plain word in a `name:` or in a
+            # comment. Covers toJSON(secrets), which dumps every secret.
             inexpr = (index(substr(s, 1, i - 1), "${{") > 0)
-            if (inexpr) record_secret("<contexto completo>", ln)
+            if (inexpr) record_secret("<full context>", ln)
         }
         i = i + 7
     }
@@ -207,19 +208,19 @@ function record_triggers_inline(v, ln,   body, n, i, parts) {
     }
 }
 
-# ---- regla 2: todo trabajo declara `permissions:` ---------------------------
+# ---- rule 2: every job declares `permissions:` -----------------------------
 function finalize_job() {
     if (job != "") {
         if (job_perm == 0)
-            fail("job-permissions", "el trabajo `" job "` no declara `permissions:`; heredaria los permisos por defecto del repositorio", job_line)
+            fail("job-permissions", "job `" job "` does not declare `permissions:`; it would inherit the repository default permissions", job_line)
         if (job_body == 0)
-            unmeas("job-permissions", "el trabajo `" job "` no tiene cuerpo reconocible; no puedo afirmar nada sobre sus permisos", job_line)
+            unmeas("job-permissions", "job `" job "` has no recognizable body; I cannot assert anything about its permissions", job_line)
     }
     job = ""
 }
 
 BEGIN {
-    # Unicos disparadores admitidos por el modelo de amenaza del repo.
+    # The only triggers allowed by this repo's threat model.
     split("schedule workflow_dispatch push pull_request", _a, " ")
     for (_i in _a) allowed[_a[_i]] = 1
 
@@ -233,25 +234,25 @@ BEGIN {
     has_anchor = 0
 }
 
-# --- tabuladores: la indentacion deja de ser fiable --------------------------
+# --- tabs: indentation stops being trustworthy ------------------------------
 index($0, "\t") > 0 { has_tab = 1 }
 
-# --- anclas/alias YAML: fuera del alcance del escaner lexico -----------------
+# --- YAML anchors/aliases: out of scope for a lexical scanner ---------------
 /^[ ]*[A-Za-z_0-9-]+:[ ]*[&*][A-Za-z_]/ { has_anchor = 1 }
 
-# --- regla 4 (recoleccion): referencias a secretos, texto crudo --------------
+# --- rule 4 (collection): secret references, raw text ----------------------
 {
-    # Un comentario YAML puro no lee nada... SALVO que lleve `${{ }}` dentro: en
-    # un bloque `run:`, GitHub expande la plantilla ANTES de que el shell vea la
-    # almohadilla, asi que un `# ${{ secrets.X }}` si filtra. Se salta solo el
-    # comentario sin plantilla (prosa que menciona `secrets.ALGO`).
+    # A pure YAML comment reads nothing... UNLESS it carries `${{ }}` inside:
+    # in a `run:` block GitHub expands the template BEFORE the shell ever sees
+    # the hash sign, so a `# ${{ secrets.X }}` does leak. Only the comment
+    # without a template is skipped (prose that mentions `secrets.SOMETHING`).
     if (!(trim($0) ~ /^#/ && index($0, "${{") == 0))
         scan_secrets($0, FNR)
     if (trim($0) ~ /^secrets:[ ]*inherit[ ]*$/)
-        fail("secrets-inherit", "`secrets: inherit` entrega TODOS los secretos del repositorio al workflow llamado", FNR)
+        fail("secrets-inherit", "`secrets: inherit` hands EVERY repository secret to the called workflow", FNR)
 }
 
-# --- estructura --------------------------------------------------------------
+# --- structure ---------------------------------------------------------------
 {
     line = $0
 
@@ -311,14 +312,14 @@ index($0, "\t") > 0 { has_tab = 1 }
                 k = keyof(line)
                 if (k == "permissions") {
                     job_perm = 1
-                    # No basta con DECLARAR `permissions:`: la regla es "minimos
-                    # por trabajo". Un `write-all`/`read-all` es una concesion en
-                    # bloque, es decir, exactamente lo que la regla prohibe.
+                    # Declaring `permissions:` is not enough: the rule is
+                    # "minimum per job". A `write-all`/`read-all` is a bulk
+                    # grant, that is, exactly what the rule forbids.
                     jpv = valof(line)
                     sub(/[ ]*#.*$/, "", jpv)
                     jpv = trim(jpv)
                     if (jpv != "" && jpv != "{}")
-                        fail("job-permissions-broad", "el trabajo `" job "` concede permisos EN BLOQUE (`permissions: " jpv "`); se exige `{}` o un mapa explicito scope por scope", FNR)
+                        fail("job-permissions-broad", "job `" job "` grants permissions IN BULK (`permissions: " jpv "`); `{}` or an explicit scope-by-scope map is required", FNR)
                 }
             }
         }
@@ -331,46 +332,46 @@ END {
     finalize_job()
 
     if (has_tab)
-        unmeas("parse", "el fichero contiene tabuladores: la indentacion no es fiable y no puedo auditarlo con garantias", 0)
+        unmeas("parse", "the file contains tabs: indentation is not reliable and I cannot audit it with any guarantee", 0)
     if (has_anchor)
-        unmeas("parse", "el fichero usa anclas/alias YAML (&/ *): fuera del alcance de este escaner lexico", 0)
+        unmeas("parse", "the file uses YAML anchors/aliases (& / *): out of scope for this lexical scanner", 0)
     if (!saw_on)
-        unmeas("parse", "no encontre un bloque `on:` de nivel superior (recuerda: YAML 1.1 convierte `on` en booleano si no se cita; usa `on:` tal cual o `\"on\":`)", 0)
+        unmeas("parse", "no top-level `on:` block found (remember: YAML 1.1 turns `on` into a boolean if it is not quoted; use `on:` as is or `\"on\":`)", 0)
     if (!saw_jobs || njobs == 0)
-        unmeas("parse", "no encontre trabajos bajo `jobs:`; no hay nada que auditar y eso no es un aprobado", 0)
+        unmeas("parse", "no jobs found under `jobs:`; there is nothing to audit and that is not a pass", 0)
 
-    # ---- regla 1: solo disparadores del propio repositorio ------------------
+    # ---- rule 1: only triggers owned by this repository --------------------
     for (t in trig) {
         if (!(t in allowed)) {
             if (t == "pull_request_target")
-                fail("trigger", "`pull_request_target` ejecuta en el contexto del repositorio destino con secretos y token de escritura, sobre codigo de un fork: prohibido en este repo", trig[t])
+                fail("trigger", "`pull_request_target` runs in the context of the target repository with secrets and a write token, over code from a fork: forbidden in this repo", trig[t])
             else if (t == "workflow_run")
-                fail("trigger", "`workflow_run` tambien corre en el contexto privilegiado del repositorio y puede originarse en un fork: prohibido en este repo", trig[t])
+                fail("trigger", "`workflow_run` also runs in the privileged context of the repository and can originate in a fork: forbidden in this repo", trig[t])
             else if (t == "issues" || t == "issue_comment" || t == "discussion" || t == "discussion_comment" || t == "pull_request_review" || t == "pull_request_review_comment")
-                fail("trigger", "`" t "` se dispara con contenido escrito por terceros (inyeccion indirecta de prompts): prohibido en este repo", trig[t])
+                fail("trigger", "`" t "` fires on content written by third parties (indirect prompt injection): forbidden in this repo", trig[t])
             else
-                fail("trigger", "disparador `" t "` fuera de la lista permitida (schedule, workflow_dispatch, push, pull_request)", trig[t])
+                fail("trigger", "trigger `" t "` is outside the allowed list (schedule, workflow_dispatch, push, pull_request)", trig[t])
         }
     }
 
-    # ---- regla 2 (nivel workflow) ------------------------------------------
+    # ---- rule 2 (workflow level) -------------------------------------------
     if (saw_jobs) {
         if (!wf_perm_seen)
-            fail("wf-permissions", "el workflow no declara `permissions:` de nivel superior; se exige `permissions: {}` para no heredar el default del repositorio", 1)
+            fail("wf-permissions", "the workflow does not declare a top-level `permissions:`; `permissions: {}` is required so it does not inherit the repository default", 1)
         else if (wf_perm_val != "{}")
-            fail("wf-permissions", "`permissions:` de nivel superior debe ser exactamente `{}` (encontrado: `" wf_perm_val "`); los permisos se conceden trabajo a trabajo", wf_perm_line)
+            fail("wf-permissions", "top-level `permissions:` must be exactly `{}` (found: `" wf_perm_val "`); permissions are granted job by job", wf_perm_line)
     }
 
-    # ---- regla 4: secretos + disparadores alcanzables por terceros ----------
+    # ---- rule 4: secrets + triggers reachable by third parties -------------
     if (("pull_request" in trig) && nsecret > 0) {
         for (n in secretref)
-            fail("secrets-untrusted", "el workflow se dispara con `pull_request` (alcanzable desde un fork) y lee el contexto de secretos (`" n "`); ningun trabajo que procese contenido no confiable puede recibir secretos", secretref[n])
+            fail("secrets-untrusted", "the workflow fires on `pull_request` (reachable from a fork) and reads the secrets context (`" n "`); no job that processes untrusted content may receive secrets", secretref[n])
     }
 
-    # Si el fichero no es interpretable, no sostengo ningun FAIL estructural.
+    # If the file is not interpretable, I do not stand behind any structural FAIL.
     if (has_tab || has_anchor) {
         if (nfail > 0)
-            unmeas("parse", "descarto " nfail " hallazgo(s) estructural(es) de este fichero: no puedo sostenerlos sobre un YAML que no se interpretar", 0)
+            unmeas("parse", "discarding " nfail " structural finding(s) from this file: I cannot stand behind them on a YAML I do not know how to interpret", 0)
         nfail = 0
     }
 
