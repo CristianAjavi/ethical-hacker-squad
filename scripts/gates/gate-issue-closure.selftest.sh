@@ -67,6 +67,22 @@ printf 'Cambio suelto sin issue.\n' > "$T/b4"
 check "--require-link sin ningun cierre declarado" 1 \
   "$GATE" --repo "$REPO" --body-file "$T/b4" --labels-file "$T/labels.txt" --changed-files "$T/files.gate" --require-link
 
+# Borrar el gate que te delata no es vigilar la regresion. Antes esto pasaba en VERDE
+# porque `git diff --name-only` lista los borrados igual que los añadidos.
+check "cerrar un falso positivo BORRANDO el gate" 1 \
+  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
+          --changed-files "$T/files.gate" --deleted-files "$T/files.gate"
+
+printf 'scripts/gates/gate-issue-closure.sh\ntests/cases/viejo.md\n' > "$T/files.mixto"
+printf 'tests/cases/viejo.md\n' > "$T/files.delcase"
+check "borra un caso pero modifica el gate: sigue contando" 0 \
+  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
+          --changed-files "$T/files.mixto" --deleted-files "$T/files.delcase"
+
+check "--deleted-files ilegible" 2 \
+  "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" \
+          --changed-files "$T/files.gate" --deleted-files "$T/no-existe.txt"
+
 # --- rc=0: MEDI y esta bien ------------------------------------------------
 check "falso positivo + gate tocado" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/files.gate"

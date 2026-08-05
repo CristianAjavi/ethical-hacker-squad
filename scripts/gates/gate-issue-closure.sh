@@ -27,6 +27,9 @@
 #   --repo OWNER/REPO      Repositorio (por defecto: GITHUB_REPOSITORY o el remoto origin)
 #   --body-file F          Fichero con el cuerpo del PR (gana sobre PR_BODY y sobre gh)
 #   --changed-files F      Fichero con un path por linea (gana sobre git diff y sobre gh)
+#   --deleted-files F      Fichero con los paths BORRADOS por el PR (solo tiene sentido
+#                          junto a --changed-files; con git o gh se deduce solo).
+#                          Un fichero borrado NO cuenta como regresion vigilada.
 #   --labels-file F        Mapa offline "NUMERO<TAB o espacio>label" (una linea por label)
 #   --base REF             Base para `git diff` (por defecto: GITHUB_BASE_REF, origin/main o main)
 #   --emit-refs            Solo imprime los numeros de issue de ESTE repo que el PR dice cerrar
@@ -34,7 +37,7 @@
 #   -h, --help             Esta ayuda
 #
 # Variables de entorno equivalentes: PR_BODY, PR_NUMBER, GITHUB_REPOSITORY,
-#   CHANGED_FILES_FILE, LABELS_FILE, BASE_REF,
+#   CHANGED_FILES_FILE, DELETED_FILES_FILE, LABELS_FILE, BASE_REF,
 #   REGRESSION_LABELS (por defecto "tipo/falso-positivo,tipo/falso-negativo"),
 #   EVIDENCE_PATHS   (globs separados por coma; por defecto los de abajo).
 
@@ -51,6 +54,7 @@ PR_NUMBER="${PR_NUMBER:-}"
 REPO="${GITHUB_REPOSITORY:-}"
 BODY_FILE=""
 CHANGED_FILES_FILE="${CHANGED_FILES_FILE:-}"
+DELETED_FILES_FILE="${DELETED_FILES_FILE:-}"
 LABELS_FILE="${LABELS_FILE:-}"
 BASE_REF="${BASE_REF:-}"
 EMIT_REFS=0
@@ -64,7 +68,7 @@ say()  { printf '%s\n' "$*"; }
 note() { printf '  - %s\n' "$*"; }
 err()  { printf '%s\n' "$*" >&2; }
 
-usage() { sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # Los globs de EVIDENCE_PATHS se trocean con IFS pero NO se expanden contra el disco:
 # `set -f` evita que "scripts/gates/*" se convierta en la lista de ficheros existentes.
@@ -86,6 +90,7 @@ while [ $# -gt 0 ]; do
     --repo)          REPO="${2:-}"; shift 2 ;;
     --body-file)     BODY_FILE="${2:-}"; shift 2 ;;
     --changed-files) CHANGED_FILES_FILE="${2:-}"; shift 2 ;;
+    --deleted-files) DELETED_FILES_FILE="${2:-}"; shift 2 ;;
     --labels-file)   LABELS_FILE="${2:-}"; shift 2 ;;
     --base)          BASE_REF="${2:-}"; shift 2 ;;
     --emit-refs)     EMIT_REFS=1; shift ;;
@@ -345,6 +350,12 @@ fi
 # 5. Ficheros que toca el PR
 # ---------------------------------------------------------------------------
 CHANGED="$TMPDIR_GATE/changed.txt"
+# Ficheros BORRADOS por el PR. Borrar el gate que te delata NO es vigilar la regresion:
+# `git diff --name-only` lista los borrados igual que los añadidos, asi que sin esto un
+# PR podia cerrar un falso positivo BORRANDO scripts/gates/... y salir en verde.
+DELETED="$TMPDIR_GATE/deleted.txt"
+: > "$DELETED"
+DELETED_SRC=""            # vacio = no se pudo saber que se borro
 CHANGED_SRC=""
 if [ -n "$CHANGED_FILES_FILE" ]; then
   if [ ! -r "$CHANGED_FILES_FILE" ]; then
@@ -353,6 +364,14 @@ if [ -n "$CHANGED_FILES_FILE" ]; then
   fi
   cat -- "$CHANGED_FILES_FILE" > "$CHANGED"
   CHANGED_SRC="--changed-files $CHANGED_FILES_FILE"
+  if [ -n "$DELETED_FILES_FILE" ]; then
+    if [ ! -r "$DELETED_FILES_FILE" ]; then
+      err "NO PUDE MEDIR: --deleted-files '$DELETED_FILES_FILE' no se puede leer."
+      exit "$RC_UNMEASURABLE"
+    fi
+    cat -- "$DELETED_FILES_FILE" > "$DELETED"
+    DELETED_SRC="--deleted-files $DELETED_FILES_FILE"
+  fi
 else
   base="$BASE_REF"
   if [ -z "$base" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then base="origin/$GITHUB_BASE_REF"; fi
@@ -367,12 +386,23 @@ else
       exit "$RC_UNMEASURABLE"
     fi
     CHANGED_SRC="git diff --name-only $base...HEAD"
+    if ! git diff --name-only --diff-filter=D "$base"...HEAD > "$DELETED" 2>/dev/null; then
+      err "NO PUDE MEDIR: no pude listar los ficheros borrados con --diff-filter=D."
+      exit "$RC_UNMEASURABLE"
+    fi
+    DELETED_SRC="git diff --name-only --diff-filter=D $base...HEAD"
   elif [ -n "$PR_NUMBER" ] && command -v gh >/dev/null 2>&1 && [ -n "$REPO" ]; then
     if ! gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' > "$CHANGED" 2>"$TMPDIR_GATE/api.err"; then
       err "NO PUDE MEDIR: la API de ficheros del PR no respondio: $(cat "$TMPDIR_GATE/api.err")"
       exit "$RC_UNMEASURABLE"
     fi
     CHANGED_SRC="gh api repos/$REPO/pulls/$PR_NUMBER/files"
+    if ! gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+         --jq '.[] | select(.status == "removed") | .filename' > "$DELETED" 2>"$TMPDIR_GATE/api.err"; then
+      err "NO PUDE MEDIR: no pude saber que ficheros borra el PR: $(cat "$TMPDIR_GATE/api.err")"
+      exit "$RC_UNMEASURABLE"
+    fi
+    DELETED_SRC="gh api ... (status == removed)"
   else
     err "NO PUDE MEDIR: no pude obtener la lista de ficheros del PR (sin base git valida y sin gh)."
     exit "$RC_UNMEASURABLE"
@@ -390,16 +420,37 @@ matches_evidence() {
   return 1
 }
 
+is_deleted() { # $1 = path -> rc 0 si el PR lo borra
+  [ -s "$DELETED" ] || return 1
+  awk -v want="$1" '$0 == want { found=1 } END { exit(found ? 0 : 1) }' "$DELETED"
+}
+
 : > "$TMPDIR_GATE/evidence.hits"
+: > "$TMPDIR_GATE/evidence.deleted"
 n_changed=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   n_changed=$((n_changed + 1))
-  if matches_evidence "$f"; then printf '%s\n' "$f" >> "$TMPDIR_GATE/evidence.hits"; fi
+  if matches_evidence "$f"; then
+    if is_deleted "$f"; then
+      printf '%s\n' "$f" >> "$TMPDIR_GATE/evidence.deleted"
+    else
+      printf '%s\n' "$f" >> "$TMPDIR_GATE/evidence.hits"
+    fi
+  fi
 done < "$CHANGED"
 
 say ""
 say "Ficheros del PR    : $n_changed  (fuente: $CHANGED_SRC)"
+if [ -n "$DELETED_SRC" ]; then
+  say "Ficheros borrados  : $(wc -l < "$DELETED" | tr -d ' ')  (fuente: $DELETED_SRC)"
+else
+  say "Ficheros borrados  : NO REVISADO (no se me dijo cuales borra el PR; usa --deleted-files)"
+fi
+if [ -s "$TMPDIR_GATE/evidence.deleted" ]; then
+  say "Ficheros de regresion que el PR BORRA (no cuentan como vigilancia):"
+  while IFS= read -r f; do note "$f"; done < "$TMPDIR_GATE/evidence.deleted"
+fi
 if [ -s "$TMPDIR_GATE/evidence.hits" ]; then
   say "Ficheros que cuentan como regresion vigilada:"
   while IFS= read -r f; do note "$f"; done < "$TMPDIR_GATE/evidence.hits"
@@ -415,7 +466,12 @@ say ""
 say "Resultado: FALLA."
 say "El PR dice cerrar estos issues:"
 while IFS= read -r n; do note "#$n (falso positivo o falso negativo)"; done < "$TMPDIR_GATE/needs_regression"
-say "...pero no toca ningun fichero de: $EVIDENCE_PATHS"
+if [ -s "$TMPDIR_GATE/evidence.deleted" ]; then
+  say "...y lo unico que toca de: $EVIDENCE_PATHS lo BORRA. Borrar el check que te delata"
+  say "   no es vigilar la regresion."
+else
+  say "...pero no toca ningun fichero de: $EVIDENCE_PATHS"
+fi
 say ""
 say "Un arreglo sin check que lo vigile es una recaida programada. Añade el caso de"
 say "regresion (o el gate) que falle si el defecto vuelve, y declaralo en la seccion"

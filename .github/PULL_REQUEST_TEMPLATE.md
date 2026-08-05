@@ -1,7 +1,16 @@
 <!--
-  No borres las secciones. Un PR sin issue enlazado y sin regresion vigilada
-  se bloquea: scripts/gates/gate-issue-closure.sh corre en cada PR.
-  Los apartados se rellenan; los que no apliquen se marcan "no aplica" con una razon.
+  No borres las secciones. Los apartados se rellenan; los que no apliquen se marcan
+  "no aplica" con una razon.
+
+  QUE BLOQUEA DE VERDAD (scripts/gates/gate-issue-closure.sh, en cada PR):
+  si este PR declara cerrar un issue etiquetado tipo/falso-positivo o tipo/falso-negativo
+  y NO toca ningun fichero de scripts/gates/, tests/ o cases/, el gate falla (rc=1).
+  Borrar ese fichero tampoco cuenta: el gate descarta los ficheros que el PR elimina.
+
+  QUE NO BLOQUEA (lo revisa una persona): no declarar ningun issue no falla el gate,
+  porque hay PRs legitimos sin issue (infraestructura, el loop de conocimiento).
+  Tampoco puede comprobar que el fichero tocado contenga DE VERDAD el caso de esta
+  regresion. Eso es lo que se revisa leyendo las secciones de abajo.
 -->
 
 ## Que cierra

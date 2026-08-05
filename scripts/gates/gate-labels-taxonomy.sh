@@ -58,14 +58,33 @@ if not tax:
     sys.exit(2)
 
 VALID_TYPES = {"markdown", "input", "textarea", "dropdown", "checkboxes"}
-DROPDOWN_PREFIX = {"rol": "area/", "area": "area/", "severidad": "severidad/"}
+
+# REGISTRO EXPLICITO DE DESPLEGABLES. Antes esto era un dict "opt-in": un desplegable
+# cuyo id no estuviera aqui se saltaba EN SILENCIO y el gate seguia diciendo "OK".
+# Renombrar `id: rol` a `id: rol_emisor` desactivaba la comprobacion entera sin que
+# nada fallara: rc=0 significaba "no lo revise", que es justo lo que no puede pasar.
+# Ahora todo desplegable tiene que estar declarado en UNA de las dos tablas.
+#
+#   id -> (prefijo del label, opciones que a proposito NO son un label)
+DROPDOWN_MAPEADOS = {
+    "rol":       ("area/",      set()),
+    "area":      ("area/",      set()),
+    "severidad": ("severidad/", set()),
+    "canal":     ("canal/",     {"instalado a mano / no lo se"}),
+}
+# id -> razon por la que sus opciones no corresponden a ningun label
+DROPDOWN_EXENTOS = {}
 
 problems = []
 checked_forms = 0
 checked_labels = 0
 checked_options = 0
+skipped_dropdowns = []
 
-forms = sorted(p for p in tpl_dir.glob("*.yml") if p.name != "config.yml")
+# Se miran .yml y .yaml: la doc de GitHub solo documenta .yml, pero un fichero .yaml
+# suelto aqui quedaria sin revisar y este gate no puede callarse sobre lo que no mira.
+forms = sorted(p for p in list(tpl_dir.glob("*.yml")) + list(tpl_dir.glob("*.yaml"))
+               if p.stem != "config")
 if not forms:
     print("NO PUDE MEDIR: no hay ningun issue form en .github/ISSUE_TEMPLATE.")
     sys.exit(2)
@@ -94,16 +113,53 @@ for p in forms:
             continue
         if t != "dropdown":
             continue
-        prefix = DROPDOWN_PREFIX.get(el.get("id", ""))
-        if not prefix:
+        did = el.get("id", "")
+        if did in DROPDOWN_EXENTOS:
+            skipped_dropdowns.append(f"{p.name}:{did} (exento: {DROPDOWN_EXENTOS[did]})")
             continue
+        if did not in DROPDOWN_MAPEADOS:
+            problems.append(
+                f"{p.name}: el desplegable '{did}' no esta declarado. Añadelo a "
+                f"DROPDOWN_MAPEADOS (con su prefijo de label) o a DROPDOWN_EXENTOS "
+                f"(con la razon). Sin declararlo, sus opciones quedarian sin revisar "
+                f"y este gate diria 'OK' sin haber medido nada.")
+            continue
+        prefix, libres = DROPDOWN_MAPEADOS[did]
         for opt in el.get("attributes", {}).get("options", []):
             checked_options += 1
+            if str(opt) in libres:
+                continue
             key = str(opt).split(" ")[0]
             full = prefix + key
             if full not in tax:
                 problems.append(f"{p.name}: la opcion '{opt}' del desplegable "
-                                f"'{el.get('id')}' no mapea a ningun label ({full})")
+                                f"'{did}' no mapea a ningun label ({full})")
+
+# Coherencia con gate-issue-closure.sh: ese gate solo EXIGE regresion vigilada cuando el
+# issue lleva uno de los labels de REGRESSION_LABELS. Si alguien renombra el label en la
+# taxonomia (o hay un typo en el valor por defecto), el gate deja de exigir nada y
+# devuelve rc=0 "OK" para siempre, sin que nadie se entere. Aqui se ata el cabo.
+closure = root / "scripts/gates/gate-issue-closure.sh"
+checked_regression = []
+if not closure.exists():
+    problems.append("no encuentro scripts/gates/gate-issue-closure.sh: no puedo comprobar "
+                    "que sus labels de regresion existan en la taxonomia")
+else:
+    m = re.search(r'^REGRESSION_LABELS="\$\{REGRESSION_LABELS:-([^}"]*)\}"',
+                  closure.read_text(), re.M)
+    if not m:
+        problems.append("gate-issue-closure.sh: no pude leer el valor por defecto de "
+                        "REGRESSION_LABELS (cambio el formato); sin eso no puedo comprobar "
+                        "que esos labels existan")
+    else:
+        checked_regression = [x.strip() for x in m.group(1).split(",") if x.strip()]
+        if not checked_regression:
+            problems.append("gate-issue-closure.sh: REGRESSION_LABELS por defecto esta vacio; "
+                            "el gate de cierre no exigiria regresion a NINGUN issue")
+        for lbl in checked_regression:
+            if lbl not in tax:
+                problems.append(f"gate-issue-closure.sh: el label de regresion '{lbl}' no existe "
+                                f"en scripts/gh/labels.sh; ese gate nunca se activaria")
 
 cfg = tpl_dir / "config.yml"
 if not cfg.exists():
@@ -121,6 +177,10 @@ print("gate-labels-taxonomy")
 print("====================")
 print(f"REVISADO: {checked_forms} issue forms, {checked_labels} labels declarados, "
       f"{checked_options} opciones de desplegable, contra {len(tax)} labels de la taxonomia.")
+print(f"REVISADO: los {len(checked_regression)} labels de regresion de gate-issue-closure.sh "
+      f"existen en la taxonomia: {', '.join(checked_regression) or '<ninguno>'}")
+if skipped_dropdowns:
+    print("NO REVISADO (exento y declarado como tal): " + "; ".join(skipped_dropdowns))
 print("NO REVISADO: si esos labels existen en GitHub (eso es scripts/gh/labels.sh --check).")
 print()
 

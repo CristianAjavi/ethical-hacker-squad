@@ -115,6 +115,16 @@ if [ -z "$REPO" ]; then
   exit "$RC_UNMEASURABLE"
 fi
 
+# Una taxonomia vacia hacia que --check dijera "OK. Taxonomia completa y sin deriva"
+# con rc=0 habiendo comprobado CERO labels: un rc=0 que significaba "no revise nada".
+# Sin declaraciones no hay nada que medir, y eso es NO PUDE MEDIR.
+N_DECLARED="$(printf '%s\n' "$LABELS" | grep -c '|')"
+if [ "$N_DECLARED" -eq 0 ]; then
+  printf 'NO PUDE MEDIR: la taxonomia LABELS esta vacia (0 labels declarados).\n' >&2
+  printf 'Un "sin deriva" sobre cero labels no es una medicion.\n' >&2
+  exit "$RC_UNMEASURABLE"
+fi
+
 TMPD="$(mktemp -d)" || { printf 'NO PUDE MEDIR: no pude crear temporal.\n' >&2; exit "$RC_UNMEASURABLE"; }
 trap 'rm -rf "$TMPD"' EXIT
 
@@ -137,7 +147,7 @@ n_create=0; n_update=0; n_same=0; n_err=0
 printf 'labels.sh\n=========\n'
 printf 'Repositorio : %s\n' "$REPO"
 printf 'Modo        : %s\n' "$MODE"
-printf 'Taxonomia   : %s labels declarados\n\n' "$(printf '%s\n' "$LABELS" | grep -c '|')"
+printf 'Taxonomia   : %s labels declarados\n\n' "$N_DECLARED"
 
 while IFS='|' read -r name color desc; do
   [ -n "${name:-}" ] || continue
@@ -190,7 +200,7 @@ fi
 case "$MODE" in
   check)
     printf '\nREVISADO: existencia, color y descripcion de los %d labels declarados.\n' \
-      "$(printf '%s\n' "$LABELS" | grep -c '|')"
+      "$N_DECLARED"
     printf 'NO REVISADO: labels no declarados (listados arriba como aviso).\n'
     if [ "$n_create" -gt 0 ] || [ "$n_update" -gt 0 ]; then
       printf '\nResultado: FALLA. La taxonomia del repo no coincide con scripts/gh/labels.sh.\n'
