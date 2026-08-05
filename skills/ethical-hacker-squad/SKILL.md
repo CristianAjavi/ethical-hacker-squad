@@ -72,7 +72,7 @@ Each of these agents already carries its safety contract and loads its own pack,
 
 ### Fallback path: no plugin agents available
 
-If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. Use `general-purpose` and copy into the prompt, explicitly (a subagent inherits neither this skill nor its context): scope and exact path; mode; target language; the role order from `references/team.md`; the path of the role's knowledge pack so the subagent reads it itself; the relevant rows of `references/coverage.md`; the full safety contract above; the return format from `references/team.md`; and in `audit` mode, the flat instruction not to edit any file. `security-auditor` is a reasonable alternative for a deep pass over one sensitive surface, and `results-verifier` for the verifier role.
+If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. Use `general-purpose` and copy into the prompt, explicitly (a subagent inherits neither this skill nor its context): scope and exact path; mode; target language; the role order from `references/team.md`; the path of the role's knowledge pack so the subagent reads it itself; the relevant rows of `references/coverage.md`; the full safety contract above; the return format from `references/team.md`; and in `audit` mode, the flat instruction not to edit any file. Use `general-purpose` for every role in this mode. If you happen to have your own equivalent specialist agents installed, they work too, but do not assume any particular agent exists.
 
 Never let the same agent both fix and verify.
 

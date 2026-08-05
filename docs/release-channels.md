@@ -2,6 +2,8 @@
 
 How a user gets this plugin, how they get updates, and why the branches are arranged the way they are.
 
+> **Status.** This is a specification. The automation it describes has not landed yet: there is no `stable` branch, no tagged release and no CI on `main`. Read it as the contract the machinery is built to satisfy, not as a description of controls already running. See `docs/design-decisions.md`.
+
 ## For the user
 
 Install:

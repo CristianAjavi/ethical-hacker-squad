@@ -36,6 +36,6 @@ The two highest-yield entry points are `web-api.md` §0, which lists the classes
 
 ## Provenance and maintenance
 
-Every factual claim in the corpus — a standard version, a measured percentage, an incident — carries its source. The corpus is refreshed by an automated loop described in `docs/knowledge-loop.md`, which may only draw from the source allowlist in `docs/sources-allowlist.json`, must attach provenance to every item it changes, and can never modify the safety contract, the plugin manifest, the allowlist or the workflows.
+Every factual claim in the corpus — a standard version, a measured percentage, an incident — carries its source. The corpus is to be refreshed by an automated loop specified in `docs/knowledge-loop.md` (not yet running), which may only draw from the source allowlist in `docs/sources-allowlist.json`, must attach provenance to every item it changes, and can never modify the safety contract, the plugin manifest, the allowlist or the workflows.
 
 Two consequences you should carry into any edit: **no item without a citation**, and **no text copied verbatim from a copyleft or proprietary source**. Both are enforced in CI, not left to good intentions.

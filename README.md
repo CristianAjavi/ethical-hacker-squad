@@ -27,7 +27,7 @@ Most "act as a security expert" prompts are adjectives. This one ships **procedu
 
 `security-lead` (you) · `web-api` · `mobile` · `infra-cloud` · `supply-chain` · `ai-safety` · `privacy-abuse` · `remediator` · `verifier`
 
-Installed as a plugin, each specialist is a real subagent whose tool access is enforced by the harness rather than requested in a prompt: auditors ship without `Edit` and `Write`, and only the remediator can modify files.
+Installed as a plugin, each specialist is a real subagent with its own tool access: auditors ship without `Edit` and `Write`, and only the remediator can modify files. That closes the direct write path, not every write path — auditors keep `Bash`, so the working tree is checked after an `audit` run rather than assumed clean.
 
 ## Knowledge
 

@@ -9,7 +9,7 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 ### Added
 
 - **Knowledge corpus** (2,749 lines, 122 numbered procedures across 7 role packs). Each procedure carries where to look per stack, the vulnerable pattern, false-positive criteria, a minimal non-destructive test, standard traceability and tool guidance: `web-api` (`WEB-01`..`WEB-22`), `mobile` (`MOB-01`..`MOB-15`), `infra-cloud` (`INF-01`..`INF-18`), `supply-chain` (`SUP-01`..`SUP-20`), `ai-safety` (`AI-01`..`AI-22`), `privacy-abuse` (`PRV-01`..`PRV-11`), `remediation` (`REM-01`..`REM-07`, `VER-01`..`VER-07`).
-- **Dedicated plugin subagents** under `agents/`. Auditor roles ship without `Edit` and `Write`, so read-only operation in `audit` mode is enforced by the harness rather than requested in a prompt.
+- **Dedicated plugin subagents** under `agents/`. Auditor roles ship without `Edit` and `Write`, which removes the most direct write path. It is a real reduction, not a guarantee: auditors keep `Bash`, so read-only operation still depends on the contract and must be confirmed with `git status --porcelain` after a run.
 - **`references/traceability.md`** — verified state of every cited standard, the standard-to-role matrix, the citation policy, and an explicit list of known coverage gaps.
 - **`references/tooling.md`** — per-surface non-destructive invocation, network posture, licence constraints, and the typical false positive of each tool.
 - **`references/bibliography.md`** — annotated bibliography with verified bibliographic data and free-to-read status.
@@ -21,7 +21,7 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
-- **`plugin.json` no longer declares a fixed `version`.** Claude Code resolves plugin version as `plugin.json` → marketplace entry → commit SHA, so the hardcoded `"1.0.0"` meant that pushing new commits delivered nothing to existing installs: the resolved version never changed and the cached copy was considered current. Every commit on `main` now resolves to a distinct SHA, and the semver lives solely in the marketplace entry on `stable`.
+- **`plugin.json` no longer declares a fixed `version`.** Claude Code resolves plugin version as `plugin.json` → marketplace entry → commit SHA, so the hardcoded `"1.0.0"` meant that pushing new commits delivered nothing to existing installs: the resolved version never changed and the cached copy was considered current. Every commit on `main` now resolves to a distinct SHA. The semver will live solely in the marketplace entry on the `stable` branch; that branch and its first tagged release do not exist yet.
 
 ### Changed
 

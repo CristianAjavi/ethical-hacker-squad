@@ -37,7 +37,7 @@ The question that decides it: *if someone reintroduces this tomorrow, does somet
 
 A `false-positive` "fixed" by rewording a paragraph is not fixed. Prose does not execute and nothing watches it. The fix is a corrected pattern or a sharpened false-positive criterion, **plus** a case in the corpus or a gate that fails if the old behaviour returns.
 
-This is enforced, not requested: a pull request that closes a `false-positive` or `false-negative` issue without touching `scripts/gates/`, `tests/` or `references/knowledge/**` fails CI. If a case genuinely cannot be guarded, say so in the pull request and let the override happen in the open.
+This is meant to be enforced, not requested: gate `G8` specifies that a pull request closing a `false-positive` or `false-negative` issue must also touch `scripts/gates/`, `tests/` or `references/knowledge/**`. Until CI lands, treat it as a review rule you apply by hand. If a case genuinely cannot be guarded, say so in the pull request and let the override happen in the open.
 
 Every pull request declares which gate, test or corpus case now watches the regression, and uses `Fixes #N`.
 
@@ -100,7 +100,7 @@ git worktree remove ../ehs-test
 
 What to check on that run: the leader staffed only roles the inventory justifies; each specialist loaded only the pack sections it needed; findings cite procedure IDs; every finding worked through its false-positive criteria; the coverage declaration is present and honest; and in `audit` mode `git status --porcelain` is empty afterwards.
 
-That last one matters. Auditor agents are configured without `Edit` and `Write`, which the harness enforces — but they retain `Bash`, which can write through the shell. The tool restriction is a real control and an incomplete one, so verify the working tree rather than assuming it.
+That last one matters. Auditor agents are configured without `Edit` and `Write` — but they retain `Bash`, which can write through the shell. Removing the direct write tools is a real reduction and an incomplete control, so verify the working tree rather than assuming it.
 
 Run the gates locally before opening the pull request: `scripts/gates/`. Each exits `0` for measured-and-fine, `1` for measured-and-failing, and `2` for could-not-measure. Exit `2` is a failure, never a pass: a gate that cannot tell a clean result from a tool that did not run is not a gate.
 

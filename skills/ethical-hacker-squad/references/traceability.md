@@ -73,6 +73,7 @@ Corrections worth carrying, because getting these wrong is common: the current O
 | `ASVS 5.0 V8` | web-api | §2 | `WEB-04`..`WEB-06` |
 | `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | §9 / §1 | `WEB-19`, `INF-03` |
 | `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | §1, §5 / §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
+| `ASVS 5.0 V15` | web-api / remediator / ai-safety | §9 / part A / §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
 | `ASVS 5.0 V16` | web-api / infra-cloud | §11 / §1 | `WEB-22`, `INF-06` |
 | `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | §2, §6 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12` |
 | `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | §5, §7 | `MOB-09`, `MOB-10`, `MOB-13` |
@@ -114,5 +115,7 @@ Declare these rather than implying they are covered:
 - **`MASTG-TEST-NNNN` individual IDs** — the corpus cites MASVS controls and MASTG test groups, not individual test numbers, because those numbers were not verified one by one.
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
+- **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.
+- **CLI, desktop and library surfaces** — injection, deserialization and file handling transfer from `web-api.md`, but symlink handling, temp-file races, argument and environment parsing, and dangerous public-API defaults have no procedure.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.
 - **`ATT&CK` technique mapping** — used sparingly and only where the technique was verified. Absence of an ATT&CK ID on a finding means it was not verified, not that no technique applies.

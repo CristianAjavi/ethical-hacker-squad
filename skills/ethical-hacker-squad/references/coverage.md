@@ -29,7 +29,8 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 | `*.tf`, `*.tfvars`, CloudFormation, Bicep, Pulumi | `infra-cloud` | `infra-cloud.md` §1 | Includes the logging gap: IaC without audit logging is the single most common omission measured. |
 | `Dockerfile`, `docker-compose.yml`, image builds | `infra-cloud` | `infra-cloud.md` §2 | |
 | Kubernetes manifests, Helm charts, `kustomization.yaml` | `infra-cloud` | `infra-cloud.md` §3 | Scanning an unrendered Helm chart produces template-literal false positives. |
-| `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`, `.circleci/` | `infra-cloud` + `supply-chain` | `infra-cloud.md` §4, `supply-chain.md` §5 | Mapped to `CICD-SEC-*`. Unpinned actions and `pull_request_target` are the highest-yield checks. |
+| `.github/workflows/` | `infra-cloud` + `supply-chain` | `infra-cloud.md` §4, `supply-chain.md` §5 | Mapped to `CICD-SEC-*`. Unpinned actions and `pull_request_target` are the highest-yield checks. |
+| `.gitlab-ci.yml`, `Jenkinsfile`, `.circleci/` | `infra-cloud` + `supply-chain` | `infra-cloud.md` §4, `supply-chain.md` §5 | **Partial only.** `INF-13`..`INF-16` are written against GitHub Actions. The `CICD-SEC-*` classes transfer conceptually - privileged triggers, interpolation of untrusted input into a shell step, over-broad job tokens, unpinned third-party steps - but the symbols and file layout do not. Reason from the class, and declare the platform as partially covered. |
 | Multiple environments, `.env*`, secret managers, deployment configuration | `infra-cloud` | `infra-cloud.md` §5 | |
 | SBOM, artifact signing, `cosign`, release or publishing workflow | `supply-chain` | `supply-chain.md` §6 | Provenance and attestation. Maps to `SLSA Build L1`..`L3`. |
 | A dependency added recently, an unfamiliar maintainer, or a suspected incident | `supply-chain` | `supply-chain.md` §9 | Malicious-package indicators. Read before concluding a package is merely outdated. |
@@ -43,7 +44,7 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 | Third-party SDKs, telemetry, tracking, ad libraries | `privacy-abuse` | `privacy-abuse.md` §4 | Overlaps `MASVS-PRIVACY-*` on mobile. |
 | User data flowing into prompts, fine-tuning or provider logs | `privacy-abuse` + `ai-safety` | `privacy-abuse.md` §5 | |
 | Signup, invitations, referrals, quotas, public enumeration surfaces | `privacy-abuse` | `privacy-abuse.md` §8 | Abuse paths are product decisions; label them as such. |
-| Desktop app, CLI, published library | `web-api` (adapted) | `web-api.md` §3, §5, §11 | Path handling, temp files, symlinks, argument and environment parsing, untrusted formats, deserialization, dangerous defaults in the public API. |
+| Desktop app, CLI, published library | `web-api` (partial only) | `web-api.md` §3, §5 | **Partial coverage, declare it.** Injection, deserialization and file handling transfer. Path traversal via symlink, temp-file races, argument and environment parsing, and dangerous public-API defaults have **no procedure** - see the gap list in `traceability.md`. |
 
 ## Surfaces with no matching pack
 

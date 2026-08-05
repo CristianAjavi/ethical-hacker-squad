@@ -78,6 +78,12 @@ How each one lies: jadx emits decompiled code that can be corrupt, so grepping i
 
 **frida and objection are excluded from the automated pipeline.** Their function is to disable a running application's security controls and inject code into its process. They modify state, are therefore not non-destructive, require a rooted device you own, and need written authorization. They are not part of this skill's tooling.
 
+## Privacy surfaces
+
+There is no scanner for this. Personal-data mapping is done by reading schemas, models, migrations, DTOs, serializers, log statements and analytics event definitions, and the useful tools are the generic ones: `grep` over field names that denote personal data in the project's own vocabulary, the ORM's own schema dump, and the migration history to find fields added and never removed.
+
+Two cautions. Field-name matching is a starting point, not an inventory — personal data hides in free-text columns, JSON blobs and third-party identifiers that no name pattern catches, so report the method's limits alongside its output. And never sample production data to find out what a field contains; infer from the schema and the code that writes it.
+
 ## Remote and dynamic — REQUIRES AUTHORIZATION
 
 Everything here sends traffic to a host. None of it runs without explicit, scoped authorization from the owner of that host.
