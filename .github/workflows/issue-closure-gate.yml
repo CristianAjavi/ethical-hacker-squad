@@ -1,0 +1,134 @@
+# Cablea scripts/gates/gate-issue-closure.sh a cada PR.
+#
+# MODELO DE AMENAZA. El cuerpo de un PR es contenido NO CONFIABLE (cualquiera abre un
+# PR desde un fork). El diseno lo trata como tal:
+#
+#   * Trigger `pull_request`, nunca `pull_request_target`: el codigo que se ejecuta es
+#     el de la rama base, y el token de un PR desde fork es de solo lectura.
+#   * DOS JOBS. El job `refs` es el unico que toca el cuerpo del PR y NO recibe ningun
+#     permiso de escritura ni ningun secreto del repositorio; su unica salida son
+#     NUMEROS de issue, validados a `^[0-9]+$` uno por uno. El job `enforce` recibe
+#     esos digitos ya saneados, y es el unico que habla con la API.
+#   * El cuerpo llega SIEMPRE por `env:` y se lee como fichero. Jamas se interpola
+#     `${{ github.event.* }}` dentro de un `run:` (eso es exactamente lo que detecta el
+#     check Dangerous-Workflow de Scorecard, y es como se inyecta un comando).
+#   * El unico token en juego es el GITHUB_TOKEN automatico con `issues: read` y
+#     `contents: read` sobre un repositorio PUBLICO: no da acceso a nada que un
+#     anonimo no pueda leer, y no puede escribir. No se expone ningun secreto del repo.
+name: Gate de cierre de issues
+
+on:
+  pull_request:
+    # `edited` es necesario: el gate depende del cuerpo del PR, que se edita a mano.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  selftest:
+    name: Autoprueba del gate (falla cuando debe fallar)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Ejecutar la autoprueba offline
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gates/gate-issue-closure.selftest.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Autoprueba OK::El gate distingue 0/1/2." ;;
+            1) echo "::error title=Autoprueba FALLA::El gate ya no falla cuando debe fallar." ;;
+            2) echo "::error title=NO PUDE MEDIR::La autoprueba no pudo ejecutarse." ;;
+          esac
+          exit "$rc"
+
+  refs:
+    name: Extraer issues declarados (sin token de escritura)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      refs: ${{ steps.parse.outputs.refs }}
+    steps:
+      - name: Checkout de la rama base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parsear el cuerpo del PR
+        id: parse
+        env:
+          # Contenido no confiable: entra como variable de entorno, no como codigo.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          rc=0
+          ./scripts/gates/gate-issue-closure.sh \
+            --body-file /tmp/pr-body.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --emit-refs > /tmp/refs.raw || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "::error title=NO PUDE MEDIR::No se pudo leer el cuerpo del PR."
+            exit 2
+          fi
+          # Lista blanca: solo digitos. Cualquier otra cosa se descarta.
+          refs=""
+          while IFS= read -r n; do
+            case "$n" in
+              ''|*[!0-9]*) continue ;;
+            esac
+            refs="$refs $n"
+          done < /tmp/refs.raw
+          refs="${refs# }"
+          echo "Issues declarados: ${refs:-<ninguno>}"
+          echo "refs=$refs" >> "$GITHUB_OUTPUT"
+
+  enforce:
+    name: Exigir regresion vigilada
+    runs-on: ubuntu-latest
+    needs: refs
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Checkout con historia
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Ejecutar el gate
+        env:
+          # Solo digitos saneados por el job anterior. Nada de texto del usuario.
+          REFS: ${{ needs.refs.outputs.refs }}
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          if [ -z "${REFS:-}" ]; then
+            echo "::notice title=Gate OK::El PR no declara cerrar ningun issue de este repositorio."
+            exit 0
+          fi
+          : > /tmp/body-sintetico.txt
+          for n in $REFS; do
+            case "$n" in ''|*[!0-9]*) echo "::error::referencia no numerica: $n"; exit 2 ;; esac
+            printf 'Fixes #%s\n' "$n" >> /tmp/body-sintetico.txt
+          done
+          rc=0
+          ./scripts/gates/gate-issue-closure.sh \
+            --body-file /tmp/body-sintetico.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --base "$BASE_REF" || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Gate OK::Medido y correcto." ;;
+            1) echo "::error title=Gate FALLA::Cierra un falso positivo/negativo sin tocar ningun gate ni el corpus de casos." ;;
+            2) echo "::error title=NO PUDE MEDIR::El gate no pudo medir. Un rc=0 nunca significa 'no lo revise'." ;;
+            *) echo "::error title=Gate roto::codigo de salida inesperado $rc" ;;
+          esac
+          exit "$rc"
