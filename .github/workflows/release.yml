@@ -140,24 +140,42 @@ jobs:
           echo "stable_exists=$STABLE_EXISTS" >> "$GITHUB_OUTPUT"
           echo "last_source=$LAST_SOURCE" >> "$GITHUB_OUTPUT"
 
+          # --first-parent NO es cosmetico: es la ventana de reposo.
+          # `git rev-list --before` filtra por FECHA DE COMMIT, y esa fecha la
+          # elige quien escribe el commit (GIT_COMMITTER_DATE). Sin
+          # --first-parent, el recorrido entra en las ramas mergeadas, asi que
+          # un PR del loop de conocimiento con un commit retrofechado se
+          # promueve el mismo dia en que se mergea. MEDIDO en un repo de
+          # prueba: commit retrofechado a 8 dias, mergeado hoy -> era el
+          # candidato elegido, con 0 dias de reposo real.
+          # Con --first-parent solo se miran los commits que GitHub crea al
+          # mergear (fecha del servidor) y que fueron de verdad un estado de
+          # main. Ademas se exige pertenencia a esa cadena de forma explicita.
+          FP_CHAIN=$(git rev-list --first-parent origin/main)
+
           if [ -n "${INPUT_SHA:-}" ]; then
             SHA=$(git rev-parse --verify "${INPUT_SHA}^{commit}")
-            # Un SHA a mano tambien tiene que estar EN main: nunca se promueve
-            # un commit suelto, de un fork o de una rama de bot.
-            if ! git merge-base --is-ancestor "$SHA" origin/main; then
-              echo "::error::$SHA no es ancestro de origin/main. Solo se promueve historia de main." >&2
-              exit 1
-            fi
             echo "candidato manual: $SHA"
           else
-            SHA=$(git rev-list -1 --before="${SOAK_DAYS} days ago" origin/main || true)
+            SHA=$(git rev-list -1 --first-parent --before="${SOAK_DAYS} days ago" origin/main || true)
             if [ -z "$SHA" ]; then
-              echo "::notice::Ningun commit de main tiene mas de ${SOAK_DAYS} dias. Nada que promover."
+              echo "::notice::Ningun commit de la cadena first-parent de main tiene mas de ${SOAK_DAYS} dias. Nada que promover."
               echo "sha=" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "candidato por reposo (>= ${SOAK_DAYS} dias): $SHA"
           fi
+
+          # INVARIANTE DURA, para los dos caminos: el candidato tiene que ser
+          # un estado por el que main paso de verdad. Un commit que solo vive
+          # dentro de una rama mergeada es un arbol intermedio que nunca fue
+          # main y que ningun CI de main evaluo.
+          if ! printf '%s\n' "$FP_CHAIN" | grep -qxF "$SHA"; then
+            echo "::error::$SHA no esta en la cadena first-parent de origin/main: nunca fue un estado de main." >&2
+            exit 1
+          fi
+          echo "  [OK] $SHA pertenece a la cadena first-parent de main"
+          echo "  fecha de commit: $(git show -s --format=%cI "$SHA")"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Comprobar la ventana de reposo (bloqueo determinista por etiqueta)
@@ -306,12 +324,6 @@ jobs:
           path: tools
           persist-credentials: false
 
-      - name: Checkout del repo para publicar (historia completa)
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-          path: source
-
       - name: Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -319,6 +331,16 @@ jobs:
 
       - name: Instalar el CLI de Claude Code (version pineada)
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      # Este checkout va DESPUES del npm install a proposito: es el unico del
+      # workflow que deja el token con contents:write escrito en .git/config, y
+      # `npm install` ejecuta scripts de terceros. Instalar primero reduce la
+      # ventana en que ese token esta en disco junto a codigo que no es nuestro.
+      - name: Checkout del repo para publicar (historia completa)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          path: source
 
       - name: Construir el arbol de stable
         working-directory: source
@@ -363,12 +385,42 @@ jobs:
             sed '1{/^# Changelog/d;}' "$WORK/prev-changelog.md" | sed '/./,$!d'
           } > CHANGELOG.md
 
+          # 3) El commit de stable se cuelga del ANTERIOR commit de stable, no
+          #    del candidato de main.
+          #    Por que: `git commit` aqui dejaria como padre a $SOURCE_SHA, y
+          #    ese commit NO desciende del stable anterior (el stable anterior
+          #    nunca se mergeo a main). MEDIDO en un repo de prueba: el commit
+          #    del segundo release no es descendiente del primero, asi que
+          #    `git push origin refs/heads/stable:refs/heads/stable` se rechaza
+          #    por non-fast-forward. Tal como estaba, la promocion funcionaba
+          #    exactamente UNA vez y despues fallaba para siempre.
+          #    Con commit-tree el ARBOL sigue siendo el de main (que es lo que
+          #    el GATE de diff comprueba) y la rama stable queda append-only:
+          #    cada release avanza en fast-forward y nadie tiene que
+          #    force-pushear una rama que los usuarios ya clonaron.
           git add .claude-plugin/plugin.json CHANGELOG.md
-          git commit -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
-                     -m "Source-Commit: ${SOURCE_SHA}" \
-                     -m "Promocion automatica del canal stable. El arbol es identico a main@${SOURCE_SHA} salvo .claude-plugin/plugin.json (semver) y CHANGELOG.md."
-          git branch -f stable HEAD
-          echo "commit de stable: $(git rev-parse HEAD)"
+          TREE=$(git write-tree)
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            PARENT=$(git rev-parse refs/remotes/origin/stable)
+          else
+            PARENT="$SOURCE_SHA"
+          fi
+          NEW=$(git commit-tree "$TREE" -p "$PARENT" \
+                  -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
+                  -m "Source-Commit: ${SOURCE_SHA}" \
+                  -m "Promocion automatica del canal stable. El arbol es identico a main@${SOURCE_SHA} salvo .claude-plugin/plugin.json (semver) y CHANGELOG.md.")
+          git branch -f stable "$NEW"
+          git reset -q --hard "$NEW"
+          echo "commit de stable: $NEW (padre: $PARENT)"
+
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            if git merge-base --is-ancestor refs/remotes/origin/stable "$NEW"; then
+              echo "  [OK] avanza en fast-forward sobre el stable publicado"
+            else
+              echo "::error::el commit nuevo no desciende de origin/stable: el push seria non-fast-forward" >&2
+              exit 1
+            fi
+          fi
 
       - name: 'GATE: el arbol de stable es el de main salvo dos archivos'
         working-directory: source

@@ -24,6 +24,10 @@
 #
 # VARIABLES DE ENTORNO
 #   EHS_REPO_ROOT                 raiz del repo
+#   EHS_SERVED_ROOTS              raices que se copian al cache del usuario
+#                                 (default: "skills agents commands hooks";
+#                                 las que no existan se declaran ausentes, no
+#                                 se aprueban en silencio)
 #   EHS_ALLOW_TOOLS_FRONTMATTER=1 permite 'allowed-tools' en el frontmatter
 #                                 (decision explicita de un humano, no del bot)
 #   EHS_MAX_SKILL_MD_BYTES        default 12288
@@ -89,10 +93,17 @@ fsize() { wc -c <"$1" | tr -d ' '; }
 
 # --- 0. herramientas -------------------------------------------------------
 section "herramientas"
-for tool in grep sed awk find wc sort; do
+for tool in grep sed awk find wc sort mktemp; do
   command -v "$tool" >/dev/null 2>&1 || unmeasurable "falta la herramienta '$tool'"
 done
 ok "utilidades POSIX disponibles"
+
+# Temporal impredecible: /tmp/algo.$PID es un nombre adivinable y este script
+# corre en el mismo runner que contenido no confiable.
+LINKS_TMP=$(mktemp "${TMPDIR:-/tmp}/ehs-links.XXXXXX") \
+  || unmeasurable "no pude crear un archivo temporal"
+cleanup() { [[ -n "${LINKS_TMP:-}" ]] && command rm -f "$LINKS_TMP" 2>/dev/null; }
+trap cleanup EXIT
 
 # --- 1. raiz ---------------------------------------------------------------
 if [[ -n "${EHS_REPO_ROOT:-}" ]]; then
@@ -140,8 +151,40 @@ for sf in "${SKILL_FILES[@]}"; do
 
   fm=$(sed -n "2,$((close_line - 1))p" "$sf")
 
-  # Claves de primer nivel (sin indentar).
-  fm_keys=$(printf '%s\n' "$fm" | grep -E '^[A-Za-z_][A-Za-z0-9_-]*:' | sed 's/:.*//' | sort -u)
+  # --- extraccion de claves de primer nivel, ESTRICTA y fail-closed --------
+  # Un `grep '^clave:'` es EVADIBLE y se demostro: `"allowed-tools": Bash(*)`
+  # y `allowed-tools : Bash(*)` son ambas la clave `allowed-tools` para
+  # cualquier parser YAML (MEDIDO con PyYAML) y ninguna empieza por
+  # `allowed-tools:`, asi que la lista blanca las dejaba pasar con rc=0.
+  # Aqui se acepta comilla opcional y espacios antes de los dos puntos, y
+  # ademas toda linea de primer nivel que NO encaje en la forma `clave:` se
+  # declara FALLO: no se aprueba lo que el gate no es capaz de interpretar.
+  RE_KEY_DQ='^"([A-Za-z_][A-Za-z0-9_.-]*)"[[:space:]]*:'
+  RE_KEY_SQ="^'([A-Za-z_][A-Za-z0-9_.-]*)'[[:space:]]*:"
+  RE_KEY_PL='^([A-Za-z_][A-Za-z0-9_.-]*)[[:space:]]*:'
+
+  fm_keys_raw=""
+  fm_unparsed=""
+  while IFS= read -r ln; do
+    [[ -n "${ln//[[:space:]]/}" ]] || continue          # linea en blanco
+    case "$ln" in
+      [[:space:]]*) continue ;;                         # continuacion indentada
+      '-'*)         continue ;;                         # item de secuencia
+      '#'*)         continue ;;                         # comentario
+    esac
+    if   [[ "$ln" =~ $RE_KEY_DQ ]]; then fm_keys_raw+="${BASH_REMATCH[1]}"$'\n'
+    elif [[ "$ln" =~ $RE_KEY_SQ ]]; then fm_keys_raw+="${BASH_REMATCH[1]}"$'\n'
+    elif [[ "$ln" =~ $RE_KEY_PL ]]; then fm_keys_raw+="${BASH_REMATCH[1]}"$'\n'
+    else fm_unparsed+="$ln"$'\n'
+    fi
+  done <<<"$fm"
+
+  if [[ -n "$fm_unparsed" ]]; then
+    fail "$rel: linea(s) de frontmatter de primer nivel que este gate no sabe interpretar (se rechazan por defecto)"
+    while IFS= read -r u; do [[ -n "$u" ]] && info "| $u"; done <<<"$fm_unparsed"
+  fi
+
+  fm_keys=$(printf '%s' "$fm_keys_raw" | sort -u)
 
   bad_keys=""
   while IFS= read -r k; do
@@ -163,12 +206,19 @@ for sf in "${SKILL_FILES[@]}"; do
     info "permitidas: $ALLOWED_FM_KEYS"
     [[ "$bad_keys" == *"allowed-tools"* ]] && \
       info "'allowed-tools' concede herramientas a la skill: no puede entrar por un PR automatico. Exportar EHS_ALLOW_TOOLS_FRONTMATTER=1 solo tras revision humana."
-  else
+  elif [[ -z "$fm_unparsed" ]]; then
     ok "$rel: solo claves permitidas en el frontmatter"
   fi
 
-  fm_name=$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -n 1 | sed 's/[[:space:]]*$//' | tr -d '"'"'")
-  fm_desc=$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -n 1 | sed 's/[[:space:]]*$//')
+  # El valor tambien se lee tolerando la forma citada / con espacio, para no
+  # dar un falso 'falta name' cuando la clave existe pero esta escrita asi.
+  fm_value() { # $1=clave
+    printf '%s\n' "$fm" \
+      | sed -nE "s/^[\"']?$1[\"']?[[:space:]]*:[[:space:]]*//p" \
+      | head -n 1 | sed 's/[[:space:]]*$//'
+  }
+  fm_name=$(fm_value name | tr -d '"'"'")
+  fm_desc=$(fm_value description)
 
   if [[ -z "$fm_name" ]]; then
     fail "$rel: falta 'name' en el frontmatter (campo obligatorio)"
@@ -243,38 +293,61 @@ for md in "${MD_FILES[@]}"; do
       printf 'BROKEN\t%s\t%s\n' "$mdrel" "$target"
     fi
   done
-done >/tmp/ehs-links.$$ 2>/dev/null
+done >"$LINKS_TMP"
 
-LINKS_SEEN=$(wc -l </tmp/ehs-links.$$ | tr -d ' ')
-BROKEN=$(grep -c '^BROKEN' /tmp/ehs-links.$$ 2>/dev/null || true)
+LINKS_SEEN=$(wc -l <"$LINKS_TMP" | tr -d ' ')
+BROKEN=$(grep -c '^BROKEN' "$LINKS_TMP" 2>/dev/null || true)
 BROKEN=${BROKEN:-0}
 if (( BROKEN > 0 )); then
   fail "$BROKEN enlace(s) relativo(s) apuntan a archivos inexistentes"
-  grep '^BROKEN' /tmp/ehs-links.$$ | awk -F'\t' '{printf "         | %s -> %s\n", $2, $3}' >&2
+  grep '^BROKEN' "$LINKS_TMP" | awk -F'\t' '{printf "         | %s -> %s\n", $2, $3}' >&2
 else
   ok "los $LINKS_SEEN enlace(s) relativo(s) internos resuelven a archivos existentes"
 fi
-rm -f /tmp/ehs-links.$$ 2>/dev/null || true
 
 # --- 4. forma del arbol servido al usuario ---------------------------------
-section "forma del arbol skills/"
+# Se escanean TODAS las raices que Claude Code copia al cache del usuario, no
+# solo skills/. agents/ contiene instrucciones de subagentes que se distribuyen
+# igual y que el loop de conocimiento tambien puede tocar; dejarlas fuera del
+# escaneo era un punto ciego (un symlink, un binario o un archivo de 3 MB en
+# agents/ no lo veia nadie). Las reglas de FRONTMATTER de SKILL.md siguen
+# aplicandose solo a skills/: un agente tiene otro esquema (name, description,
+# model, tools) y juzgarlo con la lista blanca de skills seria un falso fallo.
+SERVED_ROOTS_LIST="${EHS_SERVED_ROOTS:-skills agents commands hooks}"
+SERVED_PRESENT=()
+SERVED_ABSENT=()
+for d in $SERVED_ROOTS_LIST; do
+  if [[ -d "$ROOT/$d" ]]; then SERVED_PRESENT+=("$d"); else SERVED_ABSENT+=("$d"); fi
+done
+section "forma del arbol servido al usuario (${SERVED_PRESENT[*]})"
+info "raices escaneadas: ${SERVED_PRESENT[*]}"
+if ((${#SERVED_ABSENT[@]} > 0)); then
+  info "raices ausentes en este arbol (nada que escanear): ${SERVED_ABSENT[*]}"
+fi
+
 TREE_FILES=()
 TREE_LINKS=()
-while IFS= read -r _f; do TREE_FILES+=("$_f"); done < <(find "$ROOT/skills" -type f | sort)
-while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_LINKS+=("$_f"); done < <(find "$ROOT/skills" -type l | sort)
+for d in "${SERVED_PRESENT[@]}"; do
+  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_FILES+=("$_f"); done < <(find "$ROOT/$d" -type f | sort)
+  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_LINKS+=("$_f"); done < <(find "$ROOT/$d" -type l | sort)
+done
 
 if ((${#TREE_LINKS[@]} > 0)); then
-  fail "${#TREE_LINKS[@]} symlink(s) dentro de skills/ (pueden apuntar fuera del arbol distribuido)"
+  fail "${#TREE_LINKS[@]} symlink(s) en el arbol servido (pueden apuntar fuera del arbol distribuido)"
   for l in "${TREE_LINKS[@]}"; do info "| ${l#"$ROOT"/}"; done
 else
-  ok "sin symlinks dentro de skills/"
+  ok "sin symlinks en el arbol servido"
 fi
 
 bad_ext=""
 exec_bits=""
 for f in "${TREE_FILES[@]}"; do
   rel="${f#"$ROOT"/}"
-  ext="${f##*.}"
+  # La extension se saca del NOMBRE, no de la ruta: `${f##*.}` sobre la ruta
+  # completa devuelve basura (o parte de un directorio) cuando el archivo no
+  # tiene punto y algun directorio padre si lo tiene.
+  base="${f##*/}"
+  if [[ "$base" == *.* ]]; then ext="${base##*.}"; else ext=""; fi
   case " $ALLOWED_EXTENSIONS " in
     *" $ext "*) ;;
     *) bad_ext+="$rel " ;;
@@ -282,14 +355,14 @@ for f in "${TREE_FILES[@]}"; do
   [[ -x "$f" ]] && exec_bits+="$rel "
 done
 if [[ -n "$bad_ext" ]]; then
-  fail "archivo(s) con extension no permitida en skills/ (permitidas: $ALLOWED_EXTENSIONS): $bad_ext"
+  fail "archivo(s) con extension no permitida en el arbol servido (permitidas: $ALLOWED_EXTENSIONS): $bad_ext"
 else
-  ok "todos los archivos de skills/ son .md (nada ejecutable ni binario se distribuye)"
+  ok "todos los archivos del arbol servido son .md (nada ejecutable ni binario se distribuye)"
 fi
 if [[ -n "$exec_bits" ]]; then
-  fail "archivo(s) con bit de ejecucion en skills/: $exec_bits"
+  fail "archivo(s) con bit de ejecucion en el arbol servido: $exec_bits"
 else
-  ok "ningun archivo de skills/ tiene bit de ejecucion"
+  ok "ningun archivo del arbol servido tiene bit de ejecucion"
 fi
 
 # --- 5. presupuesto de tamano ----------------------------------------------
@@ -318,20 +391,24 @@ done
 TREE_BYTES=0
 for f in "${TREE_FILES[@]}"; do TREE_BYTES=$((TREE_BYTES + $(fsize "$f"))); done
 if (( TREE_BYTES > MAX_TREE_BYTES )); then
-  fail "skills/ pesa $TREE_BYTES B > $MAX_TREE_BYTES B (limite de radio de explosion del corpus)"
+  fail "el arbol servido (${SERVED_PRESENT[*]}) pesa $TREE_BYTES B > $MAX_TREE_BYTES B (limite de radio de explosion del corpus)"
 else
-  ok "skills/ pesa $TREE_BYTES B / $MAX_TREE_BYTES B"
+  ok "el arbol servido (${SERVED_PRESENT[*]}) pesa $TREE_BYTES B / $MAX_TREE_BYTES B"
 fi
 if (( ${#TREE_FILES[@]} > MAX_TREE_FILES )); then
-  fail "skills/ tiene ${#TREE_FILES[@]} archivos > $MAX_TREE_FILES"
+  fail "el arbol servido tiene ${#TREE_FILES[@]} archivos > $MAX_TREE_FILES"
 else
-  ok "skills/ tiene ${#TREE_FILES[@]} archivo(s) / $MAX_TREE_FILES"
+  ok "el arbol servido tiene ${#TREE_FILES[@]} archivo(s) / $MAX_TREE_FILES"
 fi
 
 # --- resumen ---------------------------------------------------------------
 section "resumen"
-printf '  revisado: %d comprobacion(es) sobre %d SKILL.md y %d archivo(s) .md\n' \
-  "$N_CHECKED" "${#SKILL_FILES[@]}" "${#MD_FILES[@]}"
+printf '  revisado: %d comprobacion(es) sobre %d SKILL.md, %d archivo(s) .md y %d archivo(s) del arbol servido\n' \
+  "$N_CHECKED" "${#SKILL_FILES[@]}" "${#MD_FILES[@]}" "${#TREE_FILES[@]}"
+printf '  raices servidas escaneadas: %s\n' "${SERVED_PRESENT[*]}"
+if ((${#SERVED_ABSENT[@]} > 0)); then
+  printf '  raices servidas AUSENTES (no escaneadas porque no existen): %s\n' "${SERVED_ABSENT[*]}"
+fi
 printf '  NO revisado (fuera de alcance por diseno): el CONTENIDO semantico de los .md;\n'
 printf '    este gate acota forma, enlaces, tipos y tamano, no juzga texto.\n'
 if ((${#SKIPPED[@]} > 0)); then

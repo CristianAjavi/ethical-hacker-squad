@@ -60,25 +60,32 @@ else
   RANGE="$TO"   # historia completa: primer release
 fi
 
-# %H<TAB>%s<TAB>%b con los saltos del body neutralizados a espacios, para que
-# cada commit ocupe exactamente una linea.
-LOG=$(git log --no-merges --format='%H%x09%s%x09%b' "$RANGE" 2>/dev/null | tr -d '\r')
+# UN REGISTRO POR COMMIT, no una linea por commit.
+# Un `git log --format='%H<TAB>%s<TAB>%b'` NO produce una linea por commit: el
+# body lleva saltos de linea propios, asi que cada linea del body se leia como
+# si fuera otro commit. MEDIDO: un unico commit `docs:` cuyo body contenia la
+# linea `feat!: ...` se contaba como 3 commits y forzaba un salto MAJOR. El
+# cuerpo del commit es texto no confiable (viene de PRs del loop de
+# conocimiento), asi que no puede decidir la version.
+# Se enumera primero por SHA y se pide subject y body por separado.
+SHAS=$(git log --no-merges --format='%H' "$RANGE" 2>/dev/null)
 LOG_RC=$?
 (( LOG_RC == 0 )) || die2 "git log fallo sobre el rango '$RANGE'"
 
 COUNT=0
 HAS_MAJOR=0
 HAS_MINOR=0
-while IFS= read -r line; do
-  [[ -n "$line" ]] || continue
+while IFS= read -r sha; do
+  [[ -n "$sha" ]] || continue
   COUNT=$((COUNT + 1))
-  subject=$(printf '%s' "$line" | cut -f2)
-  body=$(printf '%s' "$line" | cut -f3-)
+  subject=$(git show -s --format='%s' "$sha")
+  # el body se aplana a una sola linea: solo se busca un marcador en el.
+  body=$(git show -s --format='%b' "$sha" | tr '\r\n' '  ')
   # BREAKING: `tipo!:` en el subject o `BREAKING CHANGE:` en el body.
   if printf '%s' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:'; then HAS_MAJOR=1; fi
   if printf '%s' "$body" | grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:'; then HAS_MAJOR=1; fi
   if printf '%s' "$subject" | grep -qE '^feat(\([^)]*\))?!?:'; then HAS_MINOR=1; fi
-done <<<"$LOG"
+done <<<"$SHAS"
 
 if (( COUNT == 0 )); then
   printf 'current_version=%s\n' "$CURRENT"

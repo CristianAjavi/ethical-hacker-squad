@@ -76,14 +76,19 @@ sanitize() {
 FEATS=""; FIXES=""; SECS=""; OTHERS=""; BREAKS=""
 COUNT=0
 
-LOG=$(git log --no-merges --format='%H%x09%s%x09%b' "$RANGE" 2>/dev/null | tr -d '\r')
-[[ -n "$LOG" ]] || die1 "no hay commits en el rango '$RANGE'"
+# UN REGISTRO POR COMMIT. Ver la nota en next-version.sh: el body trae saltos
+# de linea propios, asi que un formato '%H<TAB>%s<TAB>%b' hacia que CADA LINEA
+# del cuerpo se tratara como un commit distinto. MEDIDO: un solo commit
+# producia tres entradas de CHANGELOG, dos de ellas con texto elegido por quien
+# escribio el cuerpo y con un "sha" falso (los 7 primeros caracteres de esa
+# linea). Es decir, texto no confiable publicado como si fuera un commit real.
+SHAS=$(git log --no-merges --format='%H' "$RANGE" 2>/dev/null)
+[[ -n "$SHAS" ]] || die1 "no hay commits en el rango '$RANGE'"
 
-while IFS= read -r line; do
-  [[ -n "$line" ]] || continue
-  sha=$(printf '%s' "$line" | cut -f1)
-  subject=$(printf '%s' "$line" | cut -f2)
-  body=$(printf '%s' "$line" | cut -f3-)
+while IFS= read -r sha; do
+  [[ -n "$sha" ]] || continue
+  subject=$(git show -s --format='%s' "$sha")
+  body=$(git show -s --format='%b' "$sha" | tr '\r\n' '  ')
   short="${sha:0:7}"
   COUNT=$((COUNT + 1))
 
@@ -105,7 +110,7 @@ while IFS= read -r line; do
     docs|chore|ci|refactor|test|build|perf|style) OTHERS+="${entry}"$'\n' ;;
     *)                 OTHERS+="${entry}"$'\n' ;;
   esac
-done <<<"$LOG"
+done <<<"$SHAS"
 
 printf '## %s — %s\n\n' "$VERSION" "$DATE"
 if [[ -n "$REPO" ]]; then
