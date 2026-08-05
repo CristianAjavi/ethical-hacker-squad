@@ -8,12 +8,15 @@
 # Verifica, sobre .github/workflows/*.yml:
 #   1. Que ningun workflow use `pull_request_target` (ni ningun otro disparador
 #      fuera de: schedule, workflow_dispatch, push, pull_request).
-#   2. Que el workflow declare `permissions: {}` y que TODO trabajo declare su
-#      propio bloque `permissions:`.
-#   3. Que toda accion de tercero este fijada por SHA de 40 caracteres, con su
-#      comentario `# vX.Y.Z` (Dependabot lo necesita para actualizar el pin).
+#   2. Que el workflow declare `permissions: {}`, que TODO trabajo declare su
+#      propio bloque `permissions:` y que ninguno los conceda EN BLOQUE
+#      (`write-all`/`read-all`): la regla es "minimos", no "declarados".
+#   3. Que toda accion de tercero este fijada por SHA de 40 caracteres, con un
+#      comentario que sea una VERSION reconocible (`# v7.0.1`), que es lo que
+#      Dependabot necesita para actualizar el pin.
 #   4. Que ningun workflow alcanzable por terceros (`pull_request`, que tambien
-#      llega desde forks) referencie secretos distintos de GITHUB_TOKEN, ni use
+#      llega desde forks) lea el contexto `secrets` — en cualquiera de sus tres
+#      formas: `secrets.X`, `secrets['X']` y `toJSON(secrets)` — ni use
 #      `secrets: inherit`.
 #
 # Codigos de salida: 0 = medido y bien | 1 = medido y falla | 2 = no pude medir.
@@ -37,6 +40,7 @@ FIXTURES="$SELF_DIR/fixtures/hardening"
 ROOT="$(gate_root)"
 TARGET_DIR="$ROOT/.github/workflows"
 ONLY_SELFTEST=0
+SELFTEST_SKIPPED=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -167,7 +171,7 @@ self_test() {
 # ---------------------------------------------------------------------------
 main() {
   gate_header "workflow-hardening (awk, sin dependencias externas)"
-  gate_scope   "disparadores permitidos, permissions por workflow y por job, pin por SHA de 40 chars + comentario de version, secretos en workflows alcanzables desde forks"
+  gate_scope   "disparadores permitidos; permissions {} en la raiz y minimos (no en bloque) por job; pin por SHA de 40 chars + comentario de version; lectura del contexto secrets (forma .X, ['X'] y toJSON) en workflows alcanzables desde forks"
   gate_out_of_scope "inyeccion de plantillas en \`run:\`, shellcheck, sintaxis YAML/cron, acciones suplantadas o vulnerables conocidas — de eso se ocupa gate-actions-lint.sh (zizmor + actionlint)"
 
   if [ ! -f "$AWK_PROG" ]; then
@@ -191,10 +195,19 @@ main() {
     fi
     gate_info "autoprueba superada (fixtures negativos, positivos y no-medibles en $FIXTURES)"
   else
-    gate_warn "autoprueba OMITIDA por GATE_SELFTEST=0"
+    # Omitir la autoprueba no puede producir un verde: si el gate no se ha
+    # medido a si mismo, su "todo correcto" no es defendible. Se permite el
+    # atajo para depurar, pero el veredicto queda topado en 2.
+    gate_warn "autoprueba OMITIDA por GATE_SELFTEST=0: el veredicto no podra ser 0"
+    SELFTEST_SKIPPED=1
   fi
 
   if [ "$ONLY_SELFTEST" -eq 1 ]; then
+    if [ "$SELFTEST_SKIPPED" -eq 1 ]; then
+      gate_warn "--self-test con GATE_SELFTEST=0: no se ejecuto ninguna prueba"
+      gate_verdict 2
+      return "$GATE_UNMEASURABLE"
+    fi
     gate_ok "autoprueba superada; no se audito el repo (--self-test)"
     gate_verdict 0
     return "$GATE_OK"
@@ -208,8 +221,13 @@ main() {
   gate_info "directorio auditado: ${TARGET_DIR#"$ROOT"/} (${nf:-0} fichero(s))"
   awk -F'|' '$1=="STAT"{s[$2]+=$3} END{for (k in s) printf "· total %s: %d\n", k, s[k]}' "$out" | LC_ALL=C sort
 
+  if [ "$rc" -eq 0 ] && [ "$SELFTEST_SKIPPED" -eq 1 ]; then
+    gate_warn "los ${nf} workflow(s) no dispararon hallazgos, pero la autoprueba se omitio: no puedo firmar este resultado"
+    rc="$GATE_UNMEASURABLE"
+  fi
+
   if [ "$rc" -eq 0 ]; then
-    gate_ok "los ${nf} workflow(s) cumplen las 4 reglas duras"
+    gate_ok "los ${nf} workflow(s) cumplen las reglas duras"
   else
     print_findings "$out" FAIL   "  FALLA     "
     print_findings "$out" UNMEAS "  NO MEDIBLE"

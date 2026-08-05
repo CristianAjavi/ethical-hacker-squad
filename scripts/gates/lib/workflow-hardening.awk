@@ -122,11 +122,68 @@ function check_uses(u, ln,   v, c, cpos, ref, at, digest) {
         fail("uses-pin", "accion de tercero NO fijada por SHA de 40 caracteres (`" ref "`): " v, ln)
         return
     }
-    if (c !~ /#[ ]*v?[0-9]/) {
+    # El comentario tiene que parecerse a una VERSION (`v7`, `v7.0.1`, `1.7.12`).
+    # Un `# 0` o un `# ver luego` colaban con la regla anterior y dejaban el pin
+    # sin la etiqueta que Dependabot necesita para actualizarlo.
+    if (c !~ /v[0-9]/ && c !~ /[0-9]+\.[0-9]+/) {
         fail("uses-comment", "SHA sin comentario de version (`# vX.Y.Z`); Dependabot usa ese comentario para reportar y actualizar el pin: " v, ln)
         return
     }
     npinned++
+}
+
+# ---- regla 4 (recoleccion): referencias al contexto `secrets` ---------------
+# GitHub documenta DOS sintaxis para leer un contexto, y ambas dan el mismo
+# secreto: `secrets.NOMBRE` (property dereference) y `secrets['NOMBRE']` (index).
+# Ademas, `toJSON(secrets)` vuelca el contexto ENTERO. Mirar solo la primera
+# forma dejaba una via limpia para colar un secreto en un workflow alcanzable
+# desde un fork, que es justo lo que esta regla existe para impedir.
+function record_secret(nm, ln) {
+    if (nm == "GITHUB_TOKEN") return
+    if (!(nm in secretref)) { secretref[nm] = ln; nsecret++ }
+}
+
+function scan_secrets(s, ln,   i, j, prev, c, q, nm, inexpr) {
+    i = 1
+    while (1) {
+        j = index(substr(s, i), "secrets")
+        if (j == 0) return
+        i = i + j - 1                       # posicion absoluta de la palabra
+        prev = (i > 1) ? substr(s, i - 1, 1) : ""
+        if (prev != "" && prev ~ /[A-Za-z0-9_]/) { i = i + 7; continue }
+
+        j = i + 7
+        while (substr(s, j, 1) == " ") j++
+        c = substr(s, j, 1)
+
+        if (c == ".") {                     # secrets.NOMBRE
+            j++
+            nm = ""
+            while (substr(s, j, 1) ~ /[A-Za-z0-9_-]/) { nm = nm substr(s, j, 1); j++ }
+            if (nm != "") record_secret(nm, ln)
+        } else if (c == "[") {              # secrets['NOMBRE'] / secrets["NOMBRE"]
+            j++
+            while (substr(s, j, 1) == " ") j++
+            q = substr(s, j, 1)
+            if (q == "'" || q == "\"") {
+                j++
+                nm = ""
+                while (substr(s, j, 1) != q && substr(s, j, 1) != "") { nm = nm substr(s, j, 1); j++ }
+                if (nm != "") record_secret(nm, ln)
+            } else {
+                record_secret("<indice calculado>", ln)
+            }
+        } else if (c == ":") {
+            # es la clave YAML `secrets:`, no una lectura del contexto.
+        } else {
+            # `secrets` a secas: solo cuenta dentro de una expresion ${{ ... }},
+            # para no confundirlo con la palabra suelta en un `name:` o un
+            # comentario. Cubre toJSON(secrets), que vuelca todos los secretos.
+            inexpr = (index(substr(s, 1, i - 1), "${{") > 0)
+            if (inexpr) record_secret("<contexto completo>", ln)
+        }
+        i = i + 7
+    }
 }
 
 function record_trigger(name, ln) {
@@ -184,14 +241,12 @@ index($0, "\t") > 0 { has_tab = 1 }
 
 # --- regla 4 (recoleccion): referencias a secretos, texto crudo --------------
 {
-    _s = $0
-    while (match(_s, /secrets\.[A-Za-z_][A-Za-z0-9_-]*/)) {
-        _nm = substr(_s, RSTART + 8, RLENGTH - 8)
-        if (_nm != "GITHUB_TOKEN") {
-            if (!(_nm in secretref)) { secretref[_nm] = FNR; nsecret++ }
-        }
-        _s = substr(_s, RSTART + RLENGTH)
-    }
+    # Un comentario YAML puro no lee nada... SALVO que lleve `${{ }}` dentro: en
+    # un bloque `run:`, GitHub expande la plantilla ANTES de que el shell vea la
+    # almohadilla, asi que un `# ${{ secrets.X }}` si filtra. Se salta solo el
+    # comentario sin plantilla (prosa que menciona `secrets.ALGO`).
+    if (!(trim($0) ~ /^#/ && index($0, "${{") == 0))
+        scan_secrets($0, FNR)
     if (trim($0) ~ /^secrets:[ ]*inherit[ ]*$/)
         fail("secrets-inherit", "`secrets: inherit` entrega TODOS los secretos del repositorio al workflow llamado", FNR)
 }
@@ -254,7 +309,17 @@ index($0, "\t") > 0 { has_tab = 1 }
             if (jobkey_ind < 0) jobkey_ind = ci
             if (ci == jobkey_ind) {
                 k = keyof(line)
-                if (k == "permissions") job_perm = 1
+                if (k == "permissions") {
+                    job_perm = 1
+                    # No basta con DECLARAR `permissions:`: la regla es "minimos
+                    # por trabajo". Un `write-all`/`read-all` es una concesion en
+                    # bloque, es decir, exactamente lo que la regla prohibe.
+                    jpv = valof(line)
+                    sub(/[ ]*#.*$/, "", jpv)
+                    jpv = trim(jpv)
+                    if (jpv != "" && jpv != "{}")
+                        fail("job-permissions-broad", "el trabajo `" job "` concede permisos EN BLOQUE (`permissions: " jpv "`); se exige `{}` o un mapa explicito scope por scope", FNR)
+                }
             }
         }
     }
@@ -299,7 +364,7 @@ END {
     # ---- regla 4: secretos + disparadores alcanzables por terceros ----------
     if (("pull_request" in trig) && nsecret > 0) {
         for (n in secretref)
-            fail("secrets-untrusted", "el workflow se dispara con `pull_request` (alcanzable desde un fork) y referencia `secrets." n "`; ningun trabajo que procese contenido no confiable puede recibir secretos", secretref[n])
+            fail("secrets-untrusted", "el workflow se dispara con `pull_request` (alcanzable desde un fork) y lee el contexto de secretos (`" n "`); ningun trabajo que procese contenido no confiable puede recibir secretos", secretref[n])
     }
 
     # Si el fichero no es interpretable, no sostengo ningun FAIL estructural.
