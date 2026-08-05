@@ -201,11 +201,13 @@ discover_contexts() {
   fi
   local tmp; tmp="$(mktemp)"
   local sha
-  while IFS= read -r sha; do
+  # FD 3 + </dev/null: si 'gh' consumiese stdin se comeria el resto de la lista
+  # de commits y el descubrimiento saldria corto sin decirlo.
+  while IFS= read -r sha <&3; do
     [[ -n "$sha" ]] || continue
     gh api "repos/$REPO/commits/$sha/check-runs" \
-      --jq '.check_runs[] | "\(.name)\t\(.app.id)\t\(.conclusion)"' 2>/dev/null >>"$tmp" || true
-  done <<<"$shas"
+      --jq '.check_runs[] | "\(.name)\t\(.app.id)\t\(.conclusion)"' </dev/null 2>/dev/null >>"$tmp" || true
+  done 3<<<"$shas"
   if [[ -s "$tmp" ]]; then
     sort -u "$tmp" | while IFS=$'\t' read -r name appid concl; do
       printf '   %-40s app_id=%-8s conclusion=%s\n' "$name" "$appid" "$concl"
@@ -221,10 +223,10 @@ observed_contexts() {
   # imprime, una por linea, "nombre\tapp_id" de los checks vistos en main
   local shas sha
   shas="$(gh api "repos/$REPO/commits?sha=$SOURCE_BRANCH&per_page=20" --jq '.[].sha' 2>/dev/null)" || return 1
-  while IFS= read -r sha; do
+  while IFS= read -r sha <&3; do
     [[ -n "$sha" ]] || continue
-    gh api "repos/$REPO/commits/$sha/check-runs" --jq '.check_runs[] | "\(.name)\t\(.app.id)"' 2>/dev/null || true
-  done <<<"$shas" | sort -u
+    gh api "repos/$REPO/commits/$sha/check-runs" --jq '.check_runs[] | "\(.name)\t\(.app.id)"' </dev/null 2>/dev/null || true
+  done 3<<<"$shas" | sort -u
 }
 
 if [[ $DISCOVER_ONLY -eq 1 ]]; then
@@ -252,7 +254,9 @@ readonly NORM_FROM_PUT='{
   deletions:           (.allow_deletions // false),
   linear_history:      (.required_linear_history // false),
   conversation_res:    (.required_conversation_resolution // false),
-  lock_branch:         (.lock_branch // false)
+  lock_branch:         (.lock_branch // false),
+  block_creations:     (.block_creations // false),
+  fork_syncing:        (.allow_fork_syncing // false)
 }'
 
 readonly NORM_FROM_GET='{
@@ -268,7 +272,9 @@ readonly NORM_FROM_GET='{
   deletions:           (.allow_deletions.enabled // false),
   linear_history:      (.required_linear_history.enabled // false),
   conversation_res:    (.required_conversation_resolution.enabled // false),
-  lock_branch:         (.lock_branch.enabled // false)
+  lock_branch:         (.lock_branch.enabled // false),
+  block_creations:     (.block_creations.enabled // false),
+  fork_syncing:        (.allow_fork_syncing.enabled // false)
 }'
 
 # Inyecta actions_app_id en cada check requerido: el JSON declarativo solo

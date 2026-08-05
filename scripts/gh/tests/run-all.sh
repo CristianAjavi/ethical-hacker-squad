@@ -41,12 +41,18 @@ suite() {
 
 suite "Estructura del workflow (disparadores, permisos, SHAs, inyeccion)" \
   python3 "$SP/validate-workflow.py" "$ROOT/.github/workflows/promote-stable.yml"
+suite "NEGATIVO: el validador de workflows rechaza cada mutacion maligna" \
+  python3 "$SP/test-workflow-mutations.py"
 suite "Logica de decision de la promocion" \
   bash "$SP/test-promote-decision.sh"
 suite "Job de gates + caminos negativos de apply-governance.sh" \
   bash "$SP/test-gates-and-governance.sh"
+suite "NEGATIVO: el bucle de gates no puede saltarse ningun gate" \
+  bash "$SP/test-gates-loop.sh"
 suite "apply-governance.sh contra API simulada (rc=0 alcanzable)" \
   bash "$SP/test-governance-rc0.sh"
+suite "NEGATIVO: ningun campo de proteccion declarado queda sin vigilar" \
+  bash "$SP/test-governance-drift.sh"
 
 echo ""
 echo "==============================================================="
