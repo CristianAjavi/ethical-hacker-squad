@@ -1,0 +1,505 @@
+# ===========================================================================
+# release-stable — promocion automatica del canal `stable`.
+#
+# QUE HACE
+#   Toma un commit de `main` que ya reposo SOAK_DAYS dias sin issues en contra,
+#   verifica su arbol con los gates del repo, y publica el canal `stable`:
+#     - rama `stable` = arbol identico al de main + `version` semver en
+#       .claude-plugin/plugin.json + CHANGELOG.md
+#     - tag anotado `ethical-hacker-squad--vX.Y.Z` (convencion de `claude plugin tag`)
+#
+# MODELO DE CANALES (por que la rama y no un segundo marketplace)
+#   marketplace.json tiene UNA entrada con "source": "./". El canal lo elige el
+#   usuario al agregar el marketplace:
+#     /plugin marketplace add CristianAjavi/ethical-hacker-squad          -> latest (main)
+#     /plugin marketplace add CristianAjavi/ethical-hacker-squad@stable   -> stable
+#   Asi el usuario de stable lee el CATALOGO y el PLUGIN desde la rama stable, y
+#   su Claude Code nunca toca main. Con dos entradas apuntando a refs distintos,
+#   el catalogo seguiria viviendo en main y un commit malicioso alli podria
+#   redirigir a los usuarios de stable sin tocar jamas la rama stable.
+#   main OMITE `version` (cada commit = version nueva por SHA); stable la declara.
+#   Doc: https://code.claude.com/docs/en/plugin-marketplaces#version-resolution-and-release-channels
+#
+# POSTURA DE SEGURIDAD DEL WORKFLOW
+#   - Disparadores: solo `schedule` y `workflow_dispatch`. Nunca
+#     pull_request_target, nunca `issues`/`issue_comment`: ningun tercero puede
+#     provocar una ejecucion.
+#   - `permissions: {}` a nivel de workflow (deny-all) y permisos minimos
+#     declarados POR JOB.
+#   - Acciones de terceros fijadas por SHA de 40 caracteres (el SHA del COMMIT,
+#     desreferenciado; los tags anotados apuntan a un objeto tag, no al arbol
+#     que se ejecuta).
+#   - El unico contenido no confiable que toca este workflow son los ASUNTOS de
+#     commit que van al CHANGELOG; se sanean a texto plano en build-changelog.sh
+#     y ningun LLM los lee ni decide con ellos.
+#   - El bloqueo por issues es DETERMINISTA: se cuenta cuantas issues abiertas
+#     llevan una etiqueta que solo puede poner alguien con permiso de triage.
+#     Nunca se lee el titulo ni el cuerpo de una issue.
+#
+# LIMITACION DECLARADA (no la escondemos)
+#   Los tags son ANOTADOS pero NO FIRMADOS. Firmarlos exigiria darle una clave
+#   privada a un job automatico, que es peor riesgo que la firma que aporta.
+#   La procedencia auditable aqui es: el trailer `Source-Commit:` del commit de
+#   stable + el gate de diff que prueba que el arbol de stable es el de main.
+#   Un mantenedor puede re-firmar el tag a mano si quiere firma humana.
+#   Tampoco se emiten artifact attestations: Claude Code instala clonando el
+#   repo y nunca ejecuta `gh attestation verify`, asi que serian teatro.
+# ===========================================================================
+name: release-stable
+
+on:
+  schedule:
+    # Lunes 06:17 UTC. Minuto no redondo a proposito: la cola de cron de
+    # GitHub se satura en los minutos :00.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Commit de main a promover (vacio = el mas reciente que ya reposo)'
+        required: false
+        type: string
+      bump:
+        description: 'Salto de version'
+        required: false
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+      dry_run:
+        description: 'Solo simular: no empuja rama ni tag'
+        required: false
+        default: true
+        type: boolean
+
+# Deny-all. Cada job pide lo suyo y nada mas.
+permissions: {}
+
+concurrency:
+  group: release-stable
+  cancel-in-progress: false
+
+env:
+  # Version pineada del CLI que aporta los dos gates de primera parte
+  # (`plugin validate --strict` y `plugin tag --dry-run`). Verificada como
+  # publicada en npm el 2026-08-04.
+  CLAUDE_CODE_VERSION: '2.1.221'
+  SOAK_DAYS: '7'
+  BLOCK_LABEL: 'channel-stable-block'
+  PLUGIN_NAME: 'ethical-hacker-squad'
+
+jobs:
+  # -------------------------------------------------------------------------
+  resolve:
+    name: Resolver candidato y version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read   # leer historia de main y de stable
+      issues: read     # SOLO contar issues con la etiqueta de bloqueo
+    outputs:
+      should_release: ${{ steps.decide.outputs.should_release }}
+      source_sha: ${{ steps.candidate.outputs.sha }}
+      current_version: ${{ steps.ver.outputs.current_version }}
+      next_version: ${{ steps.ver.outputs.next_version }}
+      bump: ${{ steps.ver.outputs.bump }}
+      stable_exists: ${{ steps.candidate.outputs.stable_exists }}
+      last_source: ${{ steps.candidate.outputs.last_source }}
+    steps:
+      - name: Checkout (historia completa, sin dejar credenciales en el disco)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Traer main y stable
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --tags origin
+          if git ls-remote --exit-code --heads origin stable >/dev/null 2>&1; then
+            git fetch --no-tags origin +refs/heads/stable:refs/remotes/origin/stable
+            echo "stable existe"
+          else
+            echo "stable NO existe todavia (primer release)"
+          fi
+
+      - name: Elegir el commit candidato
+        id: candidate
+        env:
+          INPUT_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+
+          if git show-ref -q --verify refs/remotes/origin/stable; then
+            STABLE_EXISTS=true
+            LAST_SOURCE=$(git log -1 --format=%B origin/stable \
+              | sed -n 's/^Source-Commit:[[:space:]]*//p' | head -n1)
+          else
+            STABLE_EXISTS=false
+            LAST_SOURCE=""
+          fi
+          echo "stable_exists=$STABLE_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "last_source=$LAST_SOURCE" >> "$GITHUB_OUTPUT"
+
+          # --first-parent NO es cosmetico: es la ventana de reposo.
+          # `git rev-list --before` filtra por FECHA DE COMMIT, y esa fecha la
+          # elige quien escribe el commit (GIT_COMMITTER_DATE). Sin
+          # --first-parent, el recorrido entra en las ramas mergeadas, asi que
+          # un PR del loop de conocimiento con un commit retrofechado se
+          # promueve el mismo dia en que se mergea. MEDIDO en un repo de
+          # prueba: commit retrofechado a 8 dias, mergeado hoy -> era el
+          # candidato elegido, con 0 dias de reposo real.
+          # Con --first-parent solo se miran los commits que GitHub crea al
+          # mergear (fecha del servidor) y que fueron de verdad un estado de
+          # main. Ademas se exige pertenencia a esa cadena de forma explicita.
+          FP_CHAIN=$(git rev-list --first-parent origin/main)
+
+          if [ -n "${INPUT_SHA:-}" ]; then
+            SHA=$(git rev-parse --verify "${INPUT_SHA}^{commit}")
+            echo "candidato manual: $SHA"
+          else
+            SHA=$(git rev-list -1 --first-parent --before="${SOAK_DAYS} days ago" origin/main || true)
+            if [ -z "$SHA" ]; then
+              echo "::notice::Ningun commit de la cadena first-parent de main tiene mas de ${SOAK_DAYS} dias. Nada que promover."
+              echo "sha=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "candidato por reposo (>= ${SOAK_DAYS} dias): $SHA"
+          fi
+
+          # INVARIANTE DURA, para los dos caminos: el candidato tiene que ser
+          # un estado por el que main paso de verdad. Un commit que solo vive
+          # dentro de una rama mergeada es un arbol intermedio que nunca fue
+          # main y que ningun CI de main evaluo.
+          if ! printf '%s\n' "$FP_CHAIN" | grep -qxF "$SHA"; then
+            echo "::error::$SHA no esta en la cadena first-parent de origin/main: nunca fue un estado de main." >&2
+            exit 1
+          fi
+          echo "  [OK] $SHA pertenece a la cadena first-parent de main"
+          echo "  fecha de commit: $(git show -s --format=%cI "$SHA")"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Comprobar la ventana de reposo (bloqueo determinista por etiqueta)
+        id: soak
+        if: steps.candidate.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Solo se cuenta. Ni el titulo ni el cuerpo de ninguna issue entran en
+          # la decision: eso seria darle el volante a texto de terceros.
+          COUNT=$(gh api -X GET "repos/${REPO}/issues" \
+                    -f state=open -f labels="${BLOCK_LABEL}" -f per_page=100 \
+                    --jq 'length')
+          echo "issues abiertas con la etiqueta '${BLOCK_LABEL}': $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::Hay $COUNT issue(s) abiertas con '${BLOCK_LABEL}'. Promocion bloqueada." >&2
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "blocked=false" >> "$GITHUB_OUTPUT"
+
+      - name: Calcular la version siguiente
+        id: ver
+        if: steps.candidate.outputs.sha != ''
+        env:
+          SHA: ${{ steps.candidate.outputs.sha }}
+          STABLE_EXISTS: ${{ steps.candidate.outputs.stable_exists }}
+          BUMP: ${{ inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            CURRENT=$(git show origin/stable:.claude-plugin/plugin.json \
+                      | jq -r '.version // "0.0.0"')
+            FROM=$(git log -1 --format=%B origin/stable \
+                   | sed -n 's/^Source-Commit:[[:space:]]*//p' | head -n1)
+          else
+            CURRENT="0.0.0"
+            FROM=""
+          fi
+          echo "version actual en stable: $CURRENT ; base del diff: ${FROM:-<historia completa>}"
+
+          set +e
+          OUT=$(scripts/gh/next-version.sh --current "$CURRENT" --from "$FROM" --to "$SHA" --bump "$BUMP")
+          RC=$?
+          set -e
+          printf '%s\n' "$OUT"
+          case "$RC" in
+            0) : ;;
+            1) echo "::notice::Nada que publicar."; echo "current_version=$CURRENT" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            *) echo "::error::next-version.sh no pudo medir (rc=$RC)"; exit 1 ;;
+          esac
+          printf '%s\n' "$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Decidir
+        id: decide
+        env:
+          SHA: ${{ steps.candidate.outputs.sha }}
+          LAST_SOURCE: ${{ steps.candidate.outputs.last_source }}
+          NEXT: ${{ steps.ver.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SHA:-}" ] || [ -z "${NEXT:-}" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin candidato o sin version nueva."
+            exit 0
+          fi
+          if [ "${LAST_SOURCE:-}" = "$SHA" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::stable ya apunta a $SHA. Idempotente: no se hace nada."
+            exit 0
+          fi
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "Se promovera $SHA como $NEXT"
+
+  # -------------------------------------------------------------------------
+  verify:
+    name: Gates sobre el arbol candidato
+    needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read   # nada mas: este job no publica
+    steps:
+      # Dos checkouts a proposito:
+      #   tools/  = la punta de main -> el codigo que JUZGA
+      #   source/ = el commit candidato -> el contenido JUZGADO
+      # Nunca se corren los gates que trae el propio candidato: si un commit
+      # comprometido pudiera aportar sus gates, se estaria auto-aprobando.
+      - name: Checkout de los gates (punta de main)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: tools
+          persist-credentials: false
+
+      - name: Checkout del commit candidato
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '20'
+
+      - name: Instalar el CLI de Claude Code (version pineada)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      - name: gate-plugin-integrity
+        env:
+          EHS_REPO_ROOT: ${{ github.workspace }}/source
+        run: bash tools/scripts/gates/gate-plugin-integrity.sh
+
+      - name: gate-plugin-version (canal latest = el arbol tal cual esta en main)
+        env:
+          EHS_REPO_ROOT: ${{ github.workspace }}/source
+          EHS_CHANNEL: latest
+          EHS_REQUIRE_CLAUDE_CLI: '1'   # sin el CLI, rc=2: no se aprueba a ciegas
+        run: bash tools/scripts/gates/gate-plugin-version.sh
+
+  # -------------------------------------------------------------------------
+  promote:
+    name: Publicar stable
+    needs: [resolve, verify]
+    if: needs.resolve.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # unico job con escritura: empuja rama stable y el tag
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      NEXT_VERSION: ${{ needs.resolve.outputs.next_version }}
+      LAST_SOURCE: ${{ needs.resolve.outputs.last_source }}
+      STABLE_EXISTS: ${{ needs.resolve.outputs.stable_exists }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+    steps:
+      # Mismo reparto que en `verify`: tools/ juzga, source/ es lo juzgado.
+      - name: Checkout de los scripts de release (punta de main)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: tools
+          persist-credentials: false
+
+      - name: Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '20'
+
+      - name: Instalar el CLI de Claude Code (version pineada)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      # Este checkout va DESPUES del npm install a proposito: es el unico del
+      # workflow que deja el token con contents:write escrito en .git/config, y
+      # `npm install` ejecuta scripts de terceros. Instalar primero reduce la
+      # ventana en que ese token esta en disco junto a codigo que no es nuestro.
+      - name: Checkout del repo para publicar (historia completa)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          path: source
+
+      - name: Construir el arbol de stable
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          WORK="${RUNNER_TEMP}"
+
+          # El arbol de stable ES el de main. Se parte del candidato exacto.
+          git checkout --detach "$SOURCE_SHA"
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            git fetch --no-tags origin +refs/heads/stable:refs/remotes/origin/stable
+            # Solo se arrastra el CHANGELOG anterior; nada mas de stable.
+            if git cat-file -e "origin/stable:CHANGELOG.md" 2>/dev/null; then
+              git show "origin/stable:CHANGELOG.md" > "$WORK/prev-changelog.md"
+            else
+              : > "$WORK/prev-changelog.md"
+            fi
+            FROM="$LAST_SOURCE"
+          else
+            : > "$WORK/prev-changelog.md"
+            FROM=""
+          fi
+
+          # 1) unica diferencia funcional frente a main: el semver explicito.
+          tmp=$(mktemp)
+          jq --arg v "$NEXT_VERSION" '.version = $v' .claude-plugin/plugin.json > "$tmp"
+          mv "$tmp" .claude-plugin/plugin.json
+
+          # 2) CHANGELOG (asuntos de commit saneados a texto plano).
+          "${GITHUB_WORKSPACE}/tools/scripts/gh/build-changelog.sh" \
+            --version "$NEXT_VERSION" --from "$FROM" --to "$SOURCE_SHA" \
+            --repo "${GITHUB_REPOSITORY}" > "$WORK/section.md"
+
+          {
+            echo "# Changelog — canal stable"
+            echo
+            cat "$WORK/section.md"
+            echo
+            sed '1{/^# Changelog/d;}' "$WORK/prev-changelog.md" | sed '/./,$!d'
+          } > CHANGELOG.md
+
+          # 3) El commit de stable se cuelga del ANTERIOR commit de stable, no
+          #    del candidato de main.
+          #    Por que: `git commit` aqui dejaria como padre a $SOURCE_SHA, y
+          #    ese commit NO desciende del stable anterior (el stable anterior
+          #    nunca se mergeo a main). MEDIDO en un repo de prueba: el commit
+          #    del segundo release no es descendiente del primero, asi que
+          #    `git push origin refs/heads/stable:refs/heads/stable` se rechaza
+          #    por non-fast-forward. Tal como estaba, la promocion funcionaba
+          #    exactamente UNA vez y despues fallaba para siempre.
+          #    Con commit-tree el ARBOL sigue siendo el de main (que es lo que
+          #    el GATE de diff comprueba) y la rama stable queda append-only:
+          #    cada release avanza en fast-forward y nadie tiene que
+          #    force-pushear una rama que los usuarios ya clonaron.
+          git add .claude-plugin/plugin.json CHANGELOG.md
+          TREE=$(git write-tree)
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            PARENT=$(git rev-parse refs/remotes/origin/stable)
+          else
+            PARENT="$SOURCE_SHA"
+          fi
+          NEW=$(git commit-tree "$TREE" -p "$PARENT" \
+                  -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
+                  -m "Source-Commit: ${SOURCE_SHA}" \
+                  -m "Promocion automatica del canal stable. El arbol es identico a main@${SOURCE_SHA} salvo .claude-plugin/plugin.json (semver) y CHANGELOG.md.")
+          git branch -f stable "$NEW"
+          git reset -q --hard "$NEW"
+          echo "commit de stable: $NEW (padre: $PARENT)"
+
+          if [ "$STABLE_EXISTS" = "true" ]; then
+            if git merge-base --is-ancestor refs/remotes/origin/stable "$NEW"; then
+              echo "  [OK] avanza en fast-forward sobre el stable publicado"
+            else
+              echo "::error::el commit nuevo no desciende de origin/stable: el push seria non-fast-forward" >&2
+              exit 1
+            fi
+          fi
+
+      - name: 'GATE: el arbol de stable es el de main salvo dos archivos'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          # Este es el gate que sostiene todo el modelo: prueba que la promocion
+          # no introdujo NADA que no haya pasado por main y por los gates.
+          if ! git diff --quiet "$SOURCE_SHA" stable -- . \
+              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md'; then
+            echo "::error::stable difiere de main@${SOURCE_SHA} fuera de plugin.json y CHANGELOG.md" >&2
+            git diff --stat "$SOURCE_SHA" stable -- . \
+              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md' >&2
+            exit 1
+          fi
+          echo "[OK] arbol identico salvo los dos archivos esperados"
+
+          # Y dentro de plugin.json, la unica diferencia permitida es `version`.
+          git show "${SOURCE_SHA}:.claude-plugin/plugin.json" | jq -S 'del(.version)' > "${RUNNER_TEMP}/a.json"
+          git show "stable:.claude-plugin/plugin.json"        | jq -S 'del(.version)' > "${RUNNER_TEMP}/b.json"
+          if ! diff -u "${RUNNER_TEMP}/a.json" "${RUNNER_TEMP}/b.json"; then
+            echo "::error::plugin.json cambio en algo mas que 'version'" >&2
+            exit 1
+          fi
+          echo "[OK] plugin.json solo cambia en 'version'"
+
+      - name: gate-plugin-version (canal stable)
+        env:
+          EHS_REPO_ROOT: ${{ github.workspace }}/source
+          EHS_CHANNEL: stable
+          EHS_REQUIRE_CLAUDE_CLI: '1'
+        run: bash tools/scripts/gates/gate-plugin-version.sh
+
+      - name: gate-plugin-integrity (arbol final)
+        env:
+          EHS_REPO_ROOT: ${{ github.workspace }}/source
+        run: bash tools/scripts/gates/gate-plugin-integrity.sh
+
+      - name: 'GATE: claude plugin tag --dry-run'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          # Comprueba que plugin.json y la entrada del marketplace concuerdan
+          # ANTES de crear el tag. Sin pipes: el rc de un pipeline seria el del
+          # ultimo comando y enmascararia el fallo.
+          claude plugin tag --dry-run .
+
+      - name: Crear tag anotado y empujar
+        if: env.DRY_RUN != 'true'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          TAG="${PLUGIN_NAME}--v${NEXT_VERSION}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::el tag $TAG ya existe" >&2
+            exit 1
+          fi
+          # Tag ANOTADO, no firmado: ver la limitacion declarada arriba.
+          git tag -a "$TAG" -m "${PLUGIN_NAME} ${NEXT_VERSION} (source ${SOURCE_SHA})"
+          git push origin "refs/heads/stable:refs/heads/stable"
+          git push origin "refs/tags/${TAG}"
+          echo "publicado $TAG -> stable"
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## release-stable"
+            echo
+            echo "| campo | valor |"
+            echo "|---|---|"
+            echo "| commit de origen | \`${SOURCE_SHA}\` |"
+            echo "| version | \`${NEXT_VERSION}\` |"
+            echo "| tag | \`${PLUGIN_NAME}--v${NEXT_VERSION}\` |"
+            echo "| dry run | \`${DRY_RUN}\` |"
+            echo
+            echo "Instalacion del canal stable:"
+            echo
+            echo '```'
+            echo "/plugin marketplace add ${GITHUB_REPOSITORY}@stable"
+            echo "/plugin install ${PLUGIN_NAME}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
