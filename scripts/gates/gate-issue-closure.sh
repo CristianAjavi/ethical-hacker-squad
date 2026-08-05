@@ -48,7 +48,15 @@ RC_FAIL=1
 RC_UNMEASURABLE=2
 
 REGRESSION_LABELS="${REGRESSION_LABELS:-tipo/falso-positivo,tipo/falso-negativo}"
-EVIDENCE_PATHS="${EVIDENCE_PATHS:-scripts/gates/*,tests/*,cases/*}"
+# Las rutas las fija el contrato G8 de docs/gate-requirements.md: "scripts/gates/",
+# "tests/" o "references/knowledge/**". `cases/` no existe en el repo y no esta en el
+# contrato: dejarlo era una ruta muerta, y faltaba justo donde vive el corpus, con lo
+# que arreglar un falso negativo añadiendo el caso al corpus (el remedio principal que
+# nombra el contrato) fallaba el gate. Un gate que castiga el arreglo correcto se acaba
+# esquivando. Si el contrato cambia, cambia esta linea EN EL MISMO PR.
+# El corpus vive en skills/<skill>/references/knowledge/, no en la raiz: el glob tiene
+# que casar la ruta REAL, no la abreviatura con la que el contrato lo nombra.
+EVIDENCE_PATHS="${EVIDENCE_PATHS:-scripts/gates/*,tests/*,skills/*/references/knowledge/*}"
 
 PR_NUMBER="${PR_NUMBER:-}"
 REPO="${GITHUB_REPOSITORY:-}"

@@ -4,7 +4,9 @@
 
   QUE BLOQUEA DE VERDAD (scripts/gates/gate-issue-closure.sh, en cada PR):
   si este PR declara cerrar un issue etiquetado tipo/falso-positivo o tipo/falso-negativo
-  y NO toca ningun fichero de scripts/gates/, tests/ o cases/, el gate falla (rc=1).
+  y NO toca ningun fichero de scripts/gates/, tests/ o
+  skills/*/references/knowledge/ (el contrato G8 de docs/gate-requirements.md),
+  el gate falla (rc=1).
   Borrar ese fichero tampoco cuenta: el gate descarta los ficheros que el PR elimina.
 
   QUE NO BLOQUEA (lo revisa una persona): no declarar ningun issue no falla el gate,
@@ -35,7 +37,7 @@ Fixes #
   Rellena las tres lineas. El gate exige que el PR toque de verdad un gate o el corpus de casos.
 -->
 
-- **Gate o caso:** <!-- ruta exacta: scripts/gates/<x>.sh, tests/cases/<x>, cases/<x> -->
+- **Gate o caso:** <!-- ruta exacta: scripts/gates/<x>.sh, tests/fixtures/<x>, o el caso añadido a skills/*/references/knowledge/<x>.md -->
 - **Que detecta:** <!-- la entrada concreta que antes pasaba y ahora falla -->
 - **Como falla si la regresion vuelve:** <!-- salida y codigo de salida esperados: 1 = medi y falla -->
 

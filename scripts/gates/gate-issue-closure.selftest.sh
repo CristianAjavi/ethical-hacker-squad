@@ -28,7 +28,10 @@ cat > "$T/labels.txt" <<'EOF'
 EOF
 
 printf 'scripts/gates/gate-issue-closure.sh\n' > "$T/files.gate"
-printf 'tests/cases/pickle-worker.md\n'        > "$T/files.case"
+printf 'tests/fixtures/pickle-worker.yml\n'    > "$T/files.case"
+# Los tres remedios que admite el contrato G8 de docs/gate-requirements.md.
+printf 'skills/ethical-hacker-squad/references/knowledge/web-api.md\n' > "$T/files.corpus"
+# Prosa: explicar el error en la skill no es un check. G8 lo rechaza a proposito.
 printf 'README.md\nskills/ethical-hacker-squad/SKILL.md\n' > "$T/files.norel"
 : > "$T/files.empty"
 
@@ -87,8 +90,13 @@ check "--deleted-files ilegible" 2 \
 check "falso positivo + gate tocado" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b1" --labels-file "$T/labels.txt" --changed-files "$T/files.gate"
 
-check "falso negativo + caso del corpus tocado" 0 \
+check "falso negativo + fixture de gate tocado" 0 \
   "$GATE" --repo "$REPO" --body-file "$T/b2" --labels-file "$T/labels.txt" --changed-files "$T/files.case"
+
+# G8 nombra el caso de corpus como remedio principal de un falso negativo. Con el
+# EVIDENCE_PATHS anterior ("cases/*", que no existe) este PR correcto FALLABA.
+check "falso negativo + caso añadido al corpus" 0 \
+  "$GATE" --repo "$REPO" --body-file "$T/b2" --labels-file "$T/labels.txt" --changed-files "$T/files.corpus"
 
 printf 'Closes #12\n' > "$T/b5"
 check "issue de tipo bug: no se exige regresion" 0 \
