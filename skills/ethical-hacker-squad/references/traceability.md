@@ -51,61 +51,63 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
+Five packs ship as two files each. The `Pack` column names the file that holds the section, so a row citing two files means both are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md`, `supply-chain.md` / `supply-chain-secrets-malware.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|
-| `WSTG-INFO-*`, `WSTG-CONF-*` | web-api | `web-api.md` §11, infra-cloud §5 | `WEB-22`, `INF-17` |
-| `WSTG-IDNT-*`, `WSTG-ATHN-*`, `WSTG-SESS-*` | web-api | §1 | `WEB-01`..`WEB-03` |
-| `WSTG-ATHZ-*` | web-api | §2 | `WEB-04`..`WEB-06` |
-| `WSTG-INPV-*` | web-api | §3, §4, §5, §6 | `WEB-07`..`WEB-14` |
-| `WSTG-ERRH-*` | web-api | §11 | `WEB-22` |
-| `WSTG-CRYP-*` | web-api | §9 | `WEB-19` |
-| `WSTG-BUSL-*` | web-api | §8 | `WEB-17`, `WEB-18` |
-| `WSTG-CLNT-*` | web-api | §6, §7 | `WEB-13`..`WEB-16` |
-| `WSTG-APIT-*` | web-api | §10 | `WEB-20`, `WEB-21` |
-| `API1:2023`..`API5:2023` | web-api | §1, §2 | `WEB-01`..`WEB-06` |
-| `API6:2023`, `API4:2023` | web-api | §8 | `WEB-17`, `WEB-18` |
-| `API7:2023` | web-api | §4 | `WEB-10` |
-| `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | §7, §11 / §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
-| `ASVS 5.0 V1`, `V2`, `V5` | web-api | §3, §4, §5 | `WEB-07`..`WEB-12` |
-| `ASVS 5.0 V3` | web-api | §6, §7 | `WEB-13`..`WEB-16` |
-| `ASVS 5.0 V4` | web-api | §10 | `WEB-20`, `WEB-21` |
-| `ASVS 5.0 V6`, `V7`, `V9`, `V10` | web-api | §1 | `WEB-01`..`WEB-03` |
-| `ASVS 5.0 V8` | web-api | §2 | `WEB-04`..`WEB-06` |
-| `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | §9 / §1 | `WEB-19`, `INF-03` |
-| `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | §1, §5 / §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
-| `ASVS 5.0 V15` | web-api / remediator / ai-safety | §9 / part A / §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
-| `ASVS 5.0 V16` | web-api / infra-cloud | §11 / §1 | `WEB-22`, `INF-06` |
-| `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | §2, §6 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12` |
-| `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | §5, §7 | `MOB-09`, `MOB-10`, `MOB-13` |
-| `MASVS-PLATFORM-*` | mobile | §1, §3, §4, §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15` |
-| `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | §6, §7 | `MOB-11`..`MOB-13` |
-| `MASVS-PRIVACY-*` | privacy-abuse / mobile | §5 / §2 | `PRV-07`, `MOB-04` |
-| `A01:2025` | web-api | §2, §4 | `WEB-04`..`WEB-06`, `WEB-10` |
-| `A02:2025` | infra-cloud | §1..§3, §5 | `INF-01`..`INF-12`, `INF-17` |
-| `A03:2025` | supply-chain | §1..§6, §8, §9 | `SUP-01`..`SUP-12`, `SUP-16`..`SUP-20` |
-| `A04:2025` | web-api / infra-cloud | §9 / §1 | `WEB-19`, `INF-03` |
-| `A05:2025` | web-api | §3 | `WEB-07`..`WEB-09` |
+| `WSTG-INFO-*`, `WSTG-CONF-*` | web-api | `web-api-clientside-logic.md` §11, `infra-cloud-cicd-exposure.md` §5 | `WEB-22`, `INF-17` |
+| `WSTG-IDNT-*`, `WSTG-ATHN-*`, `WSTG-SESS-*` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
+| `WSTG-ATHZ-*` | web-api | `web-api.md` §2 | `WEB-04`..`WEB-06` |
+| `WSTG-INPV-*` | web-api | `web-api.md` §3, §4, §5 + `web-api-clientside-logic.md` §6 | `WEB-07`..`WEB-14` |
+| `WSTG-ERRH-*` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
+| `WSTG-CRYP-*` | web-api | `web-api-clientside-logic.md` §9 | `WEB-19` |
+| `WSTG-BUSL-*` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
+| `WSTG-CLNT-*` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
+| `WSTG-APIT-*` | web-api | `web-api-clientside-logic.md` §10 | `WEB-20`, `WEB-21` |
+| `API1:2023`..`API5:2023` | web-api | `web-api.md` §1, §2 | `WEB-01`..`WEB-06` |
+| `API6:2023`, `API4:2023` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
+| `API7:2023` | web-api | `web-api.md` §4 | `WEB-10` |
+| `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | `web-api-clientside-logic.md` §7, §11 / `supply-chain.md` §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
+| `ASVS 5.0 V1`, `V2`, `V5` | web-api | `web-api.md` §3, §4, §5 | `WEB-07`..`WEB-12` |
+| `ASVS 5.0 V3` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
+| `ASVS 5.0 V4` | web-api | `web-api-clientside-logic.md` §10 | `WEB-20`, `WEB-21` |
+| `ASVS 5.0 V6`, `V7`, `V9`, `V10` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
+| `ASVS 5.0 V8` | web-api | `web-api.md` §2 | `WEB-04`..`WEB-06` |
+| `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | `web-api-clientside-logic.md` §9 / `infra-cloud.md` §1 | `WEB-19`, `INF-03` |
+| `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | `infra-cloud.md` §1 + `infra-cloud-cicd-exposure.md` §5 / `privacy-abuse.md` §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
+| `ASVS 5.0 V15` | web-api / remediator / ai-safety | `web-api-clientside-logic.md` §9 / part A / `ai-safety-data-output.md` §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
+| `ASVS 5.0 V16` | web-api / infra-cloud | `web-api-clientside-logic.md` §11 / `infra-cloud.md` §1 | `WEB-22`, `INF-06` |
+| `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | `mobile.md` §2, §6 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12` |
+| `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | `mobile.md` §5, §7 | `MOB-09`, `MOB-10`, `MOB-13` |
+| `MASVS-PLATFORM-*` | mobile | `mobile.md` §1, §3, §4 + `mobile-ios.md` §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15` |
+| `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | `mobile.md` §6, §7 | `MOB-11`..`MOB-13` |
+| `MASVS-PRIVACY-*` | privacy-abuse / mobile | `privacy-abuse.md` §5 / `mobile.md` §2 | `PRV-07`, `MOB-04` |
+| `A01:2025` | web-api | `web-api.md` §2, §4 | `WEB-04`..`WEB-06`, `WEB-10` |
+| `A02:2025` | infra-cloud | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §5 | `INF-01`..`INF-12`, `INF-17` |
+| `A03:2025` | supply-chain | `supply-chain.md` §1..§6 + `supply-chain-secrets-malware.md` §8, §9 | `SUP-01`..`SUP-12`, `SUP-16`..`SUP-20` |
+| `A04:2025` | web-api / infra-cloud | `web-api-clientside-logic.md` §9 / `infra-cloud.md` §1 | `WEB-19`, `INF-03` |
+| `A05:2025` | web-api | `web-api.md` §3 | `WEB-07`..`WEB-09` |
 | `A06:2025` | leader | design review across packs | — |
-| `A07:2025` | web-api | §1 | `WEB-01`..`WEB-03` |
-| `A08:2025` | supply-chain | §5, §6 | `SUP-09`..`SUP-12` |
-| `A09:2025` | infra-cloud / web-api | §1 / §11 | `INF-06`, `WEB-22` |
-| `A10:2025` | web-api | §11 | `WEB-22` |
-| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | §4 / §5, §6 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12` |
-| `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | §5, §6 | `SUP-09`..`SUP-12` |
-| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | §5..§8 / part A | `SUP-13`..`SUP-16`, `REM-*` |
-| `LLM01:2026`, `AML.T0051` | ai-safety | §0, §1 | `AI-01`..`AI-04` |
-| `LLM02:2026`, `LLM08:2026` | ai-safety | §6 | `AI-17`, `AI-18` |
-| `LLM03:2026` | ai-safety | §2 | `AI-05`..`AI-07` |
-| `LLM04:2026`, `ASI04` | ai-safety + supply-chain | §3 | `AI-08`..`AI-11` |
-| `LLM05:2026`, `ASI06` | ai-safety | §4 | `AI-12`..`AI-14` |
-| `LLM06:2026` | ai-safety | §7 | `AI-19` |
-| `LLM09:2026` | ai-safety | §4 | `AI-12`..`AI-14` |
-| `LLM10:2026` | ai-safety | §5 | `AI-15`, `AI-16` |
-| `ASI01`, `ASI09` | ai-safety | §0, §1 | `AI-01`..`AI-04` |
-| `ASI02`, `ASI03`, `ASI05` | ai-safety | §2 | `AI-05`..`AI-07` |
-| `ASI07`, `ASI08`, `ASI10` | ai-safety | §2, §3 | `AI-05`..`AI-11` |
-| `AML.T0068` | ai-safety | §8 | `AI-20` |
-| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud | §1..§5 | `INF-01`..`INF-17` |
+| `A07:2025` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
+| `A08:2025` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
+| `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-clientside-logic.md` §11 | `INF-06`, `WEB-22` |
+| `A10:2025` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
+| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 / `supply-chain.md` §5, §6 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12` |
+| `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
+| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | `supply-chain.md` §5..§7 + `supply-chain-secrets-malware.md` §8 / part A | `SUP-13`..`SUP-16`, `REM-*` |
+| `LLM01:2026`, `AML.T0051` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
+| `LLM02:2026`, `LLM08:2026` | ai-safety | `ai-safety-data-output.md` §6 | `AI-17`, `AI-18` |
+| `LLM03:2026` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
+| `LLM04:2026`, `ASI04` | ai-safety + supply-chain | `ai-safety.md` §3 | `AI-08`..`AI-11` |
+| `LLM05:2026`, `ASI06` | ai-safety | `ai-safety-data-output.md` §4 | `AI-12`..`AI-14` |
+| `LLM06:2026` | ai-safety | `ai-safety-data-output.md` §7 | `AI-19` |
+| `LLM09:2026` | ai-safety | `ai-safety-data-output.md` §4 | `AI-12`..`AI-14` |
+| `LLM10:2026` | ai-safety | `ai-safety-data-output.md` §5 | `AI-15`, `AI-16` |
+| `ASI01`, `ASI09` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
+| `ASI02`, `ASI03`, `ASI05` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
+| `ASI07`, `ASI08`, `ASI10` | ai-safety | `ai-safety.md` §2, §3 | `AI-05`..`AI-11` |
+| `AML.T0068` | ai-safety | `ai-safety-data-output.md` §8 | `AI-20` |
+| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 | `INF-01`..`INF-17` |
 
 ## Known coverage gaps
 
