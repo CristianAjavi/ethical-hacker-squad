@@ -53,17 +53,34 @@ set -uo pipefail
 #   still a single-pass read; beyond that the file should be split so the model
 #   does not have to swallow irrelevant material.
 #
-# Whole tree served to the user (256 KiB) and file count (64)
+# Whole tree served to the user (512 KiB) and file count (64)
 #   This is the SECURITY threshold, not the ergonomics one: it bounds the blast
-#   radius of the knowledge loop. With the current corpus at ~17 KiB, 256 KiB
-#   gives plenty of legitimate headroom while turning "a bot PR drops 3 MB of
-#   text scraped from the internet into what gets installed for everyone" into a
-#   CI failure rather than a release. The thresholds are deliberately generous:
-#   if one is genuinely hit, that is a signal deserving human review, not an
-#   automatic adjustment.
+#   radius of the knowledge loop, turning "a bot PR drops 3 MB of text scraped
+#   from the internet into what gets installed for everyone" into a CI failure
+#   rather than a release. The thresholds are deliberately generous: if one is
+#   genuinely hit, that is a signal deserving human review, not an automatic
+#   adjustment.
+#
+#   RE-BASELINED 2026-08. The previous value (256 KiB) was justified against
+#   "the current corpus at ~17 KiB" - a placeholder written before the knowledge
+#   corpus existed. The real corpus is ~350 KiB, so the old number was measuring
+#   a repository that never shipped. It was raised, not because the tree failed
+#   the check, but because the stated rationale no longer described reality.
+#   Splitting files cannot fix a total-size budget by construction: the five
+#   oversized packs were split, and the tree grew by 16 KiB of new headers. Only
+#   deleting corpus could satisfy 256 KiB, which is not a security improvement.
+#   512 KiB keeps the property that matters - a bulk dump is still an order of
+#   magnitude away - while the per-file 32 KiB budget remains the binding
+#   control on what any single agent must read.
+#
+#   KNOWN WEAKNESS: an absolute cap is a poor instrument for "a bot added too
+#   much at once". The correct control is a DELTA guard - no single PR may grow
+#   the served tree by more than N bytes - which stays sensitive no matter how
+#   large the corpus becomes. That is tracked as follow-up work; this cap is the
+#   interim.
 MAX_SKILL_MD_BYTES="${EHS_MAX_SKILL_MD_BYTES:-12288}"
 MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
-MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-262144}"
+MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-524288}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an

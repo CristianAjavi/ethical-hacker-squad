@@ -35,12 +35,15 @@ Every relative Markdown link, and every path interpolated from the plugin-root v
 
 Progressive disclosure only works if the entry point stays small.
 
-| Item | Limit | Rationale |
-|---|---|---|
-| `SKILL.md` | 500 lines | Official guidance for skill entry points; it stays in context for the whole session. |
-| Any single file under `references/` | 600 lines | Above this a specialist cannot load selectively. |
-| Total corpus under `references/knowledge/` | 3,500 lines | Loading everything must remain obviously wrong. |
-| Any single `agents/*.md` | 120 lines | An agent definition is a contract, not a manual. |
+**Bytes are the authority, lines are the sanity check.** Both units appear below because both were specified independently, and they disagreed: a 543-line table-dense pack weighed 44 KiB while the line budget said it was fine. Lines are a poor proxy for what a model actually pays; bytes are closer. Where the two conflict, the byte budget in `gate-plugin-integrity.sh` wins.
+
+| Item | Byte limit | Line limit | Rationale |
+|---|---|---|---|
+| `SKILL.md` | 12 KiB | 500 | Loaded whole every time the skill fires; its cost is not amortisable. |
+| Any single file under `references/` | 32 KiB | 600 | Loaded one at a time on demand. Beyond this, split the file - do not raise the limit. |
+| Total corpus under `references/knowledge/` | - | 3,500 | Loading everything must remain obviously wrong. |
+| Whole served tree (`skills` + `agents`) | 512 KiB, 64 files | - | Security threshold: bounds the blast radius of the knowledge loop. Re-baselined 2026-08; see the gate's own comment for why, and for why a delta guard is the better instrument. |
+| Any single `agents/*.md` | - | 120 | An agent definition is a contract, not a manual. |
 
 Exceeding a limit fails with the file and its line count.
 
@@ -130,25 +133,31 @@ The aggregate is recorded as informational with a **no-regression** rule: it may
 
 Labels are English, matching the repository language. Anyone wiring automation should use exactly these strings.
 
+Every label is prefixed. The single source of truth is `scripts/gh/labels.sh`; `gate-labels-taxonomy.sh` fails if an issue form, a gate or `governance.json` references a label that does not exist there. 35 labels.
+
 **Type — the two first-class types are audit-quality errors, not crashes:**
 
 | Label | Meaning |
 |---|---|
-| `false-positive` | The squad reported something that is not exploitable. |
-| `false-negative` | The squad missed a real finding. |
-| `knowledge-gap` | A surface, stack or class with no procedure covering it. |
-| `licensing` | A licence, attribution or `NOTICE` problem. |
-| `tooling` | A tool invocation, output interpretation or availability problem. |
-| `bug` | The skill, plugin or automation malfunctions mechanically. |
-| `docs` | Documentation only. |
+| `type/false-positive` | The squad reported something that is not exploitable. |
+| `type/false-negative` | The squad missed a real finding. |
+| `type/knowledge-gap` | A surface, stack or class with no procedure covering it. |
+| `type/bug` | The plugin does not do what it says (install, flow, format). |
+| `type/enhancement` | Improvement to an existing capability. |
+| `type/documentation` | Documentation or skill text only. |
+| `type/maintenance` | Repository infrastructure, CI, dependencies. |
 
-**Area — one per role:** `area/web-api`, `area/mobile`, `area/infra-cloud`, `area/supply-chain`, `area/ai-safety`, `area/privacy-abuse`, `area/remediation`, `area/lead`, `area/plugin`, `area/ci`.
+**Area — one per role:** `area/security-lead`, `area/web-api`, `area/mobile`, `area/infra-cloud`, `area/supply-chain`, `area/ai-safety`, `area/privacy-abuse`, `area/remediator`, `area/verifier`, `area/plugin`, `area/ci`.
 
 **Severity:** `severity/critical`, `severity/high`, `severity/medium`, `severity/low`, `severity/info`.
 
-**Origin:** `origin/loop` (opened by automation) and `origin/human`. Provenance, not decoration — it decides which review rules apply.
+**Origin:** `origin/loop` (opened by automation) and `origin/human`. Provenance, not decoration - it decides which review rules apply.
 
-**Status:** `status/needs-repro`, `status/needs-gate`, `status/blocked`, `good-first-issue`, `help-wanted`.
+**Status:** `status/needs-triage`, `status/confirmed`, `status/not-reproducible`, `status/needs-info`, `status/rejected`, `status/resting`, `status/blocked`.
+
+**Channel:** `channel/latest`, `channel/stable`, `channel/stable-blocked` (the last one blocks promotion while open).
+
+Renaming a label moves historical issues, so `labels.sh` never deletes: surplus labels are listed as a warning. The Spanish-to-English rename was free because no taxonomy label had been created on GitHub yet - verified by a dry run reporting `create=35 update=0`.
 
 Applying labels to externally submitted issues must be **deterministic**, derived from the structured fields of the issue form. It must never come from a model's reading of free prose: that would be a language model taking a write action based on untrusted text, which is the exact chain this repository is built to avoid. If a routing decision cannot be made from the form's fields, the correct fix is to add a field to the form.
 
