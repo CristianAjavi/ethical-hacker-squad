@@ -228,10 +228,19 @@ F="$WORK/t10"; make_fixture "$F"
 expect_says "T10 --no-gates is a declared hole, not a pass" 2 "not the same as passing" "$F" --no-gates
 
 # T11 - a knowledge file on disk that packs.json does not declare would be
-#       invisible to every count. It must be reported, not skipped.
+#       invisible to every count. It must be reported, and the totals must go
+#       UNMEASURED with it: they no longer describe what is on disk. Reporting the
+#       stray file while still printing a confident TOTAL is the silent
+#       under-count that packs.json promises not to do.
 F="$WORK/t11"; make_fixture "$F"
 printf '# Orphan\n\n### TST-99 Nobody counts me\n\n%s\n' "$PROC_BODY" > "$F/kb/orphan.md"
-expect_says "T11 undeclared knowledge file is reported" 1 "not declared in packs.json" "$F"
+expect_says "T11 undeclared knowledge file is reported" 2 "not declared in packs.json" "$F"
+run_meter "$F"
+if printf '%s' "$LAST_OUT" | grep -q 'TOTALS NOT MEASURED'; then
+  ok "T11b undeclared file also voids the totals (no silent under-count)"
+else
+  bad "T11b undeclared file also voids the totals" "the totals were still published as measured"
+fi
 
 # T12 - an empty Traceability field is a failure; a field that says
 #       "internal process" is not (T01 already covers the legitimate case).
@@ -273,6 +282,92 @@ if command -v jq >/dev/null 2>&1; then
 else
   printf '  SKIP  T15 jq not installed, JSON not validated\n'
 fi
+
+# --------------------------------------------------------------------------
+# T16-T20 were added by the adversarial review of 2026-08-16. Each one is a
+# real defect that was found by attacking the meter, not by reading it.
+# --------------------------------------------------------------------------
+
+# T16 - THE SECOND FALSE GREEN. The runner's GATE SUMMARY counters are taken on
+#       trust, and the entire verdict hangs off them. Here the summary swears
+#       FAIL: 0 / UNMEASURABLE: 0 while its own detail lines say a gate failed
+#       and another could not be measured. Before the fix the meter printed both
+#       detail lines and concluded "exit 0 - everything measured, nothing
+#       failing". A runner that contradicts itself cannot be believed in either
+#       direction: that is a 2.
+F="$WORK/t16"; make_fixture "$F"
+cat > "$F/scripts/gates/run-all.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '\n===== GATE SUMMARY =====\n'
+printf 'discovered: 2 | run: 2 | green: 2 | FAIL: 0 | UNMEASURABLE: 0\n'
+printf 'FAIL gate-a.sh — the manifest is broken\n'
+printf 'UNMEASURABLE gate-b.sh — COULD NOT MEASURE\n'
+exit 0
+EOF
+chmod +x "$F/scripts/gates/run-all.sh"
+expect_says "T16 a runner contradicting its own summary is NOT MEASURED" 2 \
+  "contradicts itself" "$F"
+
+# T17 - THE REASSURING ZERO. The knowledge directory EXISTS but every pack file
+#       is gone. T14 covers the easy branch (directory absent); this is the one
+#       that used to print "TOTAL 0 0 0 0" followed by "every procedure carries
+#       the six mandatory fields" - a green sentence about a corpus that is not
+#       there. Zero is a measurement. Absent is not zero.
+F="$WORK/t17"; make_fixture "$F"
+mv "$F/kb/pack-one.md" "$F/pack-one.md.moved"
+run_meter "$F"; got=$?
+if [ "$got" -ne 2 ]; then
+  bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" "expected 2, got $got"
+elif printf '%s' "$LAST_OUT" | grep -qE '^  TOTAL +0 +0 +0'; then
+  bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" \
+      "it printed a TOTAL of 0 as though it had counted"
+elif printf '%s' "$LAST_OUT" | grep -qF 'every procedure carries the six'; then
+  bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" \
+      "it gave an all-clear on the six fields over a corpus it never read"
+else
+  ok "T17 an empty corpus directory is NOT MEASURED, never 0 procedures (exit 2)"
+fi
+
+# T18 - THE PLAUSIBLE UNDER-COUNT. One pack file of two is unreadable. The pack
+#       row correctly said n/m, but the TOTAL row kept printing the sum of what
+#       it managed to read, unmarked: a number that looks exactly like a real
+#       measurement and is short by a whole file. Harder to catch than a zero,
+#       because nothing on screen invites you to doubt it.
+F="$WORK/t18"; make_fixture "$F"
+printf '### TST-03 In the second file\n\n%s\n' "$PROC_BODY" > "$F/kb/pack-two.md"
+sed 's|"files": \["pack-one.md"\]|"files": ["pack-one.md", "pack-two.md"]|' \
+  "$F/packs.json" > "$F/tmp" && mv "$F/tmp" "$F/packs.json"
+mv "$F/kb/pack-two.md" "$F/pack-two.md.moved"
+run_meter "$F"; got=$?
+if [ "$got" -ne 2 ]; then
+  bad "T18 an unreadable pack file voids the totals" "expected 2, got $got"
+elif printf '%s' "$LAST_OUT" | grep -qE '^  TOTAL +[0-9]'; then
+  bad "T18 an unreadable pack file voids the totals" \
+      "the TOTAL row still published a number summed over files it could not read"
+else
+  ok "T18 an unreadable pack file voids the totals, not just the pack row (exit 2)"
+fi
+
+# T19 - A GAP IS A LOST PROCEDURE. Numbering gaps were computed and printed, and
+#       then changed nothing: with green gates the meter returned 0 while a
+#       procedure had vanished from the middle of a pack. Printing a defect is
+#       not the same as counting it.
+F="$WORK/t19"; make_fixture "$F"
+printf '### TST-04 Leaves a hole at 03\n\n%s\n' "$PROC_BODY" >> "$F/kb/pack-one.md"
+expect_says "T19 a numbering gap is a measured failure, not a note" 1 \
+  "numbering gap in TST" "$F"
+
+# T20 - a runner that claims gates ran but names none of them. Nothing can be
+#       attributed, so nothing can be trusted.
+F="$WORK/t20"; make_fixture "$F"
+cat > "$F/scripts/gates/run-all.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '\n===== GATE SUMMARY =====\n'
+printf 'discovered: 2 | run: 2 | green: 2 | FAIL: 0 | UNMEASURABLE: 0\n'
+exit 0
+EOF
+chmod +x "$F/scripts/gates/run-all.sh"
+expect_says "T20 a runner that names no gate is NOT MEASURED" 2 "printed no per-gate line" "$F"
 
 printf '\n=== %d passed, %d failed ===\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

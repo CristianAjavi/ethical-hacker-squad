@@ -87,3 +87,70 @@ jobs:
           # not at job level.)
           GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
         run: ./scripts/gates/run-all.sh --only 'gate-actions-lint.sh'
+
+  meter:
+    # THE METER IS NOT A GATE YET, AND THIS JOB IS DELIBERATELY NOT BLOCKING.
+    #
+    # It publishes the project's numbers on every run so we can watch how they
+    # behave before anyone attaches a threshold to them. `meter` is NOT listed in
+    # scripts/gh/governance.json promotion.required_contexts, so it is not a
+    # required check and cannot block a merge or a promotion. Turning it into a
+    # gate is a later, separate decision that has to be made on evidence: today
+    # nobody knows how the figures drift across normal PRs.
+    #
+    # What DOES fail this job is the meter's own self-test. That is not a metric
+    # threshold, it is the instrument checking itself against 21 negative cases,
+    # and a broken instrument makes every number below meaningless. A red here
+    # says "do not believe the figures", not "this PR is bad".
+    name: meter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Negative self-test first: an instrument that has not been checked has no
+      # business printing numbers three lines further down.
+      - name: Self-test the meter (21 negative cases)
+        run: bash scripts/meter/meter.selftest.sh
+
+      # --no-gates ON PURPOSE: the gate suite already has its own two jobs above,
+      # and re-running it here would duplicate the work and the verdict. The
+      # meter reports that section as an explicit NOT MEASURED hole rather than
+      # implying the gates passed, so its overall verdict in CI is always 2. That
+      # is the honest reading and another reason this job must not gate anything.
+      - name: Measure the project and publish the figures
+        run: |
+          set -uo pipefail
+          bash scripts/meter/meter.sh --no-gates > meter.txt 2> meter.err
+          code=$?
+          bash scripts/meter/meter.sh --no-gates --json > meter.json 2>/dev/null || true
+
+          {
+            printf '## Project meter\n\n'
+            printf '0 = measured and fine | 1 = measured and FAILS | 2 = COULD NOT MEASURE\n\n'
+            printf 'Meter exit code: **%s**. This job does not gate on it.\n\n' "$code"
+            printf 'The gate suite is reported as NOT MEASURED here by design: it runs in the\n'
+            printf '`gates` and `workflow-hardening` jobs of this same workflow.\n\n'
+            printf '```\n'
+            cat meter.txt
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat meter.txt
+          # The meter's own verdict never fails this step. Only the self-test above can.
+          exit 0
+
+      - name: Upload the machine-readable measurement
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: meter-${{ github.sha }}
+          path: |
+            meter.txt
+            meter.json
+          if-no-files-found: warn
+          retention-days: 30

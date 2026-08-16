@@ -148,7 +148,8 @@ def measure_corpus(root, cfg):
     procedures = []          # every procedure, flat
     problems = []            # measured failures
     total_lines = total_bytes = 0
-    unreadable = []
+    unreadable = []          # full diagnostics, one per unreadable file
+    unread_names = []        # just the filenames, for a reason line a human can read
 
     for pack in cfg["packs"]:
         p_lines = p_bytes = 0
@@ -159,6 +160,7 @@ def measure_corpus(root, cfg):
             text, err = read_text(fpath)
             if err:
                 unreadable.append(err)
+                unread_names.append(fname)
                 p_files.append({"file": fname, "status": STATUS_NOT_MEASURED, "reason": err})
                 continue
             nbytes = os.path.getsize(fpath)
@@ -224,6 +226,29 @@ def measure_corpus(root, cfg):
             "id_range": m(_id_ranges(p_procs)) if all_readable else nm("a pack file is unreadable"),
         })
 
+    # ---- Is this corpus WHOLE? Every aggregate below is a statement about the
+    # ---- corpus as a whole, so it may only be published when the whole corpus
+    # ---- was actually read. A file that could not be read, or a file nobody
+    # ---- declared, means the totals would be a partial sum wearing the clothes
+    # ---- of a complete one - and a plausible undercount is a worse lie than a
+    # ---- missing number, because nothing on screen invites you to doubt it.
+    whole = True
+    reasons = []
+    if unreadable:
+        whole = False
+        reasons.append("%d declared pack file(s) could not be read: %s"
+                       % (len(unreadable), ", ".join(sorted(unread_names))))
+    if undeclared:
+        whole = False
+        reasons.append("%d knowledge file(s) on disk are not declared in packs.json, so "
+                       "their procedures are in no count: %s"
+                       % (len(undeclared), ", ".join(undeclared)))
+    partial_reason = "; ".join(reasons)
+
+    def agg(value):
+        """An aggregate over the corpus: publishable only if the corpus was whole."""
+        return m(value) if whole else nm(partial_reason)
+
     # ---- ID integrity (cheap, and it is exactly the class of error that a
     # ---- parallel merge introduces: two areas claiming the same number)
     seen = {}
@@ -233,6 +258,8 @@ def measure_corpus(root, cfg):
     for pid, where in sorted(seen.items()):
         if len(where) > 1:
             duplicates.append({"id": pid, "at": where})
+            # A duplicate FOUND is real whatever else went unread; only the
+            # claim "there are none" depends on having read everything.
             problems.append("duplicate procedure ID %s at %s" % (pid, ", ".join(where)))
 
     gaps = []
@@ -243,23 +270,36 @@ def measure_corpus(root, cfg):
         missing = sorted(set(range(min(numbers), max(numbers) + 1)) - set(numbers))
         if missing:
             gaps.append({"prefix": prefix, "missing": missing})
+            # A hole in the numbering is a procedure that a merge dropped. It is
+            # only a FINDING when the corpus was whole: in a partial read the
+            # "missing" numbers are simply the ones in the file we could not open.
+            if whole:
+                problems.append(
+                    "numbering gap in %s: %s missing. A gap is a procedure lost in a "
+                    "merge until someone proves otherwise."
+                    % (prefix, ", ".join("%s-%02d" % (prefix, n) for n in missing)))
 
     section["status"] = STATUS_MEASURED
     section["knowledge_dir"] = cfg["knowledge_dir"]
     section["packs"] = packs_out
+    section["corpus_is_whole"] = m(True) if whole else nm(partial_reason)
     section["undeclared_files"] = m(undeclared)
     section["unreadable_files"] = m(unreadable)
     section["totals"] = {
         "packs": m(len(packs_out)),
-        "procedures": m(len(procedures)),
-        "lines": m(total_lines),
-        "bytes": m(total_bytes),
-        "complete_6_fields": m(sum(1 for p in procedures if p["complete"])),
-        "incomplete_6_fields": m(sum(1 for p in procedures if not p["complete"])),
+        "procedures": agg(len(procedures)),
+        "lines": agg(total_lines),
+        "bytes": agg(total_bytes),
+        "complete_6_fields": agg(sum(1 for p in procedures if p["complete"])),
+        "incomplete_6_fields": agg(sum(1 for p in procedures if not p["complete"])),
     }
     section["id_integrity"] = {
-        "duplicate_ids": m(duplicates),
-        "numbering_gaps": m(gaps),
+        # The list of duplicates/gaps FOUND is always real. Publishing it as
+        # "measured" when files went unread would assert that the list is
+        # exhaustive, which it is not.
+        "duplicate_ids": agg(duplicates),
+        "numbering_gaps": agg(gaps),
+        "found_anyway": m({"duplicate_ids": duplicates, "numbering_gaps": gaps}),
     }
     if undeclared:
         problems.append(
@@ -267,7 +307,7 @@ def measure_corpus(root, cfg):
             % ", ".join(undeclared))
     if unreadable:
         section["status"] = STATUS_NOT_MEASURED
-        section["reason"] = "; ".join(unreadable)
+        section["reason"] = partial_reason
     return section, procedures, problems
 
 
@@ -667,6 +707,42 @@ def measure_gates(raw_path, rc_raw, skipped_reason):
         section["runner_contract"] = nm(
             "scripts/gates/run-all.sh returned %s, which is outside the 0/1/2 contract"
             % rc_raw)
+
+    # ---- The summary counters are TAKEN ON TRUST from the runner. Cross-check
+    # them against the per-gate lines the runner printed underneath, because the
+    # whole verdict of this meter hangs off those five integers.
+    #
+    # The check is DIRECTIONAL on purpose. A runner may legitimately print fewer
+    # detail lines than it counted (truncation, a gate that prints nothing), so
+    # "summary claims more than the detail shows" is not evidence of anything.
+    # The opposite direction is: a detail line states that a gate FAILED or could
+    # NOT BE MEASURED, while the summary counts zero of them. One of the two is
+    # wrong, we cannot tell which, and believing the summary is how a broken gate
+    # gets laundered into a green verdict. Unknown is 2.
+    detail_failed = sum(1 for g in per_gate if g["code"] == 1)
+    detail_unmeas = sum(1 for g in per_gate if g["code"] == 2)
+    contradictions = []
+    if detail_failed > failed:
+        contradictions.append(
+            "%d gate line(s) say FAIL (%s) but the summary counts FAIL: %d"
+            % (detail_failed,
+               ", ".join(g["gate"] for g in per_gate if g["code"] == 1), failed))
+    if detail_unmeas > unmeas:
+        contradictions.append(
+            "%d gate line(s) say UNMEASURABLE (%s) but the summary counts UNMEASURABLE: %d"
+            % (detail_unmeas,
+               ", ".join(g["gate"] for g in per_gate if g["code"] == 2), unmeas))
+    if run > 0 and not per_gate:
+        contradictions.append(
+            "the summary says %d gate(s) ran but the runner printed no per-gate line, "
+            "so no individual result could be confirmed" % run)
+
+    if contradictions:
+        section["summary_matches_detail"] = nm(
+            "scripts/gates/run-all.sh contradicts itself: %s. The gate results cannot be "
+            "trusted until the runner agrees with its own output." % "; ".join(contradictions))
+    else:
+        section["summary_matches_detail"] = m(True)
     return section, problems
 
 
@@ -834,20 +910,41 @@ def render_table(rep, out):
             fmt(tot["lines"], absent="n/m"),
             fmt(tot["bytes"], absent="n/m"),
             fmt(tot["complete_6_fields"], absent="n/m")))
-        inc = val(tot["incomplete_6_fields"])
-        if inc:
-            w("\n  PROCEDURES MISSING A MANDATORY FIELD (%d):\n" % inc)
-            for p in corpus["packs"]:
-                for item in val(p["incomplete"], []) or []:
-                    w("    %-10s missing %-40s (%s)\n"
-                      % (item["id"], ",".join(item["missing"]), item["at"]))
-        elif is_measured(tot["incomplete_6_fields"]):
-            w("  every procedure carries the six mandatory fields.\n")
-        dups = val(corpus["id_integrity"]["duplicate_ids"], [])
-        gaps = val(corpus["id_integrity"]["numbering_gaps"], [])
-        w("  duplicate IDs: %s   numbering gaps: %s\n" % (
-            (", ".join(d["id"] for d in dups) if dups else "none"),
-            (", ".join("%s %s" % (g["prefix"], g["missing"]) for g in gaps) if gaps else "none")))
+
+        # When the corpus was not whole, every line below would be a claim about
+        # files that were never opened. Say what is unknown, print what was found
+        # anyway, and never print an all-clear over unread files.
+        whole = corpus.get("corpus_is_whole", m(True))
+        found = val(corpus["id_integrity"].get("found_anyway", m({})), {}) or {}
+        if not is_measured(whole):
+            w("\n  TOTALS NOT MEASURED - the corpus was not read whole:\n")
+            for chunk in (whole.get("reason") or "").split("; "):
+                if chunk:
+                    w("    %s\n" % chunk)
+            w("  Nothing can be totalled, and no all-clear can be given, over files that\n")
+            w("  were never opened. The partial figures per pack are shown above as n/m.\n")
+            fd = found.get("duplicate_ids") or []
+            fg = found.get("numbering_gaps") or []
+            w("  found in the part that WAS read - duplicate IDs: %s   numbering gaps: %s\n" % (
+                (", ".join(d["id"] for d in fd) if fd else "none so far"),
+                (", ".join("%s %s" % (g["prefix"], g["missing"]) for g in fg)
+                 if fg else "none so far")))
+        else:
+            inc = val(tot["incomplete_6_fields"])
+            if inc:
+                w("\n  PROCEDURES MISSING A MANDATORY FIELD (%d):\n" % inc)
+                for p in corpus["packs"]:
+                    for item in val(p["incomplete"], []) or []:
+                        w("    %-10s missing %-40s (%s)\n"
+                          % (item["id"], ",".join(item["missing"]), item["at"]))
+            else:
+                w("  every procedure carries the six mandatory fields.\n")
+            dups = val(corpus["id_integrity"]["duplicate_ids"], [])
+            gaps = val(corpus["id_integrity"]["numbering_gaps"], [])
+            w("  duplicate IDs: %s   numbering gaps: %s\n" % (
+                (", ".join(d["id"] for d in dups) if dups else "none"),
+                (", ".join("%s %s" % (g["prefix"], g["missing"]) for g in gaps)
+                 if gaps else "none")))
         und = val(corpus["undeclared_files"], [])
         if und:
             w("  UNDECLARED knowledge files (present, not in packs.json): %s\n" % ", ".join(und))
@@ -949,6 +1046,10 @@ def render_table(rep, out):
             w("  declared, not run here: %s\n" % " ".join(deferred))
         if val(ga["unmeasurable"], 0):
             w("  an UNMEASURABLE gate is NOT a pass: that check never happened.\n")
+        smd = ga.get("summary_matches_detail")
+        if smd is not None and not is_measured(smd):
+            w("  !! GATE RESULTS NOT MEASURED - the runner contradicts itself:\n")
+            w("     %s\n" % smd["reason"])
     w("\n")
 
     # ---- hygiene
@@ -992,7 +1093,7 @@ def render_table(rep, out):
             w("    - %s\n" % item)
     if verdict["not_measured"]:
         w("  NOT MEASURED (%d) - these are holes, not zeros:\n" % len(verdict["not_measured"]))
-        for item in verdict["not_measured"]:
+        for item in verdict.get("not_measured_condensed") or verdict["not_measured"]:
             w("    - %s: %s\n" % (item["metric"], item["reason"]))
     w("%s\n" % BAR)
 
@@ -1081,6 +1182,26 @@ def main():
         seen_reason.add(key)
         unique_holes.append(hole)
 
+    # One broken input produces one hole per leaf it poisons. Listing forty of
+    # them buries the verdict in noise and trains the reader to skip it, which is
+    # its own way of hiding a hole. Cap the listing PER SECTION and state how many
+    # were folded away: the count is never hidden, only the repetition.
+    HOLES_SHOWN_PER_SECTION = 3
+    per_section, capped = {}, []
+    for hole in unique_holes:
+        top = hole["metric"].split(".")[0] or "(root)"
+        per_section[top] = per_section.get(top, 0) + 1
+        if per_section[top] <= HOLES_SHOWN_PER_SECTION:
+            capped.append(hole)
+    for top, count in per_section.items():
+        if count > HOLES_SHOWN_PER_SECTION:
+            capped.append({
+                "metric": top,
+                "reason": "... and %d further NOT MEASURED leaf metric(s) under '%s', all "
+                          "caused by the same unread input. They are listed in full in "
+                          "--json." % (count - HOLES_SHOWN_PER_SECTION, top),
+            })
+
     if unique_holes:
         code, meaning = 2, "COULD NOT MEASURE at least one metric"
     elif failures:
@@ -1092,7 +1213,8 @@ def main():
         "exit_code": code,
         "meaning": meaning,
         "measured_failures": failures,
-        "not_measured": unique_holes,
+        "not_measured": unique_holes,          # complete, always
+        "not_measured_condensed": capped,      # same holes, folded for the table
     }
 
     if args.format == "json":
