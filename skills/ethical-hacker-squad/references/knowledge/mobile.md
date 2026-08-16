@@ -2,7 +2,8 @@
 
 > **When to load this file:** the inventory includes an `.apk`, `.aab`, `.ipa`, an Android project (Gradle, Kotlin/Java, `AndroidManifest.xml`) or an iOS project (Xcode, Swift/Obj-C, `Info.plist`), or a backend whose only client is a mobile app.
 > **Do not load it if:** the scope is only web, API or infrastructure with no mobile client.
-> **Cost:** ~345 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~310 lines. Load by section using the index; you do not need to read it end to end.
+> **Second file of this pack:** `mobile-ios.md` holds §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the inventory has an iOS project or an `.ipa`; the sections below still apply to iOS.
 
 ## Selective loading index
 
@@ -16,7 +17,8 @@
 | §5 Network and TLS | `network_security_config.xml`, `TrustManager`, pinning | MOB-09..MOB-10 |
 | §6 Crypto and embedded secrets | `Cipher`, `SecureRandom`, `strings.xml`, `BuildConfig` | MOB-11..MOB-12 |
 | §7 Mobile backend and client-side controls | API consumed only by the app, on-screen validation | MOB-13 |
-| §8 iOS specific | `Info.plist`, entitlements, Keychain, pasteboard | MOB-14..MOB-15 |
+
+Section §8 (`MOB-14`..`MOB-15`), the iOS specifics, is in `mobile-ios.md`.
 
 ## How to use a procedure
 
@@ -292,7 +294,7 @@ These are two different kinds of evidence and they do not get mixed inside one f
 **Where to look**
 - Validation that exists only in the app: price or discount computed on the device and sent to the server, quantity capped in the interface, a role read from a local preference, "premium user" resolved from a stored flag.
 - Environment checks treated as security: root or jailbreak detection, emulator detection, signature verification performed by the app itself.
-- The API the app consumes: if the backend is in scope, apply the `web-api.md` pack (BOLA, BFLA, rate limiting); if it is not, document the surface and do not test it.
+- The API the app consumes: if the backend is in scope, apply the `web-api` pack (BOLA and BFLA in `web-api.md`, rate limiting in `web-api-clientside-logic.md`); if it is not, document the surface and do not test it.
 
 **Vulnerable pattern** — the server trusts what the client sends because "only the app talks to it". Anyone can replay the requests with an ordinary HTTP client: the app is an interface, not a trust boundary. Anti-tampering checks raise the attacker's cost, but they are not an access control.
 
@@ -305,43 +307,3 @@ These are two different kinds of evidence and they do not get mixed inside one f
 
 **Traceability**: `CWE-602` · `CWE-639` · `CWE-863` · `MASVS-AUTH-*` · `MASVS-RESILIENCE-*` · `API1:2023`
 **Tooling**: extract the list of endpoints and the fields each one sends from the code, then cross it against the backend. No static tool can infer what gets re-validated on the other side.
-
-## §8 iOS specific
-
-### MOB-14 iOS: Info.plist, ATS, URL schemes and entitlements
-
-**Where to look**
-- `Info.plist`: `NSAppTransportSecurity` (`NSAllowsArbitraryLoads`, per-domain exceptions), `CFBundleURLSchemes`, `LSApplicationQueriesSchemes`, `UIFileSharingEnabled`/`LSSupportsOpeningDocumentsInPlace` (which expose the documents directory), and the permission purpose strings (`NS*UsageDescription`) versus the permissions actually used.
-- Entitlements (`*.entitlements`, or `codesign -d --entitlements` over the binary): `com.apple.developer.associated-domains`, App Groups and Keychain Access Groups shared with other apps, `get-task-allow` (the debuggable equivalent) in a distribution build.
-- Extensions and capabilities: share extensions, widgets and background modes that widen the surface.
-
-**Vulnerable pattern** — ATS relaxed globally to allow a legacy endpoint; a custom URL scheme exposing sensitive actions with no origin verification; keychain access groups shared with more apps than necessary, which widens the blast radius of a compromise.
-
-**What rules it out (false positive)**
-- ATS enabled with narrow, justified per-domain exceptions and no `NSAllowsArbitraryLoads`.
-- Verified Universal Links instead of custom schemes, or a handler that validates the link and requires a session.
-- Shared groups limited to apps from the same owner with a documented need.
-
-**Minimal test** — static: unpack the `.ipa` and read `Info.plist` and the binary's entitlements; cross every declared permission against its use in the code.
-
-**Traceability**: `CWE-319` · `CWE-939` · `CWE-732` · `MASVS-NETWORK-*` · `MASVS-PLATFORM-*` · `MASTG-TEST-*` from the PLATFORM group
-**Tooling**: `plutil -p Info.plist` to read it in clear → an `NSAllowsArbitraryLoads` accompanied by per-domain exceptions may be less severe than it looks; read the whole dictionary.
-
-### MOB-15 iOS: Keychain, local storage and pasteboard
-
-**Where to look**
-- Keychain: the chosen `kSecAttrAccessible*` attribute (`kSecAttrAccessibleAlways` and variants without `ThisDeviceOnly` let the item travel in backups and onto another device), `kSecAttrAccessControl` with biometrics when the data warrants it.
-- Storage: `UserDefaults` holding tokens or personal data, files in `Documents/` without adequate `NSFileProtection`, unencrypted Core Data or Realm stores, `URLCache` entries caching authenticated responses.
-- Interface and system: `UIPasteboard.general` with sensitive data (the general pasteboard is shared and, with Universal Clipboard, can cross devices), app snapshots when backgrounding, third-party keyboards in sensitive fields.
-
-**Vulnerable pattern** — the credential is stored in `UserDefaults` (a plaintext plist inside the container) instead of the keychain, or in the keychain with a more permissive accessibility class than needed, so it survives a backup and is restored onto another device.
-
-**What rules it out (false positive)**
-- Keychain items using `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` (or stricter) for sensitive material, and default file protection not lowered.
-- What lives in `UserDefaults` is preferences with no authentication value.
-- The pasteboard is cleared after use or marked local, and sensitive screens are hidden in the app switcher.
-
-**Minimal test** — static: enumerate every keychain write and its accessibility class, and every `UserDefaults` key with its expected content. Inspecting a device container: **REQUIRES AUTHORIZATION**.
-
-**Traceability**: `CWE-312` · `CWE-922` · `CWE-359` · `MASVS-STORAGE-1` · `MASVS-PRIVACY-1` · `MASTG-TEST-0001`
-**Tooling**: `grep -rn "kSecAttrAccessible\|UserDefaults.standard.set\|UIPasteboard.general" .` over the source → with an `.ipa` and no source, the compiled binary sharply limits what you can assert; say so in the report instead of assuming.
