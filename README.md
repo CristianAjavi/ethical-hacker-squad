@@ -31,13 +31,14 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 
 ## Knowledge
 
-Seven packs, one per role. Five of them are stored as **two files** so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; both files of a pack belong to the same role and share one procedure numbering.
+Seven packs, one per role. Five of them are stored as **more than one file** (`mobile` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
 
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
 | web-api | `web-api.md` | `WEB-01`..`WEB-12` | authn and sessions, object- and function-level authorization, injection, SSRF, deserialization and upload |
 | | `web-api-clientside-logic.md` | `WEB-13`..`WEB-22` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, error and log leakage |
-| mobile | `mobile.md` | `MOB-01`..`MOB-13` | manifest and exported surface, storage and logs, WebViews and bridges, deep links and intents, TLS and pinning, crypto and embedded secrets, client-only controls |
+| mobile | `mobile.md` | `MOB-01`..`MOB-12` | manifest and exported surface, storage and logs, WebViews and bridges, deep links and intents, TLS and pinning, crypto and embedded secrets |
+| | `mobile-runtime-trust.md` | `MOB-13`, `MOB-16`..`MOB-18` | client-only controls, biometrics bound to a key, overlay and accessibility defenses on confirmation screens, code loaded after the store |
 | | `mobile-ios.md` | `MOB-14`..`MOB-15` | iOS specifics: `Info.plist`, ATS, URL schemes, entitlements, Keychain, pasteboard |
 | infra-cloud | `infra-cloud.md` | `INF-01`..`INF-12` | Terraform and IaC, containers, Kubernetes |
 | | `infra-cloud-cicd-exposure.md` | `INF-13`..`INF-18` | CI/CD and GitHub Actions, environment separation and deployment secrets, remote exposure |

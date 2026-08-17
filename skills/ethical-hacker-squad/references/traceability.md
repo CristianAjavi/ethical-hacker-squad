@@ -22,7 +22,7 @@ Apply the same policy when writing a report: cite the ID, describe the requireme
 |---|---|---|---|---|
 | OWASP WSTG | v4.2 | 2020-12-03 | `WSTG-<CAT>-<NN>`, 12 categories, 97 tests | CC BY-SA 4.0 |
 | OWASP ASVS | 5.0.0 | 2025-05-30 | chapters `V1`..`V17`; requirements numeric `X.Y.Z` | CC BY-SA 4.0 |
-| OWASP MASVS | 2.1.0 | 2024-01-18 | `MASVS-<GROUP>-<N>`, 8 groups, 24 controls, no L1/L2/R levels | CC BY-SA 4.0 |
+| OWASP MASVS | 2.1.0 | 2024-01-18 | `MASVS-<GROUP>-<N>`, 8 groups, 24 controls, no L1/L2/R **control** levels; `MAS-L1`/`MAS-L2`/`MAS-R`/`MAS-P` exist, but as MAS **testing profiles** (the engagement's adversary model), never as a level on a control | CC BY-SA 4.0 |
 | OWASP MASTG | 2.0.0 | 2026-06-30 | `MASTG-TEST-NNNN` (193 tests), `MASWE-NNNN` | CC BY-SA 4.0 |
 | OWASP Top 10 | **2025** | released; exact final date not verified | `A01:2025`..`A10:2025` | CC BY-SA 4.0 |
 | OWASP API Security Top 10 | 2023 | 2023-06-05 | `API1:2023`..`API10:2023` | CC BY-SA 4.0 |
@@ -51,7 +51,7 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
-Five packs ship as two files each. The `Pack` column names the file that holds the section, so a row citing two files means both are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md`, `supply-chain.md` / `supply-chain-secrets-malware.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+Five packs ship as more than one file (`mobile` and `supply-chain` as three). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
 
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|
@@ -77,10 +77,10 @@ Five packs ship as two files each. The `Pack` column names the file that holds t
 | `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | `infra-cloud.md` §1 + `infra-cloud-cicd-exposure.md` §5 / `privacy-abuse.md` §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
 | `ASVS 5.0 V15` | web-api / remediator / ai-safety | `web-api-clientside-logic.md` §9 / part A / `ai-safety-data-output.md` §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
 | `ASVS 5.0 V16` | web-api / infra-cloud | `web-api-clientside-logic.md` §11 / `infra-cloud.md` §1 | `WEB-22`, `INF-06` |
-| `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | `mobile.md` §2, §6 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12` |
-| `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | `mobile.md` §5, §7 | `MOB-09`, `MOB-10`, `MOB-13` |
-| `MASVS-PLATFORM-*` | mobile | `mobile.md` §1, §3, §4 + `mobile-ios.md` §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15` |
-| `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | `mobile.md` §6, §7 | `MOB-11`..`MOB-13` |
+| `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | `mobile.md` §2, §6 + `mobile-runtime-trust.md` §9 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12`, `MOB-16` |
+| `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | `mobile.md` §5 + `mobile-runtime-trust.md` §7, §9 | `MOB-09`, `MOB-10`, `MOB-13`, `MOB-16` |
+| `MASVS-PLATFORM-*` | mobile | `mobile.md` §1, §3, §4 + `mobile-runtime-trust.md` §10 + `mobile-ios.md` §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15`, `MOB-17` |
+| `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | `mobile.md` §6 + `mobile-runtime-trust.md` §7, §11 | `MOB-11`..`MOB-13`, `MOB-18` |
 | `MASVS-PRIVACY-*` | privacy-abuse / mobile | `privacy-abuse.md` §5 / `mobile.md` §2 | `PRV-07`, `MOB-04` |
 | `A01:2025` | web-api | `web-api.md` §2, §4 | `WEB-04`..`WEB-06`, `WEB-10` |
 | `A02:2025` | infra-cloud | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §5 | `INF-01`..`INF-12`, `INF-17` |
@@ -92,9 +92,9 @@ Five packs ship as two files each. The `Pack` column names the file that holds t
 | `A08:2025` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
 | `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-clientside-logic.md` §11 | `INF-06`, `WEB-22` |
 | `A10:2025` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
-| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 / `supply-chain.md` §5, §6 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12` |
-| `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
-| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | `supply-chain.md` §5..§7 + `supply-chain-secrets-malware.md` §8 / part A | `SUP-13`..`SUP-16`, `REM-*` |
+| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 / `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12`, `SUP-21`, `SUP-22` |
+| `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `SUP-09`..`SUP-12`, `SUP-21`..`SUP-23` |
+| `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | `supply-chain.md` §5..§7 + `supply-chain-secrets-malware.md` §8 + `supply-chain-source-lifecycle.md` §10, §11 / part A | `SUP-13`..`SUP-16`, `SUP-21`..`SUP-25`, `REM-*` |
 | `LLM01:2026`, `AML.T0051` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
 | `LLM02:2026`, `LLM08:2026` | ai-safety | `ai-safety-data-output.md` §6 | `AI-17`, `AI-18` |
 | `LLM03:2026` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
@@ -107,14 +107,14 @@ Five packs ship as two files each. The `Pack` column names the file that holds t
 | `ASI02`, `ASI03`, `ASI05` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
 | `ASI07`, `ASI08`, `ASI10` | ai-safety | `ai-safety.md` §2, §3 | `AI-05`..`AI-11` |
 | `AML.T0068` | ai-safety | `ai-safety-data-output.md` §8 | `AI-20` |
-| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 | `INF-01`..`INF-17` |
+| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud + supply-chain | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 / `supply-chain.md` §1, §7 + `supply-chain-source-lifecycle.md` §10, §11 | `INF-01`..`INF-17`, `SUP-02`, `SUP-13`..`SUP-15`, `SUP-21`..`SUP-25` |
 
 ## Known coverage gaps
 
 Declare these rather than implying they are covered:
 
 - **`WSTG-CRYP-*` beyond `WEB-19`** — protocol-level cryptographic testing (cipher suites, padding oracles) is not covered by a procedure. TLS posture is a remote test that requires authorization.
-- **`MASTG-TEST-NNNN` individual IDs** — the corpus cites MASVS controls and MASTG test groups, not individual test numbers, because those numbers were not verified one by one.
+- **`MASTG-TEST-NNNN` and `MASWE-NNNN` individual IDs** — the corpus cites MASVS controls, MASTG test groups and MASWE weakness groups (`MASWE AUTH group`), not individual numbers, because those numbers were not verified one by one. The MAS testing profiles are cited as a concept; their requirement lists were not read one by one either.
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
 - **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.

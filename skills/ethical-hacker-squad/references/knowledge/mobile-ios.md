@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory includes an iOS project (Xcode, Swift/Objective-C, `Info.plist`, entitlements) or an `.ipa`.
 > **Do not load it if:** the mobile scope is Android only, or there is no mobile client at all.
-> **Cost:** ~55 lines. The other part of the pack, `mobile.md`, holds §0-§7 and `MOB-01`..`MOB-13`. Read its §0 first: what you may assert from a compiled artifact rather than from source applies to iOS too, and its §2, §5 and §6 (storage, TLS, cryptography) cover iOS as well as Android.
+> **Cost:** ~55 lines. The entry point of the pack, `mobile.md`, holds §0-§6 and `MOB-01`..`MOB-12`. Read its §0 first: what you may assert from a compiled artifact rather than from source applies to iOS too, the MAS testing profile it requires you to declare applies to iOS too, and its §2, §5 and §6 (storage, TLS, cryptography) cover iOS as well as Android. The third file, `mobile-runtime-trust.md`, holds §7 and §9-§11 (`MOB-13`, `MOB-16`..`MOB-18`); `MOB-16` (local authentication) and `MOB-18` (code loaded after the store) have an iOS side and are worth opening for an `.ipa`.
 
 ## Selective loading index
 
@@ -12,7 +12,7 @@
 
 ## How to use a procedure
 
-The six fields are a contract. **"What rules it out" is mandatory before you report**. "Minimal test" is static and local: running the app against a server, against someone else's device, or instrumenting it at runtime is marked `REQUIRES AUTHORIZATION`. MASVS controls are cited at group level, no `MASTG-TEST-NNNN` identifiers are invented, and MASVS v2.1.0 defines no L1/L2/R levels. The full statement of the contract is in `mobile.md`.
+The six fields are a contract. **"What rules it out" is mandatory before you report**. "Minimal test" is static and local: running the app against a server, against someone else's device, or instrumenting it at runtime is marked `REQUIRES AUTHORIZATION`. MASVS controls are cited at group level, no `MASTG-TEST-NNNN` or `MASWE-NNNN` identifier is invented, and MASVS 2.1.0 defines no L1/L2/R control levels — the MAS profiles (`MAS-L1`, `MAS-L2`, `MAS-R`, `MAS-P`) are the engagement's adversary model and must be declared, as `mobile.md` §0 requires. The full statement of the contract is in `mobile.md`.
 
 ## §8 iOS specific
 

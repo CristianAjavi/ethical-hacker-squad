@@ -2,8 +2,8 @@
 
 > **When to load this file:** the inventory includes an `.apk`, `.aab`, `.ipa`, an Android project (Gradle, Kotlin/Java, `AndroidManifest.xml`) or an iOS project (Xcode, Swift/Obj-C, `Info.plist`), or a backend whose only client is a mobile app.
 > **Do not load it if:** the scope is only web, API or infrastructure with no mobile client.
-> **Cost:** ~310 lines. Load by section using the index; you do not need to read it end to end.
-> **Second file of this pack:** `mobile-ios.md` holds §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the inventory has an iOS project or an `.ipa`; the sections below still apply to iOS.
+> **Cost:** ~290 lines. Load by section using the index; you do not need to read it end to end.
+> **Other files of this pack:** `mobile-runtime-trust.md` holds §7 and §9-§11 with `MOB-13`, `MOB-16`..`MOB-18` — client-only controls, local authentication, screen integrity and overlays, and code loaded after the store. Open it whenever the app confirms an effect on screen, unlocks with biometrics or a PIN, updates itself over the air, or has a backend only it talks to. `mobile-ios.md` holds §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the inventory has an iOS project or an `.ipa`; the sections below still apply to iOS.
 
 ## Selective loading index
 
@@ -16,15 +16,16 @@
 | §4 Deep links and intents | `<intent-filter>`, `CFBundleURLSchemes`, App Links | MOB-07..MOB-08 |
 | §5 Network and TLS | `network_security_config.xml`, `TrustManager`, pinning | MOB-09..MOB-10 |
 | §6 Crypto and embedded secrets | `Cipher`, `SecureRandom`, `strings.xml`, `BuildConfig` | MOB-11..MOB-12 |
-| §7 Mobile backend and client-side controls | API consumed only by the app, on-screen validation | MOB-13 |
 
-Section §8 (`MOB-14`..`MOB-15`), the iOS specifics, is in `mobile-ios.md`.
+Section §7 (`MOB-13`) and sections §9-§11 (`MOB-16`..`MOB-18`) — client-only controls, local authentication, screen integrity and overlays, code that arrives after the store — are in `mobile-runtime-trust.md`. Section §8 (`MOB-14`..`MOB-15`), the iOS specifics, is in `mobile-ios.md`.
 
 ## How to use a procedure
 
 The six fields are a contract. "Where to look" changes depending on whether you hold the compiled artifact or the source; **"What rules it out" is mandatory before you report**. "Minimal test" is static and local: anything that involves running the app against a server, against someone else's device, or instrumenting it at runtime is marked `REQUIRES AUTHORIZATION`. Do not treat a tool match as a finding until you confirm the code is reachable and the data is sensitive.
 
-On traceability: MASVS controls are cited at group level (`MASVS-PLATFORM-*`) except for `MASVS-STORAGE-1` and `MASVS-PRIVACY-1`, and no `MASTG-TEST-NNNN` identifiers are invented; the corresponding test group is referenced instead. MASVS v2.1.0 does **not** define L1/L2/R levels: do not use them.
+On traceability: MASVS controls are cited at group level (`MASVS-PLATFORM-*`) except for `MASVS-STORAGE-1` and `MASVS-PRIVACY-1`, and no `MASTG-TEST-NNNN` or `MASWE-NNNN` identifier is invented; the corresponding test or weakness group is referenced instead. MASVS 2.1.0 defines no L1/L2/R **control** levels: never attach one to a `MASVS-*` control.
+
+**Declare the adversary you audited against.** The MAS project does define **testing profiles** — `MAS-L1`, `MAS-L2`, `MAS-R`, `MAS-P` — and a profile is the adversary model of the engagement, not a property of a control. MAS-L1 assumes the operating system is trusted and no third party holds the device; MAS-L2 assumes a rooted or jailbroken device in someone else's hands. Say in the report which one the audit assumed: the severity of several procedures (`MOB-13`, `MOB-16`, `MOB-17`) is decided by it, and an audit that never declared its adversary cannot defend the severities it assigned. The profile names are verified as a MAS project concept; their individual requirement lists were not read one by one.
 
 ## §0 Compiled APK vs source code: what you can assert
 
@@ -286,24 +287,3 @@ These are two different kinds of evidence and they do not get mixed inside one f
 
 **Traceability**: `CWE-798` · `CWE-200` · `MASVS-STORAGE-1` · `MASVS-CRYPTO-*` · `MASTG-TEST-*` from the STORAGE group
 **Tooling**: `apkleaks -f app.apk --json` → extremely high false-positive rate from regex matching; every high-entropy string it flags needs checking whether it is a real key, a hash, an identifier or base64 of a resource. The recommendation is always to rotate and move it server-side, never to obfuscate it better.
-
-## §7 Mobile backend and client-only controls
-
-### MOB-13 Controls enforced only on the client
-
-**Where to look**
-- Validation that exists only in the app: price or discount computed on the device and sent to the server, quantity capped in the interface, a role read from a local preference, "premium user" resolved from a stored flag.
-- Environment checks treated as security: root or jailbreak detection, emulator detection, signature verification performed by the app itself.
-- The API the app consumes: if the backend is in scope, apply the `web-api` pack (BOLA and BFLA in `web-api.md`, rate limiting in `web-api-clientside-logic.md`); if it is not, document the surface and do not test it.
-
-**Vulnerable pattern** — the server trusts what the client sends because "only the app talks to it". Anyone can replay the requests with an ordinary HTTP client: the app is an interface, not a trust boundary. Anti-tampering checks raise the attacker's cost, but they are not an access control.
-
-**What rules it out (false positive)**
-- The server recomputes and validates every value with impact (price, balance, role, quota) against its own authoritative source.
-- Authorization is resolved from the token identity server-side, not from body fields.
-- The client-side check is a user-experience improvement and its server-side equivalent exists.
-
-**Minimal test** — static: for every impactful value the app sends, locate the re-validation in the backend. If the backend is out of scope, report it as a probable risk with the client-side evidence. Replaying requests against a real server: **REQUIRES AUTHORIZATION**.
-
-**Traceability**: `CWE-602` · `CWE-639` · `CWE-863` · `MASVS-AUTH-*` · `MASVS-RESILIENCE-*` · `API1:2023`
-**Tooling**: extract the list of endpoints and the fields each one sends from the code, then cross it against the backend. No static tool can infer what gets re-validated on the other side.
