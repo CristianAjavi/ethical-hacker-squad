@@ -16,6 +16,8 @@ Load this before invoking any scanner. It answers three questions per tool: how 
 
 Anything in the last group leaves the machine. Say so in the report's methodology section.
 
+`rg` (ripgrep, MIT) is fully offline and is the tool this squad reaches for most, which is exactly why its defaults deserve a line here: it honours `.gitignore` and `.ignore`, skips hidden files, and skips files it decides are binary. A search that returns nothing has therefore searched a filtered view of the tree, and in an audit that reads as "the secret is not there" when it means "I did not look at the places secrets get committed by accident". Use `rg -uu --hidden` — or `git grep` against the full history — before recording a negative, and say which one you ran. This is a false-negative source, not a false-positive one, so nothing in the output warns you.
+
 ## Secrets
 
 | Tool | Licence | Non-destructive invocation | Typical false positive |
@@ -89,6 +91,8 @@ Two cautions. Field-name matching is a starting point, not an inventory — pers
 Everything here sends traffic to a host. None of it runs without explicit, scoped authorization from the owner of that host.
 
 `zap-baseline.py -t https://target -J r.json -m 1` is passive (spider plus passive rules); `zap-full-scan.py` is active and is a different decision. It over-reports missing headers that a CDN or WAF supplies, and a one-minute spider does not cover a single-page application, so its silence means little. `nuclei -u https://target -t ./templates/ -ni -duc -jsonl` with `-ni` disables out-of-band callbacks to third-party infrastructure; exclude the `intrusive`, `dos` and `fuzz` tags; its version- and banner-based templates report CVEs without confirming exploitability. `nikto` is actively intrusive, trips WAF and IDS, and has the worst signal-to-noise ratio of the set: banner-derived "outdated server" findings are routinely wrong because distributions backport fixes. `testssl.sh --ids-friendly` and `sslyze` (AGPL — subprocess only) report facts rather than judgements; the letter grade is not a vulnerability.
+
+`curl` earns an entry despite being a general-purpose utility, because it is the quietest way to cross the line this section exists to police: one request against a host in the target's infrastructure turns a local code review into a remote test, with no scanner banner and no log entry anywhere the auditor will see. Treat a `curl` at a host you were not authorised to touch as the same decision as launching a scanner at it. Against `localhost` or a container the auditor started it is a local test and needs no authorisation. When it is used as evidence, record the full command and the response status in the finding — a `curl` that nobody can re-run proves nothing.
 
 Rule of thumb across all of them: discard by default any finding derived solely from a version banner.
 
