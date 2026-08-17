@@ -2,8 +2,9 @@
 
 > **When to load this file:** when the target has third-party dependencies, a package registry, an artifact publishing flow, or when you need to triage the output of a software composition analysis (SCA) scanner and hunt for secrets in the repository and its history.
 > **Do not load it if:** the audit only covers infrastructure or network configuration (use `infra-cloud.md`) or application logic with no relevant external dependencies.
-> **Cost:** ~300 lines. Load by section using the index; §7 changes the report the most.
+> **Cost:** ~305 lines. Load by section using the index; §7 changes the report the most.
 > **Second file of this pack:** `supply-chain-secrets-malware.md` holds §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so that file is opened on almost every engagement; it carries its own index.
+> **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-25` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, and suppressed CVEs. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
@@ -16,10 +17,10 @@
 | §6 Provenance, SBOM and signing | SLSA requirements, SBOM, binary distribution | SUP-11, SUP-12 |
 | §7 Dependency vulnerability triage | any SCA output (always) | SUP-13, SUP-14, SUP-15 |
 
-Sections §8 and §9 (`SUP-16`..`SUP-20`) are in `supply-chain-secrets-malware.md`.
+Sections §8 and §9 (`SUP-16`..`SUP-20`) are in `supply-chain-secrets-malware.md`. Sections §10 and §11 (`SUP-21`..`SUP-25`) are in `supply-chain-source-lifecycle.md`: §10 when you audit the repository that produces the artifact or any signature-verification command, §11 whenever you are about to call a dependency result clean.
 
 ## How to use a procedure
-First locate the files listed under **Where to look**: without that pattern the procedure does not apply and nothing gets reported. Run the **Minimal test** — local, no network unless stated, and never touching third-party systems — to move from "the scanner flagged it" to "I verified it". Check it against **What rules it out** before writing anything; in this discipline most raw findings die right there. **Traceability** feeds the report matrix and **Tooling** states what to read and what *not* to conclude. Cross-cutting rule for §7: **an SCA finding with no evidence of an import or a call to the vulnerable symbol drops to informational**, and you say so in the report.
+First locate the files listed under **Where to look**: without that pattern the procedure does not apply and nothing gets reported. Run the **Minimal test** — local, no network unless stated, and never touching third-party systems — to move from "the scanner flagged it" to "I verified it". Check it against **What rules it out** before writing anything; in this discipline most raw findings die right there. **Traceability** feeds the report matrix and **Tooling** states what to read and what *not* to conclude. Two cross-cutting rules for §7: **an SCA finding with no evidence of an import or a call to the vulnerable symbol drops to informational**, and you say so in the report; and **before writing that a component is clean, close `SUP-24` and `SUP-25`** (§11, in `supply-chain-source-lifecycle.md`) — past end of support the scanner's silence is not a measurement, and a suppression you did not re-derive is a finding you deleted from your own report.
 
 Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vulnerability exploitation** and that **48% involve a third party**; Google Cloud Threat Horizons H1 2026 measures third-party software vulnerabilities rising from 2.9% to **44.5% of initial access** between H1 and H2 of 2025. OWASP promoted this to its own category in 2025: `A03:2025 Software Supply Chain Failures`.
 
@@ -56,7 +57,7 @@ Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vu
 - The floating range is bounded by a committed lock and by `npm ci` in the pipeline: resolution is deterministic and the finding drops to informational about the manifest.
 - The dependency has had no release in years because it is functionally complete and small; assess issue activity and CVE response, not just the date.
 
-**Minimal test**: for every direct dependency, compare the version resolved in the lock against the latest published one and record the distance; flag the ones no longer maintained.\
+**Minimal test**: for every direct dependency, compare the version resolved in the lock against the latest published one and record the distance; flag the ones no longer maintained. **Boundary:** this measures distance to the latest release, not support status — a dependency can be perfectly up to date inside a branch nobody patches any more. That question is `SUP-24`.\
 **Traceability**: `CWE-1104` · `CWE-1395` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR` · `CCM TVM` · `CIS v8.1 Control 7`\
 **Tooling**: `cargo audit --file Cargo.lock --no-fetch --json` helps here, but it **mixes `unmaintained`, `unsound` and `yanked` advisories with real vulnerabilities**: separate them in the report, they are not exploitable on their own. Context (Datadog State of DevSecOps 2026): the median dependency is **278 days out of date** and **42% of services use unmaintained libraries**; Endor Labs also measures a **32% chance that updating to the latest version introduces other known vulnerabilities**, so "update everything" is not a valid recommendation without measurement.
 
