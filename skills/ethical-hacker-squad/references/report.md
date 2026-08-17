@@ -2,6 +2,8 @@
 
 This file is a reference consumed by the skill: it defines the shape of the deliverable the squad leader produces.
 
+Every verdict word in the report — status, severity, confidence and verification outcome — comes from the closed list in [vocabulary.md](vocabulary.md). Translate the surrounding prose into the user's language; do not invent, merge or soften a term.
+
 ## Language
 
 Write the report in the language the user is using. Every label below describes what a section must contain, not a heading to copy verbatim: translate the headings, keep the content.
@@ -27,7 +29,18 @@ Record:
 Order by severity, then by confidence. For each finding:
 
 1. ID and title.
-2. Status, severity and confidence.
+2. Status, severity and confidence, each taken verbatim from `vocabulary.md`:
+
+<!-- vocabulary:use status -->
+   - status: `confirmed`, `probable`, `hardening`, `discarded` or `withdrawn`. A `candidate` is not a finding and never reaches the report.
+<!-- /vocabulary:use -->
+<!-- vocabulary:use severity -->
+   - severity: `critical`, `high`, `medium`, `low` or `informational`.
+<!-- /vocabulary:use -->
+<!-- vocabulary:use confidence -->
+   - confidence: `high`, `medium` or `low`, always written with the word `confidence` beside it so it cannot be read as a severity.
+<!-- /vocabulary:use -->
+
 3. Precise location.
 4. Minimal redacted evidence.
 5. Impact scenario and preconditions.
@@ -36,7 +49,7 @@ Order by severity, then by confidence. For each finding:
 8. Verification status.
 9. Traceability: the pack procedure ID it came from, plus the standard identifiers it maps to.
 
-Do not pad with generic recommendations. Keep discarded candidates only as a short note, and only when it saves someone repeating the work.
+Do not pad with generic recommendations. Keep `discarded` candidates only as a short note, and only when it saves someone repeating the work. A `withdrawn` finding is different and is not optional: it was already claimed to the reader, who may have acted on it, so it stays in the report with the reason it did not survive.
 
 Severity is a judgement about **this** system, not a copy of a scanner label. A dependency advisory rated critical whose vulnerable symbol is never reached is not a critical finding here; say so and explain why, rather than inheriting the number.
 
@@ -57,12 +70,18 @@ In `harden` mode, list modified files, the objective of each change, and any rel
 
 ## Verification
 
-List the commands or tests executed and their result. Distinguish clearly:
+List the commands or tests executed and their result. Give every one of them a verification outcome from `vocabulary.md`, and distinguish clearly:
 
-- verified;
-- partially verified;
-- not executed;
-- blocked by authorization or environment.
+<!-- vocabulary:use verification -->
+- `verified`;
+- `partially verified`, with the class, variant or environment that stays open;
+- `refuted`, when the check established that the finding did not hold;
+- `inconclusive`, when the check ran and settled nothing;
+- `not executed`, when nothing prevented it and it was not run;
+- `blocked`, with what would unblock it.
+<!-- /vocabulary:use -->
+
+The last three are not weak results, they are the absence of a result, and each one names a different reason for it. Recording a check that errored, timed out or never reached the code as anything but `inconclusive` is the single most damaging thing this section can do: it converts a measurement that did not happen into a reassurance.
 
 "Tests pass" is not the same as "the vulnerability no longer reproduces". State which one you actually established. A clean static-analysis run belongs here as a fact about the tool, never as evidence that a class of bug is absent.
 

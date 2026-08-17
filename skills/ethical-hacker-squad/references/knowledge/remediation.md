@@ -15,11 +15,13 @@
 | §5 Ordering and collisions | there is more than one finding or more than one remediator | REM-07 |
 | §6 Adversarial posture | you are about to verify someone else's patch | VER-01 |
 | §7 Negative checks | there is a reproducible case or a new control | VER-02, VER-03, VER-04 |
-| §8 Result classification | you are about to report the state of a fix | VER-05 |
+| §8 Verification outcome | you are about to report the state of a fix | VER-05 |
 | §9 Tooling limits | you are relying on SAST, linters or scanners | VER-06 |
 | §10 What was not checked | always, at closing | VER-07 |
 
 ## How to use a procedure
+
+Every verdict this pack emits — the status of a finding and the outcome of a verification — comes from the closed vocabulary in [../vocabulary.md](../vocabulary.md). `VER-05` is where that vocabulary is applied; it does not define its own.
 
 In **Where to look** you locate the finding, the diff or the affected control. **Vulnerable pattern** describes the wrong way to repair or to verify, which is what this pack exists to prevent. **What rules it out** tells you when the apparently bad practice is acceptable in that context. **Minimal test** is the evidence you must produce; if you cannot produce it, that gets recorded (VER-07), not assumed. Apply the identifiers in **Traceability** to the report.
 
@@ -47,7 +49,7 @@ Repairing the concrete reproduction instead of the defect. The input that showed
 
 **What rules it out (false positive)**
 - The defect is genuinely local (a mistyped constant, a wrong limit) and does not represent any class.
-- The root cause requires a redesign outside the authorized scope: then you apply the bounded mitigation, label it partial, and open the deeper work as a recommendation, without selling it as a fix.
+- The root cause requires a redesign outside the authorized scope: then you apply the bounded mitigation, say in the report that it is a bounded mitigation and not the root-cause fix, and open the deeper work as a recommendation. The verification outcome for a finding closed this way is at best `partially verified`, with the part left open named.
 
 **Minimal test**
 Before touching anything, search the whole repository for other uses of the same pattern (`rg` for the sink or the vulnerable function). If your patch does not cover them, say so in the report with the list.
@@ -122,7 +124,7 @@ Run the existing suite before and after. Any test that changes result requires a
 A test is added that passes with the patch and nobody checks that it failed without it. This is the most common mistake: the test does not actually exercise the vulnerable path (it mocks exactly the point that matters, or it asserts an error message instead of the control) and it remains as a false safety net that survives a future refactor which reintroduces the flaw.
 
 **What rules it out (false positive)**
-- The finding is not reproducible by an automated test (infrastructure configuration, a missing organizational control). Then do not invent a decorative test: document the manual verification and its criterion.
+- The finding cannot be exercised by an automated test at all (infrastructure configuration, a missing organizational control). Then do not invent a decorative test: document the manual verification and its criterion.
 
 **Minimal test**
 The exact procedure, and its evidence goes into the report:
@@ -215,7 +217,7 @@ Write down two hypotheses and try to confirm them: (a) "this finding is not expl
 Treating the fix as verified because the test suite is green. **"The tests pass" is not the same as "the vulnerability does not reproduce".** The suite checks what someone thought of checking; the vulnerability is, by definition, what nobody thought of.
 
 **What rules it out (false positive)**
-- The finding had no executable reproduction (it was configuration or design): then you verify the control by inspection and classify it as partially verified (VER-05).
+- The finding had no executable reproduction (it was configuration or design): then you verify the control by inspection and the outcome is `partially verified` (VER-05), never `verified`.
 
 **Minimal test**
 Run the original reproduction as it was. It must fail, and **because of the new control**, not for another reason: a 500 from a type error is not a fix, it is another bug. Read the message and confirm the control is what blocks it.
@@ -263,28 +265,34 @@ Check the structural property, not the model's behavior: that the outbound tool 
 
 ## §8 Honest classification of the result
 
-### VER-05 Four states, and none of them is "secure"
+### VER-05 Six outcomes, and none of them is "secure"
 
 **Where to look**
 - What you actually executed against what you set out to execute
 
 **Vulnerable pattern**
-A binary fixed/not-fixed report that hides what was really checked. The reader assumes the strong case and makes decisions on a verification that never happened.
+A binary fixed/not-fixed report that hides what was really checked. The reader assumes the strong case and makes decisions on a verification that never happened. The sharper form of the same mistake: a check that errored, timed out or never reached the code under test, recorded as if it had found nothing.
 
 **What rules it out (false positive)**
-- Nothing. Every closed finding carries one of these four states:
+- Nothing. Every closed finding carries exactly one of these outcomes, defined in [../vocabulary.md](../vocabulary.md) and reproduced here for use:
 
-| State | What it means exactly |
+<!-- vocabulary:use verification status -->
+| Outcome | What it means exactly |
 |---|---|
-| **Verified** | I reproduced the original case and it now fails because of the new control, I tested variants along the applicable axes of VER-03, and the suite passes. |
-| **Partially verified** | The control exists and I checked it by inspection or with part of the tests; some axes or environments were left uncovered, and they are listed. |
-| **Not executed** | I could not reproduce it for lack of environment, data, dependencies or time. The patch may be correct; I do not know. |
-| **Blocked by authorization** | The check required touching production, a remote target or generating load. It was not done and remains proposed with its procedure. |
+| `verified` | I reproduced the original case, it now fails because of the new control, I tested variants along the applicable axes of VER-03, and the suite passes. |
+| `partially verified` | The control exists and I checked it by inspection or with part of the tests; some axes or environments were left uncovered, and they are listed. |
+| `refuted` | The check ran and established that the finding does not hold: the source was not controllable, the sink not reachable, or a control was already in place. The finding's status becomes `withdrawn` and stays in the report. |
+| `inconclusive` | The check ran and settled nothing: nondeterministic result, harness or build failure, the test never reached the code under test. The patch may be correct; this run says nothing either way. |
+| `not executed` | Nothing external stopped me and I did not run it: time, priority, or it fell outside the agreed plan. |
+| `blocked` | A named external condition stopped me: it required touching production, a remote target, credentials I do not have, or generating load. It remains proposed with its procedure and with what would unblock it. |
+<!-- /vocabulary:use -->
+
+The bottom three are the finding-level form of this repository's `0/1/2` gate doctrine: not measuring is not a pass. What separates them is **why** the answer is missing — the check ran and answered nothing, nothing stopped it and it was not run, or something external stopped it. Collapsing them is how "the build failed" ends up read as "no bug found".
 
 **Minimal test**
-For each finding, one line with state, what you executed, with what result and what is missing. Never write that the system is secure or that it has no vulnerabilities: you verified one specific finding in one specific environment.
+For each finding, one line with the outcome, what you executed, with what result and what is missing. Never write that the system is secure or that it has no vulnerabilities: you verified one specific finding in one specific environment.
 
-**Traceability**: internal process; `A09:2025` when what went unverified is the detection capability
+**Traceability**: internal process; `A09:2025` when the gap the outcome exposes is in the detection capability itself
 **Tooling**: the report itself. The honesty of the state is the deliverable.
 
 ## §9 Tooling limits

@@ -2,6 +2,8 @@
 
 The leader staffs only the relevant roles. Every specialist returns evidence, impact, confidence, severity, recommendation and a verification method. No specialist widens the scope or runs remote tests without authorization.
 
+Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
+
 Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **two files** for size reasons; both files belong to the same role and share one procedure numbering, and the first file names its sibling in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
@@ -54,21 +56,31 @@ Order: map personal data, retention, consent, minimization, access controls, mul
 
 ## Remediator / remediator
 
-Order: accept only confirmed and authorized findings. Apply the minimum patch that removes the root cause, add a regression test that fails without the patch, keep reasonable compatibility, and document behaviour changes. Do not deploy or alter external systems.
+Order: accept only `confirmed` and authorized findings; a `probable` one goes back to the leader with the missing link named. Apply the minimum patch that removes the root cause, add a regression test that fails without the patch, keep reasonable compatibility, and document behaviour changes. Do not deploy or alter external systems.
 
 ## Verifier / verifier
 
-Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and classify the fix as verified, partial or unverified. Do not edit unless the leader explicitly reassigns you.
+Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and give every result one verification outcome from `vocabulary.md`. A check that could not settle the question is `inconclusive`, `not executed` or `blocked` according to why — never a soft version of `verified`. Do not edit unless the leader explicitly reassigns you.
 
 ## Return format to the leader
 
-For each finding:
+For each finding. The three verdict fields are closed lists from [vocabulary.md](vocabulary.md); the rest is free text.
 
 - `ID and title`
 - `procedure`: the pack procedure ID that produced it (`WEB-07`, `AI-01`, ...), or `ad-hoc` if none applies
-- `status`: confirmed | probable | hardening | discarded
-- `severity`: critical | high | medium | low | informational
-- `confidence`: high | medium | low
+
+<!-- vocabulary:use status -->
+- status: `confirmed` | `probable` | `hardening` | `discarded` | `withdrawn`
+<!-- /vocabulary:use -->
+<!-- vocabulary:use severity -->
+- severity: `critical` | `high` | `medium` | `low` | `informational`
+<!-- /vocabulary:use -->
+<!-- vocabulary:use confidence -->
+- confidence: `high` | `medium` | `low`
+<!-- /vocabulary:use -->
+
+  A `candidate` is what you have before triage, and it is never returned as a finding. `confirmed` requires demonstrated impact and `confidence: high`; if one link is inferred, the status is `probable` and you name the link.
+
 - `location`: file and line, component or artifact
 - `evidence`: minimal trace or reproduction, no secrets
 - `impact and preconditions`
