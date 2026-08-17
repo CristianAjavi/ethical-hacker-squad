@@ -24,7 +24,7 @@ Seven packs, one per role, spread over twelve files, 2,830 lines in total, 122 n
 | `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~105 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
 | `ai-safety.md` | `ehs-ai-safety` | ~285 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
 | `ai-safety-data-output.md` | `ehs-ai-safety` | ~275 | `AI-12`..`AI-22` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
-| `privacy-abuse.md` | `ehs-privacy-abuse` | ~270 | `PRV-01`..`PRV-11` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model |
+| `privacy-abuse.md` | `ehs-privacy-abuse` | ~305 | `PRV-01`..`PRV-11`, `PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
 | `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~325 | `REM-01`..`REM-07`, `VER-01`..`VER-07` | `harden` or `verify` mode |
 
 ## Procedure anatomy
