@@ -25,7 +25,23 @@ Every gate must be **proved in the negative**: a fixture that makes it exit `1`,
 - **`plugin.json` on `main` must NOT contain a `version` field.** Its presence is the defect that silently blocks updates for existing installs; see `docs/release-channels.md`. On `stable`, the semver lives in the marketplace entry, and it must not appear in both files.
 - `skills/ethical-hacker-squad/SKILL.md` opens with YAML frontmatter delimited by `---`, containing `name` and `description`, with `name` matching the directory name.
 - Every file under `agents/` has YAML frontmatter with `name` and `description`, `name` matches the filename, and every `tools` entry is a real tool name.
-- Auditor agents (`ehs-web-api`, `ehs-mobile`, `ehs-infra-cloud`, `ehs-supply-chain`, `ehs-ai-safety`, `ehs-privacy-abuse`, `ehs-verifier`) must **not** list `Edit`, `Write` or `NotebookEdit`. Only `ehs-remediator` may.
+### G1b — Audit-only posture: tools, shell and claims
+
+Implemented by `scripts/gates/gate-agent-tools.sh`. Until 2026-08-16 this section stated the auditor no-write rule and **no script checked it**: the rule was applied by the harness at run time and by nothing at review time, while this document read like a guarantee. That is the exact defect this repository criticises in others.
+
+The region below is machine-read by the gate. Removing it fails the gate, on purpose: a check enforcing a rule its contract no longer states is as much of a bug as a rule nothing enforces.
+
+<!-- gate:agent-tools spec-begin -->
+**1. The tool list.** No agent under `agents/` may list `Edit`, `MultiEdit`, `Write` or `NotebookEdit` unless it declares write authority. An agent with **no `tools:` key at all** fails too: an omitted list inherits every tool of the main thread, `Write` included, so silence is the most permissive declaration a file can make, never a restriction. A wildcard entry fails for the same reason. A tool the gate cannot classify — a third-party MCP tool, for instance — is **unmeasurable (2)**, never a pass.
+
+**2. Role is derived from a declaration, never from a file name.** A hard-coded list of auditor names goes blind the moment a file is renamed or added. So: an agent is write-authorised **only if its own text carries an explicit write-authority declaration** (the marker `<!-- role: write-authorised -->`, or the equivalent sentence the remediator already carries); a negated sentence never counts as one. Everything else defaults to auditor — the strict branch. At most **one** agent may declare write authority (`EHS_MAX_WRITE_AGENTS`), or the declaration would be a self-service permission. Conversely, an agent that declares write authority and lists no write tool also fails: harden mode would have no remediator, and the run would break at engagement time instead of at review time.
+
+**3. The shell, which is the honest half.** Auditors keep `Bash`, and `Bash` writes. Removing `Edit` and `Write` therefore closes the direct write path and **not** the write path. `Bash` cannot be withdrawn — the auditors need a shell to measure anything — so the requirement is that the restriction lives where the model actually reads it: **every agent carrying `Bash` states its scope restriction in its own body.** For an auditor that means an explicit prohibition on writing through the shell (a sentence naming both the shell and the prohibition; "leave the tree as you found it" does not qualify, because it does not name the instrument). For the write-authorised agent it means the two bounds that make writing safe: writes limited to what the leader authorised, and the named operations it may not perform without explicit authorisation.
+
+**4. The claim surface.** `README.md`, `CHANGELOG.md` and `CONTRIBUTING.md` may describe this control and may not oversell it. Any sentence there that mentions the auditors' tool restriction must carry, in its own window, the caveat that the shell survives and the working tree is verified afterwards rather than assumed clean. Absolute wording — "cannot write", "guarantees", "fully prevents" — fails outright. If one of those files is missing, the claim surface is unmeasurable (2).
+<!-- gate:agent-tools spec-end -->
+
+**What this contract does not buy.** All four checks read declarations, not behaviour. The gate proves the contract says the right thing; it cannot prove an agent obeyed it. The runtime half of the control is unchanged and stays where it was: after an `audit` run, confirm `git status --porcelain` is empty. Anyone quoting G1b as proof that auditors cannot write has quoted it wrong.
 
 ## G2 — Internal links resolve
 
