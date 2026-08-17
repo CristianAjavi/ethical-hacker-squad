@@ -2,13 +2,13 @@
 
 > **When to load this file:** the inventory has a vector store, embeddings, an ingestion job or persistent agent memory; or model output reaches code, SQL, shell, HTML or rendered markdown; or the system prompt carries business rules or credentials; or an agentic loop runs without caps; or you are about to ingest text a human only reviews visually. §10 applies to every engagement without exception, because you also ingest the target's content.
 > **Do not load it if:** the work is confined to the per-agent capability inventory, the instruction/data boundary, tool authorization or the MCP tool chain — those are `ai-safety.md` §0-§3.
-> **Cost:** ~275 lines. Load by section using the index. The other half of the pack, `ai-safety.md`, holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility and severity calibration notes; `AI-01`, the lethal-trifecta check, orders everything in this file too.
+> **Cost:** ~300 lines. Load by section using the index. The pack's entry point, `ai-safety.md`, holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility and severity calibration notes; its third file, `ai-safety-agent-runtime.md`, holds §11-§12 (`AI-25`..`AI-28`) for installable agent packages, the agent's execution boundary, inter-agent handoff and attribution. `AI-01`, the lethal-trifecta check, orders everything in this file too.
 
 ## Selective loading index
 
 | Section | Load it if the inventory has | Procedures |
 |---|---|---|
-| §4 RAG, memory and poisoning | vector store, embeddings, long-term memory, automated ingestion | AI-12, AI-13, AI-14 |
+| §4 RAG, memory and poisoning | vector store, embeddings, long-term memory, automated ingestion | AI-12, AI-13, AI-14, AI-24 |
 | §5 Output as dangerous input | model output reaches code, SQL, shell, HTML or rendered markdown | AI-15, AI-16 |
 | §6 Context and secret leakage | system prompt with rules or credentials, multi-user, prompt caching | AI-17, AI-18 |
 | §7 Unbounded consumption | agentic loop, retries, public endpoint | AI-19 |
@@ -82,6 +82,30 @@ Integration test: query with tenant A's context for a term that only exists in t
 
 **Traceability**: `LLM02:2026` · `LLM09:2026` · `A01:2025` · `CWE-284` · ASVS 5.0 V8
 **Tooling**: `rg -n "similarity_search|as_retriever|\.query\(" -A3` → check whether every call carries a filter. A filter being present does not prove it is mandatory.
+
+### AI-24 Vector store deployment and the embedded copy of the data
+
+`AI-12` asks who can write into the index and `AI-14` who can read across tenants through the application. This one asks a blunter question: is the store itself reachable without the application, and does anything ever leave it.
+
+**Where to look**
+- Deployment: `docker-compose.yml`, Helm values, Terraform for `qdrant`, `chroma`, `weaviate`, `milvus`, `pgvector`, `redis` — the published port, whether authentication is configured **on the server**, and whether snapshot, backup or collection-listing endpoints answer
+- Client construction: `QdrantClient(url=`, `chromadb.HttpClient(`, `weaviate.connect_to_*`, `Milvus(`, connection strings with no credentials, `create_collection(`
+- Lifecycle: the code path that deletes a record from the source of record — does the same operation delete its chunks and its vectors? And the embedding call: what raw text leaves the perimeter to be embedded, and under what agreement
+
+**Vulnerable pattern**
+The index holds an embedded copy of everything the pipeline ingested — contracts, tickets, personal records — and it answers without authentication because "it is internal": reading a collection returns payloads and vectors with no application layer in front. The quieter variant is the lifecycle one: the record is deleted from the database, the erasure job reports success, and the chunk and its vector stay in the index and keep coming back through retrieval. Treating an embedding as anonymized is an assumption, not a control — payloads normally carry the source text, and inversion research recovers a substantial part of it from the vector alone — so a dump of the index is a disclosure of the corpus.
+
+**What rules it out (false positive)**
+- The server requires authentication, binds to a private network or a unix socket, and every query passes through an application layer that resolves identity (per-query filtering is `AI-14`, not this procedure).
+- Deletion in the source of record propagates to chunks and vectors, and a test proves the vector is gone.
+- What is indexed is public content, with no personal data and no confidentiality expectation.
+- The reachable instance is a development one seeded exclusively with synthetic fixtures — confirm what it holds, do not assume it from the port number or the environment name.
+
+**Minimal test**
+Local, against an instance you own: bring the compose file up and query the collection endpoint with no credentials, `curl -s localhost:6333/collections` for Qdrant or the equivalent for the engine in use. If it answers, the exposure is proved without touching production. For the lifecycle leg: index a synthetic record, delete it through the product's own deletion path, re-run the query and see whether it still comes back. Against a deployed instance: `REQUIRES AUTHORIZATION`.
+
+**Traceability**: `LLM09:2026` · `LLM02:2026` · `AML.T0085.000` · `AML.T0082` · `A01:2025` · `CWE-306` · `CWE-359` · `CWE-212` · ASVS 5.0 V14
+**Tooling**: `rg -n "QdrantClient|chromadb|weaviate|milvus|pgvector|create_collection"` plus a read of the compose or Helm port map. The client carrying an API key proves the parameter exists, not that the server rejects an anonymous request — check the server side. Coordinate with `privacy-abuse` (`PRV-04`, `PRV-08`): the vector index is the store that retention and erasure procedures forget.
 
 ## §5 Model output as dangerous input
 
