@@ -38,4 +38,4 @@ The two highest-yield entry points are `web-api.md` §0, which lists the classes
 
 Every factual claim in the corpus — a standard version, a measured percentage, an incident — carries its source. The corpus is to be refreshed by an automated loop specified in `docs/knowledge-loop.md` (not yet running), which may only draw from the source allowlist in `docs/sources-allowlist.json`, must attach provenance to every item it changes, and can never modify the safety contract, the plugin manifest, the allowlist or the workflows.
 
-Two consequences you should carry into any edit: **no item without a citation**, and **no text copied verbatim from a copyleft or proprietary source**. Both are enforced in CI, not left to good intentions.
+Two consequences you should carry into any edit: **no item without a citation**, and **no text copied verbatim from a copyleft or proprietary source**. The first is enforced in CI by `G4`, which also rejects an identifier that matches no known family. The second is still a review rule: `G5` is specified and not yet running.

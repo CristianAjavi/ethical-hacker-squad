@@ -4,7 +4,23 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** This is a specification. The automation it describes has not landed yet: there is no `stable` branch, no tagged release and no CI on `main`. Read it as the contract the machinery is built to satisfy, not as a description of controls already running. See `docs/design-decisions.md`.
+> **Status.** Partially implemented. `G1`, `G2`, `G3`/`G3b` and `G4` run in CI on every push and pull request (`.github/workflows/gates.yml`), and each is proved in the negative by the mutant bank in `tests/gate_mutants.py`. `G5` to `G9` are still specification, and there is still no `stable` branch and no tagged release. The table below marks which is which; anything marked *specified* describes a control that is **not** running yet. See `docs/design-decisions.md`.
+
+## What runs today
+
+| Gate | Status | Implementation |
+|---|---|---|
+| `G1` manifest and structure | running | `scripts/gates/g1_manifest.py` |
+| `G2` internal links | running | `scripts/gates/g2_links.py` |
+| `G3` context budget · `G3b` declared counts | running | `scripts/gates/g3_budget.py` |
+| `G4` citation, anatomy and sourced claims | running | `scripts/gates/g4_citations.py` |
+| `G5` licence hygiene | specified | — |
+| `G6` secret scanning | specified | — |
+| `G7` protected paths | specified | — |
+| `G8` regression guard | specified | — |
+| `G9` repository quality metric | specified | — |
+
+Run them locally with `python3 scripts/gates/run_all.py`, and the negative proofs with `python3 tests/gate_mutants.py`. Both need only a Python 3 interpreter; a gate that needed an install would be a gate nobody runs before pushing.
 
 ## Exit-code semantics — applies to every gate
 
@@ -16,7 +32,9 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `1` | Measured, outside threshold | fail with the offending items listed |
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
-Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+Every gate must be **proved in the negative**: a case that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works. `tests/gate_mutants.py` is where that proof lives: it copies the repository, breaks exactly one thing, and asserts the gate notices — 25 mutants across the four running gates, plus a baseline asserting the untouched repository passes.
+
+**Which of `1` and `2` applies to a parse error depends on the gate.** A gate that *asserts* a file parses reports a syntax error as its finding: `G1` exists to say `plugin.json` is valid JSON, so a broken manifest is exit `1`. Every other gate that opens the same file to reach some other property exits `2`, because it never got to measure the thing it was asked about. The distinction is made at the call site, in `lib.Gate.read_json`.
 
 ## G1 — Manifest and structure
 
@@ -50,11 +68,28 @@ The corpus line count and procedure count are stated in `SKILL.md`, `references/
 
 Count procedures by matching the procedure heading pattern across `references/knowledge/*.md`, count corpus lines, and fail if either disagrees with any declared figure. Prose that repeats a number needs a check watching it, or it becomes a lie on the next commit.
 
-## G4 — Every knowledge item is cited
+Four numbers are watched, not one:
 
-Every procedure in `references/knowledge/*.md` carries a **Traceability** line with at least one identifier, and every quantitative claim names its source. An item the loop adds or modifies additionally carries a source URL from the allowlist and a consultation date.
+- **Corpus lines and procedure count**, compared exactly against every declaration in `README.md`, `CHANGELOG.md`, `SKILL.md` and `references/knowledge/README.md`.
+- **Declared identifier ranges** (`` `AI-01`..`AI-22` ``): the upper bound must be the highest identifier that actually exists. A range that overstates the corpus promises procedures a reader will look for and not find.
+- **Identifier contiguity**: each family runs from `01` with no gaps and no duplicates. `WEB-07` is referenced from `traceability.md`, from findings and from issues, so a hole means a reference points at nothing.
+- **Per-pack cost estimates**, both the `**Cost:** ~N lines` header in each pack and the `Lines` column of the corpus README table, within **10 lines** of the real count. The estimate is what a specialist budgets context against; `~` allows for rounding, not for drift. This tolerance caught `infra-cloud.md` declaring `~370` when it was `387`.
 
-Fails with the list of procedures missing traceability. This is what keeps the corpus falsifiable: an uncited claim cannot be checked, and cannot be corrected when it goes stale.
+## G4 — Every knowledge item is cited and usable
+
+Three checks, one script. This is what keeps the corpus falsifiable: an uncited claim cannot be checked, and cannot be corrected when it goes stale.
+
+**`G4a` — cited, and cited with real identifiers.** Every procedure carries a `Traceability` line naming at least one identifier, **and every identifier it names matches a known family** listed in `scripts/gates/data/identifier-families.json`. The second half is the one that earns its keep: a fabricated `OWASP-MOBILE-TOP-99` sitting between four real IDs is exactly the error that survives human review, because it looks correct. Adding a standard means adding its family there, to `docs/sources-allowlist.json` and to `NOTICE.md` — three deliberate steps, on purpose.
+
+A procedure with no external identifier may declare that explicitly (`internal process`, `no external identifier`, `the one from the original finding`). Those are counted and printed on every run rather than silently accepted, so the escape hatch stays visible. Five procedures in `remediation.md` use it today.
+
+**`G4b` — the six fields exist.** Every procedure carries `Where to look`, `Vulnerable pattern`, `What rules it out (false positive)`, `Minimal test`, `Traceability` and `Tooling`. The third is the one that matters most: a procedure without false-positive criteria manufactures this repository's first-class defect.
+
+**`G4c` — quantitative claims name a source.** A prose line stating a percentage must carry a citation marker inside its own paragraph.
+
+**Honest limits.** A family match proves an identifier is well-formed, never that the standard says what the procedure claims. Fenced blocks are not scanned by `G4c`, so a figure appearing only inside an illustrative example is not measured. And a citation marker proves a source is named, not that it supports the sentence. All three are jobs for a reviewer; the gate removes the mechanical failures so the reviewer can spend attention on the rest.
+
+An item the loop adds or modifies additionally carries a source URL from the allowlist and a consultation date. **Not yet implemented** — the loop does not run.
 
 ## G5 — Licence hygiene (anti-verbatim)
 

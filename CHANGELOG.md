@@ -8,6 +8,15 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **Executable gates `G1`-`G4`** under `scripts/gates/`, running in CI on every push and pull request (`.github/workflows/gates.yml`, `actions/checkout` pinned by commit SHA, `contents: read` only, no privileged trigger). They enforce what `docs/gate-requirements.md` had only specified: manifest and agent structure including the rule that no auditor may declare a write tool, internal links and pack paths, the context budget, every number the prose states about itself, and the citation, anatomy and sourcing of every procedure. `G4` additionally rejects an identifier matching no known family, which is what catches a fabricated ID sitting between real ones. Three exit codes: measured-and-fine, measured-and-wrong, and could-not-measure, which fails rather than passing quietly.
+- **Mutant bank** (`tests/gate_mutants.py`): 25 mutations plus a clean baseline. Each copies the repository, breaks exactly one thing, and asserts the gate notices with the right exit code. A gate nobody has watched fail is a gate nobody knows works.
+- **`SECURITY.md`** — private disclosure through GitHub Security Advisories, and what counts as a vulnerability in a repository whose product is prose that an agent executes.
+
+### Fixed
+
+- `infra-cloud.md` declared a cost of `~370` lines while measuring 387. Found by `G3b` on its first run, which is the argument for the gate.
+- Claims of enforcement that did not exist yet, corrected in `README.md`, the corpus README and the three status banners: `G1`-`G4` now run, `G5`-`G9` are still specification, and the text says which is which.
+
 - **Knowledge corpus** (2,749 lines, 122 numbered procedures across 7 role packs). Each procedure carries where to look per stack, the vulnerable pattern, false-positive criteria, a minimal non-destructive test, standard traceability and tool guidance: `web-api` (`WEB-01`..`WEB-22`), `mobile` (`MOB-01`..`MOB-15`), `infra-cloud` (`INF-01`..`INF-18`), `supply-chain` (`SUP-01`..`SUP-20`), `ai-safety` (`AI-01`..`AI-22`), `privacy-abuse` (`PRV-01`..`PRV-11`), `remediation` (`REM-01`..`REM-07`, `VER-01`..`VER-07`).
 - **Dedicated plugin subagents** under `agents/`. Auditor roles ship without `Edit` and `Write`, which removes the most direct write path. It is a real reduction, not a guarantee: auditors keep `Bash`, so read-only operation still depends on the contract and must be confirmed with `git status --porcelain` after a run.
 - **`references/traceability.md`** — verified state of every cited standard, the standard-to-role matrix, the citation policy, and an explicit list of known coverage gaps.

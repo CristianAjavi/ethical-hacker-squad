@@ -98,7 +98,18 @@ That loop is also the most dangerous thing in this repository — a poisoned sou
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The two first-class issue types are `false-positive` and `false-negative` — audit-quality errors, not crashes. And the closure rule: an issue is closed by the fix **plus the check that stops it recurring**, which CI enforces.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The two first-class issue types are `false-positive` and `false-negative` — audit-quality errors, not crashes. And the closure rule: an issue is closed by the fix **plus the check that stops it recurring**. `G8` will enforce that mechanically; until it lands it is a review rule applied by hand.
+
+### Checks that run on every change
+
+`G1`–`G4` run in CI on every push and pull request, and are proved in the negative by a mutant bank: the harness copies the repository, breaks one thing, and asserts the gate notices. They check that the manifest and agent definitions are structurally sound and that no auditor can write; that every internal link and pack path resolves, since a dead link in a progressive-disclosure skill loses a capability silently; that the context budget holds and every number the prose states about itself still matches reality; and that every procedure is cited with a well-formed identifier, carries its false-positive criteria, and sources its quantitative claims.
+
+```
+python3 scripts/gates/run_all.py      # the gates
+python3 tests/gate_mutants.py         # the proof that they fail when they should
+```
+
+A gate reports three outcomes, not two: measured-and-fine, measured-and-wrong, and **could not measure**. The third fails. `G5`–`G9` — licence hygiene, secret scanning, protected paths, the closure guard and the Scorecard subset — are specified in [`docs/gate-requirements.md`](docs/gate-requirements.md) and not yet running.
 
 To report a vulnerability in this repository itself, do not open a public issue — see `SECURITY.md`.
 

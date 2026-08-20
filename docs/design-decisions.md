@@ -4,7 +4,7 @@ The non-obvious choices, with the reasoning and the cost. Written so a future ma
 
 ## Status: what exists today
 
-The corpus, the plugin and this documentation exist on `main`. **The automation that enforces the rules described in `docs/gate-requirements.md`, `docs/knowledge-loop.md` and `docs/release-channels.md` is being built and has not landed yet.** There is no `stable` branch, no tagged release, and no CI.
+The corpus, the plugin and this documentation exist on `main`, and the first four gates now run in CI on every push and pull request, each proved in the negative by `tests/gate_mutants.py`. **The rest of the automation described in `docs/gate-requirements.md`, `docs/knowledge-loop.md` and `docs/release-channels.md` is still being built.** There is no `stable` branch, no tagged release, no knowledge loop, and gates `G5`–`G9` are specification only.
 
 Those documents are written in the present tense because they are specifications — the contract the machinery is built to satisfy. Read them as design until the first `stable` release exists. This note is here because a security repository that describes controls it does not yet run is committing the exact error its own corpus teaches readers to detect, and a disclaimer buried in one file is not enough.
 

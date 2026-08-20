@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target inventory contains infrastructure as code (Terraform, Bicep, CloudFormation), Dockerfiles or images, Kubernetes/Helm manifests, or CI/CD workflows. This is the *configuration* pack, not the application-code one.
 > **Do not load it if:** the target is only application code, an APK with no backend of its own, or an analysis of dependencies and repository secrets (that lives in `supply-chain.md`).
-> **Cost:** ~370 lines. Load by section using the index; you almost never need all six.
+> **Cost:** ~385 lines. Load by section using the index; you almost never need all six.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
