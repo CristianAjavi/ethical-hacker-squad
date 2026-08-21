@@ -61,7 +61,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (.github/workflows/issue-closure-gate.yml) and right here with --pr-context.
 # What the list prevents is a `push` to main declaring them UNMEASURABLE.
 # ---------------------------------------------------------------------------
-PR_SCOPED='gate-issue-closure.sh'
+PR_SCOPED='gate-issue-closure.sh gate-protected-paths.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.

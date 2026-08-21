@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`, five of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gate `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`, and two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`. Seven have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -18,7 +18,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
 | `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test |
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
-| `G7` protected paths | specified | — |
+| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
@@ -236,6 +236,12 @@ NOTICE.md
 ```
 
 These define what the system may do and what it may read. An automation that can edit its own limits has none. Human branches may touch them; the maintainer reviews.
+
+**Implemented 2026-08-21** as `gate-protected-paths.sh`, and the list above is no longer prose: it is checked, line for line and in order, against `scripts/gates/data/protected-paths.json`, so the rule and the sentence documenting it cannot drift apart. Two self-test cases exist for exactly that drift, one in each direction.
+
+**A human branch touching a protected path is printed, never silently allowed.** The maintainer reviews it, and can only review what the run tells them is there — so the gate lists every protected path in the diff and says which pattern caught it. What it does not judge is whether the change is a good one: it asks who is changing the limits.
+
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 10 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, a human branch touching one, the documented list and the enforced list drifting in each direction, and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file).
 
 ## G8 — Regression guard on quality issues
 
