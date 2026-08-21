@@ -19,6 +19,14 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
+## Without a pointer
+
+| Run | Target | Advisory in scope | Result |
+|---|---|---|---|
+| [2026-08-21, whole repository](runs/2026-08-21-whole-repo/) | 286 files, no module named, no hint that anything was wrong | `CVE-2026-53957` | **found**, judged blind |
+
+The external run above it hands the auditor the affected module. This one does not, and it is the answer to the objection that follows from that. It is also one repository and one advisory, with a second target that never produced an artifact — the run's README says both.
+
 ## The patch bench
 
 Detection is half the job. The other half is telling a fix from something that looks like one, and it has its own key, its own scorer and its own run:
