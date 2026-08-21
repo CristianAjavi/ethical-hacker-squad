@@ -188,6 +188,74 @@ if tracked is not None:
                     f"{item['id']} points at {rel}, which git does not track: it exists here "
                     "and nowhere else, and any run elsewhere scores against a file that is missing")
 
+# ---- the patch bench -------------------------------------------------
+# A patch that no longer applies, claims a defect nobody planted, or expects a
+# verdict the vocabulary does not declare, turns a verification score into
+# noise. And a case whose every patch is a correct fix measures agreement: the
+# expensive error is `verified` on a patch that does not fix, so each case must
+# carry at least one patch that must NOT come back verified.
+LEAK_NAME = re.compile(r"correct|cosmetic|broken|breaks|symptom|wrong|fake|good|bad", re.I)
+patch_key_path = root / "bench" / "patch-truth.json"
+if patch_key_path.is_file():
+    try:
+        pkey = json.loads(patch_key_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        print(f"UNMEASURED bench/patch-truth.json does not parse: {exc}"); sys.exit(2)
+    vocab = (root / "skills/ethical-hacker-squad/references/vocabulary.md").read_text(encoding="utf-8")
+    m = re.search(r"<!--\s*vocabulary:declare verification\s*-->(.*?)<!--\s*/vocabulary:declare\s*-->",
+                  vocab, re.S)
+    if not m:
+        print("UNMEASURED vocabulary.md declares no verification region"); sys.exit(2)
+    outcomes = {t.strip() for t in re.findall(r"^\|\s*`([a-z ]+)`\s*\|", m.group(1), re.M)}
+    planted_ids = {p["id"] for p in key.get("planted", [])}
+    seen_patches, by_case = set(), {}
+    for patch in pkey.get("patches", []):
+        checks += 1
+        if patch["id"] in seen_patches:
+            findings.append(f"duplicate patch id {patch['id']}")
+        seen_patches.add(patch["id"])
+        by_case.setdefault(patch["case"], []).append(patch)
+        case = cases.get(patch["case"])
+        checks += 3
+        if not case:
+            findings.append(f"{patch['id']} names case `{patch['case']}`, which the key does not declare")
+            continue
+        diff = root / "bench" / "patches" / patch["case"] / patch["diff"]
+        if not diff.is_file():
+            findings.append(f"{patch['id']} points at {patch['diff']}, which does not exist")
+        if patch["claims_to_fix"] not in planted_ids:
+            findings.append(f"{patch['id']} claims to fix {patch['claims_to_fix']}, which is not a planted defect")
+        if LEAK_NAME.search(patch["diff"]):
+            findings.append(
+                f"{patch['id']} is stored as {patch['diff']}: the filename hands the verdict to the verifier "
+                "before it reads a line. Name patches by id only")
+        if patch["expected"] not in outcomes:
+            findings.append(
+                f"{patch['id']} expects the verdict `{patch['expected']}`, which vocabulary.md does not declare")
+    # every diff must still apply to its case
+    import subprocess, shutil, tempfile
+    for patch in pkey.get("patches", []):
+        case = cases.get(patch["case"])
+        diff = root / "bench" / "patches" / patch["case"] / patch["diff"]
+        if not case or not diff.is_file():
+            continue
+        checks += 1
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td) / "case"
+            shutil.copytree(root / case["path"], work)
+            r = subprocess.run(["git", "apply", "--check", "-p1", str(diff)],
+                               cwd=work, capture_output=True, text=True)
+            if r.returncode != 0:
+                findings.append(
+                    f"{patch['id']} no longer applies to {patch['case']}: {r.stderr.strip().splitlines()[:1]}")
+    for case_name, patches in by_case.items():
+        checks += 1
+        if all(p["expected"] == "verified" for p in patches):
+            findings.append(
+                f"case `{case_name}` has no patch that must fail verification: a set where every patch is a "
+                "correct fix measures agreement, not judgement")
+    print(f"patch bench: {len(pkey.get('patches', []))} patch(es) over {len(by_case)} case(s)")
+
 print(f"measured: {len(cases)} case(s), {len(key.get('planted', []))} planted, "
       f"{len(key.get('decoys', []))} decoys, {checks} checks")
 for f in findings:
