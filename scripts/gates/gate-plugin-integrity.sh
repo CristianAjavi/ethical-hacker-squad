@@ -99,7 +99,13 @@ MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 ALLOWED_FM_KEYS="name description license metadata"
 # Extensions tolerated inside skills/. Text only: the tree served to the user has
 # no reason to contain anything executable or binary.
-ALLOWED_EXTENSIONS="md"
+#
+# `json` was added 2026-08-21 for references/findings.schema.json, the machine
+# schema of the deliverable, which a consumer needs in order to validate an
+# artifact this squad produced. It is inert data, so the stated property holds -
+# and it is not a free pass: every shipped .json must PARSE, checked below, so
+# the extension cannot be used to smuggle bytes that only look like text.
+ALLOWED_EXTENSIONS="md json"
 
 FAILURES=0
 N_CHECKED=0
@@ -385,7 +391,29 @@ done
 if [[ -n "$bad_ext" ]]; then
   fail "file(s) with a non-permitted extension in the served tree (permitted: $ALLOWED_EXTENSIONS): $bad_ext"
 else
-  ok "every file in the served tree is .md (nothing executable or binary is distributed)"
+  ok "every file in the served tree carries a permitted extension ($ALLOWED_EXTENSIONS)"
+fi
+
+# Every shipped .json must parse. An extension allowlist that never opens the
+# file is a naming convention, not a control.
+json_files=()
+for _tf in "${TREE_FILES[@]}"; do
+  case "$_tf" in *.json) json_files+=("$_tf") ;; esac
+done
+if [ "${#json_files[@]}" -eq 0 ]; then
+  ok "no .json file is served (nothing to parse)"
+elif ! command -v python3 >/dev/null 2>&1; then
+  unmeasurable "python3 is absent: the ${#json_files[@]} served .json file(s) were NOT parsed"
+else
+  bad_json=""
+  for jf in "${json_files[@]}"; do
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$jf" >/dev/null 2>&1 || bad_json+=" $jf"
+  done
+  if [ -n "$bad_json" ]; then
+    fail "served .json file(s) that do not parse:$bad_json"
+  else
+    ok "every served .json file parses (${#json_files[@]} file(s))"
+  fi
 fi
 if [[ -n "$exec_bits" ]]; then
   fail "file(s) with the execute bit in the served tree: $exec_bits"

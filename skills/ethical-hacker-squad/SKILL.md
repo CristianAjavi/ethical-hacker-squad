@@ -42,6 +42,7 @@ Instructions and knowledge in this skill are written in English on purpose: the 
 | [references/triage.md](references/triage.md) | Before any specialist writes a finding. The ten rules that rule a finding out, each answerable, and the invariant that a `confirmed` finding has none of them unanswered. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
+| [references/findings-artifact.md](references/findings-artifact.md) | When writing the deliverable. `findings.json` beside the report: the fields, and the invariants a validator enforces on them. |
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 

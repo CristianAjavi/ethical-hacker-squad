@@ -103,4 +103,6 @@ For each finding. The three verdict fields are closed lists from [vocabulary.md]
 - `triage`: every rule from `references/triage.md` that the procedure invokes, with its answer — `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE` — and a reason naming the artifact whenever the answer is not `DOES_NOT_HOLD`. A finding returned as `confirmed` has every invoked rule answered, none `HOLDS` and none `UNKNOWN`; an unanswered rule is not a silent pass, exactly as exit code `2` is not a green gate.
 - `limits or open questions`
 
+The leader assembles these returns into `findings.json` as specified in `references/findings-artifact.md`, and validates it before anything is delivered. A specialist returns prose; the artifact is the leader's job, because only the leader has deduplicated across specialists.
+
 At the end of the run, each specialist also returns a **coverage declaration**: which sections of its pack it exercised, which it skipped, and why. The leader needs it to write an honest coverage section; a specialist that omits it has not finished.
