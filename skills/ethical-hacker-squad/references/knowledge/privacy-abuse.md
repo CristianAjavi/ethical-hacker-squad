@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the project handles data about identifiable people (accounts, profiles, contacts, location, health, payments, user content) or exposes flows a third party can abuse at scale.
 > **Do not load it if:** the artifact processes no personal data (a computation library, a template engine, a CLI with no telemetry). The risk there is purely technical and the other roles cover it.
-> **Cost:** ~305 lines. Load by section using the index; §1 first, always.
+> **Cost:** ~325 lines. Load by section using the index; §1 first, always.
 
 ## Selective loading index
 
@@ -16,6 +16,7 @@
 | §6 Data subject rights | end-user accounts, privacy panel, support | PRV-08 |
 | §7 Leakage through logs and errors | structured logging, APM, traces, Sentry | PRV-09 |
 | §8 Product abuse paths | open sign-up, invitations, referrals, user search | PRV-10, PRV-11 |
+| §10 Where the data lands | any `region`/`location` argument, cross-region replication, global services, a declared jurisdiction | PRV-12 |
 | §9 Traceability of reads | admin panels, support tooling, BI over a production replica, cloud stores holding personal data | PRV-13 |
 
 `PRV-12` is reserved for the pending data-location procedure (where the personal data physically lands and where it is replicated). The gap in the numbering is deliberate, not a procedure lost in a merge.
@@ -304,3 +305,24 @@ Two steps, both non-destructive. First, diff the configuration against the inven
 
 **Traceability**: `CWE-778` · `CWE-223` · `CWE-359` · `A09:2025` · ASVS 5.0 V14, V16 · `NIST 800-53 AU` · `CCM LOG`
 **Tooling**: no scanner reports this well — an infrastructure rule sees the trail resource and passes, which is how it stays missing for years; cross-reference `INF-06` and the infra-cloud material on audit trails the workload identity can delete. Expect "we turned it off because it costs money" as the honest answer, because these logs are billed by volume. Apply the first hard rule of this role when writing it up: with no demonstrated unauthorized read this is a privacy risk, and once it was switched off knowingly it is also a product decision with a named owner — report it as an accepted risk whose consequence is spelled out (every incident is scoped to the entire population), not as a technical vulnerability and not as an oversight.
+
+## §10 Where the data lands
+
+### PRV-12 Where the personal data physically lands, and where it is replicated
+
+**Where to look**
+- The `region`/`location` argument of every resource holding data, and the difference between the product's declared jurisdiction and the actual region of the primary store, the backups, the queues, the search index and the CDN
+- Replication and global services: cross-region bucket replication, global tables, multi-region accounts, read replicas in another region, and the third parties from PRV-06 and PRV-07, whose processing region is a configuration setting rather than a property of the product
+
+**Vulnerable pattern**
+The product is described as operating in one jurisdiction and the code deploys the database in another; or the primary store is correct and the backups, logs and analytics events replicate to a second region nobody wrote down. The most common variant is the invisible one: the main database is regional and correct while the error tracker, the analytics platform and the model provider are global by default.
+
+**What rules it out (false positive)**
+- There is a written statement of where each category of data is stored and processed, it covers backups, logs and third parties, and it matches the code
+- The data is not personal — PRV-01 decides that, not intuition
+
+**Minimal test**
+For every store in the PRV-01 inventory, write down four values: region of the primary, of the backup, of the replicas, and of the third parties that receive it. The finding is any store where the code disagrees with the declared statement, or where no statement exists. State the technical fact ("backups land in region X") and **do not rule on whether a transfer is lawful**: that depends on contracts and jurisdictions you cannot see — the second hard rule of this role applies in full.
+
+**Traceability**: `CWE-359` · `CWE-200` · `ASVS 5.0 V14` · `CCM DSP`
+**Tooling**: `rg -n 'region|location\s*=' --glob '*.tf'` produces candidates and nothing else; the interesting part usually lives in a provider console (PRV-06, PRV-07), not in the repository. Declare in the report which third parties you could not check.

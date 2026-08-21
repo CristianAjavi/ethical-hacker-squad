@@ -44,7 +44,7 @@ Instructions and knowledge in this skill are written in English on purpose: the 
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 2,830 lines across twelve files; loading all of it is a waste of context and degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 3,331 lines across fifteen files; loading all of it is a waste of context and degrades the work.
 
 ## Mapping to Claude Code
 

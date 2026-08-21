@@ -106,7 +106,9 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `ASI01`, `ASI09` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
 | `ASI02`, `ASI03`, `ASI05` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
 | `ASI07`, `ASI08`, `ASI10` | ai-safety | `ai-safety.md` §2, §3 | `AI-05`..`AI-11` |
+| `AML.T0010`, `LLM04:2026` (model artifacts) | ai-safety | `ai-safety-data-output.md` §4 | `AI-23` |
 | `AML.T0068` | ai-safety | `ai-safety-data-output.md` §8 | `AI-20` |
+| `CCM DSP` (where the data lands) | privacy-abuse | `privacy-abuse.md` §10 | `PRV-12` |
 | `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud + supply-chain | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 / `supply-chain.md` §1, §7 + `supply-chain-source-lifecycle.md` §10, §11 | `INF-01`..`INF-17`, `SUP-02`, `SUP-13`..`SUP-15`, `SUP-21`..`SUP-25` |
 
 ## Known coverage gaps
@@ -117,6 +119,7 @@ Declare these rather than implying they are covered:
 - **`MASTG-TEST-NNNN` and `MASWE-NNNN` individual IDs** — the corpus cites MASVS controls, MASTG test groups and MASWE weakness groups (`MASWE AUTH group`), not individual numbers, because those numbers were not verified one by one. The MAS testing profiles are cited as a concept; their requirement lists were not read one by one either.
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
+- **Microsoft's cloud security benchmark** — consulted while drafting `PRV-12` and **not** cited: it is not in `docs/sources-allowlist.json` and its licence was not verified. Its control identifiers therefore appear nowhere in the corpus, and cloud-provider-specific control ids are not claimed as coverage.
 - **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.
 - **CLI, desktop and library surfaces** — injection, deserialization and file handling transfer from `web-api.md`, but symlink handling, temp-file races, argument and environment parsing, and dangerous public-API defaults have no procedure.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.

@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Seven packs, one per role, spread over fourteen files, 3,131 lines in total, 132 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Seven packs, one per role, spread over fifteen files, 3,331 lines in total, 139 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -14,20 +14,21 @@ Seven packs, one per role, spread over fourteen files, 3,131 lines in total, 132
 
 | Pack file | Role | Lines | Procedures | Load when the inventory has |
 |---|---|---|---|---|
-| `web-api.md` | `ehs-web-api` | ~280 | `WEB-01`..`WEB-12` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
-| `web-api-clientside-logic.md` | `ehs-web-api` | ~220 | `WEB-13`..`WEB-22` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, error and log output |
-| `mobile.md` | `ehs-mobile` | ~290 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
-| `mobile-runtime-trust.md` | `ehs-mobile` | ~110 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
+| `web-api.md` | `ehs-web-api` | ~279 | `WEB-01`..`WEB-12` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
+| `web-api-clientside-logic.md` | `ehs-web-api` | ~222 | `WEB-13`..`WEB-22` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, error and log output |
+| `mobile.md` | `ehs-mobile` | ~289 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
+| `mobile-runtime-trust.md` | `ehs-mobile` | ~111 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~55 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
-| `infra-cloud.md` | `ehs-infra-cloud` | ~265 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
-| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~140 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
-| `supply-chain.md` | `ehs-supply-chain` | ~300 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
-| `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~105 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
-| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~130 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
-| `ai-safety.md` | `ehs-ai-safety` | ~285 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
-| `ai-safety-data-output.md` | `ehs-ai-safety` | ~275 | `AI-12`..`AI-22` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
-| `privacy-abuse.md` | `ehs-privacy-abuse` | ~305 | `PRV-01`..`PRV-11`, `PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
-| `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~325 | `REM-01`..`REM-07`, `VER-01`..`VER-07` | `harden` or `verify` mode |
+| `infra-cloud.md` | `ehs-infra-cloud` | ~263 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
+| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~139 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
+| `supply-chain.md` | `ehs-supply-chain` | ~303 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
+| `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~107 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
+| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~131 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
+| `ai-safety.md` | `ehs-ai-safety` | ~286 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
+| `ai-safety-data-output.md` | `ehs-ai-safety` | ~324 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
+| `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~128 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
+| `privacy-abuse.md` | `ehs-privacy-abuse` | ~328 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
+| `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~366 | `REM-01`..`REM-07`, `VER-01`..`VER-08` | `harden` or `verify` mode |
 
 ## Procedure anatomy
 

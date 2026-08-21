@@ -4,19 +4,19 @@ The leader staffs only the relevant roles. Every specialist returns evidence, im
 
 Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
 
-Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **two files** for size reasons; both files belong to the same role and share one procedure numbering, and the first file names its sibling in its header.
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|
 | Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
 | Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` | `WEB-01`..`WEB-22` |
-| Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-15` |
+| Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
 | Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` | `INF-01`..`INF-18` |
-| Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` | `SUP-01`..`SUP-20` |
-| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` | `AI-01`..`AI-22` |
-| Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-11` |
+| Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-25` |
+| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-28` |
+| Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
-| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-07` |
+| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
 
 ## Leader / security-lead
 
