@@ -67,6 +67,16 @@ PR_SCOPED='gate-issue-closure.sh gate-protected-paths.sh'
 # named in the deferred list with the workflow that does run them - a gate that
 # is quietly absent is indistinguishable from a gate that passed.
 EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
+# Gates that measure the LIVE repository through the GitHub API rather than this
+# checkout. Reading branch protection needs the `administration` scope, and the
+# GITHUB_TOKEN a workflow receives cannot be granted it - that permission does
+# not exist for workflow tokens. Run here they would report 2 forever, which is
+# the fastest route to somebody switching the suite off, so they are deferred BY
+# NAME with the reason, the same treatment the PR-scoped gates get. They do run:
+# locally, against an authenticated gh. Putting them in CI needs a fine-grained
+# PAT with Administration:read, and that is the owner's decision, written down
+# here rather than left as a silent hole.
+LIVE_SCOPED='gate-governance-drift.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
@@ -172,6 +182,14 @@ while IFS= read -r g <&3; do
     n_deferred=$((n_deferred + 1))
     DEFERRED="$DEFERRED $name(needs-PR)"
     gate_info "$name needs PR context: it does not run here, issue-closure-gate.yml runs it"
+    continue
+  fi
+
+  # Gates that read the live repository through the API.
+  if in_list "$name" "$LIVE_SCOPED" && [ -z "${EHS_LIVE_REPO:-}" ]; then
+    n_deferred=$((n_deferred + 1))
+    DEFERRED="$DEFERRED $name(needs-live-repo)"
+    gate_info "$name reads the live repository, not this checkout: set EHS_LIVE_REPO=1 with an authenticated gh to run it"
     continue
   fi
 
