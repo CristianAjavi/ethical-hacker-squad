@@ -17,7 +17,14 @@
 
 ZIZMOR_VERSION="${ZIZMOR_VERSION:-1.29.0}"
 ACTIONLINT_VERSION="${ACTIONLINT_VERSION:-1.7.12}"
-GATE_TOOLS_DIR="${GATE_TOOLS_DIR:-${TMPDIR:-/tmp}/ehs-gate-tools}"
+# Per-user cache, created 0700. It used to default to $TMPDIR/ehs-gate-tools,
+# which on a shared runner is a directory any local principal can write - and a
+# blinded audit of this repository showed the consequence: a planted binary in
+# that path is executed with no digest comparison at all, because the pin is only
+# checked at download time. Both halves are fixed: the location is private, and
+# a cache hit is now verified against a stamp written at install time.
+GATE_TOOLS_DIR="${GATE_TOOLS_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ehs-gate-tools}"
+mkdir -p -m 700 "$GATE_TOOLS_DIR" 2>/dev/null || true
 
 # SHA-256 of the official actionlint v1.7.12 tarballs
 # (source: actionlint_1.7.12_checksums.txt from the rhysd/actionlint release,
@@ -32,6 +39,24 @@ ACTIONLINT_BIN=""
 BOOTSTRAP_NOTES=""
 
 _boot_note() { BOOTSTRAP_NOTES="${BOOTSTRAP_NOTES}${1}"$'\n'; }
+
+# _stamp_write <dir> <file> — record what a verified install produced.
+_stamp_write() {
+  local digest
+  digest="$(_sha256_of "$2")" || return 0
+  [ -n "$digest" ] && printf '%s\n' "$digest" > "$1/.ehs-stamp" 2>/dev/null || true
+}
+
+# _stamp_ok <dir> <file> — a cache hit is only a hit if it still matches the
+# stamp written when it was verified. No stamp, no hashing tool, or a mismatch
+# all mean: do not use this cache.
+_stamp_ok() {
+  local want got
+  [ -r "$1/.ehs-stamp" ] || return 1
+  want="$(cat "$1/.ehs-stamp" 2>/dev/null)"
+  got="$(_sha256_of "$2")" || return 1
+  [ -n "$want" ] && [ -n "$got" ] && [ "$want" = "$got" ]
+}
 
 _sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -49,9 +74,12 @@ ensure_zizmor() {
 
   local venv="$GATE_TOOLS_DIR/zizmor-$ZIZMOR_VERSION/venv"
   if [ -x "$venv/bin/zizmor" ]; then
-    ZIZMOR_BIN="$venv/bin/zizmor"
-    _boot_note "zizmor: reusing the cache at $venv"
-    return 0
+    if _stamp_ok "$GATE_TOOLS_DIR/zizmor-$ZIZMOR_VERSION" "$venv/bin/zizmor"; then
+      ZIZMOR_BIN="$venv/bin/zizmor"
+      _boot_note "zizmor: reusing the cache at $venv (stamp verified)"
+      return 0
+    fi
+    _boot_note "zizmor: the cache at $venv does not match its install stamp; ignoring it and reinstalling"
   fi
 
   if command -v zizmor >/dev/null 2>&1; then
@@ -79,6 +107,7 @@ ensure_zizmor() {
     return 2
   fi
   ZIZMOR_BIN="$venv/bin/zizmor"
+  _stamp_write "$GATE_TOOLS_DIR/zizmor-$ZIZMOR_VERSION" "$venv/bin/zizmor"
   _boot_note "zizmor: installed $ZIZMOR_VERSION in $venv"
   return 0
 }
@@ -108,9 +137,12 @@ ensure_actionlint() {
 
   local dir="$GATE_TOOLS_DIR/actionlint-$ACTIONLINT_VERSION"
   if [ -x "$dir/actionlint" ]; then
-    ACTIONLINT_BIN="$dir/actionlint"
-    _boot_note "actionlint: reusing the cache at $dir"
-    return 0
+    if _stamp_ok "$dir" "$dir/actionlint"; then
+      ACTIONLINT_BIN="$dir/actionlint"
+      _boot_note "actionlint: reusing the cache at $dir (stamp verified)"
+      return 0
+    fi
+    _boot_note "actionlint: the cache at $dir does not match its install stamp; ignoring it and reinstalling"
   fi
 
   if command -v actionlint >/dev/null 2>&1; then
@@ -176,6 +208,7 @@ ensure_actionlint() {
   fi
   chmod +x "$dir/actionlint" 2>/dev/null || true
   ACTIONLINT_BIN="$dir/actionlint"
+  _stamp_write "$dir" "$dir/actionlint"
   _boot_note "actionlint: installed $ACTIONLINT_VERSION via $how, SHA-256 verified ($want)"
   return 0
 }

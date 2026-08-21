@@ -53,6 +53,12 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"docs/example.md").write_text(
   "STRIPE_KEY=sk" + "_test_" + "0" * 24 + "  # example value\n")'
 
+case_run inert-marker-elsewhere-on-the-line-does-not-suppress 1 "aws-access-key-id" '
+import os,pathlib
+# the marker sits in a comment on the same line; the key is still a key
+(pathlib.Path(os.environ["EHS_WORK"])/"docs/mixed.md").write_text(
+  "deploy with AKI" + "A" + "Q7ABCDEFGH" + "IJKLMN" + "  # see https://s3.example.com/docs\n")'
+
 case_run secret-in-the-bench-nobody-planted 1 "the exclusion would be hiding" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/express-invoices/lib/keys.js"

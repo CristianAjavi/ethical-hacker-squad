@@ -47,8 +47,13 @@ PATTERNS = {
     # the other inert markers are excluded before anything is reported.
     "vendor-live-token": re.compile(r"\b[a-z][a-z0-9]{2,11}_live_[A-Za-z0-9]{24,}\b"),
 }
-# Strings that carry a real format and are inert by construction.
-BENIGN = re.compile(r"sk_test_|changeme|CHANGEME|replace-me|example|EXAMPLE|xxxxx|0{16,}", re.I)
+# Strings that carry a real format and are inert BY CONSTRUCTION - tested against
+# the MATCH, never against the line. A blinded audit of this repository showed
+# why: applied to the line, one `https://s3.example.com` in a comment suppressed
+# a live-format key sitting next to it, and the filter meant to reduce noise was
+# deleting findings.
+BENIGN = re.compile(r"sk_test_|pk_test_|changeme|replace[-_]?me|xxxxx+|0{12,}|"
+                    r"AAAA{4,}|EXAMPLE|example[-_]?(key|token|secret)", re.I)
 
 
 def github_checksum_valid(token: str) -> bool:
@@ -81,7 +86,7 @@ def scan(path: Path) -> list[tuple[str, int, str, str]]:
             if not m:
                 continue
             hit = m.group(0)
-            if BENIGN.search(line):
+            if BENIGN.search(hit):
                 continue
             note = ""
             if name == "github-token":
