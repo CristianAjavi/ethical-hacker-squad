@@ -32,7 +32,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/gates/lib/bootstrap-actions-lint.sh
 . "$SELF_DIR/lib/bootstrap-actions-lint.sh"
 
-ROOT="$(gate_root)"
+# EHS_REPO_ROOT like every other gate: without it this gate could not be pointed
+# at a throwaway tree, which is why it had no self-test and why its stray-workflow
+# check went unexercised.
+ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 WF_DIR="$ROOT/.github/workflows"
 
 TMPD="$(mktemp -d 2>/dev/null || mktemp -d -t gatelint)"
@@ -63,6 +66,28 @@ if [ ! -d "$WF_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# A workflow outside the audited directory - checked with no tool at all, so it
+# still runs when the linters cannot be bootstrapped.
+# Scoped to THIS repository's own workflows, not the whole tree. bench/cases/
+# ships workflows written to be insecure - that is what the evaluation bench
+# is - and auditing them here would mean the gate reports the bench's planted
+# defects as our own. The scoping is not a hole: the check below fails if a
+# workflow appears anywhere outside the audited directory and outside the
+# bench, which is the only way this exclusion could hide a real one.
+stray="$(find "$ROOT" -path "$ROOT/.git" -prune -o -path '*/.github/workflows/*' -type f \
+          \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null \
+          | grep -v "^$ROOT/.github/workflows/" | grep -v "^$ROOT/bench/cases/" || true)"
+if [ -n "$stray" ]; then
+  gate_fail "workflow file(s) outside the audited directory and outside bench/cases:"
+  printf '%s\n' "$stray" | while IFS= read -r f; do gate_log "        ${f#"$ROOT"/}"; done
+  # escalate, not a private counter: this gate computes its verdict from
+  # RC_FINAL, and the counter it used to increment was read by nothing. The
+  # check printed FAIL and the gate exited 0 - a false green in the gate that
+  # exists to stop false greens, found by a blinded audit of this repository.
+  escalate 1
+fi
+
+
 # zizmor
 # ---------------------------------------------------------------------------
 ZOUT="$TMPD/zizmor.txt"
@@ -77,21 +102,6 @@ if ensure_zizmor; then
     ZARGS="$ZARGS --no-online-audits"
     gate_info "zizmor: online audits DISABLED - impostor-commit, known-vulnerable-actions and stale-action-refs were NOT checked (that runs in the supply-chain-audit workflow)"
   fi
-  # Scoped to THIS repository's own workflows, not the whole tree. bench/cases/
-  # ships workflows written to be insecure - that is what the evaluation bench
-  # is - and auditing them here would mean the gate reports the bench's planted
-  # defects as our own. The scoping is not a hole: the check below fails if a
-  # workflow appears anywhere outside the audited directory and outside the
-  # bench, which is the only way this exclusion could hide a real one.
-  stray="$(find "$ROOT" -path "$ROOT/.git" -prune -o -path '*/.github/workflows/*' -type f \
-            \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null \
-            | grep -v "^$ROOT/.github/workflows/" | grep -v "^$ROOT/bench/cases/" || true)"
-  if [ -n "$stray" ]; then
-    gate_fail "workflow file(s) outside the audited directory and outside bench/cases:"
-    printf '%s\n' "$stray" | while IFS= read -r f; do gate_log "        ${f#"$ROOT"/}"; done
-    FAILURES=$((${FAILURES:-0} + 1))
-  fi
-
   # shellcheck disable=SC2086
   "$ZIZMOR_BIN" $ZARGS "$ROOT/.github" > "$ZOUT" 2>&1
   zrc=$?

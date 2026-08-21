@@ -49,6 +49,8 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A false green in the gate that exists to stop false greens.** `gate-actions-lint.sh` detected a workflow outside the audited directory, printed `FAIL`, incremented a variable **nothing in the file read**, and exited `0` — so the compensating control that makes the zizmor scope exclusion safe did not fail the build. It now calls `escalate`, the check was lifted out of the block that only runs when the linters bootstrap, and the gate honours `EHS_REPO_ROOT` like every other gate, which is what made a self-test possible at all. Found by a **blinded audit of this repository's own machinery**, not by us.
+
 - **The verification vocabulary had no term for "the patch does not fix it"** — the single most consequential verdict a verifier can return. Its six outcomes covered `verified`, `partially verified`, `refuted` (the *finding* does not hold), and three flavours of not-measured, so a verifier that reproduced the original case after the patch had to write `inconclusive`, which says the run decided nothing. Added `not fixed` to `vocabulary.md` with its neighbour contrasts, and `VER-05` is now seven outcomes. Found by building the patch bench, which is what a bench is for.
 
 - **Identifiers written as prose.** Twenty-six `Traceability` lines across five packs cited ASVS chapters as bare text (`ASVS 5.0 V14, V16`), invisible to every check and to anyone grepping coverage of a chapter. Normalised, and the gate now fails on it.
