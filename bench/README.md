@@ -69,6 +69,8 @@ The miss all three arms share is the most useful thing either run produced: a co
 
 That is the strongest argument here for what a **coverage declaration** is worth: if recall against a named defect is near zero, what a reader can rely on is knowing what was looked at and what was not.
 
+**And that argument was then measured too, on [the only objective version of it](runs/2026-08-21-reader/): how many areas of the repository a reader can account for using the document alone, with a verbatim quotation required for every answer. With the corpus, 8 of 10. Without it, 9 of 10.** The corpus's report was not easier to act on. What the reader did single out, unprompted, was one sentence — *"the absence of an IDOR finding here means nobody looked"* — while pointing out that the same report never resolved the SQL layer it had inventoried. The differentiator is real and was executed in one place and dropped in another.
+
 The file-subset rounds are saturated: every arm finds the same advisories, and nothing is refuted. So the second run above changed the task to the one a written method is actually for — routing across a repository nobody can read in full — and **the corpus arm lost**: the unaided engineer found an advisory it did not.
 
 Routing was not the failure. Both arms read a comparable slice, and the corpus arm **had the right file open** and reported the neighbouring defect in it. The class it missed had been declared uncovered *by one of our own arms, in writing, earlier the same day*, and the write-up was deliberately deferred so it could not contaminate a round then in flight. This run is the cost of that decision, paid in the open.
