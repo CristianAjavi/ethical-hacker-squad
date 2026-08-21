@@ -1,0 +1,233 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-cli",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs local-app specialist (bench run)",
+    "coverage_declaration": "Read statically, in full, the only two files present: packer.py (96 lines) and README.md (6 lines). No packaging metadata, interpreter pin, wrapper, installer, unit file, sudoers fragment or test exists in the target, so nothing about the runtime environment could be established from it. Exercised local-app.md §0 (naming the second principal for every finding), §1 (LOC-01 archive extraction, LOC-02 symlink-following delete), §2 (LOC-03 predictable temporary files, LOC-04 the check-then-use sequences), §3 (LOC-05 argument injection, LOC-06 untrusted executable search path, LOC-07 configuration discovered from cwd), §4 (LOC-08 permissive modes, LOC-09 elevated execution) and §9 (LOC-15 credentials at rest). LOC-07 produced nothing: the module reads no configuration file and discovers nothing relative to the working directory. Not exercised, because the inventory does not justify them: §5 (LOC-10) — README.md:4 states the module is not installable, and there is neither packaging metadata nor a consumer whose call sites could be read; §6 (LOC-11, LOC-12) — no desktop shell, WebView, protocol handler or file association; §7 (LOC-13) — no socket, named pipe, loopback listener or debug port; §8 (LOC-14) — no self-update, plugin directory or runtime download. Memory safety, kernel, firmware and smart contracts are out of scope of this corpus and were not looked at. Nothing was executed: the interpreter was never run, no archive was built or extracted, no file was created in /tmp or anywhere else, no subprocess was spawned, no privileged operation was attempted and the network was not touched. Every conclusion below is read from source, and the target was left byte-for-byte as found. Reachability is the recurring gap: main() implements exactly one dispatch branch, so four of the five findings carry an inference naming that gap rather than claiming a call path that does not exist."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Archive extraction without a filter writes outside the destination (packer unpack)",
+      "procedure": "LOC-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": { "path": "packer.py", "line": 18, "component": "unpack()" },
+      "evidence": "packer.py:15-18 - unpack() opens a caller-supplied tar with tarfile.open(archive) and calls tf.extractall(dest) with no filter= argument, no member iteration and no canonicalization of the joined path. main() at packer.py:91-92 dispatches the only implemented subcommand to it with the destination hardcoded to the current working directory: unpack(args.value, \".\"). A member named ../../.ssh/authorized_keys, a member with an absolute name, or a symlink member followed by a later regular member written through it, all land wherever the archive's author chose. The same module carries the correct form six lines below, at packer.py:24: tf.extractall(dest, filter=\"data\") - and main() never calls it.",
+      "impact": "The author of the archive, not the person running the tool, decides where files are written. Escaping the destination reaches the invoking user's home tree - ~/.ssh/authorized_keys, ~/.bashrc, ~/.config - which turns an unpack into code execution or persistent access as that user at their next login or shell. Because the destination is the current working directory, even a non-traversing archive scatters attacker-chosen files over whatever directory the victim happened to be standing in.",
+      "preconditions": "The victim runs `packer unpack <archive>` on an archive they did not build - a download, an attachment, a bundle from a registry. No privileges, no second local account and no network access are needed.",
+      "recommendation": "Pass filter=\"data\" on the extraction, as unpack_safely already does, and make that the only extraction path in the module - remove the unfiltered function instead of shipping both next to each other. Where the filter argument is not available, iterate the members and resolve each joined path with os.path.realpath against the canonicalized destination, aborting on the first member that escapes it and rejecting absolute names, .. segments, symlink, hardlink and device members. Separately, stop defaulting the destination to the current working directory: require an explicit destination flag and create that directory for the operation.",
+      "traceability": ["CWE-22", "CWE-23", "CWE-59", "CAPEC-126", "ASVS 5.0 V5"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "unpack_safely at packer.py:21-24 is a sibling function, not a layer that cannot be skipped: main() at packer.py:91-92 calls unpack directly, so no control sits between the archive and the extractall on line 18."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the member names are read out of the tar file named on the command line, which is precisely the object the attacker authors; the destination is a literal, but the names that are joined to it are not."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the path exists in what ships and is the only implemented subcommand - main() packer.py:91-92 has one branch and it is this one."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is local-app.md §0's 'a file the tool is pointed at': the archive author. The boundary crossed is file to process - the victim supplies the run, the attacker supplies the content."
+        }
+      ],
+      "limits": "This does not establish which CPython version would execute the file: there is no shebang version, no pyproject.toml, no setup.py, no requirements file and no .python-version anywhere in the target. On an interpreter whose default extraction filter is already the data filter, the runtime would refuse the write - but nothing in the target claims, documents or pins that dependency, and the sibling function's explicit filter=\"data\" shows the safe form was available and deliberately not used on this path. Decompression-bomb behaviour of tarfile.open was not examined. Nothing was extracted: no archive was built and the tool was not run."
+    },
+    {
+      "id": "F-002",
+      "title": "Bundle staged at a predictable path inside a shared /tmp directory",
+      "procedure": "LOC-03",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "packer.py", "line": 30, "component": "stage()" },
+      "evidence": "packer.py:12 fixes CACHE = Path(\"/tmp/packer-cache\") - a literal /tmp path, not TMPDIR and not tempfile. stage() at packer.py:27-32 then calls CACHE.mkdir(exist_ok=True), builds CACHE / f\"stage-{os.getpid()}-{name}\" and creates it with path.write_bytes(b\"\"), which opens O_WRONLY|O_CREAT|O_TRUNC and follows symlinks. Both halves of the name are guessable: the pid is a small enumerable integer and name is the caller's bundle name. exist_ok=True on line 29 silently accepts a /tmp/packer-cache that another user created first and still owns, with whatever mode they gave it. The correct construction sits five lines below at packer.py:35-40, where stage_privately uses tempfile.mkdtemp plus tempfile.mkstemp.",
+      "impact": "Another local user who pre-creates /tmp/packer-cache, or who plants stage-<pid>-<name> inside it as a symlink, makes the tool create or truncate a file of their choosing with the invoking user's privileges. They also own the directory holding a bundle that the comment on packer.py:28 says is about to be signed, so they choose the bytes that get signed and the signature is applied to content the victim never produced.",
+      "preconditions": "A machine with a second local account - a shared host, a shared CI runner, a multi-user container - and a run in which stage() is reached. The attacker needs no privileges beyond the ability to write in /tmp.",
+      "recommendation": "Delete the fixed /tmp cache and use stage_privately's construction on every staging path: a per-run tempfile.mkdtemp() directory, which the OS creates 0700 and owned by the process, plus tempfile.mkstemp() for each file, so creation is atomic and exclusive and the name cannot be guessed. If a cache genuinely has to persist between runs, place it under a per-user directory the program creates with mode 0700, and when it already exists verify its owner and mode instead of accepting it with exist_ok=True.",
+      "traceability": ["CWE-377", "CWE-378", "CWE-379", "CWE-59", "ASVS 5.0 V5"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nothing on this path is atomic or exclusive: write_bytes is a plain truncating open with no O_EXCL and no O_NOFOLLOW, and mkdir(exist_ok=True) on line 29 is the opposite of a control - it explicitly accepts a directory the process did not create."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user, per §0, and the boundary is user to user through the world-writable /tmp named at packer.py:12."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the comment at packer.py:28 states the staged bundle is what gets signed, so its integrity is load-bearing rather than incidental; this is not public throwaway content."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the platform control that would rule this out - a per-user TMPDIR the OS creates 0700, which macOS provides by default - is bypassed by construction: packer.py:12 hardcodes /tmp instead of going through tempfile, so no environment or OS setting is in this path at all."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "stage() is present in the shipped file but main() at packer.py:86-92 dispatches only the unpack branch; no call site for stage exists anywhere in the target and none could be established, so whether this path runs in practice was not observed."
+        }
+      ],
+      "inference": "That anything calls stage(). The function ships in the file and README.md:5-6 describes a stage-sign-publish flow, but main() implements only the unpack branch, so the call site was argued from the module's shape rather than observed.",
+      "limits": "No race was demonstrated and no win rate was measured: nothing was executed, no directory was created in /tmp and no symlink was planted. The finding rests on the two syscalls and on the ownership the code accepts, which is a property of the code rather than of a single run."
+    },
+    {
+      "id": "F-003",
+      "title": "Publishing token written in cleartext into a world-readable /tmp cache",
+      "procedure": "LOC-15",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": { "path": "packer.py", "line": 63, "component": "write_token()" },
+      "evidence": "write_token() at packer.py:59-64 stores the credential with path.write_text(token) into CACHE / \"token\", where CACHE is the literal /tmp/packer-cache of packer.py:12. write_text creates the file with mode 0o666 masked by the process umask - 0644 under the common default - so every account on the machine can read it, and it lands in a directory obtained on line 62 with CACHE.mkdir(exist_ok=True), which accepts without complaint a /tmp/packer-cache that another user created and still owns. No mode is passed, no umask is set, no chmod narrows the file afterwards and no keystore is involved. The correct form is in the same file at packer.py:67-75, where write_token_privately creates ~/.config/packer with mode=0o700 and opens the file with os.open(..., O_WRONLY|O_CREAT|O_TRUNC, 0o600).",
+      "impact": "Any other local account reads the publishing token and can publish to the internal mirror as its owner - which is the token's stated purpose, per the comment at packer.py:60 and publish() at packer.py:54-56. Where the attacker owns the cache directory instead, they can replace the token or harvest every future one. A stolen publishing credential is a supply-chain position against everyone who consumes that mirror, not merely a local disclosure.",
+      "preconditions": "A second local account on the machine, and a run that stores the token. On a shared host or CI runner no timing is needed: the file simply sits there readable until something removes it.",
+      "recommendation": "Store the token the way write_token_privately already does - a per-user directory created with mode 0700 and a file opened with an explicit 0600 mode - and delete the /tmp variant so the unsafe path cannot be selected by accident. Better still, hand the secret to the OS keystore (Keychain, libsecret, the Windows credential manager) and keep only a handle on disk. Never accept a pre-existing cache directory without checking its owner and mode, and never rely on the ambient umask for a credential file.",
+      "traceability": ["CWE-312", "CWE-522", "CWE-276", "CWE-732", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no control to skip: the program sets no umask, passes no mode to write_text on packer.py:63 and performs no chmod afterwards, so nothing anywhere can force 0600 on this file."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user reading /tmp - §0's user-to-user crossing. The exculpation that applies to write_token_privately (a 0600 file inside a 0700 per-user directory) is absent here: the directory is shared and its mode is whatever its creator chose."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is a publishing credential by the comment at packer.py:60 and by the publish() flow at packer.py:54-56; it is the definition of data with security value."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "write_token() ships in the file but has no call site: main() at packer.py:86-92 dispatches only unpack, so it could not be established that this path executes in the delivered tool."
+        }
+      ],
+      "inference": "That anything calls write_token(). The sink and the mode are read end to end in the source, but the caller that would supply a real token is not present in the target - main() has one branch and it is unpack.",
+      "limits": "The file was never created and its actual mode was never observed on a filesystem; 0644 is the documented result of Path.write_text under a default 022 umask, not a measurement taken here. The target contains no real credential, so nothing needed redaction. Whether the process runs with a hardened umask in some deployment is unknown, and a hardened umask would narrow but not remove the exposure, since the containing directory can still be owned by another user."
+    },
+    {
+      "id": "F-004",
+      "title": "Filename reaches gpg without a -- terminator, so a leading dash becomes an option",
+      "procedure": "LOC-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "packer.py", "line": 45, "component": "sign()" },
+      "evidence": "sign() at packer.py:43-45 builds the vector [\"gpg\", \"--local-user\", key_id, \"--detach-sign\", path]. path is a positional value with no -- before it, no validation and no resolution, so a name beginning with - is consumed by gpg as an option rather than as a file; passing a list instead of a shell string prevents shell metacharacters, not this. key_id lands in the same vector immediately after --local-user. The correct form is six lines below at packer.py:48-51: verify() first reduces its input with Path(path).resolve(strict=True) and then places an explicit -- before it in [\"gpg\", \"--verify\", \"--\", str(resolved)].",
+      "impact": "A bundle name chosen by someone else turns the signing step into an attacker-directed gpg invocation running as the victim. The high-value options are the ones that write or redirect: --output places gpg's output at a path of the attacker's choosing with the invoking user's privileges, and --homedir or --options point gpg at a keyring and a configuration file the attacker controls, so what is signed, with which key and under which settings stops being the program's decision.",
+      "preconditions": "A bundle name that reaches sign() from outside the program - a member name taken from an archive that was just unpacked, a filename found in a working directory someone else produced, or a value passed through by a caller. No such call site exists in the target, so this precondition is argued rather than observed.",
+      "recommendation": "Place -- before every positional value, exactly as verify() does on packer.py:51, and resolve the path first so what reaches the vector is a canonical path to an existing file inside a directory the program knows, not a raw string; reject names beginning with - before that point. Constrain key_id to an allowlist of key identifiers rather than forwarding it verbatim after --local-user.",
+      "traceability": ["CWE-88", "CWE-78", "CAPEC-6", "ASVS 5.0 V1"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "this call has neither the -- terminator nor an allowlist nor a prior resolution; the control that exists in the module (packer.py:50-51) lives in a different function and does not sit on this path."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "the origin of path could not be traced backwards: sign() has no caller in the target, so whether an attacker chooses the filename is argued from the tool's stated purpose - signing bundles - rather than observed. It is demonstrably not a literal, since it is a parameter, but that is not the same as demonstrating attacker control."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "sign() ships in the file but main() at packer.py:86-92 dispatches only unpack, so no execution path to this vector could be established in what is delivered."
+        }
+      ],
+      "inference": "That path carries a value an attacker chose. The sink is observed in full - the exact argument vector on packer.py:45, with no terminator - but the source is not, because the function has no call site in the shipped dispatch.",
+      "limits": "gpg was not invoked and no option-shaped filename was tried. The set of gpg options that would be exploitable here is read from gpg's documented interface, not demonstrated against a binary, and the concrete effect would depend on the gpg version installed on the victim's machine, which the target does not constrain."
+    },
+    {
+      "id": "F-005",
+      "title": "Bare uploader resolved through the inherited PATH in a command documented to run under sudo",
+      "procedure": "LOC-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": { "path": "packer.py", "line": 56, "component": "publish()" },
+      "evidence": "publish() at packer.py:54-56 runs subprocess.run([\"uploader\", bundle], check=True). The executable is named, not located: resolution goes through whatever PATH the process inherited, and uploader is not a standard system binary, so by construction it is expected to be found somewhere outside the base system directories. README.md:5-6 states that the publish command is documented as running under sudo, and calls that part of the case. Nothing in the module pins an absolute path, checks the ownership or mode of what was resolved, or scrubs the environment before spawning the child - contrast verify() at packer.py:50, which at least reduces its input with resolve(strict=True) before use. bundle is additionally a positional value with no -- before it.",
+      "impact": "Whoever controls a directory that appears on the elevated process's PATH decides which binary root executes: another local user with write access to a loosely permissioned install directory, or the unprivileged invoker themselves where sudo passes their PATH through. That is local privilege escalation to root out of the one command the documentation tells users to run with sudo. The missing -- gives a second, smaller lever if uploader accepts option-shaped values.",
+      "preconditions": "publish() is reached while elevated, and at least one directory on the PATH the elevated process resolves against is writable by an account other than root - or sudo is configured without secure_path and env_reset, so the caller's own PATH survives into the privileged process.",
+      "recommendation": "Invoke the helper by absolute path, and before executing it verify that the file and every directory above it are owned by root and are not group- or world-writable. Scrub the environment for the child rather than inheriting it - an explicit allowlist, or the equivalent of env -i with a fixed PATH. Do not run the whole command under sudo: isolate the single operation that needs privilege, elevate only that, and describe to the user what is about to happen. Add -- before bundle so a name beginning with a dash cannot become an option.",
+      "traceability": ["CWE-426", "CWE-427", "CWE-250", "CAPEC-38", "ATT&CK T1574"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no verification to skip: packer.py:56 puts a bare name straight into subprocess.run, with no absolute path, no ownership check on the resolved binary and no environment scrubbing anywhere in the module."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "two principals are named, per §0: another local user who can write a directory on the search path, and the unprivileged invoker crossing into a root process. The boundary is user to user under elevation, which is the crossing that makes this more than a hardening note."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "publish() ships in the file but main() at packer.py:86-92 dispatches only unpack, and the sudo invocation is asserted in README.md:5-6 rather than shown - the target contains no wrapper script, sudoers fragment, launchd plist, systemd unit or installer that would demonstrate how it is really launched."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "whether sudo on the target machine is configured with secure_path and env_reset - which would replace the inherited PATH and blunt this - is a control that lives outside the repository, and no sudoers export, packaging script, install document or written statement accompanies the target. Per FP-08, the absence of that evidence is UNKNOWN and never HOLDS."
+        }
+      ],
+      "inference": "That publish() actually executes with elevated privileges. The elevation is stated in README.md:5-6 and nowhere else: no wrapper, no sudoers fragment, no unit file and no installer exists in the target, and main() never dispatches publish, so the elevated execution was read from documentation rather than observed in code.",
+      "limits": "The PATH seen by an elevated process was not observed, no real install directory was inspected for ownership or mode, and uploader does not exist in the target, so its own argument handling is unknown. Nothing was executed and no privileged operation was attempted, in line with the audit-mode safety contract."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Path traversal on archive extraction (unpack_safely)",
+      "procedure": "LOC-01",
+      "outcome": "refuted",
+      "where": "packer.py:21-24 - tf.extractall(dest, filter=\"data\"). The data filter is exactly the compensating control the procedure names: once the argument is on the call, the runtime refuses absolute member names, .. segments, links that resolve outside the destination, and device, setuid and setgid members, in a layer the caller cannot bypass. FP-01 HOLDS on line 24. This is the twin of F-001 and reporting it would be the false positive: the identical extractall shape is safe here and unsafe six lines above precisely because of that one argument. Bound: read statically - no archive was built and no extraction was run."
+    },
+    {
+      "class": "Predictable temporary file in a shared directory (stage_privately)",
+      "procedure": "LOC-03",
+      "outcome": "refuted",
+      "where": "packer.py:35-40 - tempfile.mkdtemp(prefix=\"packer-\") creates a fresh directory that the OS makes 0700 and owned by this process, and tempfile.mkstemp(prefix=..., dir=directory) then creates the file inside it atomically with O_CREAT|O_EXCL and mode 0600. Creation is exclusive and the name is unguessable, so there is nothing for another user to pre-create or replace with a symlink, and the containing directory is private to the run. FP-01 HOLDS (atomic exclusive creation) and FP-06 HOLDS (no second principal reaches inside a 0700 directory created in this run). Bound: read statically; no file was created and the mode was not measured on a live filesystem."
+    },
+    {
+      "class": "Argument injection into a subprocess (verify)",
+      "procedure": "LOC-05",
+      "outcome": "refuted",
+      "where": "packer.py:48-51 - the vector is [\"gpg\", \"--verify\", \"--\", str(resolved)]. An explicit -- terminator precedes the only external value, so gpg cannot read a leading dash as an option, and line 50 has already reduced the input with Path(path).resolve(strict=True), which fails unless the path names a file that exists and yields a canonical absolute path rather than the raw string. Both halves of the procedure's exculpation are present on the same call. FP-01 HOLDS on line 51. Bound: gpg was not invoked; the reading is of the argument vector as constructed."
+    },
+    {
+      "class": "Credential at rest with permissive modes (write_token_privately)",
+      "procedure": "LOC-08",
+      "outcome": "refuted",
+      "where": "packer.py:67-75 - ~/.config/packer is created with mode=0o700 and the file is opened with os.open(path, O_WRONLY|O_CREAT|O_TRUNC, 0o600): a 0600 file inside a 0700 per-user directory, which is the condition LOC-08 and LOC-15 name as the exculpation. FP-06 HOLDS - no second principal reaches inside the invoking user's own home directory, and §0 rule 1 says the owner is not an attacker against themselves. Saying it out loud as the pack requires: the threat model this rules out is a local attacker holding the user's own privileges, and against that attacker no file mode helps. Reporting 'token stored in cleartext on disk' here would be the false positive, and it is the same secret handled unsafely nine lines above in F-003. Bound of the check: exist_ok=True on line 70 means an already-existing ~/.config/packer keeps whatever mode it has, and os.open does not narrow the mode of a file that already exists - both were read in the source, neither was measured on a live filesystem, and neither introduces a principal other than the owner."
+    },
+    {
+      "class": "Symlink following on a recursive delete (clean)",
+      "procedure": "LOC-02",
+      "outcome": "refuted",
+      "where": "packer.py:78-83 - the tempting reading is shutil.rmtree driven by a caller-supplied path, which is the textbook LOC-02 shape. It is not what it is: the target argument is never used - line 83 discards it as _ = target - and rmtree runs on workdir, a directory this process created three lines earlier with tempfile.mkdtemp(prefix=\"packer-clean-\") and therefore owns at mode 0700, along with the inner subdirectory it made itself on line 81. FP-09 HOLDS (the construct is not what it looks like - the dangerous-looking parameter is dead), and FP-06 HOLDS with it: the entire subtree is private to this run, so there is no name another user could swap for a symlink. Bound: read statically; nothing was deleted and no sandbox symlink was planted."
+    }
+  ]
+}

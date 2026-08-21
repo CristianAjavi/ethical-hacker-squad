@@ -1,0 +1,467 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "bench/cases (both)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "two blinded specialists, first bench run"
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Caller identity and role are resolved from an unverified JWT (`jwt.decode`)",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/auth.js",
+        "line": 6,
+        "component": "currentUser(req)"
+      },
+      "evidence": "The whole chain is inside one function. Source: `req.headers.authorization`, attacker-controlled on every request. Transformation: `const bearer = (req.headers.authorization || '').replace('Bearer ', ''); const claims = jwt.decode(bearer);`. Sink: `return { id: claims && claims.sub, role: claims && claims.role };`. `jsonwebtoken@9.0.2` (package.json:8) documents `decode` as a parser that does not check the signature, the algorithm or `exp`; the verifying entry point is `jwt.verify`, which does not appear anywhere in the scope (`grep -rn 'jwt.verify' target-express` returns nothing). Both `alg: none` and a token signed with an arbitrary key are therefore accepted, and so is an expired one.",
+      "impact": "Anyone who can reach the API asserts any identity and any role by base64-encoding a JSON payload; no credential, session or prior access is required. The `sub` claim it returns is the same value the handlers use as the ownership filter (`owner_id = $2` with `req.user.id`, routes/invoices.js:16 and 24 and 32), so identity forgery collapses those filters and turns every scoped query into a read of any chosen user's rows. The `role` claim it returns carries whatever privilege the consuming code attaches to a role name.",
+      "preconditions": "Network reach to any endpoint whose handler consumes `currentUser`. No authentication, no valid token and no user interaction.",
+      "recommendation": "Replace `jwt.decode` with `jwt.verify(bearer, key, { algorithms: ['RS256'], issuer, audience })` - an explicit single-algorithm allowlist, a pinned key, and `iss`/`aud` checked - and fail closed when verification throws, returning 401 rather than an object with undefined fields. Add a unit test that feeds the verifier a token with `alg: none` and a token signed with a foreign key and asserts both are rejected; keep `decode` only where the result never reaches an access decision, as `tagRequest` does.",
+      "traceability": [
+        "CWE-347",
+        "CWE-345",
+        "CWE-287",
+        "ASVS 5.0 V9",
+        "A07:2025",
+        "API2:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer verifies the token before or after this call. `jwt.verify` appears nowhere in the scope, and `currentUser` returns its object unconditionally - there is no branch that rejects a token, so there is no control to skip around."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation the procedure names for this class is `decode` feeding only logs or metrics while authorization comes from a server-side session. That reading fits the sibling `tagRequest` and not this function: `currentUser` returns `id` and `role`, which is an identity object and not telemetry, and it never touches `req.session`."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: `jsonwebtoken` is the real dependency (package.json:8), `decode` is that library's non-verifying parser, and the function name, the comment at lib/auth.js:3 and the returned shape all state that this is the caller resolver."
+        }
+      ],
+      "limits": "The assignment `req.user = currentUser(req)` is not present in the scoped files - there is no application bootstrap or middleware registry here. What is observed end to end is the defect as reported: this function derives identity and role from an unverified token. The blast radius stated under impact rests on the routes reading `req.user.id`, which is read in routes/invoices.js but whose producer was not seen; whether an admin-gated function exists that the forged `role` would open could not be measured in this scope."
+    },
+    {
+      "id": "F-002",
+      "title": "Invoice detail is fetched by client-supplied id with no ownership or tenant filter (BOLA)",
+      "procedure": "WEB-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 8,
+        "component": "GET /invoices/:id"
+      },
+      "evidence": "`const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice);`. The only predicate is the identifier the client typed into the path. The handler never reads `req.user`, there is no `router.use` on this file, and no `Policy`, guard or scope call appears between the request and the query. The contrast is inside the same file and settles it: the sibling handler for the same screen, `GET /receipts/:id` at line 13, issues `SELECT * FROM receipts WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]` - the same author, the same shape, the ownership predicate present. Its absence here is an omission, not a design where the object is public: the other three handlers in the file (lines 15, 24, 32) all carry `owner_id`, so invoices are owner-scoped data.",
+      "impact": "Any caller who reaches the endpoint reads any invoice in the table by iterating or guessing `:id` - billing amounts, line items and whatever else the row carries, for every customer. The parameterized placeholder makes this invisible to an injection scanner: the query is safe from injection and wide open on authorization.",
+      "preconditions": "Whatever authentication the unseen upstream middleware imposes; nothing beyond it. No role and no relationship to the target invoice is needed. Chained with F-001 the precondition disappears entirely.",
+      "recommendation": "Scope the query to the subject the way the receipts handler already does: `SELECT * FROM invoices WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]`, and return 404 rather than 403 so the endpoint does not confirm the existence of other tenants' rows. Better, make the scope unskippable rather than per-handler - a repository layer that requires the subject, or row-level security in the database - so a future handler cannot forget it. Cover it with an integration test where user A requests user B's invoice on read, update and delete.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-284",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mandatory scoping layer. `db.query` receives a finished SQL string and a parameter array (lib/db.js:2), so nothing between the handler and the database can inject a tenant predicate; and the file's own convention is per-handler scoping, which the sibling routes apply by hand and this one omits."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The router is the package entry point (`\"main\": \"routes/invoices.js\"`, package.json:5). The route is registered unconditionally - no environment flag, no debug guard, no build step that could strip it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing marks this endpoint as intentionally public: the comment at routes/invoices.js:6 places it on the billing screen, and the three sibling handlers filter the same class of data by `owner_id`."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoices are per-customer financial records - the table is filtered by `owner_id` elsewhere in this same file, which is the author's own statement that its rows belong to somebody."
+        }
+      ],
+      "limits": "The invoice model is not in scope, so the exact columns `SELECT *` returns could not be enumerated; the finding rests on the row being owner-scoped, which the sibling queries establish, not on any particular column."
+    },
+    {
+      "id": "F-003",
+      "title": "SQL injection through an unvalidated `ORDER BY` interpolated from `req.query.order`",
+      "procedure": "WEB-07",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 24,
+        "component": "GET /invoices"
+      },
+      "evidence": "`const order = req.query.order || 'created_at';` then `db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id])`. The default `'created_at'` applies only when the parameter is absent; any non-empty value passes through untouched - no allowlist, no map, no cast, no identifier quoting - and is concatenated into the SQL text. `owner_id` is correctly bound as `$1`, which is precisely what makes the construct look safe at a glance: the injection is in the clause that cannot take a placeholder. The same file shows the author knows the right control: `GET /payments` at line 29-32 resolves its sort column through the `SORTABLE` map, so the string that reaches its `ORDER BY` is a code literal.",
+      "impact": "The attacker writes arbitrary SQL expression text into the query. `ORDER BY` accepts subqueries and CASE expressions, so a boolean-ordering oracle - `ORDER BY (CASE WHEN (SELECT ...) THEN 1 ELSE 2 END)` - extracts rows the `owner_id = $1` filter was meant to withhold, one bit per request, including other tenants' data and anything else the database role can read. Type and syntax errors also surface as database error text if the error handler propagates it. The bound filter gives no protection here: it constrains which rows are returned, not what the injected expression may read.",
+      "preconditions": "Reaching the endpoint and setting one query-string parameter. No role, no special configuration, no user interaction.",
+      "recommendation": "Resolve the sort key through a closed map exactly as `/payments` does - `const column = SORTABLE_INVOICES[req.query.order] || SORTABLE_INVOICES.date;` - so the value that reaches the SQL text is always a literal from the server's own table, and validate the direction the same way instead of accepting `asc`/`desc` from the client as text. Reject unknown keys explicitly rather than silently falling back, so the tests can see the rejection. Never interpolate an identifier that has passed through a request.",
+      "traceability": [
+        "CWE-89",
+        "CWE-20",
+        "WSTG-INPV-05",
+        "ASVS 5.0 V1",
+        "A05:2025",
+        "CAPEC-66"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer normalizes the value: it goes from `req.query` to the template literal in one statement, and `db.query` takes the SQL text already assembled (lib/db.js:2), so nothing downstream can re-parse or reject it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, `order` is `req.query.order` - the raw query string, chosen by the caller. It is neither a literal nor allowlist-constrained; the `|| 'created_at'` fallback fires only on an absent or empty value and therefore constrains nothing an attacker sends."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "lib/db.js is a declared stand-in for the bench (lib/db.js:1), so no statement executes in this tree, but the sink is a SQL execution point by contract: the call shape `query(text, params)` with `$1` placeholders is node-postgres, and the first argument is the statement text. Reading it as anything but SQL would ignore what every call site in routes/invoices.js does with it."
+        }
+      ],
+      "limits": "The real driver is not present, so the dialect's exact capabilities were not observed. Under the node-postgres extended protocol that `$1` implies, stacked statements are not available, which is why the impact is stated as expression-level exfiltration through an ordering oracle rather than arbitrary statement execution; on a driver that allows multiple statements the ceiling is higher."
+    },
+    {
+      "id": "F-004",
+      "title": "Server-side request forgery: `POST /branding/preview` fetches any URL the client supplies and returns the response body",
+      "procedure": "WEB-10",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/remote.js",
+        "line": 6,
+        "component": "fetchLogo(url), reached from routes/invoices.js:38"
+      },
+      "evidence": "The chain is observed end to end across two files. Source: `req.body.logoUrl` (routes/invoices.js:38). Call: `const image = await fetchLogo(req.body.logoUrl);`. Sink: `const response = await fetch(url, { redirect: 'follow' });` (lib/remote.js:6) - the URL is passed to `node-fetch@2.7.0` unparsed and unchecked, with redirect following left on. Return path: `res.type('image/png').send(image)` (routes/invoices.js:39) sends the fetched bytes back to the caller, so the forged request is not blind. The module holds the correct control one function away and does not use it here: `fetchAsset` (lib/remote.js:11-15) parses the URL, tests `ALLOWED.has(parsed.hostname)` against the set declared at line 2 and calls fetch with `redirect: 'error'`. `fetchLogo` performs none of those three steps.",
+      "impact": "The server issues the request from its own network position and hands the response body back verbatim. That reaches loopback services, anything routable inside the private network, and the cloud instance metadata endpoint on 169.254.169.254 - which on a default IMDSv1 instance yields role credentials. `node-fetch` also honours schemes the caller chooses, so `file://` and non-HTTP schemes are worth testing on this path. Because redirects are followed, an allowlist added later at the string level would still be defeated by a permitted host redirecting to an internal address.",
+      "preconditions": "The ability to POST to the endpoint with a JSON body. No role is required and no authentication check is present in the handler.",
+      "recommendation": "Route this path through the control that already exists: parse the URL, require `https:`, test the hostname against `ALLOWED`, and set `redirect: 'error'` - that is, make `fetchLogo` call `fetchAsset` rather than `fetch`. Where arbitrary customer hosts really are a requirement, resolve the hostname and reject addresses in loopback, link-local, private and unique-local ranges (v4 and v6, and their decimal and mixed notations), re-check after every redirect hop rather than once before the first, and pin the connection to the address you validated to close the DNS-rebinding window. Cap the response size and content type, and prefer an egress proxy the application cannot bypass. Also confirm the endpoint requires an authenticated caller.",
+      "traceability": [
+        "CWE-918",
+        "CWE-20",
+        "ASVS 5.0 V4",
+        "A01:2025",
+        "API7:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating control exists in the same module but is not on this path: `ALLOWED` (lib/remote.js:2) is consulted only inside `fetchAsset` (line 13). `fetchLogo` is exported separately (line 18) and the route calls it directly, so the allowlist is a control a caller may forget - which the rule's own text excludes - and here the caller did forget it. No egress restriction, proxy configuration or network policy is present anywhere in the scope."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, the argument is `req.body.logoUrl` at routes/invoices.js:38 - a request body field, fully attacker-controlled, with no parse, scheme check or host check between it and `fetch`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The route is registered unconditionally in the package's main module (package.json:5, routes/invoices.js:37) and `fetchLogo` is a published export of lib/remote.js; no flag, build step or test guard removes either."
+        }
+      ],
+      "limits": "Not exercised: the safety contract forbids network access, so no canary request was made and the reachability of any particular internal target from the deployment's network position is not established here - what is established is that the destination is chosen by the caller. Whether the endpoint sits behind authentication could not be determined: there is no application bootstrap in scope."
+    },
+    {
+      "id": "F-005",
+      "title": "Invoice note is interpolated into HTML without escaping (stored XSS sink)",
+      "procedure": "WEB-13",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/render.js",
+        "line": 5,
+        "component": "invoiceNote(note)"
+      },
+      "evidence": "`return `<div class=\"note\">${note}</div>`;` - the argument is concatenated into markup with no transformation at all. The module imports `escape-html@1.0.3` at line 1 and applies it in the sibling function on the very next lines: `customerName` returns `<span class=\"name\">${escapeHtml(name)}</span>` (line 10), and `footer` coerces with `Number(year)` (line 15). Two of the three composers neutralize their input and this one does not, while its comment (lib/render.js:3) describes the argument as \"Free-text note the customer typed on the invoice\". A payload such as [REDACTED:payload] passed as `note` emerges as live markup inside the element.",
+      "impact": "Markup and script authored by whoever writes the invoice note execute in the browser of everyone who views the rendered invoice - typically the issuing company's billing staff, i.e. a different principal from the author. That yields session-riding actions in the viewer's context and disclosure of whatever the page holds. Severity is held at medium because the viewer population and the delivery path are not observed in this scope; if the note is rendered into an authenticated back-office page, it is a high.",
+      "preconditions": "The ability to set the note text on an invoice, and a victim who views the rendered invoice.",
+      "recommendation": "Apply the module's own control: `return `<div class=\"note\">${escapeHtml(note)}</div>`;`. If the note is meant to carry formatting, run it through an allowlist sanitizer (`sanitize-html`, DOMPurify) after the last transformation rather than before, and never with escaping disabled. Add a rendering test that feeds an inert marker payload and asserts the output contains the escaped form. Serve a CSP with a nonce and without `unsafe-inline` as depth, not as the fix.",
+      "inference": "Reachability with attacker-controlled text. No caller of `invoiceNote` exists in the scoped files - lib/render.js is exported (line 18) but nothing in routes/invoices.js imports it - so that the `note` argument carries request data was read from the function's declared purpose (comment, lib/render.js:3) and from its siblings escaping the same class of value, not observed as a source-to-sink trace.",
+      "traceability": [
+        "CWE-79",
+        "CWE-116",
+        "ASVS 5.0 V1",
+        "A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer escapes for it: the function returns a raw string, and escaping in this module is applied per-composer by hand (line 10), which is exactly the kind of control a caller can omit - as this one does."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The value's origin could not be traced backwards past the function's own parameter, because no caller is present in the scope. The declared provenance (lib/render.js:3, \"the customer typed\") points at user input, but I did not see the assignment. This is the single reason the finding is `probable` rather than `confirmed`."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No CSP, no server-side sanitizer and no downstream escaping exists anywhere in the scope that would bound the impact to informational - and per the procedure a CSP would adjust severity rather than close the finding in any case."
+        }
+      ],
+      "limits": "The consuming template, the response headers and the audience of the rendered invoice are all outside the scope, so the finding is stated at the sink. Confirming it needs one line: the call site that passes a persisted note into `invoiceNote`."
+    },
+    {
+      "id": "F-1001",
+      "title": "Archive extraction without a filter writes outside the destination (packer unpack)",
+      "procedure": "LOC-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "packer.py",
+        "line": 18,
+        "component": "unpack()"
+      },
+      "evidence": "packer.py:15-18 - unpack() opens a caller-supplied tar with tarfile.open(archive) and calls tf.extractall(dest) with no filter= argument, no member iteration and no canonicalization of the joined path. main() at packer.py:91-92 dispatches the only implemented subcommand to it with the destination hardcoded to the current working directory: unpack(args.value, \".\"). A member named ../../.ssh/authorized_keys, a member with an absolute name, or a symlink member followed by a later regular member written through it, all land wherever the archive's author chose. The same module carries the correct form six lines below, at packer.py:24: tf.extractall(dest, filter=\"data\") - and main() never calls it.",
+      "impact": "The author of the archive, not the person running the tool, decides where files are written. Escaping the destination reaches the invoking user's home tree - ~/.ssh/authorized_keys, ~/.bashrc, ~/.config - which turns an unpack into code execution or persistent access as that user at their next login or shell. Because the destination is the current working directory, even a non-traversing archive scatters attacker-chosen files over whatever directory the victim happened to be standing in.",
+      "preconditions": "The victim runs `packer unpack <archive>` on an archive they did not build - a download, an attachment, a bundle from a registry. No privileges, no second local account and no network access are needed.",
+      "recommendation": "Pass filter=\"data\" on the extraction, as unpack_safely already does, and make that the only extraction path in the module - remove the unfiltered function instead of shipping both next to each other. Where the filter argument is not available, iterate the members and resolve each joined path with os.path.realpath against the canonicalized destination, aborting on the first member that escapes it and rejecting absolute names, .. segments, symlink, hardlink and device members. Separately, stop defaulting the destination to the current working directory: require an explicit destination flag and create that directory for the operation.",
+      "traceability": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-59",
+        "CAPEC-126",
+        "ASVS 5.0 V5"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "unpack_safely at packer.py:21-24 is a sibling function, not a layer that cannot be skipped: main() at packer.py:91-92 calls unpack directly, so no control sits between the archive and the extractall on line 18."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the member names are read out of the tar file named on the command line, which is precisely the object the attacker authors; the destination is a literal, but the names that are joined to it are not."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the path exists in what ships and is the only implemented subcommand - main() packer.py:91-92 has one branch and it is this one."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is local-app.md \u00a70's 'a file the tool is pointed at': the archive author. The boundary crossed is file to process - the victim supplies the run, the attacker supplies the content."
+        }
+      ],
+      "limits": "This does not establish which CPython version would execute the file: there is no shebang version, no pyproject.toml, no setup.py, no requirements file and no .python-version anywhere in the target. On an interpreter whose default extraction filter is already the data filter, the runtime would refuse the write - but nothing in the target claims, documents or pins that dependency, and the sibling function's explicit filter=\"data\" shows the safe form was available and deliberately not used on this path. Decompression-bomb behaviour of tarfile.open was not examined. Nothing was extracted: no archive was built and the tool was not run."
+    },
+    {
+      "id": "F-1002",
+      "title": "Bundle staged at a predictable path inside a shared /tmp directory",
+      "procedure": "LOC-03",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 30,
+        "component": "stage()"
+      },
+      "evidence": "packer.py:12 fixes CACHE = Path(\"/tmp/packer-cache\") - a literal /tmp path, not TMPDIR and not tempfile. stage() at packer.py:27-32 then calls CACHE.mkdir(exist_ok=True), builds CACHE / f\"stage-{os.getpid()}-{name}\" and creates it with path.write_bytes(b\"\"), which opens O_WRONLY|O_CREAT|O_TRUNC and follows symlinks. Both halves of the name are guessable: the pid is a small enumerable integer and name is the caller's bundle name. exist_ok=True on line 29 silently accepts a /tmp/packer-cache that another user created first and still owns, with whatever mode they gave it. The correct construction sits five lines below at packer.py:35-40, where stage_privately uses tempfile.mkdtemp plus tempfile.mkstemp.",
+      "impact": "Another local user who pre-creates /tmp/packer-cache, or who plants stage-<pid>-<name> inside it as a symlink, makes the tool create or truncate a file of their choosing with the invoking user's privileges. They also own the directory holding a bundle that the comment on packer.py:28 says is about to be signed, so they choose the bytes that get signed and the signature is applied to content the victim never produced.",
+      "preconditions": "A machine with a second local account - a shared host, a shared CI runner, a multi-user container - and a run in which stage() is reached. The attacker needs no privileges beyond the ability to write in /tmp.",
+      "recommendation": "Delete the fixed /tmp cache and use stage_privately's construction on every staging path: a per-run tempfile.mkdtemp() directory, which the OS creates 0700 and owned by the process, plus tempfile.mkstemp() for each file, so creation is atomic and exclusive and the name cannot be guessed. If a cache genuinely has to persist between runs, place it under a per-user directory the program creates with mode 0700, and when it already exists verify its owner and mode instead of accepting it with exist_ok=True.",
+      "traceability": [
+        "CWE-377",
+        "CWE-378",
+        "CWE-379",
+        "CWE-59",
+        "ASVS 5.0 V5"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nothing on this path is atomic or exclusive: write_bytes is a plain truncating open with no O_EXCL and no O_NOFOLLOW, and mkdir(exist_ok=True) on line 29 is the opposite of a control - it explicitly accepts a directory the process did not create."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user, per \u00a70, and the boundary is user to user through the world-writable /tmp named at packer.py:12."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the comment at packer.py:28 states the staged bundle is what gets signed, so its integrity is load-bearing rather than incidental; this is not public throwaway content."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the platform control that would rule this out - a per-user TMPDIR the OS creates 0700, which macOS provides by default - is bypassed by construction: packer.py:12 hardcodes /tmp instead of going through tempfile, so no environment or OS setting is in this path at all."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "stage() is present in the shipped file but main() at packer.py:86-92 dispatches only the unpack branch; no call site for stage exists anywhere in the target and none could be established, so whether this path runs in practice was not observed."
+        }
+      ],
+      "inference": "That anything calls stage(). The function ships in the file and README.md:5-6 describes a stage-sign-publish flow, but main() implements only the unpack branch, so the call site was argued from the module's shape rather than observed.",
+      "limits": "No race was demonstrated and no win rate was measured: nothing was executed, no directory was created in /tmp and no symlink was planted. The finding rests on the two syscalls and on the ownership the code accepts, which is a property of the code rather than of a single run."
+    },
+    {
+      "id": "F-1003",
+      "title": "Publishing token written in cleartext into a world-readable /tmp cache",
+      "procedure": "LOC-15",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 63,
+        "component": "write_token()"
+      },
+      "evidence": "write_token() at packer.py:59-64 stores the credential with path.write_text(token) into CACHE / \"token\", where CACHE is the literal /tmp/packer-cache of packer.py:12. write_text creates the file with mode 0o666 masked by the process umask - 0644 under the common default - so every account on the machine can read it, and it lands in a directory obtained on line 62 with CACHE.mkdir(exist_ok=True), which accepts without complaint a /tmp/packer-cache that another user created and still owns. No mode is passed, no umask is set, no chmod narrows the file afterwards and no keystore is involved. The correct form is in the same file at packer.py:67-75, where write_token_privately creates ~/.config/packer with mode=0o700 and opens the file with os.open(..., O_WRONLY|O_CREAT|O_TRUNC, 0o600).",
+      "impact": "Any other local account reads the publishing token and can publish to the internal mirror as its owner - which is the token's stated purpose, per the comment at packer.py:60 and publish() at packer.py:54-56. Where the attacker owns the cache directory instead, they can replace the token or harvest every future one. A stolen publishing credential is a supply-chain position against everyone who consumes that mirror, not merely a local disclosure.",
+      "preconditions": "A second local account on the machine, and a run that stores the token. On a shared host or CI runner no timing is needed: the file simply sits there readable until something removes it.",
+      "recommendation": "Store the token the way write_token_privately already does - a per-user directory created with mode 0700 and a file opened with an explicit 0600 mode - and delete the /tmp variant so the unsafe path cannot be selected by accident. Better still, hand the secret to the OS keystore (Keychain, libsecret, the Windows credential manager) and keep only a handle on disk. Never accept a pre-existing cache directory without checking its owner and mode, and never rely on the ambient umask for a credential file.",
+      "traceability": [
+        "CWE-312",
+        "CWE-522",
+        "CWE-276",
+        "CWE-732",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no control to skip: the program sets no umask, passes no mode to write_text on packer.py:63 and performs no chmod afterwards, so nothing anywhere can force 0600 on this file."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user reading /tmp - \u00a70's user-to-user crossing. The exculpation that applies to write_token_privately (a 0600 file inside a 0700 per-user directory) is absent here: the directory is shared and its mode is whatever its creator chose."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is a publishing credential by the comment at packer.py:60 and by the publish() flow at packer.py:54-56; it is the definition of data with security value."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "write_token() ships in the file but has no call site: main() at packer.py:86-92 dispatches only unpack, so it could not be established that this path executes in the delivered tool."
+        }
+      ],
+      "inference": "That anything calls write_token(). The sink and the mode are read end to end in the source, but the caller that would supply a real token is not present in the target - main() has one branch and it is unpack.",
+      "limits": "The file was never created and its actual mode was never observed on a filesystem; 0644 is the documented result of Path.write_text under a default 022 umask, not a measurement taken here. The target contains no real credential, so nothing needed redaction. Whether the process runs with a hardened umask in some deployment is unknown, and a hardened umask would narrow but not remove the exposure, since the containing directory can still be owned by another user."
+    },
+    {
+      "id": "F-1004",
+      "title": "Filename reaches gpg without a -- terminator, so a leading dash becomes an option",
+      "procedure": "LOC-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 45,
+        "component": "sign()"
+      },
+      "evidence": "sign() at packer.py:43-45 builds the vector [\"gpg\", \"--local-user\", key_id, \"--detach-sign\", path]. path is a positional value with no -- before it, no validation and no resolution, so a name beginning with - is consumed by gpg as an option rather than as a file; passing a list instead of a shell string prevents shell metacharacters, not this. key_id lands in the same vector immediately after --local-user. The correct form is six lines below at packer.py:48-51: verify() first reduces its input with Path(path).resolve(strict=True) and then places an explicit -- before it in [\"gpg\", \"--verify\", \"--\", str(resolved)].",
+      "impact": "A bundle name chosen by someone else turns the signing step into an attacker-directed gpg invocation running as the victim. The high-value options are the ones that write or redirect: --output places gpg's output at a path of the attacker's choosing with the invoking user's privileges, and --homedir or --options point gpg at a keyring and a configuration file the attacker controls, so what is signed, with which key and under which settings stops being the program's decision.",
+      "preconditions": "A bundle name that reaches sign() from outside the program - a member name taken from an archive that was just unpacked, a filename found in a working directory someone else produced, or a value passed through by a caller. No such call site exists in the target, so this precondition is argued rather than observed.",
+      "recommendation": "Place -- before every positional value, exactly as verify() does on packer.py:51, and resolve the path first so what reaches the vector is a canonical path to an existing file inside a directory the program knows, not a raw string; reject names beginning with - before that point. Constrain key_id to an allowlist of key identifiers rather than forwarding it verbatim after --local-user.",
+      "traceability": [
+        "CWE-88",
+        "CWE-78",
+        "CAPEC-6",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "this call has neither the -- terminator nor an allowlist nor a prior resolution; the control that exists in the module (packer.py:50-51) lives in a different function and does not sit on this path."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "the origin of path could not be traced backwards: sign() has no caller in the target, so whether an attacker chooses the filename is argued from the tool's stated purpose - signing bundles - rather than observed. It is demonstrably not a literal, since it is a parameter, but that is not the same as demonstrating attacker control."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "sign() ships in the file but main() at packer.py:86-92 dispatches only unpack, so no execution path to this vector could be established in what is delivered."
+        }
+      ],
+      "inference": "That path carries a value an attacker chose. The sink is observed in full - the exact argument vector on packer.py:45, with no terminator - but the source is not, because the function has no call site in the shipped dispatch.",
+      "limits": "gpg was not invoked and no option-shaped filename was tried. The set of gpg options that would be exploitable here is read from gpg's documented interface, not demonstrated against a binary, and the concrete effect would depend on the gpg version installed on the victim's machine, which the target does not constrain."
+    },
+    {
+      "id": "F-1005",
+      "title": "Bare uploader resolved through the inherited PATH in a command documented to run under sudo",
+      "procedure": "LOC-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 56,
+        "component": "publish()"
+      },
+      "evidence": "publish() at packer.py:54-56 runs subprocess.run([\"uploader\", bundle], check=True). The executable is named, not located: resolution goes through whatever PATH the process inherited, and uploader is not a standard system binary, so by construction it is expected to be found somewhere outside the base system directories. README.md:5-6 states that the publish command is documented as running under sudo, and calls that part of the case. Nothing in the module pins an absolute path, checks the ownership or mode of what was resolved, or scrubs the environment before spawning the child - contrast verify() at packer.py:50, which at least reduces its input with resolve(strict=True) before use. bundle is additionally a positional value with no -- before it.",
+      "impact": "Whoever controls a directory that appears on the elevated process's PATH decides which binary root executes: another local user with write access to a loosely permissioned install directory, or the unprivileged invoker themselves where sudo passes their PATH through. That is local privilege escalation to root out of the one command the documentation tells users to run with sudo. The missing -- gives a second, smaller lever if uploader accepts option-shaped values.",
+      "preconditions": "publish() is reached while elevated, and at least one directory on the PATH the elevated process resolves against is writable by an account other than root - or sudo is configured without secure_path and env_reset, so the caller's own PATH survives into the privileged process.",
+      "recommendation": "Invoke the helper by absolute path, and before executing it verify that the file and every directory above it are owned by root and are not group- or world-writable. Scrub the environment for the child rather than inheriting it - an explicit allowlist, or the equivalent of env -i with a fixed PATH. Do not run the whole command under sudo: isolate the single operation that needs privilege, elevate only that, and describe to the user what is about to happen. Add -- before bundle so a name beginning with a dash cannot become an option.",
+      "traceability": [
+        "CWE-426",
+        "CWE-427",
+        "CWE-250",
+        "CAPEC-38",
+        "ATT&CK T1574"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no verification to skip: packer.py:56 puts a bare name straight into subprocess.run, with no absolute path, no ownership check on the resolved binary and no environment scrubbing anywhere in the module."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "two principals are named, per \u00a70: another local user who can write a directory on the search path, and the unprivileged invoker crossing into a root process. The boundary is user to user under elevation, which is the crossing that makes this more than a hardening note."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "publish() ships in the file but main() at packer.py:86-92 dispatches only unpack, and the sudo invocation is asserted in README.md:5-6 rather than shown - the target contains no wrapper script, sudoers fragment, launchd plist, systemd unit or installer that would demonstrate how it is really launched."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "whether sudo on the target machine is configured with secure_path and env_reset - which would replace the inherited PATH and blunt this - is a control that lives outside the repository, and no sudoers export, packaging script, install document or written statement accompanies the target. Per FP-08, the absence of that evidence is UNKNOWN and never HOLDS."
+        }
+      ],
+      "inference": "That publish() actually executes with elevated privileges. The elevation is stated in README.md:5-6 and nowhere else: no wrapper, no sudoers fragment, no unit file and no installer exists in the target, and main() never dispatches publish, so the elevated execution was read from documentation rather than observed in code.",
+      "limits": "The PATH seen by an elevated process was not observed, no real install directory was inspected for ownership or mode, and uploader does not exist in the target, so its own argument handling is unknown. Nothing was executed and no privileged operation was attempted, in line with the audit-mode safety contract."
+    }
+  ]
+}
