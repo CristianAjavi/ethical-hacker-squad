@@ -76,7 +76,9 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 ## What it cannot measure
 
-Anything the cases do not contain: infrastructure, mobile, agent runtimes, supply chain, privacy surfaces, and every class in the corpus that has no case here. Today the bench exercises `web-api` and `local-app` only, and the score is silent about the other six packs — silent, not clean. It also says nothing about how the squad behaves under a real repository's size, where the expensive failure is not missing a pattern but never reading the file.
+Anything the cases do not contain: mobile surfaces, remediation and verification, and every class in the corpus that has no case here. <!-- bench:packs -->
+Today the bench exercises `web-api`, `local-app`, `infra-cloud`, `supply-chain`, `ai-safety` and `privacy-abuse`, and the score is silent about `mobile` and `remediation` — silent, not clean.
+<!-- /bench:packs --> It also says nothing about how the squad behaves under a real repository's size, where the expensive failure is not missing a pattern but never reading the file.
 
 ## Growing it
 

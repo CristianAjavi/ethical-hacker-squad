@@ -11,7 +11,7 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
 | Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` | `WEB-01`..`WEB-22` |
 | Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
-| Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` | `INF-01`..`INF-18` |
+| Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` + `knowledge/infra-cloud-cicd-platforms.md` | `INF-01`..`INF-23` |
 | Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-25` |
 | AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-28` |
 | Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |

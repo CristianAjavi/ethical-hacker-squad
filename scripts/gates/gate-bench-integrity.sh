@@ -188,6 +188,40 @@ if tracked is not None:
                     f"{item['id']} points at {rel}, which git does not track: it exists here "
                     "and nowhere else, and any run elsewhere scores against a file that is missing")
 
+# A README that says which packs the bench exercises is making a coverage claim,
+# and that claim rots the moment a case is added. It rotted once already: the
+# sentence still said "web-api and local-app only" four cases after the six-pack
+# run. So it lives in a marked region and is measured against the key.
+COVERAGE = re.compile(r"<!--\s*bench:packs\s*-->(.*?)<!--\s*/bench:packs\s*-->", re.S)
+bench_readme = root / "bench" / "README.md"
+packs_json = root / "scripts" / "meter" / "packs.json"
+checks += 1
+if not bench_readme.is_file() or not packs_json.is_file():
+    findings.append("bench/README.md or scripts/meter/packs.json is missing: the coverage claim cannot be measured")
+else:
+    m = COVERAGE.search(bench_readme.read_text(encoding="utf-8"))
+    if not m:
+        findings.append(
+            "bench/README.md states which packs the bench exercises and the claim is not inside a "
+            "`bench:packs` region, so nothing can check it against the key")
+    else:
+        payload = m.group(1)
+        head, _, tail = payload.partition("silent about")
+        said_exercised = set(re.findall(r"`([a-z-]+)`", head))
+        said_silent = set(re.findall(r"`([a-z-]+)`", tail))
+        all_packs = {p["pack"] for p in json.loads(packs_json.read_text(encoding="utf-8"))["packs"]}
+        real_exercised = {p for c in cases.values() for p in c.get("packs", [])}
+        checks += 2
+        if said_exercised != real_exercised:
+            findings.append(
+                f"bench/README.md says the bench exercises {sorted(said_exercised)}; the key says "
+                f"{sorted(real_exercised)} - a coverage claim wider than the cases is the one lie "
+                "a bench cannot afford")
+        if said_silent != all_packs - real_exercised:
+            findings.append(
+                f"bench/README.md says the score is silent about {sorted(said_silent)}; measured "
+                f"{sorted(all_packs - real_exercised)}")
+
 # ---- the patch bench -------------------------------------------------
 # A patch that no longer applies, claims a defect nobody planted, or expects a
 # verdict the vocabulary does not declare, turns a verification score into

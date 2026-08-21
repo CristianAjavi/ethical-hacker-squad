@@ -6,7 +6,7 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 3,931 lines of corpus across eight role packs, with 154 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,077 lines of corpus across eight role packs, with 159 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -31,7 +31,7 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 
 ## Knowledge
 
-Seven packs, one per role. Five of them are stored as **more than one file** (`mobile` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
+Eight packs, one per role. Five of them are stored as **more than one file** (`mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
 
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
@@ -42,12 +42,16 @@ Seven packs, one per role. Five of them are stored as **more than one file** (`m
 | | `mobile-ios.md` | `MOB-14`..`MOB-15` | iOS specifics: `Info.plist`, ATS, URL schemes, entitlements, Keychain, pasteboard |
 | infra-cloud | `infra-cloud.md` | `INF-01`..`INF-12` | Terraform and IaC, containers, Kubernetes |
 | | `infra-cloud-cicd-exposure.md` | `INF-13`..`INF-18` | CI/CD and GitHub Actions, environment separation and deployment secrets, remote exposure |
+| | `infra-cloud-cicd-platforms.md` | `INF-19`..`INF-23` | GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket: untrusted-contributor pipelines, metadata in a shell step, credential scope, moving pipeline imports, the runner as a machine |
 | supply-chain | `supply-chain.md` | `SUP-01`..`SUP-15` | manifests and locks, install scripts, dependency confusion, typosquatting and slopsquatting, pipeline integrity, provenance and SBOM, reachability-aware triage |
 | | `supply-chain-secrets-malware.md` | `SUP-16`..`SUP-20` | secrets in tree, history and CI, malicious-package indicators |
+| | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-25` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
 | ai-safety | `ai-safety.md` | `AI-01`..`AI-11` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
-| | `ai-safety-data-output.md` | `AI-12`..`AI-22` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
-| privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-11` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
-| remediation | `remediation.md` | `REM-01`..`REM-07`, `VER-01`..`VER-07` | minimum root-cause patching, regression tests that must fail without the patch, adversarial verification, honest classification |
+| | `ai-safety-data-output.md` | `AI-12`..`AI-24` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
+| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
+| local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |
+| privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
+| remediation | `remediation.md` | `REM-01`..`REM-07`, `VER-01`..`VER-08` | minimum root-cause patching, regression tests that must fail without the patch, adversarial verification, honest classification |
 
 Navigation is progressive: `SKILL.md` is a router, `coverage.md` maps detected technology to roles and to the exact file and sections that hold them, and each specialist loads only its own pack — and only the sections its inventory justifies. Loading everything is a bug, not thoroughness.
 

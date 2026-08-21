@@ -96,6 +96,22 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"'"$K"'/README.md"
 lines=[l for l in p.read_text().splitlines() if not l.startswith("| `mobile-ios.md`")]
 p.write_text("\n".join(lines)+"\n")'
 
+case_run file-row-range-drift 1 "a reader routes by this table" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text().replace("`AI-12`..`AI-24`","`AI-12`..`AI-22`",1))'
+
+case_run file-row-claims-a-ghost 1 "that are not in it" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text().replace("| `MOB-14`..`MOB-15` |","| `MOB-14`..`MOB-15`, `MOB-19` |",1))'
+
+case_run file-row-missing-entirely 1 "no row for" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+lines=[l for l in p.read_text().splitlines() if not l.startswith("| local-app | `local-app.md` |")]
+p.write_text("\n".join(lines)+"\n")'
+
 case_run fabricated-identifier 1 "matches no known identifier family" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$K"'/mobile.md"

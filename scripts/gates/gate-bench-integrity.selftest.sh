@@ -74,6 +74,21 @@ import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"
 p.write_text(p.read_text().replace("    # Signs a staged bundle","    # Planted: argument injection here\n    # Signs a staged bundle",1))'
 
+case_run coverage-claim-too-wide 1 "a coverage claim wider than the cases" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/README.md"
+p.write_text(p.read_text().replace("the bench exercises `web-api`","the bench exercises `mobile`, `web-api`",1))'
+
+case_run coverage-claim-unmarked 1 "not inside a" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/README.md"
+p.write_text(p.read_text().replace("<!-- bench:packs -->","",1))'
+
+case_run coverage-silence-drifts 1 "says the score is silent about" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/README.md"
+p.write_text(p.read_text().replace("silent about `mobile` and `remediation`","silent about `remediation`",1))'
+
 case_run patch-no-longer-applies 1 "no longer applies" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"

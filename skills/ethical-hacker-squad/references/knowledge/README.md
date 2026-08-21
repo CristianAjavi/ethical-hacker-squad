@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over sixteen files, 3,931 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over seventeen files, 4,077 lines in total, 159 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -8,7 +8,7 @@ Eight packs, one per role, spread over sixteen files, 3,931 lines in total, 154 
 2. The **specialist reads its own pack**, and only the sections its inventory justifies. Every pack opens with a selective-loading index for exactly this.
 3. One role, one pack. A specialist that needs another pack's procedure is a sign the leader split the work wrong; report it instead of reading across.
 4. `remediation.md` is the exception: it is shared by two roles, part A for the remediator and part B for the verifier. Each reads its own part.
-5. Five packs ship as **more than one file**, because a single file above 32 KiB stops being selectively loadable and blows the plugin size budget. The files of a pack are one pack: same role, same procedure numbering, disjoint sections. The first file is the entry point and names its siblings in its header; open a sibling only when the inventory reaches its sections. `mobile` ships as three (`mobile.md`, `mobile-runtime-trust.md`, `mobile-ios.md`) and so does `supply-chain` (`supply-chain.md`, `supply-chain-secrets-malware.md`, `supply-chain-source-lifecycle.md`).
+5. Five packs ship as **more than one file**, because a single file above 32 KiB stops being selectively loadable and blows the plugin size budget. The files of a pack are one pack: same role, same procedure numbering, disjoint sections. The first file is the entry point and names its siblings in its header; open a sibling only when the inventory reaches its sections. `mobile` ships as three (`mobile.md`, `mobile-runtime-trust.md`, `mobile-ios.md`), and so do `supply-chain` (`supply-chain.md`, `supply-chain-secrets-malware.md`, `supply-chain-source-lifecycle.md`), `ai-safety` (`ai-safety.md`, `ai-safety-data-output.md`, `ai-safety-agent-runtime.md`) and `infra-cloud` (`infra-cloud.md`, `infra-cloud-cicd-exposure.md`, `infra-cloud-cicd-platforms.md`).
 
 ## The packs
 
@@ -21,6 +21,7 @@ Eight packs, one per role, spread over sixteen files, 3,931 lines in total, 154 
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
 | `infra-cloud.md` | `ehs-infra-cloud` | ~287 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
 | `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~151 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
+| `infra-cloud-cicd-platforms.md` | `ehs-infra-cloud` | ~146 | `INF-19`..`INF-23` | `.gitlab-ci.yml`, a `Jenkinsfile`, `azure-pipelines.yml`, `.circleci/config.yml` or `bitbucket-pipelines.yml` |
 | `supply-chain.md` | `ehs-supply-chain` | ~333 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
 | `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~117 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
 | `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~141 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |

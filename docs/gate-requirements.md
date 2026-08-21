@@ -120,6 +120,7 @@ What it enforces:
 2. **Declared counts.** Corpus lines, procedure count and file count, wherever prose states them, against measurement.
 3. **Declared ranges.** The upper bound of `` `AI-01`..`AI-28` `` must be the highest identifier that exists.
 4. **Pack headers and the loading map.** The `**Cost:** ~N lines` estimate and the per-file table, within 10 lines.
+4b. **Every table row that names a pack file.** A row saying `` `ai-safety-data-output.md` | `AI-12`..`AI-24` `` is a claim about which procedures live in that file, and a file carrying such a table must carry a row for **every** pack file. Check 3 only looks at ranges starting at `01`, which is how three rows of `README.md` drifted and the whole `local-app` pack stayed missing from the front-page table while every other check was green.
 5. **Anatomy and identifiers.** Every procedure carries the six mandatory fields from `scripts/meter/packs.json`; its `Traceability` line names at least one identifier or declares explicitly that none applies; every backticked token matches a family in `scripts/gates/data/identifier-families.json`; and no identifier appears outside backticks.
 6. **The roster.** `references/team.md`, `agents/` and `packs.json` name the same roles, agents and files. A pack no role owns is never loaded; an agent absent from the roster is never dispatched.
 7. **Routing.** Every `` `pack.md` §N `` in `coverage.md` names a section that exists.
@@ -128,7 +129,7 @@ What it enforces:
 
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
-Proved in the negative by `gate-corpus-contract.selftest.sh`: 17 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 20 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## The triage rules
 
