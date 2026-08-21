@@ -33,6 +33,12 @@ All three arms judged by a context that saw only the advisory text and the findi
 
 **The Etherpad case is where the difference showed.** The control arm read the same exporter and reported an unbounded list-level loop — plausible, real-looking, and not the advisory. The judge called it *the closest miss*: same file, same function, same attacker-controlled source, **different mechanism**. The corpus arm reported four unescaped sinks in that exporter, one of which was the advisory, because `web-api.md` §6 tells a reader to ask what escaping a value passed through **for the context it lands in**, and to treat an attribute as a different context from a text node. That is a procedure doing what a procedure is for.
 
+## This result did not generalise, and the run that showed it is next door
+
+Three further advisories, picked by a published rule instead of by us, were put through the same three arms with the same blind protocol: `../2026-08-21-three-arm-go/`. **Every arm scored 2 of 3, finding the same two and missing the same one.** No difference between the corpus, an unaided senior engineer, and the competitor.
+
+So the Etherpad row below is real and reproducible from the artifacts in this directory, and it is also the only case in five where the corpus pulled ahead. Read the two runs together: on cases this project wrote or chose, the corpus shows a difference; on cases a rule chose, it does not.
+
 ## What this is not
 
 - **Two cases.** One tie and one difference is a signal, not a rate. Nothing here supports a percentage.

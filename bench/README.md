@@ -20,14 +20,23 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
-## What the corpus adds, and how a competitor did on the same two targets
+## What the corpus adds — and where it adds nothing
 
-| Advisory | With the corpus | Without it | `google/mantis` |
-|---|---|---|---|
-| `CVE-2026-53957` | found | found | found |
-| `CVE-2026-55090` | found | **missed** | **missed** |
+Two runs, and they do not agree. Read them together or not at all.
 
-[The three-arm run](runs/2026-08-21-ab-corpus/): same model, same targets, same blind judge; the arms differ only in what the auditor was given — the packs, nothing, or a neighbouring product's own 33 skills followed as written. One tie and one difference, and the run's README says which is which, states the discount the competitor's own rubric applied for a reproduction stage **our** rules forbade, and refuses to call two advisories a ranking.
+| Advisory | Case chosen by | With the corpus | Without it | `google/mantis` |
+|---|---|---|---|---|
+| `CVE-2026-53957` | us | found | found | found |
+| `CVE-2026-55090` | us | **found** | missed | missed |
+| `CVE-2026-55149` | a published rule | found | found | found |
+| `CVE-2026-53657` | a published rule | found | found | found |
+| `CVE-2026-64868` | a published rule | **missed** | missed | missed |
+
+[The two-case A/B](runs/2026-08-21-ab-corpus/) found one advisory the other two arms missed. [The three-case run on rule-picked targets](runs/2026-08-21-three-arm-go/) found **no difference at all**: 2 of 3 for every arm, the same two found, the same one missed.
+
+**The honest reading is the second one.** On cases this project chose, the corpus shows a difference; on cases a published rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer until a larger rule-picked sample says otherwise, and the run that would say so does not exist yet.
+
+The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. The corpus has no procedure for dead configuration, and that gap came from losing, not from planning.
 
 ## Without a pointer
 
