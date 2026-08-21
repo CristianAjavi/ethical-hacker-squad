@@ -126,19 +126,29 @@ jobs:
       - name: Measure the project and publish the figures
         run: |
           set -uo pipefail
-          bash scripts/meter/meter.sh --no-gates > meter.txt 2> meter.err
-          code=$?
+          # The step runs under `bash -e`, and the meter is designed to return 2
+          # when a section could not be measured. Capturing the status with `$?`
+          # after a bare command means the shell aborts before this step can read
+          # it: the job died at exit 2 while claiming not to gate on the meter.
+          code=0
+          bash scripts/meter/meter.sh --no-gates > meter.txt 2> meter.err || code=$?
           bash scripts/meter/meter.sh --no-gates --json > meter.json 2>/dev/null || true
 
           {
             printf '## Project meter\n\n'
             printf '0 = measured and fine | 1 = measured and FAILS | 2 = COULD NOT MEASURE\n\n'
             printf 'Meter exit code: **%s**. This job does not gate on it.\n\n' "$code"
-            printf 'The gate suite is reported as NOT MEASURED here by design: it runs in the\n'
-            printf '`gates` and `workflow-hardening` jobs of this same workflow.\n\n'
-            printf '```\n'
+            # Quoted heredoc and escaped fences: backticks inside single quotes
+            # are command substitution to a reader and to shellcheck (SC2016),
+            # even when the intent is Markdown.
+            cat <<'NOTE'
+          The gate suite is reported as NOT MEASURED here by design: it runs in the
+          `gates` and `workflow-hardening` jobs of this same workflow.
+
+          NOTE
+            echo "\`\`\`"
             cat meter.txt
-            printf '```\n'
+            echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
           cat meter.txt
