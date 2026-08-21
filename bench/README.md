@@ -23,6 +23,19 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
+## The corpus makes a weaker model worse, and that is measured
+
+[2026-08-21, weaker model](runs/2026-08-21-weaker-model/) — same target, same prompts verbatim, same blind judging, Haiku 4.5 instead of the frontier model every other round used. Ground truth is the two defects **every** frontier run in **both** arms found every time.
+
+| Arm | D1 | D2 | total |
+|---|---|---|---|
+| with the corpus | 2/3 runs | **0/3 runs** | **2 / 6** |
+| without it | 2/3 runs | 3/3 runs | **5 / 6** |
+
+The pre-registration predicted the opposite and named what would refute it. The corpus arm spent roughly twice the budget (95k-111k tokens against 48k-66k) to produce a fifth of the output, and two of its three artifacts failed the coverage invariant on the very files the run had just read. **A context tax, not a transfer of expertise** — and the last untested hypothesis for the corpus's value, tested and dead.
+
+The counterweight is in the run: the unaided lists on a weak model carry filler, and this round did not measure their precision. 5/6 says the defects are in the list, not that the list is good.
+
 ## The number that governs every other number in this file
 
 The unaided arm was measured at **0.81** agreement in one sitting and **0.60** in the next — same arm, same target, same blind instrument, same judging rule, and a run prompt rewritten because the first one was never stored. **Twenty-one points, from the prompt alone.**
