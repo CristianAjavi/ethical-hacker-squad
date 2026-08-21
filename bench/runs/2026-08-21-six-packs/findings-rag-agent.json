@@ -1,0 +1,316 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run2/rag-agent/target (4 files: README.md, config/mcp.json, agent/answer.py, agent/memory.py)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs ai-safety specialist (bench run)",
+    "coverage_declaration": "Static, local, read-only analysis of the four files in scope. No model API was called, the agent was never run, no network request was made and nothing in the target was modified. The target is not a git repository, so no commit could be recorded and no authorship or review history for any file could be examined; the audit read the files at their state on disk. Sections exercised: ai-safety.md §0 (AI-01), §1 (AI-02, AI-03, AI-04), §2 (AI-05, AI-06, AI-07), §3 (AI-08, AI-09, AI-10, AI-11); ai-safety-data-output.md §4 (AI-12, AI-13, AI-14, AI-23, AI-24), §5 (AI-15, AI-16), §6 (AI-17, AI-18), §7 (AI-19), §8 (AI-20), §9 (AI-21), §10 (AI-22); ai-safety-agent-runtime.md §11 (AI-25, AI-28), §12 (AI-26, AI-27). AI-07 was exercised by comparing side-effecting tools against gated tools and its result is folded into F-003 rather than filed separately; AI-03's single ingestion channel is inventoried in F-005. What was NOT reached, and why it bounds every finding below: agent/answer.py:7 constructs an Anthropic client that is never called, so no agent loop, turn handler, tool registry, retrieval read path, renderer, HTTP layer, orchestrator or caller of any function exists in scope. Each file offers a safe and an unsafe variant of the same operation side by side and nothing in the target selects between them, so reachability of the unsafe variants in a deployment was inferred from module structure, never observed — this is the named inference on all four probable findings. The vector store arrives as an `index` parameter with no deployment descriptor, and both MCP servers are third-party or absent from the tree, so their tool descriptions and their code were not inspected. No dynamic, adversarial or canary test was run; no `REQUIRES AUTHORIZATION` action was taken and no authorization was requested."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Lethal trifecta in one support agent: customer-written text, billing data and credentials, and an unrestricted outbound and execution channel",
+      "procedure": "AI-01",
+      "status": "probable",
+      "severity": "critical",
+      "confidence": "medium",
+      "location": { "path": "agent/answer.py", "line": 48, "component": "support assistant (answer.py + memory.py + config/mcp.json)" },
+      "evidence": "Per-agent capability inventory built from the files in scope, one row per capability. (1) Private data and credentials: agent/answer.py:59-64 `issue_refund`/`lookup` operate on billing accounts; agent/answer.py:7 reads ANTHROPIC_API_KEY from the process environment; config/mcp.json:3-7 places a literal billing API key in the `billing` server's env, in the same deployment. (2) Untrusted ingestion: agent/memory.py:26-28 `ingest_ticket` indexes `ticket[\"body\"]`, text written by whoever files a support ticket, and agent/answer.py:11-13 `build_prompt` concatenates retrieved documents into the same flat string as SYSTEM. (3) Outbound and execution channel: agent/answer.py:48 `subprocess.run(model_output, shell=True, ...)` reaches the whole shell grammar and therefore the network and every credential the process user holds; agent/answer.py:30 `issue_refund(decision[\"account_id\"], decision[\"amount\"])` is a state-changing effect whose destination the model names. Three marks on one agent.",
+      "impact": "An attacker who files a support ticket writes text that the agent reads with the standing of an instruction, and that agent holds both the billing credentials and a shell. The attacker does not need a flaw in any component: the composition is the flaw. The reachable outcomes are refunds to an attacker-chosen account, disclosure of another account's data through `lookup`, and arbitrary command execution on the host with ANTHROPIC_API_KEY and the billing key in the environment.",
+      "preconditions": "The attacker can put text into the retrieval corpus, which for a support product means filing a ticket. No account on the target system and no authentication beyond that is required.",
+      "recommendation": "Break a leg; do not add a sentence to SYSTEM asking the model to ignore instructions in data, which is a request rather than a control. In order of effect: (a) delete `summarize_and_run` and remove the shell entirely, since nothing in a support assistant needs it; (b) route every tool through `run_tool_scoped`'s shape, so the authenticated subject and not the model names the object, and keep refunds outside the assistant's reach; (c) isolate ingestion behind the Dual LLM or Plan-Then-Execute pattern, where the component that reads ticket text holds no credentials and returns typed values to a privileged orchestrator, or enforce capabilities at the call site as CaMeL (arXiv:2503.18813) does.",
+      "traceability": ["LLM01:2026", "LLM02:2026", "LLM03:2026", "ASI01", "ASI02", "AML.T0051.001", "CWE-284"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "No layer sits between ingestion and the sensitive capabilities that a call must pass through. The four safer variants in the tree (build_prompt_marked at answer.py:16, run_tool_scoped at answer.py:36, summarize_and_render at answer.py:51, ingest_ticket_marked at memory.py:31) are sibling functions a caller may simply not choose, and triage.md FP-01 states explicitly that a control a caller may forget is not this rule." },
+        { "rule": "FP-06", "answer": "DOES_NOT_HOLD", "reason": "A second principal is named: the ticket author at memory.py:28 is not the account holder whose records `lookup` returns and whose money `issue_refund` moves at answer.py:59-64. The two identities are distinct and the boundary between them is crossed inside one agent." }
+      ],
+      "inference": "That one agent holds all three legs at the same time. The three capabilities are located in one module set, one process environment and one MCP configuration, but agent/answer.py:7 builds an Anthropic client that is never called, so there is no agent loop in scope proving the legs are composed in a single session rather than belonging to separate entry points.",
+      "limits": "Establishes the composition from the code that is present. It does not establish that the deployment wires the unsafe variants rather than the safe ones, and it does not enumerate egress channels outside these files: no renderer, HTTP layer or CSP is in scope, so a markdown-image channel (AI-16) would be an additional leg neither confirmed nor excluded here."
+    },
+    {
+      "id": "F-002",
+      "title": "Model output executed as a shell command with shell=True",
+      "procedure": "AI-15",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": { "path": "agent/answer.py", "line": 48 },
+      "evidence": "agent/answer.py:46-48\n\n    def summarize_and_run(model_output: str) -> str:\n        \"\"\"Runs the shell snippet the model produced for the operator.\"\"\"\n        return subprocess.run(model_output, shell=True, capture_output=True, text=True).stdout\n\nThe function's only parameter is the model's text, the docstring names it as such, and it reaches `subprocess.run` with `shell=True` without validation, quoting, allowlist or sandbox. Source, transformation and sink are one line apart; AI-15's minimal test is static reachability and nothing needs to be executed.",
+      "impact": "Whoever can steer a single line of the model's output runs arbitrary commands as the agent's process user. That process holds ANTHROPIC_API_KEY (answer.py:7) and sits in the deployment that carries the billing key (config/mcp.json:6), so the first command an attacker runs is the one that reads them. `shell=True` also means the shell metacharacters are live, so a benign-looking summary with a trailing `; curl ...` is enough — the payload does not have to look like a command.",
+      "preconditions": "Influence over the model's output, which the retrieval path of F-004 and F-005 supplies to any customer who files a ticket.",
+      "recommendation": "Delete the function. A support assistant has no operator-shell use case that justifies it, and the safe counterpart the file already contains (`summarize_and_render`, answer.py:51-56) shows the intended shape: validate the model's output against a closed set of operations and return data. If some operator tooling genuinely needs to run commands, the model may select an identifier from a fixed list of parameterised commands — never compose the string — and the execution must move into a process with no credentials, no network and an ephemeral filesystem.",
+      "traceability": ["LLM10:2026", "ASI05", "A05:2025", "CWE-94", "CWE-78", "ASVS 5.0 V1"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "No compensating control exists on this path: no sandbox declaration, container spec, seccomp profile, allowlist or schema validation appears anywhere in the target, and the call passes the raw string straight to a shell. The closed-list validation that would be this rule's artifact lives in a different function (answer.py:51-56) that this one does not call." }
+      ],
+      "limits": "Establishes that model output reaches a shell sink in the code as written. No caller of `summarize_and_run` exists in the audited files, so how a deployment reaches it, and therefore its live blast radius, was not established — that bound is why severity is `high` rather than `critical`."
+    },
+    {
+      "id": "F-003",
+      "title": "Refund authorization decided by the model's text, with the authenticated subject discarded",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": { "path": "agent/answer.py", "line": 29 },
+      "evidence": "agent/answer.py:27-33\n\n    def run_tool(decision: dict, session: dict) -> str:\n        \"\"\"Executes the tool the model asked for.\"\"\"\n        if decision[\"tool\"] == \"refund\":\n            return issue_refund(decision[\"account_id\"], decision[\"amount\"])\n        if decision[\"tool\"] == \"lookup\":\n            return lookup(decision[\"account_id\"])\n        return \"unknown tool\"\n\nBoth the operation and its object come out of `decision`, the model's own output. `session` is accepted on line 27 and never read — the authenticated identity was in the function's hands and was dropped. `issue_refund` and `lookup` (answer.py:59-64) take the account id as a plain string and act on it; no role check, no object-level authorization and no downstream token appears on the path. No tool with an irreversible effect is behind a confirmation gate anywhere in the target (AI-07: the set of side-effecting tools is {issue_refund, summarize_and_run, remember_from_reply}; the set of gated tools is empty).",
+      "impact": "A model that has read attacker text emits `{\"tool\": \"refund\", \"account_id\": <attacker>, \"amount\": <attacker>}` and the money moves. The same primitive reads any account through `lookup`, so it is a disclosure path across customers as well as a payment path. The permission rule this code needs — act only on the caller's own account, never refund — exists in the file at answer.py:36-43 and is simply not the function being audited here.",
+      "preconditions": "Influence over the model's decision output; for a support assistant that is ticket text, per F-004 and F-005.",
+      "recommendation": "Replace the body with `run_tool_scoped`'s discipline: take the object from `session[\"authenticated_account_id\"]` and never from the model, and keep `refund` off the assistant's tool surface entirely, as that function already does by raising PermissionError. Authorize inside `issue_refund` and `lookup` against the concrete object rather than at the dispatcher, so no future caller can reintroduce the gap, and add a unit test that calls a sensitive tool with a session lacking permission and asserts it fails in authorization rather than in argument validation. Separately, put every irreversible effect behind a confirmation that renders the literal arguments (AI-07), not a summary the model wrote.",
+      "traceability": ["LLM03:2026", "ASI02", "ASI03", "ASI09", "A01:2025", "CWE-862", "CWE-863", "ASVS 5.0 V8"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "No unskippable layer authorizes this. `issue_refund` and `lookup` at answer.py:59-64 are the terminal implementations in scope and they perform the operation on the string they are handed; there is no middleware, no row-level policy and no end-user token forwarded to a backend that could authorize per object. The unused `session` parameter on line 27 is the positive evidence that identity was available at the decision point and was not applied." }
+      ],
+      "limits": "Establishes that the dispatcher decides authorization from model-controlled text. The implementations of `issue_refund` and `lookup` in scope are stubs returning formatted strings, so the audit did not observe a real billing system being reached, nor whether one exists behind them that applies its own authorization."
+    },
+    {
+      "id": "F-004",
+      "title": "Retrieved documents interpolated into the prompt with no delimitation or provenance marking",
+      "procedure": "AI-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": { "path": "agent/answer.py", "line": 13 },
+      "evidence": "agent/answer.py:11-13\n\n    def build_prompt(question: str, docs: list[str]) -> str:\n        joined = \"\\n\".join(docs)\n        return f\"{SYSTEM}\\n\\nKnowledge:\\n{joined}\\n\\nCustomer question: {question}\"\n\n`docs` is `list[str]` — the type itself has no room for an origin or a trust level — and the documents land in the same flat string as SYSTEM, separated only by the literal word `Knowledge:`, which a document can also contain. There is no delimiter the data cannot forge, no per-token marking of the data span, and no encoding of the block. The corpus these documents come from is written by `ingest_ticket` (memory.py:26-28) from customer ticket bodies.",
+      "impact": "Text written by a customer arrives in the model's context indistinguishable from the operator's instructions, which is the precondition for every downstream effect in this audit: it is what turns F-003's dispatcher into an attacker-controlled refund and F-002's shell into attacker-controlled command execution. The NCSC's 2025-12-08 framing applies directly — there is no parameterised-query equivalent here, so no phrasing added to SYSTEM repairs it.",
+      "preconditions": "The attacker can get a document into the retrieval corpus; filing a support ticket does it.",
+      "recommendation": "Use `build_prompt_marked` (answer.py:16-24), which the file already contains and which is the correct shape: one text block per document, wrapped with its `source` and `trust` attributes, in a user-role turn distinct from SYSTEM. Then delete `build_prompt` so the unsafe path cannot be selected. Add a test that indexes a document containing an instruction and an inert marker and asserts the marker never appears in the answer — spotlighting (arXiv:2403.14720) reports attack success dropping from over 50% to under 2% with this class of change. Pair it with F-005 so the `trust` attribute the marked builder renders is actually populated at ingestion.",
+      "traceability": ["LLM01:2026", "ASI01", "AML.T0051.001", "CWE-77"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "There is no sanitizer, normalizer or delimiting layer between the retrieval store and this f-string; the target contains no filter of any kind on ingested text (the AI-20 sweep found no normalization code and no non-ASCII input handling). The delimited construction exists only as a separate function at answer.py:16 that this one does not call." },
+        { "rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "The value is attacker-controlled. `docs` is fed by the retrieval corpus, and memory.py:26-28 writes `ticket[\"body\"]` — the free text of a customer support ticket — into that corpus with no review step, no closed-domain list and no approval gate. Tracing the value backwards ends at an external writer, not at a constant." }
+      ],
+      "inference": "The link from the corpus that `ingest_ticket` writes to the `docs` parameter this function reads. No retrieval call — no `similarity_search`, retriever, or query — exists anywhere in the audited files, so that the indexed ticket bodies are the documents reaching `build_prompt` is inferred from the module structure and the shared `index` object, not observed in code.",
+      "limits": "Does not establish which builder a deployment calls, since neither has a caller in scope, and does not measure how much of a document survives into the context, since no retrieval or truncation logic is present."
+    },
+    {
+      "id": "F-005",
+      "title": "Customer tickets indexed into the retrieval corpus with no origin or trust metadata",
+      "procedure": "AI-12",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "agent/memory.py", "line": 28 },
+      "evidence": "agent/memory.py:26-28\n\n    def ingest_ticket(ticket: dict, index) -> None:\n        \"\"\"Indexes a customer ticket into the retrieval store.\"\"\"\n        index.add_texts([ticket[\"body\"]])\n\n`add_texts` is called with the body alone. No `metadatas` argument, so the chunk enters the index carrying no origin, no trust level and no ticket identifier. The same file proves the API accepts all three: `ingest_ticket_marked` at memory.py:31-36 passes `metadatas=[{\"origin\": \"customer-ticket\", \"trust\": \"untrusted\", \"ticket_id\": ticket[\"id\"]}]`.",
+      "impact": "The write path into the corpus is open to any customer, and once a chunk is in the index nothing records who contributed it. Three consequences follow from that single omission: retrieval cannot filter on trust, so there is no way to keep untrusted chunks out of a privileged answer; a poisoned document cannot be selectively reverted, only the whole index rebuilt; and no post-incident question about which ticket produced which answer can be answered. PoisonedRAG (USENIX Security 2025) sets the scale — five injected texts among 2.6 million documents forced the target answer 97% of the time — so the defence is provenance, not volume.",
+      "preconditions": "The attacker files a support ticket, which is the intended use of the channel.",
+      "recommendation": "Use `ingest_ticket_marked` (memory.py:31-36) and delete the unmarked function, so no chunk can enter the index without an origin, a trust level and a revert key. Then make the metadata load-bearing on the read side: require a trust filter in the retrieval call's signature so a caller cannot omit it, and feed the stored `origin`/`trust` into `build_prompt_marked`'s document attributes (F-004), which currently expects fields that the unmarked ingestion never writes.",
+      "traceability": ["LLM05:2026", "LLM09:2026", "ASI06", "CWE-349", "ASVS 5.0 V2"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "Neither exculpation applies on this path. There is no origin or trust metadata for retrieval to filter on — that is the finding — and there is no human approval step or closed domain list: `ingest_ticket` takes a ticket dict and writes it to the index in one statement, with no queue, review flag or allowlist anywhere in the target." }
+      ],
+      "inference": "That the indexed content reaches an answer. The retrieval read side is absent from the audited files — no `similarity_search`, `as_retriever` or query call exists — so the step from a poisoned chunk to a generated answer is argued from the module's stated purpose rather than observed.",
+      "limits": "Severity is held at `medium` deliberately: the boundary-crossing impact of untrusted text governing generation is already counted once, in F-004. What this finding adds on its own is that the corpus is unauditable and cannot be selectively reverted, which is real and bounded. The audit also did not see the index implementation, so whether the engine records provenance of its own accord could not be checked."
+    },
+    {
+      "id": "F-006",
+      "title": "Free-text model replies appended to a shared long-lived memory store",
+      "procedure": "AI-13",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": { "path": "agent/memory.py", "line": 13 },
+      "evidence": "agent/memory.py:6 and 10-14\n\n    STORE = Path(\"/var/lib/acme/agent-memory.json\")\n    ...\n    def remember_from_reply(reply: str) -> None:\n        \"\"\"Persists whatever the model decided is worth keeping.\"\"\"\n        data = json.loads(STORE.read_text()) if STORE.exists() else {}\n        data.setdefault(\"notes\", []).append(reply)\n        STORE.write_text(json.dumps(data))\n\nThe whole reply string is appended verbatim to `notes`. No schema, no key allowlist, no origin mark, no expiry and no size bound sit between the model's text and the file — the docstring states the design plainly. The destination is a single process-wide path with no subject in it, so `notes` is one list shared by every session that loads the store.",
+      "impact": "This is the persistence half of the injection problem. An instruction that survives into a reply — which, per F-004, may be text a customer wrote — is written to disk and re-enters later sessions carrying the authority of the assistant's own history, after the ticket that carried it is long gone. Because the store has no subject key, what one session writes is read back by every session, so a single successful injection becomes a durable, cross-user condition rather than a per-conversation one. MINJA (arXiv:2503.03704) reports over 95% injection success through queries alone with no access to the store, and SpAIware (2024-09) documented the consequence as continuous exfiltration across future sessions.",
+      "preconditions": "One reply containing attacker-influenced text, plus the store being read back on a later turn.",
+      "recommendation": "Delete `remember_from_reply` and route all persistence through `remember_preference` (memory.py:17-23), which is already the correct pattern: a closed key set, a typed value and a TTL. If a free-text note is genuinely required, it must be extracted into a typed field by a deterministic parser rather than copied, stored with its origin and trust level, expired, and made inspectable and deletable by the user. Key the store by authenticated subject either way, so one identity's memory cannot become another's.",
+      "traceability": ["LLM01:2026", "LLM05:2026", "ASI06", "AML.T0051.001", "CWE-349"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "Neither exculpation applies to this function. It stores free text derived from model output rather than fields from a closed schema — `ALLOWED_KEYS` at memory.py:7 exists but is enforced only in `remember_preference`, never here — and there is no expiry: the `ttl_days` field is written at memory.py:22 on the preference path only, while `notes` entries carry no expiry and no deletion path appears anywhere in the target." }
+      ],
+      "inference": "That the persisted notes are read back into a later context. No reader of the `notes` array exists in the audited files, so the re-injection loop that produces the cross-session impact is argued from the module's declared role ('Long-lived assistant memory') and the persistence of the file, rather than observed in code.",
+      "limits": "Establishes the write path and the absence of any schema, mark or expiry on it. It does not establish which component calls the function or how the store is loaded into a prompt, and it does not assess per-user partitioning, which cannot be settled without the caller."
+    },
+    {
+      "id": "F-007",
+      "title": "Live-format billing credential written in plaintext into the MCP configuration",
+      "procedure": "AI-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": { "path": "config/mcp.json", "line": 6 },
+      "evidence": "config/mcp.json:3-7\n\n    \"billing\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@acme/billing-mcp@latest\"],\n      \"env\": { \"BILLING_API_KEY\": \"[REDACTED:secret]\" }\n    }\n\nThe value is a literal, not a reference. Format class recorded rather than reproduced: vendor prefix `sk-acme-` followed by 32 lowercase hexadecimal characters, 40 characters in total. It was not tested against any provider, per the engagement contract. The sibling entry at config/mcp.json:11 sets `\"DOCS_TOKEN\": \"${DOCS_TOKEN}\"`, which establishes that the substitution idiom was available in this very file and was not used for the billing key.",
+      "impact": "Everyone who can read the repository or the deployed configuration holds the billing API key, and any process that can read the file — including the agent itself through the shell of F-002 — can exfiltrate it. Because it is written into the environment of the `billing` MCP server, it is also the credential handed to the unpinned third-party package of F-008: a registry compromise there does not have to steal the key, it is given it at startup. GitGuardian (2026) found 24,008 unique secrets in MCP configuration files, 2,117 still valid, so this is the modal instance of a measured class rather than an unusual one.",
+      "preconditions": "Read access to the configuration file, which every developer, every CI job and every process on the host that runs the agent has.",
+      "recommendation": "Treat the value as compromised: rotate it at the provider first, then remove the literal. Replace it with `\"${BILLING_API_KEY}\"` to match line 11, and supply the value from a secret manager at process start. Confirm the key's absence from history at the source repository (`git log -p -- config/mcp.json`) — the audited copy is not a git repository, so prior versions could not be checked here — and scope the replacement key to the operations the assistant actually needs, with a spending limit.",
+      "traceability": ["LLM02:2026", "LLM04:2026", "ASI03", "A02:2025", "CWE-798", "CWE-312"],
+      "triage": [
+        { "rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not a placeholder and not an obviously invalid example. It is a concrete 40-character value with a structured vendor prefix and a full 32-hex-character body, not `${VAR}`, `changeme` or a truncated sample. The `${DOCS_TOKEN}` form four lines below is the placeholder this file uses when it means one." },
+        { "rule": "FP-04", "answer": "DOES_NOT_HOLD", "reason": "config/mcp.json is a runtime configuration consumed verbatim by the MCP client at startup; it is not compiled, minified or filtered by any build. The target contains no build script, packaging manifest, environment flag or test marker that would strip or override this entry, and the file is not under a test or fixture directory." }
+      ],
+      "limits": "The key's validity was deliberately not tested — AI-11 directs escalation rather than verification against the provider — so the finding establishes that a credential-format literal is committed in configuration, not that this particular key currently authenticates. If the value turns out to be synthetic, the finding stands at the same location as the practice of writing literals where the file's own placeholder idiom exists, with the impact reduced accordingly."
+    },
+    {
+      "id": "F-008",
+      "title": "Third-party MCP server installed unpinned at every startup with a credential in its environment",
+      "procedure": "AI-09",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": { "path": "config/mcp.json", "line": 5 },
+      "evidence": "config/mcp.json:3-7\n\n    \"command\": \"npx\",\n    \"args\": [\"-y\", \"@acme/billing-mcp@latest\"],\n    \"env\": { \"BILLING_API_KEY\": \"[REDACTED:secret]\" }\n\nThe classification AI-09 asks for: third-party (a scoped registry package, not a path in this repository), unpinned (`@latest` resolves at every startup and `-y` suppresses the install prompt), no lockfile or integrity hash anywhere in the target, network-capable, and carrying a credential in its environment. That is the exact combination the procedure names as the finding. The `docs` entry at config/mcp.json:8-12 is the contrast: `node ./servers/docs/index.js`, a local path, with a placeholder token.",
+      "impact": "The code that runs is whatever was published under `@acme/billing-mcp` at the moment the agent last started, so the version reviewed and the version executed are not the same artifact by construction. Whoever gains control of that package name — a compromised maintainer account, a hijacked scope, a typosquat that the config is edited toward — executes on the host with the billing key already in the environment (F-007) and every other credential the process user holds. It is also the position from which tool poisoning and a rug pull operate: tool descriptions the client renders into the model's context can change between startups with nothing to compare them against.",
+      "preconditions": "Control of the published package under that name, or of the registry path to it. No access to the target's own systems is required.",
+      "recommendation": "Pin to an exact version with lockfile integrity, or run the server from a container image referenced by digest; drop `-y` so an unexpected install is visible. Record a hash per tool description at first approval and compare it at every startup, which converts a rug pull from an invisible change into a startup failure. Remove the credential from the server's environment per F-007 and scope the replacement to the minimum the billing tools need, so a supply-chain compromise does not inherit full billing authority. Vendor the server or move it first-party if the integration is long-lived.",
+      "traceability": ["LLM04:2026", "ASI04", "A03:2025", "A08:2025", "CWE-829", "CWE-1104"],
+      "triage": [
+        { "rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "No integrity layer sits in the path. The target contains no package-lock.json, no npm-shrinkwrap, no Dockerfile and no digest reference; `npx -y` with a floating tag resolves and executes directly with nothing to verify against. There is no allowlist or signature check the resolution must pass." },
+        { "rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "What executes is publisher-controlled, not fixed. `@latest` is a mutable pointer resolved at startup, so the artifact is chosen by whoever can publish under that name rather than by anything in this repository. The exculpating form — an exact version with lockfile integrity, or a local path such as the `docs` entry at line 10 — is absent here and present four lines below, which is what distinguishes the two entries." }
+      ],
+      "limits": "This is supply-chain exposure, not an incident: nothing in this audit indicates the package is currently malicious, and it was deliberately not downloaded or executed. The server's own tool descriptions could not be inspected for the reason recorded in the AI-08 ruled_out entry."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Delimited, provenance-marked prompt construction — NOT a finding",
+      "procedure": "AI-02",
+      "outcome": "refuted",
+      "where": "agent/answer.py:16-24 `build_prompt_marked`. Each document becomes its own text block wrapped as `<document source=... trust=...>`, the question is wrapped as `<question>`, and the whole thing is returned as a user-role turn separate from SYSTEM. That is the spotlighting mitigation of arXiv:2403.14720 and AI-02's first exculpation: the content travels in a different role turn, delimited and marked with its provenance. FP-01 HOLDS here. Only the unmarked `build_prompt` beside it is reported (F-004); this function is the fix, not the defect. Bound: no caller is in scope, so it could not be confirmed that a deployment prefers it, and the `trust` attribute it renders is only meaningful once ingestion populates it (F-005)."
+    },
+    {
+      "class": "Session-scoped tool dispatch that ignores the model's object — NOT a finding",
+      "procedure": "AI-05",
+      "outcome": "refuted",
+      "where": "agent/answer.py:36-43 `run_tool_scoped`. The account id is taken from `session[\"authenticated_account_id\"]` on line 38 and the model's value is never read, and `refund` raises PermissionError rather than being gated by a prompt instruction. This is AI-05's exculpation stated exactly: the tool receives an identity context the model cannot control, and the dangerous capability is removed rather than requested. FP-01 HOLDS. Reported nothing here. Bound: how `session` is constructed and authenticated is outside the audited files."
+    },
+    {
+      "class": "Closed-schema memory with expiry — NOT a finding",
+      "procedure": "AI-13",
+      "outcome": "refuted",
+      "where": "agent/memory.py:17-23 `remember_preference`. Any key outside `ALLOWED_KEYS` (memory.py:7 — preferred_language, timezone, plan_tier) raises ValueError, and the stored value is `{\"value\": value, \"ttl_days\": 90}`. Closed schema, enumerated preferences, no free text derived from external content, expiry present: AI-13's exculpation on both of its clauses. FP-01 HOLDS. Reported nothing here; the free-text sibling at memory.py:10-14 is F-006. Bound worth recording without claiming it as a finding: the store at memory.py:6 is a single path with no subject in it, so whether preferences are partitioned per user could not be assessed from these files — that is a limit of this audit, not an assertion about the code."
+    },
+    {
+      "class": "Model output validated against a closed operation set — NOT a finding",
+      "procedure": "AI-15",
+      "outcome": "refuted",
+      "where": "agent/answer.py:51-56 `summarize_and_render`. `model_output[\"op\"]` is checked against `{total, count, average}` and anything else raises ValueError; the return is an f-string. AI-15's second exculpation (output validated against a strict schema, only operations from a closed list executed) and FP-03 (the sink is string formatting, which does not evaluate) both apply. Reported nothing here; the shell sibling is F-002. Bound: `model_output[\"value\"]` is interpolated without escaping, which would matter only if the returned string reached an HTML or template sink — no renderer exists in the target, so that question was not assessable and is recorded as a bound rather than a claim."
+    },
+    {
+      "class": "Ticket ingestion carrying origin, trust level and a revert key — NOT a finding",
+      "procedure": "AI-12",
+      "outcome": "refuted",
+      "where": "agent/memory.py:31-36 `ingest_ticket_marked` passes `metadatas=[{\"origin\": \"customer-ticket\", \"trust\": \"untrusted\", \"ticket_id\": ticket[\"id\"]}]`. Every chunk carries where it came from, how much it is trusted, and the identifier needed to revert it selectively — AI-12's first exculpation. Reported nothing here; the unmarked sibling is F-005. Bound: the docstring asserts that retrieval filters on the metadata, and no retrieval call exists in scope to confirm the filter is actually applied, so the marking is established and its enforcement is not."
+    },
+    {
+      "class": "First-party MCP server run from a local path — NOT a finding",
+      "procedure": "AI-09",
+      "outcome": "refuted",
+      "where": "config/mcp.json:8-10, the `docs` server: `\"command\": \"node\", \"args\": [\"./servers/docs/index.js\"]`. A relative path inside the project, not a registry fetch, so no version resolves at startup and no third party controls what executes — AI-09's second exculpation. FP-02 HOLDS. Bound: the referenced `./servers/docs/` directory is not present in the target, so the server's own code, its tool descriptions and its network behaviour were not reviewed."
+    },
+    {
+      "class": "Credential supplied by environment substitution — NOT a finding",
+      "procedure": "AI-11",
+      "outcome": "refuted",
+      "where": "config/mcp.json:11, `\"DOCS_TOKEN\": \"${DOCS_TOKEN}\"`. A substitution placeholder, which is AI-11's first exculpation verbatim, and FP-02 HOLDS: the value in the file is not a credential and is not attacker-reachable through the file. Reported nothing here; the literal on line 6 is F-007. Bound: whether the environment that supplies DOCS_TOKEN at runtime is itself managed by a secret manager is outside the audited files."
+    },
+    {
+      "class": "Invisible-character payloads in ingested or instruction text",
+      "procedure": "AI-20",
+      "outcome": "refuted",
+      "where": "`grep -rnP` across the whole target for U+E0000-U+E007F (Unicode Tags), U+200B-U+200D (zero width and joiners), U+202A-U+202E and U+2066-U+2069 (bidirectional control) returned no match, and a byte-level scan for any non-ASCII byte over all four files also returned no match. The target is pure printable ASCII, so no smuggled payload is present in what was audited. Bound: this covers the four files in scope only, and the sweep cannot detect homoglyphs or other encodings outside those ranges."
+    },
+    {
+      "class": "Versioned instruction files an assistant loads on its own",
+      "procedure": "AI-04",
+      "outcome": "refuted",
+      "where": "No CLAUDE.md, AGENTS.md, .cursor/rules, .windsurfrules, .clinerules, .github/copilot-instructions.md or skills/*/SKILL.md exists anywhere in the target; a recursive listing shows no hidden files at any level and the tree is not a git repository. The only prose is README.md, four lines describing the project. There is no auto-loaded instruction file to review, and consequently no authorship history to check either."
+    },
+    {
+      "class": "Manipulation of this audit through the audited content (squad self-protection)",
+      "procedure": "AI-22",
+      "outcome": "refuted",
+      "where": "Every file in the target was read as data. README.md contains no imperative addressed to a reading agent, no file attempts to widen the scope, authorize remote testing, switch the mode from audit, or ask for a finding to be omitted, and the AI-20 sweep above found no hidden instruction. Nothing in the target had to be resisted, and nothing in it was treated as an instruction. The target's code was not executed at any point."
+    },
+    {
+      "class": "Secrets or business rules inside the system prompt",
+      "procedure": "AI-17",
+      "outcome": "refuted",
+      "where": "agent/answer.py:8, the whole of SYSTEM: a role sentence and a tone instruction. No credential, connection string, table name, threshold, discount or refund limit, and no customer data. Disclosure of this string gives an attacker nothing. Note for the reader: the refund limit AI-17 would look for is not hidden in the prompt — it does not exist anywhere, which is the substance of F-003 rather than a prompt-content finding."
+    },
+    {
+      "class": "Privilege degradation after ingesting untrusted content",
+      "procedure": "AI-06",
+      "outcome": "inconclusive",
+      "where": "The check ran and settled nothing. Provenance vocabulary does appear in the target (`trust` at answer.py:21, `\"trust\": \"untrusted\"` at memory.py:35), so the concept is present — but agent/answer.py:7 builds an Anthropic client that is never called, and no agent loop, turn handler or tool-registry construction exists in the audited files, so there is no point where a per-turn tool set is decided and therefore nothing to test for a taint-dependent branch. `run_tool` accepts a `session` and discards it, which is reported as F-003 rather than here. Unblocked by the orchestrator module; without it, neither the presence nor the absence of degradation can be asserted."
+    },
+    {
+      "class": "Agentic loop with no iteration, token or spend caps",
+      "procedure": "AI-19",
+      "outcome": "inconclusive",
+      "where": "No `max_iterations`, `recursion_limit`, `max_tokens`, `max_retries` or `timeout` appears anywhere in the target — but neither does the loop or the model invocation that those parameters would bound, and no endpoint, rate limiter or provider budget configuration is in scope. An absent parameter cannot be read as a missing cap when the construct that would carry it is not present, so nothing is concluded. No load was generated against anything."
+    },
+    {
+      "class": "Exfiltration by rendering: markdown images and automatic link fetching",
+      "procedure": "AI-16",
+      "outcome": "not executed",
+      "where": "The audit reached only the four files in scope, which contain no renderer, no client code, no HTTP layer and no Content-Security-Policy. The markdown-image egress leg was therefore not assessed at all. It is recorded because it matters to F-001: that finding already counts `shell=True` as leg three, and a renderer would add a second, quieter outbound channel that this audit can neither confirm nor exclude."
+    },
+    {
+      "class": "Retrieval without tenant or permission isolation",
+      "procedure": "AI-14",
+      "outcome": "inconclusive",
+      "where": "The write side of the store is in scope (`add_texts` at memory.py:28 and 33) but the read side is not: no `similarity_search`, `as_retriever`, `.query(` or `.search(` call exists anywhere in the target, and the `index` object arrives as an untyped parameter. Whether retrieval carries a mandatory tenant filter, and whether that filter is enforced in the engine or applied after the content has already entered the context, could not be established."
+    },
+    {
+      "class": "Model, adapter and dataset artifacts loaded without provenance or safe deserialization",
+      "procedure": "AI-23",
+      "outcome": "refuted",
+      "where": "No `torch.load`, `pickle.load`, `joblib.load`, `allow_pickle=True`, `keras.models.load_model`, `from_pretrained` or `trust_remote_code` appears in the target, and the tree contains no .pt, .pth, .ckpt, .pkl, .h5, .bin or .gguf artifact and no adapter. The only model access is a hosted API client (answer.py:5-7), so there is no deserialization sink and no local weight to pin."
+    },
+    {
+      "class": "Vector store deployment, exposure and the embedded copy of the data",
+      "procedure": "AI-24",
+      "outcome": "not executed",
+      "where": "No docker-compose.yml, Helm values, Terraform, client construction or connection string for any vector engine is present; the store reaches the code only as an `index` parameter (memory.py:26, 31). Its network exposure, its authentication, and whether deletion in the source of record propagates to chunks and vectors were therefore not assessed. Nothing was connected to and no endpoint was probed."
+    },
+    {
+      "class": "Agent skills and plugins: declared capability versus what the package does",
+      "procedure": "AI-25",
+      "outcome": "refuted",
+      "where": "The target ships no installable package: no SKILL.md, no .claude-plugin/plugin.json, no manifest.json, no package.json, no hooks, scripts or bin directory, and no postinstall. There is no manifest declaring a capability and no bundled executable file to compare it against, so the procedure has no object in this target."
+    },
+    {
+      "class": "Agent execution boundary: writable scope and inherited credentials",
+      "procedure": "AI-28",
+      "outcome": "inconclusive",
+      "where": "There is no tool declaration, allowed-tools list, allowedDirectories setting, sandbox or container declaration anywhere in the target to audit, so the declared boundary could not be read. The observable write scope is two paths and both are already reported: /var/lib/acme/agent-memory.json (memory.py:6) in F-006, and — through `shell=True` at answer.py:48 — everything the process user can reach, in F-002. Inherited ambient credentials were not enumerated, because doing so means inspecting the host that would run this agent and no such host is in scope; ANTHROPIC_API_KEY is confirmed in the process environment by answer.py:7 alone."
+    },
+    {
+      "class": "Inter-agent handoff without provenance or authentication",
+      "procedure": "AI-26",
+      "outcome": "refuted",
+      "where": "There is one agent. No `Crew(`, `Task(`, `GroupChat`, `initiate_chat`, `handoff(`, `Send(` or `Command(goto=` appears in the target, and no HTTP route, queue or topic where one agent posts work for another. AI-26's fourth exculpation applies directly: a single loop calling its own tools is AI-01 and AI-03, which is where it is reported."
+    },
+    {
+      "class": "Agent actions that cannot be attributed",
+      "procedure": "AI-27",
+      "outcome": "inconclusive",
+      "where": "No logging call of any kind exists in the target — no `logging`, `structlog`, OpenTelemetry, langfuse or langsmith — while three functions have side effects (issue_refund, summarize_and_run, remember_from_reply), so the two sets do not overlap. That is not concluded as a finding because AI-27's third exculpation could not be tested: `issue_refund` and `lookup` (answer.py:59-64) are stubs returning formatted strings rather than reaching a billing system, so whether the real effect lands in a system that keeps its own attributable trail, and whether the caller's identity reaches it, is not knowable from these files. Unblocked by the billing integration and the caller module."
+    },
+    {
+      "class": "Tool poisoning, rug pull and cross-server shadowing in MCP tool descriptions",
+      "procedure": "AI-08",
+      "outcome": "blocked",
+      "where": "The descriptions must be reviewed as the client actually receives them, and neither server's descriptions are obtainable here: `@acme/billing-mcp` is a registry package that is not present in the tree and fetching it would be a network action the engagement contract forbids, and `./servers/docs/index.js` is referenced by config/mcp.json:10 but that directory does not exist in the target. What would unblock it: an offline `list_tools` dump from the client, or the server sources placed in scope; the check is then AI-08's minimal test plus the AI-20 sweep over each description. The related risk that descriptions can change between startups without detection is reported in F-008."
+    },
+    {
+      "class": "Token passthrough, unvalidated audience and confused deputy in OAuth",
+      "procedure": "AI-10",
+      "outcome": "refuted",
+      "where": "The target publishes no MCP server and performs no token validation: both entries in config/mcp.json are clients launched over stdio via `command`/`args`, with no URL, no HTTP transport, no proxy, no redirect_uri and no `jwt.decode` or `verify(` anywhere in the tree. AI-10's second exculpation applies — local stdio transport with no network exposure and no proxy — and FP-06 HOLDS: no second principal is reached across this transport."
+    },
+    {
+      "class": "Reproducible adversarial evaluation suite",
+      "procedure": "AI-21",
+      "outcome": "not executed",
+      "where": "The target contains no tests directory, no promptfooconfig.yaml, no garak, deepteam or PyRIT configuration and no security test of any kind, so there is no existing suite whose pass criterion could be examined. None was run: every tool in this class drives active attacks against a live endpoint, which the engagement contract forbids and for which no authorization was requested. The deterministic alternative is recommended instead — a versioned corpus of injection cases with binary criteria (the canary must not appear; `issue_refund` must not be invoked) running offline against the application's own logic."
+    },
+    {
+      "class": "Indirect ingestion channels with no inventory",
+      "procedure": "AI-03",
+      "outcome": "refuted",
+      "where": "The channel table AI-03 asks for has exactly one row in this target: customer ticket body (memory.py:26-28) → written by any customer → reaches the context. That single channel is inventoried and reported in F-005 and F-004 rather than left implicit, so it is not filed a second time here. No browsing, email, Slack, Jira, GitHub, calendar or third-party API loader appears anywhere in the target. The missing-documentation leg of the procedure is not reported separately because the target is a four-file sketch whose only prose is a four-line README, which is not a project documentation set an audit can hold to that standard."
+    }
+  ]
+}

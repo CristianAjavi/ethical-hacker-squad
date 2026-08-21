@@ -1,0 +1,385 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run2/node-supply/target",
+    "commit": "@acme/billing-cli@2.3.0 (no VCS metadata in scope: the target is not a git working tree, so the package.json version is used as the target identifier)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs supply-chain specialist (bench run)",
+    "coverage_declaration": "Static, offline, read-only pass over the 9 tracked files under the scope path (.npmrc, package.json, .env.example, README.md, config/runtime.json, scripts/fetch-schema.js, scripts/fetch-native.js, vendor/README.md, vendor/billing-native). Nothing was installed, executed, resolved or fetched; no registry, network or third-party system was contacted; no credential was validated against any service. Exercised: supply-chain.md §1 (SUP-01, SUP-02), §2 (SUP-03, SUP-04), §3 (SUP-05, SUP-06), §4 (SUP-07, SUP-08), §6 (SUP-11, SUP-12); supply-chain-secrets-malware.md §8 (SUP-16, SUP-18) and §9 (SUP-19, SUP-20); supply-chain-source-lifecycle.md §10 (SUP-21, SUP-22, SUP-23) and §11 (SUP-24, SUP-25). NOT exercised, and their absence is not a clean result: §5 pipeline integrity (SUP-09, SUP-10) has no artifact in scope -- there is no .github/, no CI configuration and no release workflow to read; §7 dependency vulnerability triage (SUP-13, SUP-14, SUP-15) could not run at all -- there is no lock file, no node_modules and no permitted registry access, so no dependency tree was ever resolved and no SCA output exists for this target; SUP-17 (secrets in history) is unreachable because no .git directory exists in scope. Two further structural bounds on everything below: the entry point declared at package.json:6 (bin/billing.js) is absent from the tree, so no application source exists and no reachability or call-path argument was available for any dependency; and no dependency package bodies are present, so every statement here concerns the first-party tree only, never the code of chalk, node-fetch, left-pad, lodahs or @acme/internal-config."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "preinstall lifecycle script executes attacker-relevant code on every consumer install",
+      "procedure": "SUP-03",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "package.json",
+        "line": 8,
+        "component": "@acme/billing-cli scripts.preinstall"
+      },
+      "evidence": "package.json:7-11 declares \"scripts\": { \"preinstall\": \"node scripts/fetch-native.js\", ... }. package.json has no \"files\" allowlist and the tree has no .npmignore, so scripts/ is packed into the published tarball and the hook is present in what consumers receive. npm runs preinstall before any application code, test or review step, and it is the only lifecycle hook declared. The script it runs is analysed in F-002.",
+      "impact": "Every `npm install` of this published package -- on developer laptops and inside consumer CI runners alike -- executes first-party code from the maintainer under the invoking user's identity, before any dependency is audited and before any test runs. This converts a compromise of the package, of the maintainer account, or of the host the script contacts, into code execution on every consumer of @acme/billing-cli. Backstabber's Knife Collection (DIMVA 2020) measured that 56% of 174 real malicious packages trigger at install time; this is that surface, opened deliberately.",
+      "preconditions": "The consumer installs with lifecycle scripts enabled, which is npm's default. `npm ci --ignore-scripts` neutralises it, but nothing in this package can require the consumer to use it.",
+      "recommendation": "Remove the install-time hook and ship the native helper as an optional platform-specific package resolved by `optionalDependencies` with `os`/`cpu` fields, so npm selects a registry artifact covered by the lock and the integrity hash instead of running code. If an install hook is genuinely unavoidable, move it to `postinstall`, make it fail closed, and give it the verification F-002 asks for; then document `--ignore-scripts` compatibility so consumers who disable scripts still get a working CLI rather than a silently broken one.",
+      "traceability": [
+        "CWE-94",
+        "CWE-506",
+        "CWE-829",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SSDF PW",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-03's compensating control is an environment that installs with `--ignore-scripts` and a pipeline that enforces it. No such control exists anywhere in scope: there is no CI configuration, and .npmrc (2 lines) sets only registry mappings -- it carries no `ignore-scripts=true`. A control that each consumer may or may not remember to apply is explicitly not FP-01."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-03's bounded-exposure exculpation requires that the script compile a native binding or download from the project's official domain WITH hash verification. Neither bound is present: scripts/fetch-native.js:17-20 fetches an unverified artifact from a third-party host and writes it outside the package directory (see F-002), so the exposure is neither verified nor confined to the package tree."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally to test whether the hook ships. It does: package.json declares no \"files\" field and no .npmignore exists, so both package.json's scripts block and scripts/fetch-native.js are packed into the published tarball. This is not a development-only path."
+        }
+      ],
+      "limits": "Establishes that install-time code execution is opened on consumers, not that the code currently run is malicious -- the first-party script was read and contains no obfuscation, no base64/eval chain and no environment dump (SUP-19, refuted below). It says nothing about lifecycle scripts inside the declared dependencies: no dependency tree was resolved, so `node_modules/*/package.json` was never enumerated."
+    },
+    {
+      "id": "F-002",
+      "title": "Install hook downloads an unverified remote binary to /usr/local/bin and marks it executable",
+      "procedure": "SUP-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "scripts/fetch-native.js",
+        "line": 17,
+        "component": "download() / main()"
+      },
+      "evidence": "scripts/fetch-native.js:17 `const url = 'https://downloads.example.net/billing-native/latest/billing-native';` -- a mutable `latest` path on a host that is not the package's own scope. Line 18 `const dest = '/usr/local/bin/billing-native';` -- a directory on the default PATH, outside the package. Lines 8-12: the response body is piped straight to the file with no HTTP status-code check, so a 3xx/4xx/5xx body is written as the artifact. Lines 19-20: `await download(url, dest); execSync(`chmod +x ${dest}`);` -- the file is made executable with no digest check, no signature check and no size check anywhere in the file. The repository already implements the correct pattern 30 lines away: scripts/fetch-schema.js:5,17-20 pins a SHA-256 and throws `schema digest mismatch, refusing to build` before writing. That control was not applied on this path.",
+      "impact": "Whoever controls downloads.example.net, its CDN cache, or the `latest` pointer behind it chooses the contents of an executable placed on the PATH of every machine that installs @acme/billing-cli, and it is made executable in the same breath. Because the path is `latest` rather than a version, the content can change after the package is published and after any review of the tarball, so auditing release 2.3.0 does not bound what a consumer receives from it tomorrow. Missing status-code handling widens this: a captive portal, a proxy error page or a CDN 404 body is written to /usr/local/bin and chmod'ed +x, giving a PATH-resident file of arbitrary content. This is the class of CVE-2024-3094 (xz utils): the payload never has to appear in the source that was read.",
+      "preconditions": "The install runs with write permission to /usr/local/bin -- root in CI containers and on many Linux images, and the ordinary case on Homebrew-managed macOS where /usr/local/bin is user-writable. The attacker must control the download host, the CDN edge, the `latest` pointer, or a CA-trusted TLS path to them.",
+      "recommendation": "Pin the artifact by immutable version and verify it before it touches the filesystem: fetch to a temporary path, compare a SHA-256 (or verify a detached signature / a cosign attestation) against a constant committed in this repository, and only then move it into place -- the exact shape scripts/fetch-schema.js already uses. Check `res.statusCode === 200` and fail closed on anything else, and fail closed on a digest mismatch rather than leaving a partial file. Do not write outside the package directory: install the helper under the package's own path and resolve it from the CLI, so the install cannot alter the consumer's PATH. Best of all, distribute the binary as an npm optional platform package so the lock file and registry integrity hash cover it (see F-001).",
+      "traceability": [
+        "CWE-494",
+        "CWE-829",
+        "CWE-345",
+        "CWE-427",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-4",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-04's compensating control is a download pinned by digest and verified with `sha256sum -c` or a signature before it executes. scripts/fetch-native.js contains no hash, no signature check and no `crypto` import at all; the only verification in the repository lives in the sibling scripts/fetch-schema.js and is not reached from this path. The project's own code proves the control exists and was not wired here."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-04's other exculpation is that the step runs only in a documented local development environment and is not part of what ships. The opposite is true: the script is bound to `preinstall` in package.json:8, and with no \"files\" allowlist and no .npmignore both files are packed into the published tarball, so this runs on the consumer, not on the maintainer's workstation."
+        }
+      ],
+      "limits": "The download host was never contacted, so nothing here characterises what downloads.example.net currently serves; the finding is about the absence of verification, which is a property of the code and is settled by reading it. `execSync` is not reported as command injection: `dest` at line 18 is a constant string, so no attacker-controlled value reaches the shell (FP-02 would hold for that separate claim, which is therefore not made)."
+    },
+    {
+      "id": "F-003",
+      "title": "Live-format API credential committed in config/runtime.json and packed into the published tarball",
+      "procedure": "SUP-16",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "config/runtime.json",
+        "line": 5,
+        "component": "reporting.token"
+      },
+      "evidence": "config/runtime.json:3-6 -- `\"reporting\": { \"endpoint\": \"https://reports.acme.example/v1\", \"token\": \"acme_live_[REDACTED:secret]\" }`. Format class: vendor prefix `acme_live_` followed by 32 lowercase hexadecimal characters, 42 characters in total; the `live` segment is the vendor's own production-versus-test marker. The value is paired in the same object with the endpoint it authenticates to. The repository's actual placeholder convention is visible one directory up and is entirely different: .env.example uses `replace-me`, an all-zero `sk_test_` value and `user:password@localhost`. package.json declares no \"files\" allowlist and no .npmignore exists, so config/runtime.json is inside the published tarball -- npm's default exclusions do not cover it.",
+      "impact": "A bearer credential marked as production is distributed to every consumer of @acme/billing-cli and to anyone who fetches the tarball from the public registry, alongside the exact endpoint it opens. Whoever reads it can act as the billing CLI against the reporting service for as long as the token lives -- submitting, altering or reading whatever that API exposes -- with no account, no exploit and no interaction with the victim. Publication is irreversible: unpublishing the version does not recall copies already in consumer lock files, mirrors and caches. GitGuardian 2026 measured that 64% of valid secrets detected in 2022 were still live, which is why rotation, not deletion, is the deliverable.",
+      "preconditions": "None on the attacker's side beyond reading a published package or the repository. The token must still be valid, which was deliberately not tested.",
+      "recommendation": "Treat the credential as compromised and rotate it at the reporting provider now, with a named owner and a date -- deleting the line first only removes the evidence. Then remove the secret from the file and read it from the environment or a secret manager at runtime, leaving `config/runtime.json` with non-sensitive fields (endpoint, feature flags) only. Add a `\"files\"` allowlist to package.json so the tarball carries only what the CLI needs, add a pre-commit secret scan (`gitleaks dir . --redact`, offline), and review the reporting service's access log for use of this token from outside your own infrastructure. If this repository is ever placed under version control with this file in it, the value must be considered exposed in history as well (SUP-17).",
+      "traceability": [
+        "CWE-798",
+        "CWE-540",
+        "CWE-522",
+        "CWE-312",
+        "A02:2025",
+        "A04:2025",
+        "CICD-SEC-6",
+        "SSDF PS",
+        "PS.1.1",
+        "NIST 800-53 IA",
+        "CCM CEK",
+        "ATT&CK T1552"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-16's exculpation covers examples, placeholders and documented test-service keys. This value is none of those: it carries an explicit `live` environment marker rather than a test marker, its 32 hex characters are high-entropy rather than a repeating or zeroed pattern, and it does not follow this repository's own placeholder convention, which is demonstrated in .env.example three files away (`replace-me`, an all-zero `sk_test_` value). A file-level descriptive `note` field is content of the audited artifact, not a control, and does not change the format class of the value beside it."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data is not public content or a synthetic record: it is a bearer token stored next to the endpoint it authorises (reports.acme.example/v1), so its whole security value is that it grants access there."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally to test whether the file reaches consumers. package.json has no \"files\" field and the tree has no .npmignore; config/runtime.json is not covered by npm's built-in exclusion list, so it is packed into the published artifact rather than being a source-only path."
+        }
+      ],
+      "limits": "Whether the credential is currently valid was not established: validating a credential against its provider is prohibited by the engagement contract, and no request was made to reports.acme.example. The finding rests on format class, the production marker, and the file's presence in what ships -- which is why the deliverable is rotation with an owner and a date rather than a validity verdict. It also does not establish how long the value has been present: with no .git directory in scope there is no blame or history to read."
+    },
+    {
+      "id": "F-004",
+      "title": "Runtime dependency `lodahs` is a single-character transposition of `lodash`",
+      "procedure": "SUP-07",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "package.json",
+        "line": 16,
+        "component": "dependencies.lodahs@1.0.1"
+      },
+      "evidence": "package.json:16 `\"lodahs\": \"1.0.1\"`, declared in `dependencies` (production), not `devDependencies`. The name differs from `lodash` -- one of the most-installed packages on npm -- only by the transposition of the final two characters. It is the sole exact-pinned dependency other than node-fetch, and the only one pinned to a `1.0.1` first-minor version. No file in scope imports it: the two JavaScript files present require only the node builtins fs, https, crypto and child_process, and the declared entry point bin/billing.js (package.json:6) does not exist in the tree.",
+      "impact": "If the registry name is a squat rather than a legitimate project, it is installed as a production dependency on every consumer and its own lifecycle scripts run at install time -- the same window F-001 opens for the first-party script, and the one Backstabber's Knife Collection measured as carrying 56% of real npm malware. Import is not required for that payload to run. Sonatype's 2026 figures put 454,600 new malicious packages in 2025 with more than 99% of open-source malware in npm, so the base rate for this construct is not low.",
+      "preconditions": "The consumer installs with lifecycle scripts enabled (npm's default) for the install-time payload; for a runtime payload, application code would have to import the module, which cannot be assessed here because the entry point is absent from the tree.",
+      "recommendation": "Before anything else, determine what this dependency is for -- nothing in the tree uses it, and a dependency nobody imports is a dependency you can delete. If a utility library is genuinely needed, depend on `lodash` (or a specific `lodash.*` module) by its correct name. In parallel, run SUP-07's four-signal check against the registry as a read-only query -- existence, age of first publication, download volume, and whether the maintainer matches the declared repository -- and if the package proves to be a squat, treat every machine that has installed it as exposed and rotate credentials reachable from those machines. Wire a lock-diff review into pull requests so a name like this is seen when it is added rather than in an audit.",
+      "traceability": [
+        "CWE-1357",
+        "CWE-829",
+        "CWE-506",
+        "A03:2025",
+        "A08:2025",
+        "SSDF PW",
+        "NIST 800-53 SR",
+        "ATT&CK T1195"
+      ],
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "UNKNOWN",
+          "reason": "SUP-07's exculpation is that the package is a recognised official fork or port with a long history and a matching maintainer, or that the similar name predates the popular one. Settling that requires the four registry signals SUP-07's minimal test names, and this engagement is offline with no registry query permitted, so none of the four -- existence, first-publication date, download volume, maintainer-versus-repository -- could be obtained. The condition could not be established in either direction, which caps this finding at `probable` and forbids `confirmed`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally, because absence of an import is the tempting way to dismiss this. It does not apply: the entry sits in `dependencies`, not `devDependencies`, so the package is fetched and its install hooks run on every consumer install regardless of whether any code imports it. The shipped-path question is settled by the manifest, not by the call graph."
+        }
+      ],
+      "inference": "That `lodahs` is not a legitimate package is inferred, not observed. What was observed is the name's single-character distance from `lodash`, its placement in production dependencies, and that nothing in the tree imports it. The registry evidence that would confirm or refute it -- SUP-07's four signals -- was unobtainable offline, and the package body was never present to read.",
+      "limits": "Says nothing about what the published `lodahs@1.0.1` contains: no dependency code was available and none was fetched. It also does not assert the reverse -- a package with a confusable name can be benign, and the recommendation is written so the read-only registry check settles it before anyone treats machines as compromised."
+    },
+    {
+      "id": "F-005",
+      "title": "Non-text artifact tracked and published under vendor/ with no build recipe and no reader",
+      "procedure": "SUP-23",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "vendor/billing-native",
+        "component": "vendor/billing-native (42 bytes)"
+      },
+      "evidence": "`file vendor/billing-native` reports `ELF 64-bit LSB *unknown arch 0x7574* (SYSV)`; the first eight bytes are a genuine ELF ident (7f 45 4c 46 02 01 01 00), so this is a non-text tracked artifact rather than a misclassified text file. Its provenance is disclaimed by the repository itself at vendor/README.md:1-2: \"`billing-native` is a fixture standing in for a compiled helper. It is not the output of any recipe in this repository.\" A search of every file in scope for a reader (`grep -rn 'billing-native|vendor/'`) returns only that README and the two constants in scripts/fetch-native.js:17-18, which name a same-named artifact fetched from the network to /usr/local/bin -- a different file, not this one. No build step, script or shipped file reads vendor/billing-native. With no \"files\" allowlist in package.json and no .npmignore, it is nevertheless packed into the published tarball.",
+      "impact": "The package distributes an opaque, non-reviewable artifact whose origin the repository explicitly cannot account for, and which no scanner in this discipline can see -- osv-scanner, trivy and grype are structurally blind to a blob with no manifest entry and no version, so a clean run over this repository would prove nothing about it. Today it is dead weight in the tarball rather than an execution path; the risk it carries is that a future build step or entry point can start reading it without anyone re-deriving where it came from, which is precisely the half of CVE-2024-3094 that lived inside the repository rather than in the release.",
+      "preconditions": "For any execution impact, a build step or shipped code would have to read or execute the file. None does in the tree as read.",
+      "recommendation": "Either delete it, or make it accountable: commit the recipe that produces it in this repository so it can be regenerated and diffed, or replace it with an upstream artifact pinned by digest whose source you can compare. Whichever way, add a `\"files\"` allowlist to package.json so unaccounted files cannot ride along into the tarball, and add a check that fails the build when a tracked non-text file has no documented origin (`git ls-files -z | xargs -0 file --mime-encoding | grep -w binary`, minus a declared allowlist).",
+      "traceability": [
+        "CWE-506",
+        "CWE-494",
+        "CWE-829",
+        "CWE-1357",
+        "A03:2025",
+        "A08:2025",
+        "SLSA Source L2",
+        "SSDF PS",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-23's exculpation is that the binary is the declared output of a recipe living in the same repository and can be regenerated, or is a vendored artifact pinned by digest whose upstream source can be diffed. The repository rules this out in its own words at vendor/README.md:1-2 -- it is not the output of any recipe here -- and no digest, version or upstream reference for it appears anywhere in scope."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-23's classifier caveat is that an unusual encoding or one enormous minified line made `file` call a text file binary. That is not the case: the file opens with the ELF magic number and NUL bytes and is classified as ELF, not as text with odd encoding. The second exculpation -- inert data such as an image, font or golden file -- was tested the way SUP-23 requires, by looking for the reader rather than by the file's location, and no reader exists; but 'nobody reads it' makes it dead weight, not accounted-for data, which is why this is reported as hardening rather than dropped."
+        }
+      ],
+      "limits": "The blob is 42 bytes and carries an unknown machine architecture, so it cannot be a functioning executable as it stands; this is reported as a provenance and packaging defect, not as a live payload, and the evidence states the size rather than implying more. The search for a reader covered only the 9 files in scope: the entry point declared at package.json:6 (bin/billing.js) is absent from the tree, so a reader could exist in code this audit never saw -- that is the one path by which this would stop being hardening."
+    },
+    {
+      "id": "F-006",
+      "title": "Published artifact carries no provenance attestation and no signature",
+      "procedure": "SUP-12",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "package.json",
+        "line": 10,
+        "component": "scripts.release"
+      },
+      "evidence": "package.json:10 `\"release\": \"npm publish\"` -- a bare publish with no `--provenance` flag. `grep -rn 'cosign|slsa-verifier|gh attestation|gpg --verify|sha256sum'` over the whole scope returns nothing, so no signing or verification step exists anywhere in the tree, and there is no .github/ or other CI configuration that could attach an attestation. package.json:4 `\"private\": false` confirms the package is meant for a public registry. The result is SLSA Build L0 for an artifact that, per F-001 and F-002, runs code on its consumers at install time.",
+      "impact": "A consumer has no way to bind the tarball they install to a source commit, a builder or an identity: nothing distinguishes a release built from this repository from one produced by whoever holds the publishing credential. This grants an attacker nothing on its own -- it removes a detection and attribution control rather than opening a path -- which is why it is recorded at informational. It matters more than usual here only because the package executes an install hook, so the artifact consumers cannot verify is also the artifact that runs.",
+      "preconditions": "Becomes load-bearing only if the publishing credential or the maintainer account is compromised; SUP-10 is the procedure for that question, and it could not be exercised (see ruled_out).",
+      "recommendation": "Publish from CI with npm's OIDC Trusted Publishing (`permissions: id-token: write`) and `npm publish --provenance`, so each release carries a signed attestation naming the commit and the builder; npm classic tokens were revoked on 9 December 2025 and granular write tokens are capped at 90 days, so a stored NPM_TOKEN is no longer the right shape regardless. Then state the SLSA Build level the project targets and check releases against it, rather than treating provenance as optional documentation.",
+      "traceability": [
+        "CWE-347",
+        "CWE-345",
+        "CWE-494",
+        "A08:2025",
+        "CICD-SEC-9",
+        "SLSA Build L1",
+        "SLSA Build L2",
+        "SSDF PS",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-12's exculpation is that the registry already stores provenance attestations from a hosted builder which the consumer verifies. There is no hosted build path in scope at all -- `release` is a bare `npm publish` run from wherever the maintainer stands -- so no unskippable layer produces an attestation."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-12's other exculpation is an artifact consumed only internally, by immutable digest, from an access-controlled registry. package.json:4 sets `\"private\": false` and .npmrc:1 points the unscoped default registry at registry.npmjs.org, so the consumer is a second principal outside the publisher's perimeter."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "Real but bounded to informational. No exploit path is asserted: the absent attestation is a defence-in-depth and attribution control, and its absence gives an attacker no capability they did not already have. Recorded rather than deleted, exactly as FP-10 requires, because it is the control that would have contained F-001 and F-002 had the publishing account been misused."
+        }
+      ],
+      "limits": "Established from the tree only. Whether the npm registry already holds attestations for previously published versions of @acme/billing-cli was not checked -- that requires a registry query, which this engagement did not perform -- so this describes the release path as configured here, not the history of the published package."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unverified remote download on the build path (scripts/fetch-schema.js)",
+      "procedure": "SUP-04",
+      "outcome": "refuted",
+      "where": "scripts/fetch-schema.js fetches https://cdn.example.com/schemas/billing-v2.json over TLS, but line 5 pins a SHA-256 constant and lines 17-20 hash the response and `throw new Error('schema digest mismatch, refusing to build')` BEFORE the single `fs.writeFileSync` at line 21. This is SUP-04's stated exculpation verbatim -- pinned by digest, verified before it is used -- so FP-01 HOLDS: the check gates the write inside the same function and no path reaches the write around it. Two further bounds strengthen it rather than weakening it: the fetched artifact is a JSON schema consumed as data, not code, and no npm script or file in scope invokes fetch-schema.js at all (`build` is `tsc -p .`), so it is not even on a live path. Reported as ruled out and deliberately NOT as a finding. Not established: whether the pinned constant is the digest of the schema currently served -- that would require fetching it, which was not done."
+    },
+    {
+      "class": "Secrets in a template file (.env.example)",
+      "procedure": "SUP-16",
+      "outcome": "refuted",
+      "where": ".env.example carries three values, all of which meet SUP-16's exculpation so FP-02 and FP-07 HOLD: `BILLING_API_TOKEN=replace-me` is a literal placeholder; the Stripe value uses the vendor's documented TEST prefix (`sk_test_`) followed by 26 zeros, which is both a test-service key class and a zero-entropy pattern; and `DATABASE_URL=postgres://user:password@localhost:5432/billing` names the literal strings `user` and `password` against localhost. The filename is npm's and the ecosystem's conventional template name. Reported as ruled out, not as a finding. Bound: this covers .env.example only -- the live-format credential in config/runtime.json is a different file with a different convention and is reported as F-003."
+    },
+    {
+      "class": "Dependency confusion on an internal package name",
+      "procedure": "SUP-05",
+      "outcome": "refuted",
+      "where": "The one internal dependency, `@acme/internal-config` (package.json:15), is scoped rather than bare, which is SUP-05's primary exculpation, and .npmrc:2 maps that exact scope to the internal registry (`@acme:registry=https://npm.internal.acme.example/`). SUP-05's vulnerable pattern -- an unscoped internal name with no scope mapping -- is absent in both halves. FP-09 HOLDS: the construct is an explicit scope mapping, not a missing one. Reported as ruled out, not as a finding. Bound: whether the `@acme` scope is defensively reserved on the public registry was not checked, because that requires a registry query this engagement did not perform; it does not change the local verdict, since the scope mapping already removes the resolution ambiguity SUP-05 describes."
+    },
+    {
+      "class": "Multi-registry resolution where the higher version wins",
+      "procedure": "SUP-06",
+      "outcome": "refuted",
+      "where": ".npmrc contains exactly two lines: a single default `registry=https://registry.npmjs.org/` and one per-scope mapping `@acme:registry=https://npm.internal.acme.example/`. There is no second index competing for the same names -- no npm equivalent of pip's `extra-index-url`, no incomplete Maven `mirrorOf`, no missing NuGet `packageSourceMapping`. SUP-06's exculpation 'explicit mapping by scope toward the internal registry' HOLDS (FP-01), and no name is resolvable from two indexes at once. Bound: runner environment variables (npm_config_registry, NPM_CONFIG_@acme:registry) could override this at install time and were not available; that is an evidence request, not a local defect."
+    },
+    {
+      "class": "Support lifecycle of a pinned dependency branch (node-fetch 2.7.0)",
+      "procedure": "SUP-24",
+      "outcome": "inconclusive",
+      "where": "package.json:14 pins `node-fetch` exactly at 2.7.0, the head of the 2.x line, while the maintained line is 3.x. SUP-24's inventory step ran offline and produced the version in use; its second field -- the vendor's declared end-of-support date and the source of that date -- has no offline oracle and was not obtained, so per SUP-24 the component is inconclusive and NOT clean. The consequence is recorded rather than a finding invented: any future 'no known vulnerabilities' result for node-fetch 2.7.0 must be read as unmeasured, not as measured-clean, because advisory feeds track supported branches by design. What would settle it: the maintainer's stated support policy for the 2.x line. Separately, the runtime inventory SUP-24 also asks for is empty -- package.json declares no `engines`, and there is no .nvmrc and no Dockerfile in scope -- so no Node.js major could be assessed at all."
+    },
+    {
+      "class": "Lock file missing or unused by the pipeline",
+      "procedure": "SUP-01",
+      "outcome": "refuted",
+      "where": "No package-lock.json, npm-shrinkwrap.json, yarn.lock or pnpm-lock.yaml exists. SUP-01's exculpation applies squarely and FP-09 HOLDS: this is a publishable package, not an application -- package.json:4 `\"private\": false`, package.json:6 declares a `bin`, and `release` is `npm publish` -- and for a published library the lock is not committed by design, with resolution happening on the consumer side under the consumer's own lock. Reported as ruled out rather than as a finding. The real consequence is recorded instead in the coverage declaration: with no lock there is no resolved tree, so SUP-13, SUP-14 and SUP-15 could not run and no statement about dependency vulnerabilities is made anywhere in this artifact."
+    },
+    {
+      "class": "Floating version ranges on direct dependencies",
+      "procedure": "SUP-02",
+      "outcome": "inconclusive",
+      "where": "Three direct dependencies use caret ranges (`chalk ^5.3.0`, `@acme/internal-config ^1.0.0`, `left-pad ^1.3.0`) and two are exact (`node-fetch 2.7.0`, `lodahs 1.0.1`). Caret ranges in a PUBLISHED package are the ecosystem's intended form -- exact pins in a library fracture consumer trees -- and the consumer's own lock is what makes resolution deterministic, so this is not reported as a defect. It is filed inconclusive rather than refuted because SUP-02's actual measurement -- the distance between the version resolved and the latest published, and whether each project is still maintained -- requires registry data that was not available offline, and no dependency was ever resolved. Nothing here should be read as 'the dependencies are current'."
+    },
+    {
+      "class": "Behavioural indicators of a malicious package in first-party code",
+      "procedure": "SUP-19",
+      "outcome": "refuted",
+      "where": "Both JavaScript files in scope were read in full, not executed. Neither is obfuscated or minified; there is no base64/hex-decode-then-eval chain (`grep` for `eval(`, `Function(`, `atob`, base64 Buffer decoding returns nothing), no read of `process.env` at all, no clipboard or wallet API hooking, and no conditional keyed on locale, geolocation or time zone. Their only imports are the node builtins fs, https, crypto and child_process. Bound, and it is a hard one: this covers the first-party tree only. No dependency package bodies are present and none were fetched, so nothing here speaks to chalk, node-fetch, left-pad, lodahs or @acme/internal-config -- F-004 exists precisely because that question stayed open."
+    },
+    {
+      "class": "Suppressed CVEs and unjustified 'not affected' claims",
+      "procedure": "SUP-25",
+      "outcome": "refuted",
+      "where": "No suppression or exception file of any supported form exists in scope: .trivyignore, .grype.yaml, osv-scanner.toml and audit-ci.json are all absent, there is no OWASP dependency-check suppression XML, no VEX or CSAF document, and no CI configuration in which a severity threshold could silently suppress findings below it. There is therefore no accepted risk that this audit inherited on someone else's word. This is a genuine absence, not an unmeasured one -- the named file set was enumerated directly."
+    },
+    {
+      "class": "Signature verification that accepts any signer or gates nothing",
+      "procedure": "SUP-22",
+      "outcome": "refuted",
+      "where": "`grep -rn 'cosign|slsa-verifier|gh attestation|gpg --verify|sha256sum'` across the whole scope returns no match: there is no verification command to mis-scope, no `|| true`, no advisory-only verification step. The one integrity check that does exist (scripts/fetch-schema.js) is a digest comparison in code that fails closed, assessed above. SUP-22 finds the signature that proves nothing; here there is no signature at all, which is the different finding recorded as F-006 under SUP-12."
+    },
+    {
+      "class": "Slopsquatting: imports of packages that no manifest declares",
+      "procedure": "SUP-08",
+      "outcome": "refuted",
+      "where": "Every top-level import in scope was extracted and resolved: scripts/fetch-native.js requires fs, https and child_process; scripts/fetch-schema.js requires fs, https and crypto. All six are Node.js builtins, so the set of imports that resolve neither to a builtin, nor to a local module, nor to a declared dependency is empty and there is no hallucinated name to verify. Bound, and it runs the other way too: five declared dependencies are imported by nothing in scope, because the declared entry point bin/billing.js (package.json:6) is absent from the tree. That absence, not a clean result, is why no reachability argument appears in any finding above."
+    },
+    {
+      "class": "Secrets in git history",
+      "procedure": "SUP-17",
+      "outcome": "blocked",
+      "where": "No .git directory exists under the scope path, so there is no history, no reachable deleted branch, no tag and no stash to scan; `gitleaks` in history mode has nothing to read. This is a blocked check, not a clean one: the credential in F-003 is present in the working tree today, and if this content is ever placed under version control -- or already exists in a repository outside this scope -- the value must be treated as exposed there as well. What would unblock it: read access to the repository that carries this tree."
+    },
+    {
+      "class": "Published artifact versus source tree",
+      "procedure": "SUP-20",
+      "outcome": "blocked",
+      "where": "The comparison SUP-20 requires needs two things this engagement has neither of: a published tarball for @acme/billing-cli@2.3.0, which would have to be fetched from a registry, and a git tag to diff it against, which does not exist without a .git directory. Nothing was downloaded. The xz-class question -- whether the release contains files the source does not -- therefore remains open and is stated as open. What would unblock it: the published tarball plus the tagged source, supplied locally."
+    },
+    {
+      "class": "Mutable references to pipeline dependencies",
+      "procedure": "SUP-09",
+      "outcome": "not executed",
+      "where": "SUP-09's 'where to look' pattern is absent: there is no .github/workflows/, no GitLab CI file, no Jenkins configuration and no container image reference anywhere in scope, so there are no action references to count as pinned-by-SHA versus tag. Per the pack's own rule, without the pattern the procedure does not apply and nothing is reported. This is recorded so the reader does not read silence as a pinned pipeline: no statement is made about whatever CI builds and publishes this package."
+    },
+    {
+      "class": "Publishing credentials and flow control over the release",
+      "procedure": "SUP-10",
+      "outcome": "blocked",
+      "where": "The tree shows only `\"release\": \"npm publish\"` (package.json:10). Who can trigger a publish, which credential signs it, whether an `environment` approval or branch protection stands in front of it, and whether OIDC Trusted Publishing is configured all live outside the repository. FP-08 governs the answer: absent the exported evidence, the control is UNKNOWN and must not be written down as either present or missing. What would unblock it: the npm organisation's token and Trusted-Publishing configuration, and the repository ruleset export. The same reasoning blocks SUP-21 (branch and tag protection, review requirements, signed commits), for which there is additionally no git metadata in scope to read offline."
+    },
+    {
+      "class": "SBOM presence and fidelity",
+      "procedure": "SUP-11",
+      "outcome": "not executed",
+      "where": "No release artifacts and no pipeline exist in scope, and no sbom.json, *.cdx.json or *.spdx.json is present. Generating one locally with syft would have described nine first-party files rather than a dependency inventory, since no lock file and no node_modules exist to read, so it would have measured nothing about what is distributed."
+    },
+    {
+      "class": "Dependency vulnerability triage",
+      "procedure": "SUP-13",
+      "outcome": "blocked",
+      "where": "No SCA output exists and none could be produced: with no lock file, no node_modules and no permitted registry access, osv-scanner, trivy, grype and npm audit have no resolved tree to read, and every one of them requires either the lock or the installed tree. No CVE is asserted or dismissed anywhere in this artifact, and no reachability or call-path argument was available in either direction, because the declared entry point bin/billing.js is absent. The same block applies to SUP-14 (KEV/EPSS prioritisation) and SUP-15 (data-source noise), which both operate on findings that were never produced. What would unblock it: the committed or generated lock file for the version under audit, plus offline vulnerability databases."
+    },
+    {
+      "class": "Secrets outside the repository: CI logs, artifacts and agent configuration",
+      "procedure": "SUP-18",
+      "outcome": "not executed",
+      "where": "The scope contains no CI logs, no build artifacts, no runner cache, no container image and no MCP or AI-agent configuration file, so the surface SUP-18 measures is not present in what was handed over. Recorded because GitGuardian's 2026 measurement puts 28% of secret incidents outside the repository: the absence of this surface from the audit scope is not evidence that it is clean."
+    }
+  ]
+}
