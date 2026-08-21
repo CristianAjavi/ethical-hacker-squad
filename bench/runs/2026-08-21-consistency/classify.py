@@ -22,15 +22,22 @@ import sys
 import itertools
 from pathlib import Path
 
+# ORDER IS LOAD-BEARING and the first version got it wrong. `uncapped-recursion`
+# matched on the bare method names `readtable|readarray`, which appear in the
+# text of the DECLARED-LENGTH finding too, so a distinct defect was silently
+# folded into the recursion class and three runs that differ were reported as
+# identical. The patterns below name the MECHANISM, never just the method that
+# happens to be nearby, and the most specific classes are tested first.
 CLASSES = [
-    ("alloc-from-wire-length",        r"readbytes|new byte\[|contentlength"),
-    ("uncapped-recursion",            r"recurs|readtable|readarray|stackoverflow|depth"),
-    ("declared-length-vs-remaining",  r"remaining|available\(\)|truncat"),
-    ("timestamp-overflow",            r"\*\s*1000|timestamp"),
-    ("duplicate-keys",                r"duplicate|first-wins|first wins"),
-    ("unchecked-exception",           r"unsupportedoperation|unchecked exception"),
-    ("codegen-unpinned",              r"codegen|generate-sources|groovy"),
-    ("dependency-eol",                r"slf4j|logback|jetty|end-of-life|eol|optional"),
+    ("duplicate-keys",                r"duplicate (field |key)|first[- ]wins|first occurrence wins|repeated field"),
+    ("unchecked-exception",           r"unsupportedoperation|unchecked exception|unchecked runtime"),
+    ("timestamp-overflow",            r"timestamp|\*\s*1000"),
+    ("codegen-unpinned",              r"codegen|generate-sources|generator script|groovy|shipped api source"),
+    ("dependency-eol",                r"slf4j|logback|jetty|end-of-life|end of life|\beol\b"),
+    ("declared-length-vs-remaining",  r"never compared with the bytes|bytes that remain|bytes remaining|"
+                                      r"available\(\)|silently truncat|swallow its sibling"),
+    ("alloc-from-wire-length",        r"sizes (a|the) byte array|new byte\[|readbytes|contentlength"),
+    ("uncapped-recursion",            r"depth counter|no depth|recurs|stackoverflow"),
 ]
 
 

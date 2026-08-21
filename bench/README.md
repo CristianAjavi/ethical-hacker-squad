@@ -23,16 +23,11 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
-## The one thing that separates: consistency
+## Consistency: attempted, and withdrawn
 
-| Same target, three independent runs per arm | Pairwise agreement | In every run | Union |
-|---|---|---|---|
-| [with the corpus](runs/2026-08-21-consistency/) | **1.00 / 1.00 / 1.00** | 4 classes | 4 |
-| without it | 0.71 / 0.43 / 0.67 — mean **0.60** | 3 classes | 7 |
+A run measured whether two independent reviews of the same target agree with each other — the property a written procedure should confer by construction, and the one dimension left after capability came back at parity everywhere. It reported a clean separation, and **[it is retracted](runs/2026-08-21-consistency/)**: the number came from a classifier this project wrote to reduce findings to the defect they are about, and that classifier mis-bins findings a reader bins correctly at a glance. A rewrite reversed the result and was equally broken. Two instruments, two contradictory answers, both void.
 
-Every other measurement here asks about **capability**, and capability on this task is saturated: they all came back at parity or worse. This asks about **reproducibility**, which is what a written procedure should buy, and it is the first gap that is not one item inside the noise.
-
-Two counterweights travel with it rather than sitting in a footnote. Agreement is easier over a smaller set — 4–6 findings against 9–10 — though the corpus arm's core is *larger* (4 classes in all three runs against 3) and its variable part is zero. And the unaided arm's **union** across runs is bigger, 7 against 4: it surfaced more in aggregate, just never the same more twice. **Consistency is not superiority. It is a different property, and this is the only table here that measures it.**
+What the six stored artifacts show without any classifier: **all six runs, both arms, report the same two main defects every time**, and the corpus arm reported 4–6 findings against 9–10. Whether the *sets* are more stable in one arm is exactly the open question, and it needs the blind pairwise judging this bench already uses for advisories, not regex over prose.
 
 ## What the corpus adds — and where it adds nothing
 
