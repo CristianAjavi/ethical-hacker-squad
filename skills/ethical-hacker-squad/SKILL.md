@@ -44,7 +44,7 @@ Instructions and knowledge in this skill are written in English on purpose: the 
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 2,830 lines across twelve files; loading all of it is a waste of context and degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 3,622 lines across sixteen files; loading all of it is a waste of context and degrades the work.
 
 ## Mapping to Claude Code
 
@@ -63,6 +63,7 @@ When this skill is installed as a plugin, it ships dedicated subagents whose too
 | `ehs-supply-chain` | Dependencies, provenance, secrets | none |
 | `ehs-ai-safety` | LLM applications, agents, MCP, RAG | none |
 | `ehs-privacy-abuse` | Personal data and product abuse | none |
+| `ehs-local-app` | CLI, desktop apps, published libraries, installers | none |
 | `ehs-remediator` | Applies fixes (`harden` mode only) | `Edit`, `Write` |
 | `ehs-verifier` | Independent verification | none |
 

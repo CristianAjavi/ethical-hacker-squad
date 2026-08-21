@@ -6,7 +6,7 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 2,830 lines of corpus across seven role packs, with 122 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 3,622 lines of corpus across eight role packs, with 154 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -25,7 +25,7 @@ Most "act as a security expert" prompts are adjectives. This one ships **procedu
 
 ## The squad
 
-`security-lead` (you) · `web-api` · `mobile` · `infra-cloud` · `supply-chain` · `ai-safety` · `privacy-abuse` · `remediator` · `verifier`
+`security-lead` (you) · `web-api` · `mobile` · `infra-cloud` · `supply-chain` · `ai-safety` · `privacy-abuse` · `local-app` · `remediator` · `verifier`
 
 Installed as a plugin, each specialist is a real subagent with its own tool access: auditors ship without `Edit` and `Write`, and only the remediator can modify files. That closes the direct write path, not every write path — auditors keep `Bash`, so the working tree is checked after an `audit` run rather than assumed clean.
 

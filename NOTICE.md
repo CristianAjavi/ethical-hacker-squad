@@ -32,6 +32,7 @@ The following are licensed **CC BY-SA 4.0**, a copyleft licence whose ShareAlike
 | API Security Top 10 | 2023 | <https://owasp.org/www-project-api-security/> |
 | Top 10 for LLM Applications | 2026 (2026-08-03) | <https://genai.owasp.org/> |
 | Top 10 for Agentic Applications | 2026 (v2.01) | <https://genai.owasp.org/> |
+| Agentic Skills Top 10 (`AST01`..`AST10`) | v1.0 | <https://owasp.org/www-project-agentic-skills-top-10/> |
 | Top 10 CI/CD Security Risks | current | <https://owasp.org/www-project-top-10-ci-cd-security-risks/> |
 | Cheat Sheet Series | — | <https://cheatsheetseries.owasp.org> |
 | SAMM | 2.x (core v2.2.0) | <https://owaspsamm.org/> |

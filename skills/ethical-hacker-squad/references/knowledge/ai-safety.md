@@ -141,7 +141,7 @@ The permission check lives in the system prompt ("only query the current user's 
 **Minimal test**
 Unit test on the dispatcher: a well-formed call to a sensitive tool with the context of a user lacking permission. It must fail in authorization, not in argument validation.
 
-**Traceability**: `LLM03:2026` · `ASI02` · `ASI03` · `A01:2025` · `CWE-862` · `CWE-863` · ASVS 5.0 V8
+**Traceability**: `LLM03:2026` · `ASI02` · `ASI03` · `A01:2025` · `CWE-862` · `CWE-863` · `ASVS 5.0 V8`
 **Tooling**: manual review of the dispatcher; a scanner cannot tell a real authorization from a cosmetic one.
 
 ### AI-06 No privilege degradation after ingesting external content
@@ -253,7 +253,7 @@ Without validating `aud`, a legitimate token issued for another service opens th
 **Minimal test**
 A test with a token signed by the same issuer but with another service's `aud`: it must be rejected. This is local, with a test key, not an attack.
 
-**Traceability**: `ASI03` · `ASI07` · `A01:2025` · `A07:2025` · `CWE-863` · `CWE-918` · ASVS 5.0 V9, V10
+**Traceability**: `ASI03` · `ASI07` · `A01:2025` · `A07:2025` · `CWE-863` · `CWE-918` · `ASVS 5.0 V9` · `ASVS 5.0 V10`
 **Tooling**: `rg -n "jwt.decode|verify\(|audience|aud"` → finds the validation. The call existing does not prove it validates the audience; read the arguments.
 
 ### AI-11 Secrets in MCP configuration files

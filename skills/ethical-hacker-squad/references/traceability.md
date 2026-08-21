@@ -106,8 +106,20 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `ASI01`, `ASI09` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
 | `ASI02`, `ASI03`, `ASI05` | ai-safety | `ai-safety.md` §2 | `AI-05`..`AI-07` |
 | `ASI07`, `ASI08`, `ASI10` | ai-safety | `ai-safety.md` §2, §3 | `AI-05`..`AI-11` |
+| `AML.T0010`, `LLM04:2026` (model artifacts) | ai-safety | `ai-safety-data-output.md` §4 | `AI-23` |
 | `AML.T0068` | ai-safety | `ai-safety-data-output.md` §8 | `AI-20` |
+| `CCM DSP` (where the data lands) | privacy-abuse | `privacy-abuse.md` §10 | `PRV-12` |
 | `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud + supply-chain | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 / `supply-chain.md` §1, §7 + `supply-chain-source-lifecycle.md` §10, §11 | `INF-01`..`INF-17`, `SUP-02`, `SUP-13`..`SUP-15`, `SUP-21`..`SUP-25` |
+
+| `CWE-22`, `CWE-59`, `CWE-61`, `CAPEC-126`, `CAPEC-27` | local-app | `local-app.md` §1 | `LOC-01`, `LOC-02` |
+| `CWE-367`, `CWE-377`..`CWE-379`, `CAPEC-29` | local-app | `local-app.md` §2 | `LOC-03`, `LOC-04` |
+| `CWE-88`, `CWE-426`, `CWE-427`, `CAPEC-6`, `CAPEC-38`, `CAPEC-471`, `ATT&CK T1574` | local-app | `local-app.md` §3 | `LOC-05`..`LOC-07` |
+| `CWE-250`, `CWE-269`, `CWE-276`, `CWE-732` | local-app | `local-app.md` §4 | `LOC-08`, `LOC-09` |
+| `CWE-1188`, `CWE-665` | local-app | `local-app.md` §5 | `LOC-10` |
+| `CWE-829`, `CWE-79` (desktop renderer) | local-app | `local-app.md` §6 | `LOC-11`, `LOC-12` |
+| `CWE-346`, `CWE-1385` | local-app | `local-app.md` §7 | `LOC-13` |
+| `CWE-494` (code arriving at runtime) | local-app / supply-chain | `local-app.md` §8 / `supply-chain.md` §6 | `LOC-14`, `SUP-09`..`SUP-12` |
+| `CWE-214`, `CWE-312`, `CWE-522`, `CWE-532` (on the local machine) | local-app | `local-app.md` §9 | `LOC-15` |
 
 ## Known coverage gaps
 
@@ -117,7 +129,8 @@ Declare these rather than implying they are covered:
 - **`MASTG-TEST-NNNN` and `MASWE-NNNN` individual IDs** — the corpus cites MASVS controls, MASTG test groups and MASWE weakness groups (`MASWE AUTH group`), not individual numbers, because those numbers were not verified one by one. The MAS testing profiles are cited as a concept; their requirement lists were not read one by one either.
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
+- **Microsoft's cloud security benchmark** — consulted while drafting `PRV-12` and **not** cited: it is not in `docs/sources-allowlist.json` and its licence was not verified. Its control identifiers therefore appear nowhere in the corpus, and cloud-provider-specific control ids are not claimed as coverage.
 - **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.
-- **CLI, desktop and library surfaces** — injection, deserialization and file handling transfer from `web-api.md`, but symlink handling, temp-file races, argument and environment parsing, and dangerous public-API defaults have no procedure.
+- **CLI, desktop and library surfaces** — now covered by `local-app.md` (`LOC-01`..`LOC-15`). What remains uncovered inside that surface: native memory safety, anything needing a debugger or a fuzzer, Windows mechanisms beyond DLL search order and registry protocol handlers (services, COM, scheduled tasks, ACL inheritance), and macOS TCC and entitlement analysis. Declare those as not exercised.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.
 - **`ATT&CK` technique mapping** — used sparingly and only where the technique was verified. Absence of an ATT&CK ID on a finding means it was not verified, not that no technique applies.

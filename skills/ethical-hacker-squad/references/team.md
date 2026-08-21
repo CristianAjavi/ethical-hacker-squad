@@ -4,19 +4,20 @@ The leader staffs only the relevant roles. Every specialist returns evidence, im
 
 Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
 
-Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **two files** for size reasons; both files belong to the same role and share one procedure numbering, and the first file names its sibling in its header.
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|
 | Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
 | Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` | `WEB-01`..`WEB-22` |
-| Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-15` |
+| Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
 | Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` | `INF-01`..`INF-18` |
-| Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` | `SUP-01`..`SUP-20` |
-| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` | `AI-01`..`AI-22` |
-| Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-11` |
+| Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-25` |
+| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-28` |
+| Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
+| Local applications | `ehs-local-app` | `knowledge/local-app.md` | `LOC-01`..`LOC-15` |
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
-| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-07` |
+| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
 
 ## Leader / security-lead
 
@@ -53,6 +54,12 @@ Run `AI-01` (the lethal trifecta check) first on every agent in scope. It is the
 ## Privacy and abuse / privacy-abuse
 
 Order: map personal data, retention, consent, minimization, access controls, multitenancy, export, deletion, telemetry and product abuse paths. Always separate a technical vulnerability from a privacy risk from a product decision. Describe the technical fact and the obligation it may touch; never rule on legal compliance.
+
+## Local applications / local-app
+
+Order: review command-line tools, desktop shells, published libraries, installers and local daemons — path handling and archive extraction, symlink following, temporary files and races, argument injection, search-path resolution, configuration discovered from the working directory, file permissions, privileged helpers, insecure library defaults, renderer isolation and protocol handlers, local IPC and loopback listeners, runtime code loading, and secrets at rest.
+
+`knowledge/local-app.md` §0 is mandatory and is what separates this role from the rest: on a local surface there is no anonymous internet attacker, so every finding names the second principal and the boundary crossed — another local user, a hostile input file, a hostile working directory, a web origin reaching a listener, or the consumer of a library. A finding that cannot name one is a hardening note, not a vulnerability. Tests create files only inside a temporary directory the specialist made for the run: a symlink or race test pointed at a real path is destruction, not evidence.
 
 ## Remediator / remediator
 

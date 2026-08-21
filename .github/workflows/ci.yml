@@ -58,6 +58,35 @@ jobs:
       - name: Run the gates that do not depend on external tools
         run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
 
+      # A self-test battery that only ever runs on a maintainer's laptop is not a
+      # monitored one, and two of them were in exactly that position. Discovered
+      # rather than listed, so a new battery is covered the day it lands.
+      - name: Prove the gates in the negative
+        run: |
+          set -uo pipefail
+          worst=0
+          found=0
+          for t in scripts/gates/*.selftest.sh; do
+            [ -e "$t" ] || continue
+            found=$((found + 1))
+            echo "::group::$t"
+            rc=0
+            bash "$t" || rc=$?
+            echo "::endgroup::"
+            case "$rc" in
+              0) echo "ok        $t" ;;
+              2) echo "::error title=COULD NOT MEASURE::$t could not run"; worst=2 ;;
+              *) echo "::error title=SELFTEST FAILED::$t did not behave as specified"
+                 [ "$worst" -eq 2 ] || worst=1 ;;
+            esac
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error title=COULD NOT MEASURE::no self-test battery was found"
+            exit 2
+          fi
+          echo "batteries run: $found"
+          exit "$worst"
+
   workflow-hardening:
     # Same rule as above: the name IS the required-context string.
     name: workflow-hardening
