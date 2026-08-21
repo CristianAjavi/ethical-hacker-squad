@@ -1,0 +1,43 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "control arm, no corpus",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "control arm",
+    "coverage_declaration": "Only the advisory-matching finding is published."
+  },
+  "findings": [
+    {
+      "id": "control-mcp-F-001",
+      "title": "Tool callers choose the API host and proxy for requests that carry the server's Contentful management token",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+        "line": 99,
+        "component": "space-to-space-migration export/import tools"
+      },
+      "evidence": "exportSpace.ts declares transport-level knobs as ordinary tool inputs: line 99 `host: z.string().optional().describe('Management API host')`, line 100 `hostDelivery`, line 101 `proxy: z.string().optional().describe('HTTP/HTTPS proxy config')`, line 102 `rawProxy`. The handler then merges those caller values with the server's secret and hands the whole object to the network client: lines 134-140 `const exportOptions = { ...args, managementToken, ... } as any;` followed by line 148 `await contentfulExport.default(exportOptions)`. importSpace.ts is the same shape: `host` (line 69), `proxy` documented as accepting credentials `'HTTP/HTTPS proxy string (host:port or user:pass@host:port)'` (lines 70-73), `rawProxy` (lines 74-77), merged at lines 111-115 and passed at line 119. The `as any` cast on the merged object is what lets these fields reach the library untyped and unfiltered. The server already has an operator-controlled host \u2014 env.ts lines 9-13 `CONTENTFUL_HOST ... .default('api.contentful.com')`, plumbed through register.ts line 22 \u2014 and neither tool consults it or compares the argument against it.",
+      "impact": "The management token is the server's crown jewel: a Contentful CMA token with write access to every space the credential can reach. A single tool call with `host` or `proxy` set to an attacker-controlled endpoint sends that credential off-box. Because the caller is an LLM whose context is fed by content this very server reads, the injection path is short: hostile text in a CMS entry, asset description or webhook name instructs the agent to run the migration workflow with a custom host, and the operator sees a plausible 'export failed' message while the credential is already gone. Loss of the token is loss of the CMS: read, modify, publish and delete across the organisation, with no artefact left in the MCP transcript beyond one unusual argument.",
+      "preconditions": "The exportSpace/importSpace tools must be enabled, which per register.ts lines 81-95 requires a prior call to the spaceToSpaceMigrationHandler \u2014 an action available to the same caller. No operator interaction beyond approving the migration workflow itself is needed.",
+      "recommendation": "Remove `host`, `hostDelivery`, `proxy` and `rawProxy` from both input schemas. Build the options object from operator configuration first and spread caller arguments only over an explicit allowlist of content-selection fields, so that `{ ...args }` can never reintroduce a transport key: e.g. `const exportOptions = { ...pick(args, CONTENT_OPTION_KEYS), managementToken, host: config.host }`. If a non-default host is genuinely required for self-hosted or EU-region tenants, resolve it from CONTENTFUL_HOST in env.ts or from a static allowlist, never from tool input. Drop the `as any` casts so the compiler enforces the option surface.",
+      "traceability": [
+        "CWE-918",
+        "CWE-522",
+        "CWE-201",
+        "CWE-20",
+        "OWASP-LLM01:2025"
+      ],
+      "limits": "The contentful-export and contentful-import packages were not read, so this file does not assert exactly which header carries the token to the custom host. The defect asserted is the one visible in scope: untrusted arguments controlling the destination of a request that the same code path authenticates with a server-held secret.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ]
+    }
+  ]
+}

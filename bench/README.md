@@ -19,6 +19,15 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
+## What the corpus adds
+
+| Advisory | With the corpus | Without it |
+|---|---|---|
+| `CVE-2026-53957` | found | found |
+| `CVE-2026-55090` | found | **missed** |
+
+[The A/B](runs/2026-08-21-ab-corpus/): same model, same targets, same blind judge, and the only difference is whether the auditor was given the packs. One tie and one difference — the tie is as much a result as the difference, and the run's README says which is which.
+
 ## Without a pointer
 
 | Run | Target | Advisory in scope | Result |
