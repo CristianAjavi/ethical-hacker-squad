@@ -1,0 +1,105 @@
+{
+  "coverage": "TARGET: 461 files, 409 Java (237 under src/main/java, 172 under src/test/java). This is an AMQP 0-9-1 client library, so I framed the threat model around the two boundaries a library actually has: (a) bytes arriving from a broker that may be hostile or MITM'd, and (b) the security-relevant API surface the embedding application configures (TLS, credentials, RPC helpers). I inventoried the whole tree by path, size and package, then read for content only where those two boundaries live. FULLY READ (~30 files): the wire-parsing chain - impl/Frame.java, impl/ValueReader.java, impl/CommandAssembler.java, impl/TruncatedInputStream.java, impl/Utils.java, impl/nio/NioUtils.java, impl/nio/FrameBuilder.java; the TLS/config surface - ConnectionFactory.java (targeted: setUri, all useSslProtocol overloads, useTlsWithNoVerification, enableHostnameVerification*, setNioParams/setSocketConfigurator/setSslContextFactory, NettyConfiguration, params()), ConnectionFactoryConfigurator.java, TrustEverythingTrustManager.java, PemReader.java, SocketConfigurators.java, SslEngineConfigurators.java, impl/nio/SslEngineHelper.java, impl/nio/SocketChannelFrameHandlerFactory.java, impl/nio/NioParams.java (TLS parts), impl/TlsUtils.java; auth - impl/{Plain,External,Anonymous,CRDemo}Mechanism.java, DefaultSaslConfig.java, impl/OAuth2ClientCredentialsGrantCredentialsProvider.java (HTTP request path); the handshake - impl/AMQConnection.java start()/MainLoop/readFrame/negotiatedMaxValue; the JSON and RPC helpers - tools/json/{JSONReader,JSONWriter,JSONUtil}.java, tools/jsonrpc/{JsonRpcServer,DefaultJsonRpcMapper,ServiceDescription,ProcedureDescription}.java, RpcServer.java, RpcClient.java, RpcClientParams.java; plus impl/LogTrafficListener.java, impl/Method.java, impl/AMQCommand.java, impl/AMQChannel.java (transmit path), codegen.py (argument debug-string generation), pom.xml dependency versions, all 6 .github/workflows files, and the committed test TLS material. SKIMMED BY GREP ONLY, not audited: impl/ChannelN.java (only processAsync/processDelivery read), impl/recovery/* (26 files - I read the field declarations and method inventory of AutorecoveringConnection.java and confirmed the recorded-topology maps are synchronized, but did NOT audit the recovery state machine, retry handlers, or topology filters), impl/NettyFrameHandlerFactory.java (only the TLS pipeline setup at lines 152-252 and the frame decoder's enforceFrameMax call), impl/WorkPool.java and impl/ConsumerWorkService.java (verified only that the work queues are bounded at 1000 with a timeout), impl/JacksonJsonRpcMapper.java. NOT LOOKED AT AT ALL - my silence here is not a clean bill: all 172 test files; the entire com.rabbitmq.client.observation package (15 files, Micrometer/OpenTelemetry integration); impl/{MicrometerMetricsCollector,OpenTelemetryMetricsCollector,StandardMetricsCollector,AbstractMetricsCollector}.java; impl/VariableLinkedBlockingQueue.java (787 lines, forked JDK code, incl. its readObject); impl/{ChannelManager,ConsumerDispatcher,SetQueue,IntAllocator,DefaultHeartbeatSender,UpdateSecretExtension}.java; com.rabbitmq.utility.*; impl/{ContentHeaderPropertyReader,MethodArgumentReader,ValueWriter,MethodArgumentWriter}.java (I traced ValueReader, which is where the length-prefixed reads live, but did not read the content-header property bitmask decoder); impl/DefaultCredentialsRefreshService.java and RefreshProtectedCredentialsProvider.java beyond their log statements; Address/AddressResolver/Dns*Resolver; the generated AMQP.java/AMQImpl.java (generated at build time from codegen.py, which I did read); ci/*.sh, Makefile, mvnw. NOTE ON A NON-FINDING: src/test/resources/property-file-initialisation/tls/certificates.pem contains a real PEM PRIVATE KEY block, but it is a 2020 self-signed tls-gen test fixture paired with a throwaway CA and is not a credential for anything; I am recording it here rather than as a finding. No network access was used and nothing was executed or modified.",
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JSONReader loops forever and grows an unbounded buffer on an unterminated string",
+      "file": "src/main/java/com/rabbitmq/tools/json/JSONReader.java",
+      "line": 210,
+      "severity": "high",
+      "impact": "Any peer able to publish a message to a JsonRpcServer request queue permanently hangs the server's mainloop thread and drives the JVM to OutOfMemoryError with a single small payload. The RPC server never acks, so it also stops serving every other caller.",
+      "evidence": "string(char sep) runs `while (c != sep) { ... add(); }`; add() calls next(), and StringCharacterIterator.next() returns CharacterIterator.DONE (\\uFFFF) forever once the end of input is reached. DONE never equals the separator, so the loop never terminates and appends \\uFFFF to the `buf` StringBuilder on every iteration. DefaultJsonRpcMapper.parse (DefaultJsonRpcMapper.java:42) passes the untrusted request body straight into new JSONReader().read(), and JsonRpcServer's convenience constructors default to DefaultJsonRpcMapper (JsonRpcServer.java:84,114). JsonRpcServer.doCall's try/catch only catches ClassCastException, and a non-terminating loop is not catchable anyway.",
+      "recommendation": "Terminate every scanning loop in JSONReader on CharacterIterator.DONE and throw a parse error, and add an input-length guard. Given the class is already marked for removal in 6.0, the stronger fix is to make JacksonJsonRpcMapper the default mapper for JsonRpcServer/JsonRpcClient."
+    },
+    {
+      "id": "F-002",
+      "title": "JSONReader spins forever on an unterminated // comment",
+      "file": "src/main/java/com/rabbitmq/tools/json/JSONReader.java",
+      "line": 89,
+      "severity": "medium",
+      "impact": "A two-byte RPC request body (\"//\") pins a CPU core in a busy loop that never returns, taking the JsonRpcServer mainloop with it.",
+      "evidence": "skipWhiteSpace(): `else if (c == '/' && next() == '/') { while (c != '\\n') { next(); } }`. next() returns CharacterIterator.DONE indefinitely at end of input, which is never '\\n'. Same untrusted entry point as F-001. This one does not allocate, so it produces a silent hang rather than a crash.",
+      "recommendation": "Break out of the comment loop on CharacterIterator.DONE (and reject JSON comments outright - they are not part of the JSON grammar)."
+    },
+    {
+      "id": "F-003",
+      "title": "Property-based TLS setup disables certificate and hostname validation by default",
+      "file": "src/main/java/com/rabbitmq/client/ConnectionFactoryConfigurator.java",
+      "line": 306,
+      "severity": "high",
+      "impact": "An application that turns on TLS with `rabbitmq.ssl.enabled=true` and nothing else gets a connection that trusts every certificate. A network attacker can transparently MITM the AMQP session and read the PLAIN SASL response, which is the broker username and password in cleartext.",
+      "evidence": "setUpSsl() reads SSL_VALIDATE_SERVER_CERTIFICATE and passes `validateServerCertificate == null ? Boolean.FALSE : Boolean.valueOf(validateServerCertificate)` into setUpBasicSsl(), which on false reaches `cf.useSslProtocol(sslAlgorithm, new TrustEverythingTrustManager())` (line 402). Hostname verification defaults the same way at line 301. The insecure branch is taken whenever no key store and no trust store is configured (line 303), i.e. the minimal configuration. Nothing in the class javadoc (lines 50-68) warns about this; the only signal is a runtime WARN log. Note this is the opposite of the programmatic API, where ConnectionFactory.useSslProtocol(SSLContext) always enables hostname verification (ConnectionFactory.java:907).",
+      "recommendation": "Default ssl.validate.server.certificate and ssl.verify.hostname to true, and require an explicit `ssl.validate.server.certificate=false` to reach the trust-everything path. Consider routing that path through the already-existing cf.useTlsWithNoVerification() so it carries a single, consistent warning."
+    },
+    {
+      "id": "F-004",
+      "title": "ValueReader allocates an attacker-declared byte array before checking it against the bytes actually available",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 86,
+      "severity": "medium",
+      "impact": "A malicious or MITM'd broker makes the client attempt a ~2 GB allocation from a frame of a few dozen bytes. This is reachable pre-authentication, via the server-properties table in Connection.Start.",
+      "evidence": "readBytes(): `final long contentLength = unsignedExtend(in.readInt()); if (contentLength < Integer.MAX_VALUE) { final byte[] buffer = new byte[(int) contentLength]; in.readFully(buffer); }`. The declared length is bounded only by Integer.MAX_VALUE, never by the bytes remaining in the enclosing frame payload; readFully then throws EOFException, but only after the allocation has been attempted. readBytes backs readLongstr (line 100) and field type 'x' (line 211), both reachable from readTable, which parses Connection.Start's server-properties before any credential is sent.",
+      "recommendation": "Bound the declared length by the remaining bytes of the enclosing frame before allocating (the frame payload length is already known), or read incrementally into a growing buffer. This is the same guard Frame.readFrom already applies via Utils.enforceFrameMax."
+    },
+    {
+      "id": "F-005",
+      "title": "A broker that advertises frame_max=0 silently disables the client's inbound frame size limit, including an explicitly configured maxInboundMessageBodySize",
+      "file": "src/main/java/com/rabbitmq/client/impl/AMQConnection.java",
+      "line": 438,
+      "severity": "high",
+      "impact": "A hostile or MITM'd broker switches off the client's only pre-allocation guard with one field in Connection.Tune, then makes the client allocate up to 2 GB per frame from an 8-byte header. On a large-heap application this is real memory exhaustion; on a small-heap one it is a connection-kill loop that auto-recovery repeats forever. It also silently voids setMaxInboundMessageBodySize(), a control the application explicitly asked for.",
+      "evidence": "AMQConnection.start(): `int frameMax = negotiatedMaxValue(this.requestedFrameMax, connTune.getFrameMax()); _frameHandler.setFrameMax(Math.min(this.maxInboundMessageBodySize, frameMax));`. In AMQP 0-9-1, frame_max 0 means 'no limit'. negotiatedMaxValue (line 679) is `(clientValue == 0 || serverValue == 0) ? Math.max(...) : Math.min(...)`, so it correctly preserves 0 as 'unlimited' - and the client asks for 0 by default, since ConnectionFactory.DEFAULT_FRAME_MAX = 0 (ConnectionFactory.java:86). But the following Math.min then treats 0 as a numeric minimum and picks 0 over the 64 MB cap, and Utils.framePayloadLimit(0) (Utils.java:78) maps `frameMax <= 0` to Integer.MAX_VALUE. Frame.readFrom's `Utils.enforceFrameMax(frameSize, payloadLimit.getAsInt())` (Frame.java:136) then admits any positive int before `byte[] payload = new byte[frameSize]` (line 137). NioUtils.framePayloadLimit (NioUtils.java:28) repeats the same `<= 0 -> Integer.MAX_VALUE` rule, and FrameBuilder.readFrame allocates the same way at FrameBuilder.java:100, so blocking IO, NIO and Netty are all affected.",
+      "recommendation": "Treat 0 as unlimited explicitly at the call site: `int limit = frameMax <= 0 ? this.maxInboundMessageBodySize : Math.min(this.maxInboundMessageBodySize, frameMax);`. Additionally, make Utils/NioUtils.framePayloadLimit never return Integer.MAX_VALUE when a message body cap is configured."
+    },
+    {
+      "id": "F-006",
+      "title": "LogTrafficListener writes the SASL response - the broker password in cleartext - to the application log",
+      "file": "src/main/java/com/rabbitmq/client/impl/LogTrafficListener.java",
+      "line": 26,
+      "severity": "medium",
+      "impact": "Anyone with read access to the application logs (operators, log shipping, SIEM, a support bundle attached to a ticket) recovers the AMQP username and password, and any refreshed OAuth 2 token, from a connection that merely had wire tracing switched on for debugging. There is no way to use the shipped traffic listener without leaking them.",
+      "evidence": "LogTrafficListener.write() logs the whole outbound Command at TRACE. AMQChannel.quiescingTransmit calls `this._trafficListener.write(c)` (AMQChannel.java:502) for every outbound command including those on channel 0, and AMQConnection.start() transmits Connection.StartOk carrying `sm.handleChallenge(null, username, password)` (AMQConnection.java:375-383) - for PLAIN that value is the literal \"\\0user\\0password\" (PlainMechanism.java:19) - and later UpdateSecret carrying the refreshed token (AMQConnection.java:489). impl/Method.toString() (Method.java:69) calls appendArgumentDebugStringTo(), which codegen.py generates to append every argument verbatim with no redaction (codegen.py:520-527).",
+      "recommendation": "Redact the known-sensitive arguments in the generated appendArgumentDebugStringTo - Connection.StartOk.response, Connection.SecureOk.response, Connection.UpdateSecret.new-secret - printing a length or a fixed placeholder instead. A LogTrafficListener-only filter would be a weaker fix, since any Method.toString() (exception messages, user logging) leaks the same values."
+    },
+    {
+      "id": "F-007",
+      "title": "setNioParams / setSocketConfigurator silently discard the hostname verification installed by useSslProtocol",
+      "file": "src/main/java/com/rabbitmq/client/ConnectionFactory.java",
+      "line": 732,
+      "severity": "medium",
+      "impact": "A TLS connection that the developer believes is fully verified ends up with certificate-chain validation but no hostname check, so any certificate issued by any CA in the trust store - for any name - is accepted. The downgrade depends purely on the order of two unrelated-looking setter calls and produces no warning.",
+      "evidence": "enableHostnameVerification() works by mutating state: enableHostnameVerificationForBlockingIo() composes SocketConfigurators.ENABLE_HOSTNAME_VERIFICATION into this.socketConf (line 964-970) and enableHostnameVerificationForNio() composes it into this.nioParams (line 957-962). But `setSocketConfigurator` is a plain overwrite - `this.socketConf = socketConfigurator;` (line 733) - and so is `setNioParams` - `this.nioParams = nioParams;` (line 1422). Since useSslProtocol(SSLContext) (line 904-908) and setSslContextFactory (line 1926-1929) are the calls that install verification, the sequence `cf.useSslProtocol(); cf.setSocketConfigurator(SocketConfigurators.disableNagleAlgorithm());` leaves TLS on with endpoint identification off. A fresh NioParams defaults sslEngineConfigurator to a no-op lambda (NioParams.java:90), confirming nothing re-adds it.",
+      "recommendation": "Track hostname verification as an explicit boolean flag on ConnectionFactory and apply it when the frame handler factory is built, rather than baking it into replaceable configurator objects; or have the two setters re-compose the verification step when it was previously enabled."
+    },
+    {
+      "id": "F-008",
+      "title": "RpcClient correlation IDs default to a predictable 1,2,3... sequence",
+      "file": "src/main/java/com/rabbitmq/client/RpcClient.java",
+      "line": 593,
+      "severity": "low",
+      "impact": "When the application supplies its own named reply queue instead of direct reply-to, any principal with publish rights on that queue (e.g. via the default exchange) can forge a response for an in-flight request: the IDs restart at 1 for every RpcClient and are trivially guessable. The client accepts the first message whose correlation ID matches and returns it to the caller as the RPC result.",
+      "evidence": "RpcClientParams defaults `correlationIdSupplier = RpcClient.incrementingCorrelationIdSupplier()` (RpcClientParams.java:61), whose implementation is `return prefix + ++correlationId;` starting from a zero-initialised field (RpcClient.java:582-594). setupConsumer's handleDelivery matches purely on properties.getCorrelationId() (line 278-279) with no check of the sender, and consumes with autoAck=true (line 290). The default replyTo is \"amq.rabbitmq.reply-to\" (RpcClientParams.java:44), which the broker alone can route to - which is why this is low rather than higher.",
+      "recommendation": "Default the supplier to something unguessable (a UUID, or a SecureRandom-seeded value) and keep the incrementing supplier as an opt-in for debugging. Document that a named reply queue requires restricted publish permissions."
+    },
+    {
+      "id": "F-009",
+      "title": "Unbounded recursion when decoding nested AMQP field tables",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 181,
+      "severity": "low",
+      "impact": "A malicious or MITM'd broker can raise StackOverflowError in the connection's reader thread with a single frame of deeply nested tables, before authentication. AMQConnection.MainLoop catches Throwable and shuts the connection down, so the blast radius is one connection - but automatic recovery reconnects and hits the same frame again, giving a reconnect loop.",
+      "evidence": "readTable() -> readFieldValue() case 'F' -> readTable() (lines 139-155, 180-182), and case 'A' -> readArray() -> readFieldValue() (lines 183-184, 237-248), with no depth counter anywhere. Each nesting level costs about 6 bytes on the wire (1-byte name length + 1-byte type 'F' + 4-byte length), so even a conventional 128 KB frame encodes ~20,000 levels, well past the default JVM stack. Reachable from the server-properties table of Connection.Start (AMQConnection.java:342) and from every content header.",
+      "recommendation": "Thread a depth parameter through readTable/readArray/readFieldValue and throw MalformedFrameException past a small limit (AMQP tables are not legitimately deep; 32 is generous)."
+    },
+    {
+      "id": "F-010",
+      "title": "Property-based TLS setup defaults trust and key manager algorithms to the legacy SunX509 instead of the JVM default PKIX",
+      "file": "src/main/java/com/rabbitmq/client/ConnectionFactoryConfigurator.java",
+      "line": 294,
+      "severity": "low",
+      "impact": "Certificate chains supplied by the broker are validated by SunJSSE's legacy simple validator rather than the PKIX validator, so name constraints, certificate policies and revocation configuration (OCSP/CRL, including the JVM-wide com.sun.net.ssl.checkRevocation switch) are not applied. An attacker holding a certificate that PKIX would reject on those grounds can still complete the handshake.",
+      "evidence": "`String trustStoreAlgorithm = lookUp(SSL_TRUST_STORE_ALGORITHM, properties, prefix, \"SunX509\");` (line 294) and the matching key store default at line 290, fed to `TrustManagerFactory.getInstance(truststoreAlgorithm)` (line 387). The same class uses `TrustManagerFactory.getDefaultAlgorithm()` - normally PKIX - on the no-trust-store path (line 410), so the two paths disagree.",
+      "recommendation": "Default SSL_TRUST_STORE_ALGORITHM to TrustManagerFactory.getDefaultAlgorithm() and SSL_KEY_STORE_ALGORITHM to KeyManagerFactory.getDefaultAlgorithm(), leaving SunX509 available only as an explicit override."
+    }
+  ]
+}

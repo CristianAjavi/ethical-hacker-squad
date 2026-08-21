@@ -55,11 +55,16 @@ Both rule-picked rounds ended level **and** produced procedures from what every 
 
 The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. It is now `WEB-23`, with a case, two decoys and [a measurement](runs/2026-08-21-web23/): 2 of 2 on the fresh construct, 0 decoys, and the advisory found on a second pass over the same target. **That second number does not amend the tie above.** The procedure was written from that case, so finding it again shows the lesson was encoded, not that it generalises — and the three-arm table stands exactly as it was measured.
 
-## Without a pointer
+## Without a pointer — and this is where the corpus loses
 
-| Run | Target | Advisory in scope | Result |
-|---|---|---|---|
-| [2026-08-21, whole repository](runs/2026-08-21-whole-repo/) | 286 files, no module named, no hint that anything was wrong | `CVE-2026-53957` | **found**, judged blind |
+| Run | Target | Advisories | With the corpus | Without it |
+|---|---|---|---|---|
+| [2026-08-21, whole repository, one arm](runs/2026-08-21-whole-repo/) | 286 files, no module named | `CVE-2026-53957` | **found** | not run |
+| [2026-08-21, whole repository, three arms](runs/2026-08-21-whole-repo-3arm/) | 461 files, 409 Java, no module named | two at once | **0 / 2** | **1 / 2** |
+
+The file-subset rounds are saturated: every arm finds the same advisories, and nothing is refuted. So the second run above changed the task to the one a written method is actually for — routing across a repository nobody can read in full — and **the corpus arm lost**: the unaided engineer found an advisory it did not.
+
+Routing was not the failure. Both arms read a comparable slice, and the corpus arm **had the right file open** and reported the neighbouring defect in it. The class it missed had been declared uncovered *by one of our own arms, in writing, earlier the same day*, and the write-up was deliberately deferred so it could not contaminate a round then in flight. This run is the cost of that decision, paid in the open.
 
 The external run above it hands the auditor the affected module. This one does not, and it is the answer to the objection that follows from that. It is also one repository and one advisory, with a second target that never produced an artifact — the run's README says both.
 
