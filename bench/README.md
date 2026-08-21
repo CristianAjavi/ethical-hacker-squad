@@ -33,9 +33,17 @@ Two runs, and they do not agree. Read them together or not at all.
 | `CVE-2026-53657` | a published rule | found | found | found |
 | `CVE-2026-64868` | a published rule | **missed** | missed | missed |
 
-[The two-case A/B](runs/2026-08-21-ab-corpus/) found one advisory the other two arms missed. [The three-case run on rule-picked targets](runs/2026-08-21-three-arm-go/) found **no difference at all**: 2 of 3 for every arm, the same two found, the same one missed.
+[The two-case A/B](runs/2026-08-21-ab-corpus/) found one advisory the other two arms missed. Then two rounds on targets a **published rule** selected, six advisories in two ecosystems and four projects:
 
-**The honest reading is the second one.** On cases this project chose, the corpus shows a difference; on cases a published rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer until a larger rule-picked sample says otherwise, and the run that would say so does not exist yet.
+| | Corpus | No corpus | Competitor |
+|---|---|---|---|
+| [round 1](runs/2026-08-21-three-arm-go/) — Go | 2/3 | 2/3 | 2/3 |
+| [round 2](runs/2026-08-21-round2/) — Python, in the classes this corpus is strongest at | 1/3 | 1/3 | 1/3 |
+| **total** | **3 / 6** | **3 / 6** | **3 / 6** |
+
+**Identical. Not one advisory separates the three arms in either direction.** On cases this project chose, the corpus shows a difference; on six cases a rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer and with the neighbouring product, because that is what the measurement says.
+
+Round 2 was pre-registered — including the sentence *"if the corpus does not lead here, it does not lead where it is best"* — before any of its numbers existed.
 
 The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. It is now `WEB-23`, with a case, two decoys and [a measurement](runs/2026-08-21-web23/): 2 of 2 on the fresh construct, 0 decoys, and the advisory found on a second pass over the same target. **That second number does not amend the tie above.** The procedure was written from that case, so finding it again shows the lesson was encoded, not that it generalises — and the three-arm table stands exactly as it was measured.
 
