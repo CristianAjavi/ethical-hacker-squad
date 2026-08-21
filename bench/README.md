@@ -45,6 +45,8 @@ Two runs, and they do not agree. Read them together or not at all.
 
 **Nine advisories chosen by a published rule, in three ecosystems and five projects. The three arms are identical.** Not one advisory separates them.
 
+And [precision does not separate them either](runs/2026-08-21-precision/): all 53 findings from round 3 that match no advisory were verified twice, adversarially, against the code — **nothing was refuted by both passes**. The corpus arm's smaller output (7 claims where the others had 20 and 26) is *selection, not accuracy*: what the other arms report on top is true. The one thing that is measurably different is that its artifact has somewhere to say **I could not decide this**, and theirs does not.
+
 Round 3 briefly read **3/3 against 2/3**, and that result was published and then withdrawn the same day. It came from judging two arms in one batch and the third in another; re-judged with all three in one context, the verdict on the disputed finding moved from `partial` to `yes` and the separation disappeared. [The run's README](runs/2026-08-21-round3/) carries the correction, both judgements, and the rule that follows from it: **a separation of one advisory is inside the noise of this instrument**, and every arm for one advisory is judged in one context, always.
 
 Every round was pre-registered before its numbers existed, including round 2's *"if the corpus does not lead here, it does not lead where it is best"* and round 3's *"if the round ties again, that is three rounds of parity and the honest reading is that the corpus does not lead"*.
