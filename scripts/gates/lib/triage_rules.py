@@ -122,7 +122,7 @@ def main() -> int:
                 "a pack with no policy is a pack nobody is converting"
             )
             continue
-        total = cited = 0
+        total = cited = none_declared = 0
         for fname in pack["files"]:
             body = read(root, str(kdir / fname))
             for block in re.split(r"^(?=### )", body, flags=re.M):
@@ -131,8 +131,12 @@ def main() -> int:
                     continue
                 total += 1
                 field = FP_FIELD.search(block)
-                if field and citation_line.search(field.group(1)):
-                    cited += 1
+                if field:
+                    m = citation_line.search(field.group(1))
+                    if m:
+                        cited += 1
+                        if m.group(1).startswith("none"):
+                            none_declared += 1
         checks += 1
         if policy.get("required"):
             if cited != total:
@@ -146,6 +150,7 @@ def main() -> int:
                 f"floor of {policy['floor']}; the ratchet only turns forwards"
             )
         print(f"pack {name}: {cited}/{total} procedures cite triage rules"
+              f"{f', {none_declared} declaring none' if none_declared else ''}"
               f"{' (required)' if policy.get('required') else ''}")
 
     print(f"measured: {len(ids)} rules, {checks} checks")

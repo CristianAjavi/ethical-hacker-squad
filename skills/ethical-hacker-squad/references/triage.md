@@ -54,4 +54,4 @@ Rules: FP-02, FP-04, FP-08
 
 The bullets stay as they are — they say what the exculpation looks like in that stack. The line says which questions this class demands, so a specialist knows what must be answered before reporting, and a gate can check that the field was written as a triage step rather than as prose.
 
-Rules are cited where they apply. A procedure that genuinely invokes only one rule cites one, and a procedure whose exculpations are entirely class-specific says so with `FP-09`.
+Rules are cited where they apply. A procedure that genuinely invokes only one rule cites one, and a procedure whose class admits **no** exculpation writes `Rules: none (reason).` — `AI-22` does, because only the user can change the squad's rules and never the audited content, and three `VER-*` procedures do, because they always run.

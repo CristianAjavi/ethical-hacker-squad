@@ -46,25 +46,39 @@ def norm(path: str) -> str:
 
 
 def matches(finding: dict, item: dict) -> bool:
-    """A finding hits an item when it names the same file and the same place.
+    """A finding hits an item when it points at the same place.
 
-    Deliberately generous on the path (a report may cite it from the repository
-    root or from the case root) and strict on the symbol: pointing at the right
-    file and the wrong function is not a detection.
+    LOCATION FIRST, and prose only as a fallback. The first real run exposed why:
+    a finding that contrasts the defect with the control beside it mentions both
+    symbols, so matching on the finding's text scored five correct findings as one
+    detection and six false positives. What a finding is ABOUT is its location.
     """
     fpath = norm(finding.get("location", {}).get("path", ""))
-    ipath = norm(item["path"])
-    if not fpath.endswith(ipath) and not ipath.endswith(fpath):
+    # A defect can span files - a route that accepts the value and the helper that
+    # uses it - and a finding at either half is the same finding. The key says so
+    # with `also_at`, and the first run is why: the squad reported the SSRF at the
+    # fetch helper and the key named only the route.
+    places = [{"path": item["path"], "lines": item.get("lines"), "symbol": item["symbol"]}]
+    places += item.get("also_at", [])
+    place = next((pl for pl in places
+                  if fpath.endswith(norm(pl["path"])) or norm(pl["path"]).endswith(fpath)), None)
+    if place is None:
         return False
-    blob = " ".join(str(finding.get(k, "")) for k in ("title", "evidence", "impact", "recommendation"))
-    symbol = item["symbol"]
+
+    line = finding.get("location", {}).get("line")
+    span = place.get("lines")
+    if isinstance(line, int) and span:
+        return span[0] <= line <= span[1]
+
+    # No line, or no span for this item: fall back to the finding's TITLE, which
+    # names its subject. Never the evidence or the impact, which discuss the
+    # neighbourhood.
+    symbol = place.get("symbol", item["symbol"])
     needle = symbol.split()[-1] if " " in symbol else symbol
+    title = str(finding.get("title", ""))
     if re.fullmatch(r"\w+", needle):
-        # `write_token` must not be satisfied by `write_token_privately`: that is
-        # the decoy sitting next to it, and counting it as a hit would score a
-        # false positive as a detection.
-        return re.search(rf"\b{re.escape(needle)}\b", blob, re.I) is not None
-    return needle.lower() in blob.lower()
+        return re.search(rf"\b{re.escape(needle)}\b", title, re.I) is not None
+    return needle.lower() in title.lower()
 
 
 def main() -> int:

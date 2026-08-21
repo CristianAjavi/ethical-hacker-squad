@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory includes an `.apk`, `.aab`, `.ipa`, an Android project (Gradle, Kotlin/Java, `AndroidManifest.xml`) or an iOS project (Xcode, Swift/Obj-C, `Info.plist`), or a backend whose only client is a mobile app.
 > **Do not load it if:** the scope is only web, API or infrastructure with no mobile client.
-> **Cost:** ~289 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~313 lines. Load by section using the index; you do not need to read it end to end.
 > **Other files of this pack:** `mobile-runtime-trust.md` holds §7 and §9-§11 with `MOB-13`, `MOB-16`..`MOB-18` — client-only controls, local authentication, screen integrity and overlays, and code loaded after the store. Open it whenever the app confirms an effect on screen, unlocks with biometrics or a PIN, updates itself over the air, or has a backend only it talks to. `mobile-ios.md` holds §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the inventory has an iOS project or an `.ipa`; the sections below still apply to iOS.
 
 ## Selective loading index
@@ -66,6 +66,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The exported component is the launcher, a system receiver or a documented public integration that exposes neither data nor privileged actions.
 - Session and authorization are re-validated inside the component, independently of how it was reached.
 
+Rules: FP-01, FP-05.
+
 **Minimal test** — static: list the exported components and, for each one, follow its handler down to the first sensitive decision. Invoking them on a real device: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-926` · `CWE-200` · `MASVS-PLATFORM-*` · `MASTG-TEST-*` from the PLATFORM group
@@ -83,6 +85,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The flags appear only in the debug variant and the published artifact (verified with `aapt2 dump badging`) does not carry them.
 - `allowBackup` enabled but with extraction rules that exclude the sensitive data, and with no credentials in the backed-up directory.
 - The diagnostic activity is not exported and does not alter business state.
+
+Rules: FP-01, FP-04, FP-06.
 
 **Minimal test** — static: `aapt2 dump badging app.apk` and read the manifest of the real artifact, not the source one. Compare against the Gradle `release` variant.
 
@@ -104,6 +108,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - What is persisted is non-sensitive cache or public identifiers with no authentication value.
 - Server-side invalidation exists: a stolen token can be revoked and expires within minutes (reduces impact; does not remove the finding).
 
+Rules: FP-01, FP-07, FP-10.
+
 **Minimal test** — static: locate every write and classify the data. On an APK, inspect `res/xml/` and `assets/` for preloaded databases. Extracting data from a device: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-312` · `CWE-922` · `CWE-921` · `MASVS-STORAGE-1` · `MASTG-TEST-0001`
@@ -122,6 +128,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - Logging gated by `BuildConfig.DEBUG` and stripped by R8 in release, verified in the artifact.
 - Explicit redaction of sensitive fields before logging or before sending to third parties, covered by a test.
 - The SDK receives only a pseudonymous identifier with no personal data attached.
+
+Rules: FP-01, FP-04, FP-07.
 
 **Minimal test** — static: enumerate log calls on paths handling credentials and follow the argument. Capturing logs from a real device: **REQUIRES AUTHORIZATION**.
 
@@ -144,6 +152,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The content is local and static, bundled in `assets/`, with no parameters from outside.
 - External links open in the system browser, not inside the app's WebView.
 
+Rules: FP-01, FP-02.
+
 **Minimal test** — static: trace the `loadUrl` argument back to its origin; check whether any deep link can reach it. Loading a test URL on a device: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-79` · `CWE-939` · `MASVS-PLATFORM-*` · `MASTG-TEST-*` from the PLATFORM group
@@ -162,6 +172,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The bridge only exposes harmless operations and the WebView loads exclusively verified first-party content.
 - `onReceivedSslError` cancels (`handler.cancel()`) or is not overridden at all.
 - The bridge message validates the document origin and the message schema before acting.
+
+Rules: FP-01, FP-03.
 
 **Minimal test** — static: inventory every `@JavascriptInterface` method, its effect, and the set of URLs the WebView can load. The intersection of "sensitive method" and "external URL" is the finding.
 
@@ -184,6 +196,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The handler validates the parameter against an allowlist and requires an active session before any action.
 - The link only navigates to public screens with no sensitive data or actions.
 
+Rules: FP-01, FP-05.
+
 **Minimal test** — static: list the declared schemes and hosts and follow every parameter to its use. Firing links on a device: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-939` · `CWE-940` · `MASVS-PLATFORM-*` · `MASTG-TEST-*` from the PLATFORM group
@@ -202,6 +216,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - Explicit intents with a pinned component and immutable `PendingIntent`s.
 - The forwarding component validates the destination against an allowlist of its own components.
 - The broadcast requires a custom permission and the receiver checks the sender.
+
+Rules: FP-01.
 
 **Minimal test** — static: look for places where an `Intent` coming from outside is used as the target of a call; that hop is the finding.
 
@@ -224,6 +240,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - System-only trust anchors in the release configuration; the debug variant may differ and is not a finding if it is not published.
 - The cleartext endpoint serves public content whose integrity is guaranteed by other means (resource signing), verifiable in the code.
 
+Rules: FP-01, FP-04, FP-07.
+
 **Minimal test** — static: extract `network_security_config.xml` from the artifact with `apktool` and read it in full, including nested `<domain-config>` blocks. Intercepting real traffic: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-319` · `MASVS-NETWORK-*` · `MASTG-TEST-*` from the NETWORK group
@@ -242,6 +260,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - Use of the platform's default `TrustManager` without overriding verification.
 - The permissive `TrustManager` is confined to the debug variant and absent from the published artifact (check the DEX, not just the source).
 - Pinning in place with a backup pin and a documented rotation procedure.
+
+Rules: FP-01, FP-04.
 
 **Minimal test** — static: look for `X509TrustManager` implementations in the jadx output and check whether the verification method has a body. Proxy interception testing: **REQUIRES AUTHORIZATION**.
 
@@ -264,6 +284,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - `SecureRandom` with no fixed seed for every value with a security function.
 - The weak hash is a checksum unrelated to security and governs no decision.
 
+Rules: FP-01, FP-09.
+
 **Minimal test** — static: locate every `Cipher.getInstance` and classify mode, IV origin and key origin; for every `Random` use, determine whether the value has a security function.
 
 **Traceability**: `CWE-327` · `CWE-330` · `CWE-1204` · `MASVS-CRYPTO-*` · `MASTG-TEST-0204`
@@ -282,6 +304,8 @@ These are two different kinds of evidence and they do not get mixed inside one f
 - The value is a **public** key by design (for example a maps or client SDK key), restricted by package and signature in the provider console; document the restriction instead of reporting it as a secret.
 - It is a non-confidential identifier (project id, application id) or an inert test value.
 - The secret is only obtained at runtime after the user authenticates and is never persisted in clear text.
+
+Rules: FP-01, FP-02, FP-07.
 
 **Minimal test** — static: use `apkleaks` as a candidate generator and manually verify the format and use of each hit; on source, run `git log -p` to see whether the key was ever versioned. Do not use the secret and do not transcribe it in full in the report: redact it and describe its type and location.
 

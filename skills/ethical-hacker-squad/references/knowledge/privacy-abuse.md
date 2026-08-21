@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the project handles data about identifiable people (accounts, profiles, contacts, location, health, payments, user content) or exposes flows a third party can abuse at scale.
 > **Do not load it if:** the artifact processes no personal data (a computation library, a template engine, a CLI with no telemetry). The risk there is purely technical and the other roles cover it.
-> **Cost:** ~328 lines. Load by section using the index; §1 first, always.
+> **Cost:** ~354 lines. Load by section using the index; §1 first, always.
 
 ## Selective loading index
 
@@ -47,6 +47,8 @@ There is no inventory and no classification: nobody knows which fields are perso
 - A maintained data map exists (even as a markdown file) covering store, field, category and owner, and it matches the real schema.
 - The fields that look personal are synthetic and a check prevents loading real data outside production.
 
+Rules: FP-07, FP-08.
+
 **Minimal test**
 Generate the schema column list and classify it into three buckets: direct identifier / personal attribute / sensitive data. The absence of that list in the repository is already the finding (privacy risk, not vulnerability).
 
@@ -72,6 +74,8 @@ The whole object travels to the client and the frontend only displays the name. 
 - The field list is explicit and a test fails when a new undeclared field appears.
 - The endpoint is internal, authenticated with a service credential and not reachable from the browser.
 
+Rules: FP-01, FP-06.
+
 **Minimal test**
 Call the endpoint with a test user and compare the returned JSON against what the interface displays. Every extra field is a finding. Synthetic data, environment you own.
 
@@ -93,6 +97,8 @@ Fields appearing only in the model, the migration and the form, and nowhere in b
 - The field is used in a job, a report or an integration that grep does not reach (search email templates and BI queries too before reporting it).
 - There is documented justification for why it is collected.
 
+Rules: FP-08, FP-09.
+
 **Minimal test**
 For every personal field in the schema, `rg` its name across the whole repository and count uses outside model, migration and form. Zero uses = minimization candidate.
 
@@ -111,6 +117,8 @@ Deleting the account flips a flag and all personal data stays indefinitely, incl
 **What rules it out (false positive)**
 - The soft delete is intentional and bounded (a known recovery window) and a job purges or anonymizes at expiry, with evidence that it runs.
 - The retained data is strictly what an accounting or legal obligation requires keeping, and it is segregated with restricted access.
+
+Rules: FP-01, FP-08.
 
 **Minimal test**
 Follow the account deletion path and list every store the data reached (database, bucket, index, analytics, email, queues). Mark which ones deletion propagates to. The ones left without propagation are the finding. Use a synthetic account created for the test.
@@ -135,6 +143,8 @@ Isolation depends on every query remembering to add the filter. A single new end
 - The tenant filter is applied in a mandatory layer (row-level security in the database, a default manager, an access policy) that cannot be skipped by oversight.
 - The identifier is opaque and unguessable, and there is also an ownership check (the first alone is not enough).
 
+Rules: FP-01.
+
 **Minimal test**
 Integration test with two synthetic tenants: A requests one of B's identifiers and must receive 404 or 403 without leaking whether the resource exists.
 
@@ -155,6 +165,8 @@ The SDK starts on first render and sends device identifiers, IP address and navi
 **What rules it out (false positive)**
 - The SDK loads only after effective consent, with a pseudonymous identifier, and scrubbing is configured and verified over what is sent.
 - Telemetry is first-party, stays on project infrastructure and never travels to a third party.
+
+Rules: FP-01, FP-06.
 
 **Minimal test**
 Open the product with the network console and list the destination domains and the body of the first events, before and after accepting consent. On mobile, review the dependency declaration and the declared permissions. Environment you own, synthetic account.
@@ -177,6 +189,8 @@ The full conversation history, with name, email, address and purchase history, i
 - Data is pseudonymized before sending (identifiers replaced by tokens reversible only inside the system) and the prompt carries only what the task needs.
 - The model runs on first-party infrastructure with no transfer to a third party, or there is an agreement with zero retention verifiable in the configuration.
 
+Rules: FP-01, FP-06, FP-08.
+
 **Minimal test**
 Capture a real assembled prompt in a development environment with synthetic data and classify every interpolated field: necessary / unnecessary / sensitive. And check in the provider console whether retention and training use are disabled.
 
@@ -197,6 +211,8 @@ Account deletion is executed by an engineer with direct database access whenever
 **What rules it out (false positive)**
 - The flows exist, are automated, require step-up authentication, cover the full inventory and leave an auditable trail.
 - The product has no identifiable end users (an internal tool with corporate accounts managed by the customer, who owns those flows).
+
+Rules: FP-01, FP-07.
 
 **Minimal test**
 Run the export with a synthetic account that generated data in every store from PRV-04 and compare the file contents against the inventory. Every missing store is a finding.
@@ -222,6 +238,8 @@ The application log ends up holding the same data as the database but with none 
 - There is centralized redaction by field list applied in the formatter, with a test covering it, and the APM has PII sending disabled.
 - Only opaque identifiers are logged, with no personal attributes, and correlation requires database access.
 
+Rules: FP-01, FP-07.
+
 **Minimal test**
 Trigger a validation error with a synthetic account and search for its values in the log output. If they appear, it is proved. Do not run this test against production nor with real people's data.
 
@@ -245,6 +263,8 @@ An attacker confirms whether an email has an account and, with unrate-limited us
 - Responses are uniform in content and timing, and there is rate limiting per account and per origin on the search endpoints.
 - The directory is public by design and communicated as such to users (then it is a documented product decision, not a finding).
 
+Rules: FP-01, FP-05.
+
 **Minimal test**
 Compare the response and the timing for an existing and a non-existing email, with synthetic accounts you own. Two requests are enough: do not generate volume to prove it.
 
@@ -264,6 +284,8 @@ An unverified new account can send unlimited invitations with free text from the
 **What rules it out (false positive)**
 - Value is credited after a verified milestone (payment, real usage) and there is duplicate control based on independent signals, plus idempotency in the balance operation.
 - Sends go out with the system's own sender, a per-account quota and templated content with no free text.
+
+Rules: FP-01.
 
 **Minimal test**
 Model the flow on paper: cost to the attacker, value obtained, controls it crosses. If the value exceeds the cost and there is no intermediate verification, it is proved without executing anything. **Do not abuse the real flow**: sending invitations or creating accounts in volume affects third parties and falls outside the security contract.
@@ -298,6 +320,8 @@ Every write is audited and no read is. After an incident nobody can answer the o
 
 What does **not** rule it out: a SIEM connected to the account while the read category is disabled at the source; "the provider keeps 90 days of everything", which is the control plane; masking or dynamic data masking, which changes what the reader sees and records nothing about the read; and access reviews, which say who *could* read, never who *did*.
 
+Rules: FP-01, FP-07.
+
 **Minimal test**
 Two steps, both non-destructive. First, diff the configuration against the inventory —
 `rg -n 'DATA_READ|advanced_event_selector|data_resource|StorageRead|category *= *"\w*Read"' -g '*.tf' -g '*.bicep' -g '*.y*ml'`
@@ -320,6 +344,8 @@ The product is described as operating in one jurisdiction and the code deploys t
 **What rules it out (false positive)**
 - There is a written statement of where each category of data is stored and processed, it covers backups, logs and third parties, and it matches the code
 - The data is not personal — PRV-01 decides that, not intuition
+
+Rules: FP-07, FP-08.
 
 **Minimal test**
 For every store in the PRV-01 inventory, write down four values: region of the primary, of the backup, of the replicas, and of the third parties that receive it. The finding is any store where the code disagrees with the declared statement, or where no statement exists. State the technical fact ("backups land in region X") and **do not rule on whether a transfer is lawful**: that depends on contracts and jurisdictions you cannot see — the second hard rule of this role applies in full.

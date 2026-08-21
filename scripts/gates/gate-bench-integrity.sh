@@ -103,6 +103,18 @@ for kind in ("planted", "decoys"):
             findings.append(
                 f"{item['id']} points at `{item['symbol']}` in {item['path']}, and `{needle}` does not "
                 "appear there: the case was edited and the key was not")
+        for extra in item.get("also_at", []):
+            checks += 2
+            extra_path = root / case["path"] / extra["path"]
+            if not extra_path.is_file():
+                findings.append(f"{item['id']} also_at points at {extra['path']}, which does not exist")
+                continue
+            extra_body = extra_path.read_text(encoding="utf-8")
+            extra_needle = extra.get("symbol", "")
+            if extra_needle and re.fullmatch(r"\w+", extra_needle):
+                if re.search(rf"\b{re.escape(extra_needle)}\b", extra_body) is None:
+                    findings.append(
+                        f"{item['id']} also_at names `{extra_needle}` in {extra['path']}, which is not there")
         if kind == "planted":
             checks += 1
             if item["procedure"] not in procedures:

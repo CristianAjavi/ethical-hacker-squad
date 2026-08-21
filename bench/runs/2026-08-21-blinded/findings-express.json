@@ -1,0 +1,254 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs web-api specialist (bench run)",
+    "coverage_declaration": "Static reading of the six files in scope (package.json, lib/auth.js, lib/db.js, lib/remote.js, lib/render.js, routes/invoices.js, 109 lines total). Nothing was executed, no dependency was installed and no network request was made, per the safety contract. Exercised: WEB-01 (token verification, lib/auth.js), WEB-04 (object-level authorization on the five routes), WEB-07 (data-layer injection on all four db.query call sites), WEB-10 (outbound fetch on both remote.js functions and the route that reaches one of them), WEB-13 (server-side HTML composition in lib/render.js). Partially exercised: WEB-05 - the router declares no authentication or role middleware and no application bootstrap exists in scope, so route x method x role could not be built; the absence of a check here is not evidence of an absent check upstream. Not assessable in scope: WEB-06 property-level exposure - both `SELECT *` handlers return whatever the driver yields and no model, schema or serializer is present; WEB-02/WEB-03 - `req.session.user` is referenced at lib/auth.js:14 but there is no session middleware, cookie configuration, login, registration or recovery flow to read; WEB-15/WEB-16 - no CORS, cache or CSRF configuration and no cookie-borne credential could be confirmed. Not looked for, because the constructs are absent from the scope: WEB-08 (no child_process), WEB-09 (no template engine or evaluator), WEB-11 (no deserializer), WEB-12 (no upload, download-by-path or archive extraction), WEB-14 (no client-side code), WEB-17/WEB-18 (no money, quota or retry flow), WEB-19 (no crypto or secret material), WEB-20/WEB-21 (no GraphQL, WebSocket or SSE), WEB-22 (no error handler or logging). Dependency versions were read from package.json; there is no lockfile and no offline advisory data, so no software-composition conclusion is drawn. lib/db.js is a declared stand-in (lib/db.js:1), so no query ever executes in this tree; findings against it are read against the node-postgres `query(text, params)` contract the call sites use, and that reading is stated where it matters."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Caller identity and role are resolved from an unverified JWT (`jwt.decode`)",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/auth.js",
+        "line": 6,
+        "component": "currentUser(req)"
+      },
+      "evidence": "The whole chain is inside one function. Source: `req.headers.authorization`, attacker-controlled on every request. Transformation: `const bearer = (req.headers.authorization || '').replace('Bearer ', ''); const claims = jwt.decode(bearer);`. Sink: `return { id: claims && claims.sub, role: claims && claims.role };`. `jsonwebtoken@9.0.2` (package.json:8) documents `decode` as a parser that does not check the signature, the algorithm or `exp`; the verifying entry point is `jwt.verify`, which does not appear anywhere in the scope (`grep -rn 'jwt.verify' target-express` returns nothing). Both `alg: none` and a token signed with an arbitrary key are therefore accepted, and so is an expired one.",
+      "impact": "Anyone who can reach the API asserts any identity and any role by base64-encoding a JSON payload; no credential, session or prior access is required. The `sub` claim it returns is the same value the handlers use as the ownership filter (`owner_id = $2` with `req.user.id`, routes/invoices.js:16 and 24 and 32), so identity forgery collapses those filters and turns every scoped query into a read of any chosen user's rows. The `role` claim it returns carries whatever privilege the consuming code attaches to a role name.",
+      "preconditions": "Network reach to any endpoint whose handler consumes `currentUser`. No authentication, no valid token and no user interaction.",
+      "recommendation": "Replace `jwt.decode` with `jwt.verify(bearer, key, { algorithms: ['RS256'], issuer, audience })` - an explicit single-algorithm allowlist, a pinned key, and `iss`/`aud` checked - and fail closed when verification throws, returning 401 rather than an object with undefined fields. Add a unit test that feeds the verifier a token with `alg: none` and a token signed with a foreign key and asserts both are rejected; keep `decode` only where the result never reaches an access decision, as `tagRequest` does.",
+      "traceability": ["CWE-347", "CWE-345", "CWE-287", "ASVS 5.0 V9", "A07:2025", "API2:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer verifies the token before or after this call. `jwt.verify` appears nowhere in the scope, and `currentUser` returns its object unconditionally - there is no branch that rejects a token, so there is no control to skip around."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation the procedure names for this class is `decode` feeding only logs or metrics while authorization comes from a server-side session. That reading fits the sibling `tagRequest` and not this function: `currentUser` returns `id` and `role`, which is an identity object and not telemetry, and it never touches `req.session`."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: `jsonwebtoken` is the real dependency (package.json:8), `decode` is that library's non-verifying parser, and the function name, the comment at lib/auth.js:3 and the returned shape all state that this is the caller resolver."
+        }
+      ],
+      "limits": "The assignment `req.user = currentUser(req)` is not present in the scoped files - there is no application bootstrap or middleware registry here. What is observed end to end is the defect as reported: this function derives identity and role from an unverified token. The blast radius stated under impact rests on the routes reading `req.user.id`, which is read in routes/invoices.js but whose producer was not seen; whether an admin-gated function exists that the forged `role` would open could not be measured in this scope."
+    },
+    {
+      "id": "F-002",
+      "title": "Invoice detail is fetched by client-supplied id with no ownership or tenant filter (BOLA)",
+      "procedure": "WEB-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 8,
+        "component": "GET /invoices/:id"
+      },
+      "evidence": "`const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice);`. The only predicate is the identifier the client typed into the path. The handler never reads `req.user`, there is no `router.use` on this file, and no `Policy`, guard or scope call appears between the request and the query. The contrast is inside the same file and settles it: the sibling handler for the same screen, `GET /receipts/:id` at line 13, issues `SELECT * FROM receipts WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]` - the same author, the same shape, the ownership predicate present. Its absence here is an omission, not a design where the object is public: the other three handlers in the file (lines 15, 24, 32) all carry `owner_id`, so invoices are owner-scoped data.",
+      "impact": "Any caller who reaches the endpoint reads any invoice in the table by iterating or guessing `:id` - billing amounts, line items and whatever else the row carries, for every customer. The parameterized placeholder makes this invisible to an injection scanner: the query is safe from injection and wide open on authorization.",
+      "preconditions": "Whatever authentication the unseen upstream middleware imposes; nothing beyond it. No role and no relationship to the target invoice is needed. Chained with F-001 the precondition disappears entirely.",
+      "recommendation": "Scope the query to the subject the way the receipts handler already does: `SELECT * FROM invoices WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]`, and return 404 rather than 403 so the endpoint does not confirm the existence of other tenants' rows. Better, make the scope unskippable rather than per-handler - a repository layer that requires the subject, or row-level security in the database - so a future handler cannot forget it. Cover it with an integration test where user A requests user B's invoice on read, update and delete.",
+      "traceability": ["CWE-639", "CWE-862", "CWE-284", "ASVS 5.0 V8", "A01:2025", "API1:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mandatory scoping layer. `db.query` receives a finished SQL string and a parameter array (lib/db.js:2), so nothing between the handler and the database can inject a tenant predicate; and the file's own convention is per-handler scoping, which the sibling routes apply by hand and this one omits."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The router is the package entry point (`\"main\": \"routes/invoices.js\"`, package.json:5). The route is registered unconditionally - no environment flag, no debug guard, no build step that could strip it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing marks this endpoint as intentionally public: the comment at routes/invoices.js:6 places it on the billing screen, and the three sibling handlers filter the same class of data by `owner_id`."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoices are per-customer financial records - the table is filtered by `owner_id` elsewhere in this same file, which is the author's own statement that its rows belong to somebody."
+        }
+      ],
+      "limits": "The invoice model is not in scope, so the exact columns `SELECT *` returns could not be enumerated; the finding rests on the row being owner-scoped, which the sibling queries establish, not on any particular column."
+    },
+    {
+      "id": "F-003",
+      "title": "SQL injection through an unvalidated `ORDER BY` interpolated from `req.query.order`",
+      "procedure": "WEB-07",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 24,
+        "component": "GET /invoices"
+      },
+      "evidence": "`const order = req.query.order || 'created_at';` then `db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id])`. The default `'created_at'` applies only when the parameter is absent; any non-empty value passes through untouched - no allowlist, no map, no cast, no identifier quoting - and is concatenated into the SQL text. `owner_id` is correctly bound as `$1`, which is precisely what makes the construct look safe at a glance: the injection is in the clause that cannot take a placeholder. The same file shows the author knows the right control: `GET /payments` at line 29-32 resolves its sort column through the `SORTABLE` map, so the string that reaches its `ORDER BY` is a code literal.",
+      "impact": "The attacker writes arbitrary SQL expression text into the query. `ORDER BY` accepts subqueries and CASE expressions, so a boolean-ordering oracle - `ORDER BY (CASE WHEN (SELECT ...) THEN 1 ELSE 2 END)` - extracts rows the `owner_id = $1` filter was meant to withhold, one bit per request, including other tenants' data and anything else the database role can read. Type and syntax errors also surface as database error text if the error handler propagates it. The bound filter gives no protection here: it constrains which rows are returned, not what the injected expression may read.",
+      "preconditions": "Reaching the endpoint and setting one query-string parameter. No role, no special configuration, no user interaction.",
+      "recommendation": "Resolve the sort key through a closed map exactly as `/payments` does - `const column = SORTABLE_INVOICES[req.query.order] || SORTABLE_INVOICES.date;` - so the value that reaches the SQL text is always a literal from the server's own table, and validate the direction the same way instead of accepting `asc`/`desc` from the client as text. Reject unknown keys explicitly rather than silently falling back, so the tests can see the rejection. Never interpolate an identifier that has passed through a request.",
+      "traceability": ["CWE-89", "CWE-20", "WSTG-INPV-05", "ASVS 5.0 V1", "A05:2025", "CAPEC-66"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer normalizes the value: it goes from `req.query` to the template literal in one statement, and `db.query` takes the SQL text already assembled (lib/db.js:2), so nothing downstream can re-parse or reject it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, `order` is `req.query.order` - the raw query string, chosen by the caller. It is neither a literal nor allowlist-constrained; the `|| 'created_at'` fallback fires only on an absent or empty value and therefore constrains nothing an attacker sends."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "lib/db.js is a declared stand-in for the bench (lib/db.js:1), so no statement executes in this tree, but the sink is a SQL execution point by contract: the call shape `query(text, params)` with `$1` placeholders is node-postgres, and the first argument is the statement text. Reading it as anything but SQL would ignore what every call site in routes/invoices.js does with it."
+        }
+      ],
+      "limits": "The real driver is not present, so the dialect's exact capabilities were not observed. Under the node-postgres extended protocol that `$1` implies, stacked statements are not available, which is why the impact is stated as expression-level exfiltration through an ordering oracle rather than arbitrary statement execution; on a driver that allows multiple statements the ceiling is higher."
+    },
+    {
+      "id": "F-004",
+      "title": "Server-side request forgery: `POST /branding/preview` fetches any URL the client supplies and returns the response body",
+      "procedure": "WEB-10",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/remote.js",
+        "line": 6,
+        "component": "fetchLogo(url), reached from routes/invoices.js:38"
+      },
+      "evidence": "The chain is observed end to end across two files. Source: `req.body.logoUrl` (routes/invoices.js:38). Call: `const image = await fetchLogo(req.body.logoUrl);`. Sink: `const response = await fetch(url, { redirect: 'follow' });` (lib/remote.js:6) - the URL is passed to `node-fetch@2.7.0` unparsed and unchecked, with redirect following left on. Return path: `res.type('image/png').send(image)` (routes/invoices.js:39) sends the fetched bytes back to the caller, so the forged request is not blind. The module holds the correct control one function away and does not use it here: `fetchAsset` (lib/remote.js:11-15) parses the URL, tests `ALLOWED.has(parsed.hostname)` against the set declared at line 2 and calls fetch with `redirect: 'error'`. `fetchLogo` performs none of those three steps.",
+      "impact": "The server issues the request from its own network position and hands the response body back verbatim. That reaches loopback services, anything routable inside the private network, and the cloud instance metadata endpoint on 169.254.169.254 - which on a default IMDSv1 instance yields role credentials. `node-fetch` also honours schemes the caller chooses, so `file://` and non-HTTP schemes are worth testing on this path. Because redirects are followed, an allowlist added later at the string level would still be defeated by a permitted host redirecting to an internal address.",
+      "preconditions": "The ability to POST to the endpoint with a JSON body. No role is required and no authentication check is present in the handler.",
+      "recommendation": "Route this path through the control that already exists: parse the URL, require `https:`, test the hostname against `ALLOWED`, and set `redirect: 'error'` - that is, make `fetchLogo` call `fetchAsset` rather than `fetch`. Where arbitrary customer hosts really are a requirement, resolve the hostname and reject addresses in loopback, link-local, private and unique-local ranges (v4 and v6, and their decimal and mixed notations), re-check after every redirect hop rather than once before the first, and pin the connection to the address you validated to close the DNS-rebinding window. Cap the response size and content type, and prefer an egress proxy the application cannot bypass. Also confirm the endpoint requires an authenticated caller.",
+      "traceability": ["CWE-918", "CWE-20", "ASVS 5.0 V4", "A01:2025", "API7:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating control exists in the same module but is not on this path: `ALLOWED` (lib/remote.js:2) is consulted only inside `fetchAsset` (line 13). `fetchLogo` is exported separately (line 18) and the route calls it directly, so the allowlist is a control a caller may forget - which the rule's own text excludes - and here the caller did forget it. No egress restriction, proxy configuration or network policy is present anywhere in the scope."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, the argument is `req.body.logoUrl` at routes/invoices.js:38 - a request body field, fully attacker-controlled, with no parse, scheme check or host check between it and `fetch`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The route is registered unconditionally in the package's main module (package.json:5, routes/invoices.js:37) and `fetchLogo` is a published export of lib/remote.js; no flag, build step or test guard removes either."
+        }
+      ],
+      "limits": "Not exercised: the safety contract forbids network access, so no canary request was made and the reachability of any particular internal target from the deployment's network position is not established here - what is established is that the destination is chosen by the caller. Whether the endpoint sits behind authentication could not be determined: there is no application bootstrap in scope."
+    },
+    {
+      "id": "F-005",
+      "title": "Invoice note is interpolated into HTML without escaping (stored XSS sink)",
+      "procedure": "WEB-13",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/render.js",
+        "line": 5,
+        "component": "invoiceNote(note)"
+      },
+      "evidence": "`return `<div class=\"note\">${note}</div>`;` - the argument is concatenated into markup with no transformation at all. The module imports `escape-html@1.0.3` at line 1 and applies it in the sibling function on the very next lines: `customerName` returns `<span class=\"name\">${escapeHtml(name)}</span>` (line 10), and `footer` coerces with `Number(year)` (line 15). Two of the three composers neutralize their input and this one does not, while its comment (lib/render.js:3) describes the argument as \"Free-text note the customer typed on the invoice\". A payload such as [REDACTED:payload] passed as `note` emerges as live markup inside the element.",
+      "impact": "Markup and script authored by whoever writes the invoice note execute in the browser of everyone who views the rendered invoice - typically the issuing company's billing staff, i.e. a different principal from the author. That yields session-riding actions in the viewer's context and disclosure of whatever the page holds. Severity is held at medium because the viewer population and the delivery path are not observed in this scope; if the note is rendered into an authenticated back-office page, it is a high.",
+      "preconditions": "The ability to set the note text on an invoice, and a victim who views the rendered invoice.",
+      "recommendation": "Apply the module's own control: `return `<div class=\"note\">${escapeHtml(note)}</div>`;`. If the note is meant to carry formatting, run it through an allowlist sanitizer (`sanitize-html`, DOMPurify) after the last transformation rather than before, and never with escaping disabled. Add a rendering test that feeds an inert marker payload and asserts the output contains the escaped form. Serve a CSP with a nonce and without `unsafe-inline` as depth, not as the fix.",
+      "inference": "Reachability with attacker-controlled text. No caller of `invoiceNote` exists in the scoped files - lib/render.js is exported (line 18) but nothing in routes/invoices.js imports it - so that the `note` argument carries request data was read from the function's declared purpose (comment, lib/render.js:3) and from its siblings escaping the same class of value, not observed as a source-to-sink trace.",
+      "traceability": ["CWE-79", "CWE-116", "ASVS 5.0 V1", "A05:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer escapes for it: the function returns a raw string, and escaping in this module is applied per-composer by hand (line 10), which is exactly the kind of control a caller can omit - as this one does."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The value's origin could not be traced backwards past the function's own parameter, because no caller is present in the scope. The declared provenance (lib/render.js:3, \"the customer typed\") points at user input, but I did not see the assignment. This is the single reason the finding is `probable` rather than `confirmed`."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No CSP, no server-side sanitizer and no downstream escaping exists anywhere in the scope that would bound the impact to informational - and per the procedure a CSP would adjust severity rather than close the finding in any case."
+        }
+      ],
+      "limits": "The consuming template, the response headers and the audience of the rendered invoice are all outside the scope, so the finding is stated at the sink. Confirming it needs one line: the call site that passes a persisted note into `invoiceNote`."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unverified JWT used for an access decision (CWE-347)",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "lib/auth.js:11-15, `tagRequest`. Same `jwt.decode` call on the same attacker-controlled header as F-001, and it is not the same finding. The decoded `claims.tenant` is consumed only by `metrics.increment('requests', { tenant: ... })` - a metrics label, not an authorization input - and the value the function actually returns to its caller is `req.session.user`, resolved server-side and never derived from the token. FP-03 HOLDS (the sink is telemetry, not a decision) and FP-09 HOLDS (the construct reads as instrumentation, which its comment at line 10 states). What survives is a note, not a finding: an attacker can pollute the tenant dimension of the metrics with arbitrary labels, which is a data-quality and cardinality concern for the metrics backend rather than a security boundary."
+    },
+    {
+      "class": "SSRF through a client-supplied URL (CWE-918)",
+      "procedure": "WEB-10",
+      "outcome": "refuted",
+      "where": "lib/remote.js:11-15, `fetchAsset`. The URL is parsed with `new URL(url)` before any use, the hostname is tested against the closed set `ALLOWED = new Set(['assets.example.com'])` (line 2) and the request is issued with `redirect: 'error'`, so a permitted host cannot bounce the server onto an internal address - the redirect gap that usually defeats an allowlist is closed here. The check is on `parsed.hostname`, not on the raw string, so `@`-in-authority, embedded credentials and case tricks do not slip past it. FP-02 HOLDS: after the guard the destination is constrained to one literal host. This is the control F-004 fails to use."
+    },
+    {
+      "class": "SQL injection in a non-parameterizable clause (CWE-89)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "routes/invoices.js:29-32, `GET /payments`. `req.query.sort` is never interpolated: it is used only as a lookup key into the server-side map `SORTABLE`, and the value that reaches `ORDER BY ${column}` is one of the code literals `'created_at'` or `'total_cents'`, with `SORTABLE.date` as the fallback. FP-02 HOLDS: the attacker chooses among the map's values, not the string. One nuance checked rather than assumed - `SORTABLE` is an object literal, so keys such as `constructor`, `__proto__`, `toString` and `valueOf` resolve through `Object.prototype` and are truthy, bypassing the `||` fallback and stringifying into the query. That is worth knowing, but it is not injection: those stringifications are fixed native-code and `[object Object]` text with no attacker-controlled substring, so the ceiling is a malformed statement and an error, not attacker SQL. Hardening, not a finding: `Object.hasOwn(SORTABLE, key)` or a null-prototype map closes it."
+    },
+    {
+      "class": "BOLA / missing object-level authorization (CWE-639)",
+      "procedure": "WEB-04",
+      "outcome": "refuted",
+      "where": "routes/invoices.js:13-19, `GET /receipts/:id`. The query is `SELECT * FROM receipts WHERE id = $1 AND owner_id = $2` bound with `[req.params.id, req.user.id]`: the client-supplied identifier is intersected with the subject, so a receipt belonging to another owner returns an empty result rather than the row. FP-01 HOLDS at the query itself - the scope is inside the statement, and there is no path to the data around it. The same conclusion applies to `GET /invoices` (line 24) and `GET /payments` (line 32), both of which carry `owner_id = $1`. Note the dependency this creates: the scoping is only as sound as `req.user.id`, which F-001 shows is derived from an unverified token; the authorization construct is correct and its input is not."
+    },
+    {
+      "class": "Cross-site scripting in server-side HTML composition (CWE-79)",
+      "procedure": "WEB-13",
+      "outcome": "refuted",
+      "where": "lib/render.js:9-11 and 14-16. `customerName` wraps its argument in `escapeHtml(name)` from `escape-html@1.0.3` before interpolation, and the value lands in element text - the context HTML escaping is the right one for - not in an attribute, a URL or a `<script>` block, so FP-03 HOLDS. `footer` interpolates `Number(year)`, which yields a number or `NaN` and can carry no HTML metacharacter whatever the caller passes, so FP-02 HOLDS. Neither is a finding; both are the controls `invoiceNote` omits."
+    },
+    {
+      "class": "SQL injection through bound parameters (CWE-89)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "routes/invoices.js:8, 14-17. `WHERE id = $1` and `WHERE id = $1 AND owner_id = $2` are genuine placeholders with the values passed in the parameter array and no string formatting before the call - FP-02 HOLDS for the value positions. Recorded deliberately because line 8 is where a scanner stops: the statement is injection-safe and is still the target of F-002, which is an authorization defect the parameterization does nothing about."
+    },
+    {
+      "class": "Known-vulnerable dependencies (CWE-1395)",
+      "procedure": "ad-hoc",
+      "outcome": "blocked",
+      "where": "package.json:6-11 pins express 4.19.2, jsonwebtoken 9.0.2, node-fetch 2.7.0, escape-html 1.0.3. There is no lockfile, no node_modules tree and therefore no transitive graph to resolve, and the safety contract forbids installing anything or reaching the network, so no advisory database could be consulted. No composition conclusion is drawn in either direction - the absence of a claim here is not a clean bill. Unblocked by an `npm audit` or an SCA run against a local advisory mirror on a resolved lockfile."
+    },
+    {
+      "class": "Session lifecycle, cookie attributes and CSRF (CWE-384, CWE-352)",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "lib/auth.js:14 returns `req.session.user`, so a server-side session exists and is trusted for at least one decision, while lib/auth.js:5 reads a bearer token - two credential mechanisms in one module. Whether the session rides on a cookie, with which `httpOnly`/`Secure`/`SameSite` attributes, whether the identifier is regenerated at login, and whether the state-changing `POST /branding/preview` (routes/invoices.js:37) is protected against cross-site submission all depend on a session middleware, a cookie configuration and an application bootstrap that do not exist in this scope. Nothing was established; recording it so the gap is not read as a pass."
+    },
+    {
+      "class": "Function-level authorization on the route table (CWE-862)",
+      "procedure": "WEB-05",
+      "outcome": "inconclusive",
+      "where": "routes/invoices.js registers five routes with no `router.use`, no authentication middleware, no role guard and no per-route decorator, and `POST /branding/preview` (line 37) changes nothing but consumes server-side network capability while reading no identity at all. Three handlers dereference `req.user.id` unguarded, which would throw on an unauthenticated request - weak evidence that an upstream middleware populates it. Without the application entry point the route x method x role matrix cannot be built, so no verdict is given on whether any endpoint is missing its check."
+    }
+  ]
+}
