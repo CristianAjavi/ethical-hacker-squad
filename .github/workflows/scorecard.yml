@@ -1,0 +1,65 @@
+# OpenSSF Scorecard: it MEASURES the posture of the repository. It is NOT a gate.
+#
+# The official ossf/scorecard workflow is adopted almost verbatim
+# (.github/workflows/scorecard-analysis.yml), because it already satisfies our hard rules:
+# only push to the default branch plus schedule, minimal `permissions` raised per job,
+# checkout with persist-credentials: false and actions pinned by 40-character SHA.
+#
+# WHY IT DOES NOT BLOCK: the official action has no threshold input and never fails
+# the job over a low score (verified in its action.yaml: its only inputs are
+# results_file, results_format, repo_token, publish_results, file_mode and internal_*).
+# The CLI has no threshold flag either. On top of that, the aggregate score is a
+# risk-weighted average that EXCLUDES the checks returning "?", so it can GO DOWN for
+# doing things right (a check moves from "?" to scorable). Gating on the aggregate
+# would mean eternal red or a threshold that measures nothing.
+# The gate with teeth lives separately, per check, in scripts/gates/.
+#
+# ACCEPTED TRADE-OFF: publish_results: true sends the result to api.scorecard.dev,
+# that is, it is public. For a public MIT repo that is acceptable and it is what enables the badge.
+name: Scorecard (measurement)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, Saturdays. Cron in UTC.
+    - cron: '17 4 * * 6'
+  workflow_dispatch:
+
+# No default permissions. Each job declares its own.
+permissions: {}
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    # Does not run on forks: it would publish results for a repo that is not this one.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read          # checkout
+      security-events: write  # upload the SARIF to the code scanning panel
+      id-token: write         # OIDC token, required by publish_results: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Store the SARIF as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          sarif_file: results.sarif

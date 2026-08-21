@@ -1,0 +1,166 @@
+# .github/workflows/ci.yml
+#
+# CI for the repo. Runs EVERY gate in scripts/gates/ and distinguishes the three
+# possible outcomes: 0 measured/OK, 1 measured/FAILS, 2 COULD NOT MEASURE.
+# A gate at 2 is NOT taken as good: the step ends red just like a 1, but the run
+# summary separates them so it is visible that a check never actually happened
+# ("reviewed and correct" is not the same as "not reviewed").
+#
+# Triggers: only events from this repository. No pull_request_target, issues,
+# issue_comment or workflow_run: those are the paths by which a third party gets
+# text into a privileged context.
+#
+# Note on `push`: a push made by a workflow using GITHUB_TOKEN does NOT create a
+# workflow run (documented by GitHub). That is, if the automatic promotion to
+# `stable` pushes with GITHUB_TOKEN, this CI will not trigger on that push; the
+# quality gate has to have been closed BEFORE, in the run that promotes.
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - stable
+  push:
+    branches:
+      - main
+      - stable
+
+# No default permissions: each job asks for the minimum it needs.
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    # The job NAME is what becomes the check-run name, and that string is what
+    # scripts/gh/governance.json lists in promotion.required_contexts and what
+    # branch protection would require. A prose name ("Deterministic gates (no
+    # external tools)") makes that contract fragile and unreadable, so the name
+    # is kept identical to the job id. apply-governance.sh fails if the two ever
+    # drift apart.
+    name: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gate inventory
+        run: ./scripts/gates/run-all.sh --list
+
+      - name: Run the gates that do not depend on external tools
+        run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
+
+  workflow-hardening:
+    # Same rule as above: the name IS the required-context string.
+    name: workflow-hardening
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No token: this job analyzes the content of the PR, which on a fork is
+      # untrusted content. The zizmor audits that need network access live in
+      # supply-chain-audit.yml, which is not triggered from forks.
+      #
+      # actionlint delegates the analysis of `run:` blocks to shellcheck. If the
+      # runner does not ship it, the gate says so and returns 2 (COULD NOT
+      # MEASURE) and this step stays red ON PURPOSE: "I did not review it"
+      # cannot look green.
+      - name: zizmor + actionlint over the workflows
+        env:
+          # Tool cache outside the work tree: the gate installs zizmor and
+          # actionlint at pinned versions and verifies the SHA-256 of the
+          # downloaded binary. (`runner.*` is only available at step level,
+          # not at job level.)
+          GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
+        run: ./scripts/gates/run-all.sh --only 'gate-actions-lint.sh'
+
+  meter:
+    # THE METER IS NOT A GATE YET, AND THIS JOB IS DELIBERATELY NOT BLOCKING.
+    #
+    # It publishes the project's numbers on every run so we can watch how they
+    # behave before anyone attaches a threshold to them. `meter` is NOT listed in
+    # scripts/gh/governance.json promotion.required_contexts, so it is not a
+    # required check and cannot block a merge or a promotion. Turning it into a
+    # gate is a later, separate decision that has to be made on evidence: today
+    # nobody knows how the figures drift across normal PRs.
+    #
+    # What DOES fail this job is the meter's own self-test. That is not a metric
+    # threshold, it is the instrument checking itself against 21 negative cases,
+    # and a broken instrument makes every number below meaningless. A red here
+    # says "do not believe the figures", not "this PR is bad".
+    name: meter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Negative self-test first: an instrument that has not been checked has no
+      # business printing numbers three lines further down.
+      - name: Self-test the meter (21 negative cases)
+        run: bash scripts/meter/meter.selftest.sh
+
+      # --no-gates ON PURPOSE: the gate suite already has its own two jobs above,
+      # and re-running it here would duplicate the work and the verdict. The
+      # meter reports that section as an explicit NOT MEASURED hole rather than
+      # implying the gates passed, so its overall verdict in CI is always 2. That
+      # is the honest reading and another reason this job must not gate anything.
+      - name: Measure the project and publish the figures
+        run: |
+          set -uo pipefail
+          # The step runs under `bash -e`, and the meter is designed to return 2
+          # when a section could not be measured. Capturing the status with `$?`
+          # after a bare command means the shell aborts before this step can read
+          # it: the job died at exit 2 while claiming not to gate on the meter.
+          code=0
+          bash scripts/meter/meter.sh --no-gates > meter.txt 2> meter.err || code=$?
+          bash scripts/meter/meter.sh --no-gates --json > meter.json 2>/dev/null || true
+
+          {
+            printf '## Project meter\n\n'
+            printf '0 = measured and fine | 1 = measured and FAILS | 2 = COULD NOT MEASURE\n\n'
+            printf 'Meter exit code: **%s**. This job does not gate on it.\n\n' "$code"
+            # Quoted heredoc and escaped fences: backticks inside single quotes
+            # are command substitution to a reader and to shellcheck (SC2016),
+            # even when the intent is Markdown.
+            cat <<'NOTE'
+          The gate suite is reported as NOT MEASURED here by design: it runs in the
+          `gates` and `workflow-hardening` jobs of this same workflow.
+
+          NOTE
+            echo "\`\`\`"
+            cat meter.txt
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat meter.txt
+          # The meter's own verdict never fails this step. Only the self-test above can.
+          exit 0
+
+      - name: Upload the machine-readable measurement
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: meter-${{ github.sha }}
+          path: |
+            meter.txt
+            meter.json
+          if-no-files-found: warn
+          retention-days: 30

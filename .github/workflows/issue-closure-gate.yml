@@ -1,0 +1,134 @@
+# Wires scripts/gates/gate-issue-closure.sh into every PR.
+#
+# THREAT MODEL. The body of a PR is UNTRUSTED content (anyone can open a PR from a
+# fork). The design treats it as such:
+#
+#   * Trigger `pull_request`, never `pull_request_target`: the code that runs is the
+#     code of the base branch, and the token of a PR from a fork is read-only.
+#   * TWO JOBS. The `refs` job is the only one that touches the PR body and it gets NO
+#     write permission and NO repository secret; its only output is issue NUMBERS,
+#     validated one by one against `^[0-9]+$`. The `enforce` job receives those already
+#     sanitized digits, and is the only one that talks to the API.
+#   * The body ALWAYS arrives through `env:` and is read as a file. `${{ github.event.* }}`
+#     is never interpolated inside a `run:` (that is exactly what Scorecard's
+#     Dangerous-Workflow check detects, and it is how a command gets injected).
+#   * The only token in play is the automatic GITHUB_TOKEN with `issues: read` and
+#     `contents: read` over a PUBLIC repository: it grants access to nothing an anonymous
+#     user could not read, and it cannot write. No repo secret is exposed.
+name: Issue closure gate
+
+on:
+  pull_request:
+    # `edited` is required: the gate depends on the PR body, which is edited by hand.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  selftest:
+    name: Gate selftest (fails when it must fail)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the offline selftest
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gates/gate-issue-closure.selftest.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Selftest OK::The gate distinguishes 0/1/2." ;;
+            1) echo "::error title=Selftest FAILS::The gate no longer fails when it must." ;;
+            2) echo "::error title=COULD NOT MEASURE::The selftest could not run." ;;
+          esac
+          exit "$rc"
+
+  refs:
+    name: Extract declared issues (no write token)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      refs: ${{ steps.parse.outputs.refs }}
+    steps:
+      - name: Checkout of the base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parse the PR body
+        id: parse
+        env:
+          # Untrusted content: it enters as an environment variable, not as code.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          rc=0
+          ./scripts/gates/gate-issue-closure.sh \
+            --body-file /tmp/pr-body.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --emit-refs > /tmp/refs.raw || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "::error title=COULD NOT MEASURE::The PR body could not be read."
+            exit 2
+          fi
+          # Allowlist: digits only. Anything else is discarded.
+          refs=""
+          while IFS= read -r n; do
+            case "$n" in
+              ''|*[!0-9]*) continue ;;
+            esac
+            refs="$refs $n"
+          done < /tmp/refs.raw
+          refs="${refs# }"
+          echo "Declared issues: ${refs:-<none>}"
+          echo "refs=$refs" >> "$GITHUB_OUTPUT"
+
+  enforce:
+    name: Require a watched regression
+    runs-on: ubuntu-latest
+    needs: refs
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Checkout with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run the gate
+        env:
+          # Only digits sanitized by the previous job. No user text at all.
+          REFS: ${{ needs.refs.outputs.refs }}
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          if [ -z "${REFS:-}" ]; then
+            echo "::notice title=Gate OK::The PR does not declare closing any issue of this repository."
+            exit 0
+          fi
+          : > /tmp/synthetic-body.txt
+          for n in $REFS; do
+            case "$n" in ''|*[!0-9]*) echo "::error::non-numeric reference: $n"; exit 2 ;; esac
+            printf 'Fixes #%s\n' "$n" >> /tmp/synthetic-body.txt
+          done
+          rc=0
+          ./scripts/gates/gate-issue-closure.sh \
+            --body-file /tmp/synthetic-body.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --base "$BASE_REF" || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Gate OK::Measured and correct." ;;
+            1) echo "::error title=Gate FAILS::It closes a false positive/negative without touching any gate or the case corpus." ;;
+            2) echo "::error title=COULD NOT MEASURE::The gate could not measure. An rc=0 never means 'I did not review it'." ;;
+            *) echo "::error title=Gate broken::unexpected exit code $rc" ;;
+          esac
+          exit "$rc"

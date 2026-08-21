@@ -1,0 +1,63 @@
+# Monitors the label taxonomy. Without this, scripts/gh/labels.sh would be prose:
+# if a label disappears, the issue forms stop labeling SILENTLY (GitHub ignores
+# nonexistent labels) and deterministic triage breaks without warning.
+#
+# Read only. No untrusted input: it triggers on a schedule, by hand, or when the
+# script itself or the forms change.
+#
+# SCOPE, after the integration. This workflow keeps ONLY the half that needs the
+# network: comparing the declared taxonomy against the labels that really exist
+# on GitHub. The offline half (do the forms only use labels the taxonomy
+# declares?) is gate-labels-taxonomy.sh, and it runs in ci.yml through
+# scripts/gates/run-all.sh on every push and every pull request. It used to run
+# in both places; two workflows doing the same job means the day one of them is
+# changed the other quietly disagrees, and it doubles the noise on a PR that
+# touches a form.
+name: Labels drift
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # No YAML anchors on purpose: the GitHub Actions parser does not support anchors/aliases.
+    paths:
+      - 'scripts/gh/labels.sh'
+      - 'scripts/gates/gate-labels-taxonomy.sh'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/labels-drift.yml'
+  # No `pull_request`: the only job left talks to the GitHub API about THIS
+  # repository's labels, which says nothing about a pull request's contents and
+  # is skipped from forks anyway.
+
+permissions: {}
+
+jobs:
+  check:
+    name: labels.sh --check (against GitHub)
+    runs-on: ubuntu-latest
+    # On a PR from a fork it adds nothing: the taxonomy lives in the target repo.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad' && github.event_name != 'pull_request'
+    permissions:
+      contents: read   # checkout and reading the labels of the public repo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the taxonomy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gh/labels.sh --repo "$GITHUB_REPOSITORY" --check || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Labels OK::Taxonomy complete and with no drift." ;;
+            1) echo "::error title=Label drift::Labels are missing or differ. Run scripts/gh/labels.sh --apply with an account that has write permission." ;;
+            2) echo "::error title=COULD NOT MEASURE::The taxonomy could not be queried (gh/jq missing or the API did not answer)." ;;
+            *) echo "::error title=Script broken::unexpected exit code $rc" ;;
+          esac
+          exit "$rc"

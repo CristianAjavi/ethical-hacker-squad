@@ -9,8 +9,9 @@ You are the infrastructure and cloud security specialist of the Ethical Hacker S
 
 ## First actions
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/infra-cloud.md`, opening only the sections the inventory justifies.
-2. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/infra-cloud.md`, opening only the sections the inventory justifies. That file holds §1-§3 and `INF-01`..`INF-12` — IaC, container images, Kubernetes.
+2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/infra-cloud-cicd-exposure.md`, with §4-§6 and `INF-13`..`INF-18` — CI/CD and GitHub Actions, environment separation, Terraform state and deployment secrets, and verification of effective network exposure. Open it whenever the inventory has pipelines, several environments or a live host in scope. It is the same pack, not another role's.
+3. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
 
 ## Safety contract
 

@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the project handles data about identifiable people (accounts, profiles, contacts, location, health, payments, user content) or exposes flows a third party can abuse at scale.
 > **Do not load it if:** the artifact processes no personal data (a computation library, a template engine, a CLI with no telemetry). The risk there is purely technical and the other roles cover it.
-> **Cost:** ~270 lines. Load by section using the index; §1 first, always.
+> **Cost:** ~305 lines. Load by section using the index; §1 first, always.
 
 ## Selective loading index
 
@@ -16,6 +16,9 @@
 | §6 Data subject rights | end-user accounts, privacy panel, support | PRV-08 |
 | §7 Leakage through logs and errors | structured logging, APM, traces, Sentry | PRV-09 |
 | §8 Product abuse paths | open sign-up, invitations, referrals, user search | PRV-10, PRV-11 |
+| §9 Traceability of reads | admin panels, support tooling, BI over a production replica, cloud stores holding personal data | PRV-13 |
+
+`PRV-12` is reserved for the pending data-location procedure (where the personal data physically lands and where it is replicated). The gap in the numbering is deliberate, not a procedure lost in a merge.
 
 ## How to use a procedure
 
@@ -266,3 +269,38 @@ Model the flow on paper: cost to the attacker, value obtained, controls it cross
 
 **Traceability**: `CWE-841` · `CWE-799` · `CWE-362` · `A06:2025` · ASVS 5.0 V2
 **Tooling**: manual review of the flow plus a local concurrency test on the crediting operation. A theoretically possible abuse does not always deserve mitigation: present it with its cost and let others decide.
+
+## §9 Traceability of reads
+
+### PRV-13 Reading personal data leaves no trace
+
+This procedure **overlaps with the infra-cloud role**: `INF-06` audits control-plane logging — who changed the infrastructure. This one covers the data plane — who read the record. They are different switches, and the data-plane one is off by default in the three major providers and billed by volume, which is precisely why it stays off. Report a single finding with both readings and cross-reference it, never two.
+
+**Where to look**
+- The data-plane switch in the infrastructure code, which is a separate object from the audit trail itself: `aws_cloudtrail` with an `event_selector` / `advanced_event_selector` covering a `data_resource` (S3 objects, DynamoDB tables); `google_project_iam_audit_config` with `log_type = "DATA_READ"` (admin activity is recorded by default, data access is not); `azurerm_monitor_diagnostic_setting` attached to the storage or database sub-resource with the read category enabled, not only the write one
+- The application side, where most reads actually happen: generated back offices and admin panels, the support tool, BI or notebooks pointed at a production replica, a shared database account used from a bastion, and the export button — the read that takes the whole table at once
+- The trail itself: where it is written, who can delete or rewrite it, how long it is kept, and whether it now duplicates the personal data it was meant to account for (PRV-09)
+
+**Vulnerable pattern**
+```hcl
+resource "aws_cloudtrail" "audit" {   # every API call that CHANGES something
+  is_multi_region_trail = true
+}                                     # and not one data event selector: who read
+                                      # the objects is recorded nowhere
+```
+Every write is audited and no read is. After an incident nobody can answer the only question the affected people care about — whose data was read — so the whole population has to be treated as affected. Two variants look covered and are not: read logging enabled on the main database while the same data also lives in the search index, the analytics warehouse, the exports bucket and the backups, so the answer is still no; and a "trail" that is really the request log at INFO level, with no actor, no subject and no reason, which on top of everything else is a PRV-09 finding. The internal case is more frequent than the external one: a support tool where any agent opens any account, with no reason recorded and no entry written.
+
+**What rules it out (false positive)**
+- Read logging is enabled on the stores PRV-01 says hold personal data — all of them, not only the primary — with retention that outlives a plausible detection window, and written where the identity that reads the data cannot delete or rewrite it. Retention shorter than that window reduces the finding; it does not clear it.
+- Every operator read goes through an application layer that records actor, subject identifier, timestamp and reason, and that record is reviewed by someone other than the person using the tool. The provider-level switch is then defence in depth, and anything missing is reported at that lower severity.
+- The store holds no personal data — PRV-01 decides that, not the resource name. A missing read trail on a build-artifact bucket belongs to `INF-06`, not to this role.
+
+What does **not** rule it out: a SIEM connected to the account while the read category is disabled at the source; "the provider keeps 90 days of everything", which is the control plane; masking or dynamic data masking, which changes what the reader sees and records nothing about the read; and access reviews, which say who *could* read, never who *did*.
+
+**Minimal test**
+Two steps, both non-destructive. First, diff the configuration against the inventory —
+`rg -n 'DATA_READ|advanced_event_selector|data_resource|StorageRead|category *= *"\w*Read"' -g '*.tf' -g '*.bicep' -g '*.y*ml'`
+— and every store from PRV-01 with no hit is a candidate. Second, settle the application side with one synthetic subject in an environment you own: read it once through each operator path (admin panel, support tool, direct query, export) and then look for the entry with `rg -n "<synthetic_subject_id>" ./logs`. A path that produced no entry naming actor and subject is the finding. Never demonstrate this over a real person's record: the paths are enumerated from the code and the configuration, and the single read you perform is against data you created. If the destination is the provider's log service rather than a local file, querying it touches the client's own account and runs only inside the engagement's written scope (REQUIRES AUTHORIZATION).
+
+**Traceability**: `CWE-778` · `CWE-223` · `CWE-359` · `A09:2025` · ASVS 5.0 V14, V16 · `NIST 800-53 AU` · `CCM LOG`
+**Tooling**: no scanner reports this well — an infrastructure rule sees the trail resource and passes, which is how it stays missing for years; cross-reference `INF-06` and the infra-cloud material on audit trails the workload identity can delete. Expect "we turned it off because it costs money" as the honest answer, because these logs are billed by volume. Apply the first hard rule of this role when writing it up: with no demonstrated unauthorized read this is a privacy risk, and once it was switched off knowingly it is also a product decision with a named owner — report it as an accepted risk whose consequence is spelled out (every incident is scoped to the entire population), not as a technical vulnerability and not as an oversight.

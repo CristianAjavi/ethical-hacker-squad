@@ -1,0 +1,171 @@
+{
+  "_comment": [
+    "DESIRED GOVERNANCE STATE OF THE REPO. Single source of truth for scripts/gh/apply-governance.sh.",
+    "This file does not apply itself: the script compares it against the real state via GET and only mutates with --apply.",
+    "Decisions and their rationale are documented in the _why_* fields of each block.",
+    "Verified live (GET only) on 2026-08-04 against CristianAjavi/ethical-hacker-squad."
+  ],
+  "repo": "CristianAjavi/ethical-hacker-squad",
+  "expected_account": "CristianAjavi",
+  "actions_app_id": 15368,
+  "_why_actions_app_id": [
+    "id of the 'github-actions' GitHub App (verified: gh api /apps/github-actions -> id 15368).",
+    "Every required check is pinned to this app. Without app_id, any integration with write access (or a",
+    "stolen token) can publish a GREEN commit status with the same 'context' and satisfy the gate without",
+    "running anything at all. For a security repo this is mandatory."
+  ],
+  "settings": {
+    "allow_auto_merge": true,
+    "allow_squash_merge": true,
+    "allow_merge_commit": false,
+    "allow_rebase_merge": false,
+    "delete_branch_on_merge": true,
+    "allow_update_branch": true,
+    "has_issues": true,
+    "has_wiki": false,
+    "has_projects": false,
+    "web_commit_signoff_required": false
+  },
+  "_why_settings": [
+    "allow_auto_merge: auto-merge is NOT a gate, it is a trigger. The option only shows up on PRs that",
+    "  cannot be merged right away, so the order matters: first the required checks, then",
+    "  allow_auto_merge=true, and only then 'gh pr merge --auto'. The other way around = instant merge with no gate.",
+    "  The script enforces that order (it applies main's protection before the settings).",
+    "squash-only: linear history and a single commit per PR = a diff auditable per commit, which is what",
+    "  the knowledge-corpus verifier needs.",
+    "delete_branch_on_merge: bot/knowledge-* branches delete themselves after merging."
+  ],
+  "vulnerability_alerts": true,
+  "secret_scanning": {
+    "enabled": true,
+    "push_protection": true,
+    "_unverified_availability": true,
+    "_note": "I did NOT verify against official docs that secret scanning + push protection are available via API on a public repo of a personal Free account. The script treats a 4xx here as COULD NOT MEASURE (rc 2), never as success."
+  },
+  "topics": [
+    "ai-agents",
+    "appsec",
+    "claude-code",
+    "claude-code-plugin",
+    "security",
+    "prompt-injection",
+    "supply-chain-security"
+  ],
+  "_why_labels": [
+    "THIS FILE NO LONGER DECLARES LABELS. The single authority for the label taxonomy is",
+    "scripts/gh/labels.sh (34 labels), which is what the issue forms, gate-issue-closure.sh and",
+    "gate-labels-taxonomy.sh are wired to. Two declarations meant two scripts creating labels on",
+    "the same repo, each reporting the other's labels as 'undeclared'.",
+    "apply-governance.sh now delegates: it runs 'scripts/gh/labels.sh --check' and folds in its rc.",
+    "promotion.blocking_issue_labels below only REFERENCES names from that taxonomy; gate-labels-taxonomy.sh",
+    "fails if a name referenced here does not exist there."
+  ],
+  "promotion": {
+    "stable_branch": "stable",
+    "source_branch": "main",
+    "cooldown_days": 7,
+    "blocking_issue_labels": [
+      "channel/stable-blocked"
+    ],
+    "tag_prefix": "ethical-hacker-squad--v",
+    "gates_dir": "scripts/gates",
+    "required_contexts": [
+      "gates",
+      "workflow-hardening"
+    ]
+  },
+  "_why_promotion": [
+    "required_contexts: names of the check runs that MUST exist and be conclusion=success on the",
+    "  candidate commit. A check run is named after the job's 'name:' field, so these two strings must",
+    "  match the 'name:' of the two jobs in .github/workflows/ci.yml EXACTLY. They are kept short and",
+    "  identifier-like for that reason. Anti-lockout safeguard: --apply REFUSES to declare a context",
+    "  never observed in main's recent check runs. Use --discover-contexts to list observed ones.",
+    "tag_prefix: the convention `claude plugin tag` expects is <plugin-name>--vX.Y.Z, and",
+    "  .github/workflows/release.yml validates it with `claude plugin tag --dry-run` before pushing.",
+    "  It also keeps the tag space of stable separate from any tag on main.",
+    "blocking_issue_labels: any OPEN ISSUE (not a PR) carrying one of these stops promotion. The name",
+    "  must exist in scripts/gh/labels.sh or GitHub silently ignores it and the block is inert;",
+    "  gate-labels-taxonomy.sh enforces that.",
+    "cooldown_days: the rest window, read by release.yml (single source of truth; the workflow no",
+    "  longer hardcodes SOAK_DAYS)."
+  ],
+  "branches": {
+    "main": {
+      "_why": [
+        "CLASSIC protection (PUT /branches/{b}/protection), not a ruleset. Reason: the availability note",
+        "  for PUBLIC repos on Free is explicit in the branch-protection REST docs, whereas the availability",
+        "  of REPOSITORY rulesets on a personal Free account is NOT documented (we only have a",
+        "  GET /rulesets -> 200 [] as a hint). Besides, PUT is a full replacement = idempotent by",
+        "  construction, which is exactly what you want in a script that runs unattended.",
+        "restrictions: null MANDATORY. Quote from the docs: 'User, app, and team restrictions are only",
+        "  available for organization-owned repositories. Omit this parameter for personal repositories.'",
+        "  Honest consequence: here you CANNOT express 'only the bot writes to X'. The real guarantee comes",
+        "  from the executable gates, not from the branch rule.",
+        "required_approving_review_count 0: it demands the PR PATH (nothing enters by direct push, everything",
+        "  goes through checks) without demanding a human approval that nobody can give in a single-owner repo.",
+        "require_code_owner_reviews false: see .github/CODEOWNERS, which exists only to route and notify.",
+        "enforce_admins false: A CONSCIOUS, DOCUMENTED DECISION. It is the only rollback mechanism left",
+        "  (GITHUB_TOKEN is not admin and cannot force-push a protected branch). If you set it to true, the",
+        "  stable rollback documented in release.yml stops working without disabling the protection",
+        "  by hand. The control here is not the block, it is the audit trail."
+      ],
+      "protection": {
+        "required_status_checks": {
+          "strict": false,
+          "checks": [
+            {
+              "context": "gates"
+            }
+          ]
+        },
+        "enforce_admins": false,
+        "required_pull_request_reviews": {
+          "dismiss_stale_reviews": true,
+          "require_code_owner_reviews": false,
+          "required_approving_review_count": 0,
+          "require_last_push_approval": false
+        },
+        "restrictions": null,
+        "required_linear_history": true,
+        "allow_force_pushes": false,
+        "allow_deletions": false,
+        "block_creations": false,
+        "required_conversation_resolution": true,
+        "lock_branch": false,
+        "allow_fork_syncing": false
+      }
+    },
+    "stable": {
+      "_why": [
+        "stable carries neither a mandatory PR nor required checks, on purpose. The promotion workflow pushes",
+        "  an already verified SHA directly (git push origin <sha>:refs/heads/stable). A required check on",
+        "  stable would block that push without adding any guarantee: the verification already happened on the",
+        "  candidate commit in main.",
+        "What IS hardened: allow_force_pushes=false (the history of the channel consumed by plugin users",
+        "  cannot be rewritten) and allow_deletions=false (the channel cannot be deleted).",
+        "A fast-forward push is NOT a force push, so the normal promotion goes through.",
+        "Operational reminder: this branch DOES NOT EXIST TODAY. The script cannot protect it until the first",
+        "  promotion creates it; that is why it reports rc 2 (could not measure) and not rc 0."
+      ],
+      "protection": {
+        "required_status_checks": null,
+        "enforce_admins": false,
+        "required_pull_request_reviews": null,
+        "restrictions": null,
+        "required_linear_history": true,
+        "allow_force_pushes": false,
+        "allow_deletions": false,
+        "block_creations": false,
+        "required_conversation_resolution": false,
+        "lock_branch": false,
+        "allow_fork_syncing": false
+      }
+    }
+  },
+  "_discarded": {
+    "rulesets": "Documented plan B, not implemented. Real advantages (they stack, enforcement=evaluate, /history to audit drift, bypass_actors) but: availability on a personal Free repo UNVERIFIED, there is no upsert endpoint (idempotency has to be built by listing by name), and none of those advantages pay off with one maintainer and one weekly bot. If some day a bypass is needed for a non-human actor, that is the moment to migrate (bypass_actors {actor_type:'Integration', actor_id:15368, bypass_mode:'pull_request'}). Rule: NEVER mix classic protection and a ruleset on the same branch; when they stack the most restrictive wins and a ruleset bypass does not cancel a classic block.",
+    "merge_queue": "Discarded. It solves contention between concurrent PRs, which does not exist here (one maintainer + one weekly bot), and in exchange it adds the merge_group trigger, that is, one more execution surface to audit. Complexity with no benefit.",
+    "restrictions_push": "Impossible on a personal repo (org-only). Not pursued.",
+    "require_code_owner_reviews": "With a single human with write access, it either blocks the owner on their own PRs or reintroduces the human click that automatic promotion is meant to remove."
+  }
+}

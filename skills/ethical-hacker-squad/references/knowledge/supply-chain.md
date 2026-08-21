@@ -2,7 +2,9 @@
 
 > **When to load this file:** when the target has third-party dependencies, a package registry, an artifact publishing flow, or when you need to triage the output of a software composition analysis (SCA) scanner and hunt for secrets in the repository and its history.
 > **Do not load it if:** the audit only covers infrastructure or network configuration (use `infra-cloud.md`) or application logic with no relevant external dependencies.
-> **Cost:** ~400 lines. Load by section using the index; §7 changes the report the most and §8 avoids the most noise.
+> **Cost:** ~305 lines. Load by section using the index; §7 changes the report the most.
+> **Second file of this pack:** `supply-chain-secrets-malware.md` holds §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so that file is opened on almost every engagement; it carries its own index.
+> **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-25` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, and suppressed CVEs. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
@@ -14,11 +16,11 @@
 | §5 CI/CD and publishing integrity | `.github/workflows/`, `release.yml`, registry tokens | SUP-09, SUP-10 |
 | §6 Provenance, SBOM and signing | SLSA requirements, SBOM, binary distribution | SUP-11, SUP-12 |
 | §7 Dependency vulnerability triage | any SCA output (always) | SUP-13, SUP-14, SUP-15 |
-| §8 Secrets in the repository and history | any repository (always) | SUP-16, SUP-17, SUP-18 |
-| §9 Malware in dependencies | new dependencies, suspected incident | SUP-19, SUP-20 |
+
+Sections §8 and §9 (`SUP-16`..`SUP-20`) are in `supply-chain-secrets-malware.md`. Sections §10 and §11 (`SUP-21`..`SUP-25`) are in `supply-chain-source-lifecycle.md`: §10 when you audit the repository that produces the artifact or any signature-verification command, §11 whenever you are about to call a dependency result clean.
 
 ## How to use a procedure
-First locate the files listed under **Where to look**: without that pattern the procedure does not apply and nothing gets reported. Run the **Minimal test** — local, no network unless stated, and never touching third-party systems — to move from "the scanner flagged it" to "I verified it". Check it against **What rules it out** before writing anything; in this discipline most raw findings die right there. **Traceability** feeds the report matrix and **Tooling** states what to read and what *not* to conclude. Cross-cutting rule for §7: **an SCA finding with no evidence of an import or a call to the vulnerable symbol drops to informational**, and you say so in the report.
+First locate the files listed under **Where to look**: without that pattern the procedure does not apply and nothing gets reported. Run the **Minimal test** — local, no network unless stated, and never touching third-party systems — to move from "the scanner flagged it" to "I verified it". Check it against **What rules it out** before writing anything; in this discipline most raw findings die right there. **Traceability** feeds the report matrix and **Tooling** states what to read and what *not* to conclude. Two cross-cutting rules for §7: **an SCA finding with no evidence of an import or a call to the vulnerable symbol drops to informational**, and you say so in the report; and **before writing that a component is clean, close `SUP-24` and `SUP-25`** (§11, in `supply-chain-source-lifecycle.md`) — past end of support the scanner's silence is not a measurement, and a suppression you did not re-derive is a finding you deleted from your own report.
 
 Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vulnerability exploitation** and that **48% involve a third party**; Google Cloud Threat Horizons H1 2026 measures third-party software vulnerabilities rising from 2.9% to **44.5% of initial access** between H1 and H2 of 2025. OWASP promoted this to its own category in 2025: `A03:2025 Software Supply Chain Failures`.
 
@@ -55,7 +57,7 @@ Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vu
 - The floating range is bounded by a committed lock and by `npm ci` in the pipeline: resolution is deterministic and the finding drops to informational about the manifest.
 - The dependency has had no release in years because it is functionally complete and small; assess issue activity and CVE response, not just the date.
 
-**Minimal test**: for every direct dependency, compare the version resolved in the lock against the latest published one and record the distance; flag the ones no longer maintained.\
+**Minimal test**: for every direct dependency, compare the version resolved in the lock against the latest published one and record the distance; flag the ones no longer maintained. **Boundary:** this measures distance to the latest release, not support status — a dependency can be perfectly up to date inside a branch nobody patches any more. That question is `SUP-24`.\
 **Traceability**: `CWE-1104` · `CWE-1395` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR` · `CCM TVM` · `CIS v8.1 Control 7`\
 **Tooling**: `cargo audit --file Cargo.lock --no-fetch --json` helps here, but it **mixes `unmaintained`, `unsound` and `yanked` advisories with real vulnerabilities**: separate them in the report, they are not exploitable on their own. Context (Datadog State of DevSecOps 2026): the median dependency is **278 days out of date** and **42% of services use unmaintained libraries**; Endor Labs also measures a **32% chance that updating to the latest version introduces other known vulnerabilities**, so "update everything" is not a valid recommendation without measurement.
 
@@ -299,96 +301,3 @@ dependency-check: "commons-collections 3.2.1" -> CPE of another product with the
 **Minimal test**: cross-check each finding against the ecosystem's own database and discard those that appear only through CPE matching.\
 **Traceability**: `CWE-1395` · `A03:2025` · `A09:2025` · `SSDF RV` · `NIST 800-53 RA` · `CCM TVM`\
 **Tooling**: `osv-scanner scan source -r --offline-vulnerabilities --format json .`, `trivy fs --scanners vuln,secret,misconfig --offline-scan --skip-db-update --format sarif .`, `GRYPE_DB_AUTO_UPDATE=false grype dir:. -o json`, `npm audit --package-lock-only --omit=dev --json` (**never `npm audit fix`**; it needs network and ships the dependency tree to the registry), `pip-audit -r requirements.txt --no-deps -f json` (never `--fix`). **OWASP dependency-check has the worst false-positive profile** in this pack because of its heuristic CPE matching against the name: JARs with relocated classes ("shaded") match unrelated CPEs, and maintaining a suppression file is part of operating it normally. Data framing the noise: Sonatype 2026 measures that **nearly 65% of open source CVEs have no CVSS assigned by the NVD**, with a median of **41 days** to score them, and that **95% of vulnerable downloads already had a fix available**. On the accepted-risk side, Datadog 2026 measures that **87% of organizations have at least one exploitable vulnerability deployed**, and Orca that **more than 77% leave critical container vulnerabilities unpatched for over 90 days**.
-
-## §8 Secrets in the repository and in history
-
-### SUP-16 Secrets in the working tree
-**Where to look**
-- `.env`, `.env.*`, `config/*.y*ml`, `appsettings*.json`, `*.pem`, `id_rsa`, `credentials`, `service-account*.json`, notebooks, test files and fixtures.
-- Configuration files for agents and MCP servers: this is measured surface, not a hypothetical one.
-
-**Vulnerable pattern**
-```env
-AWS_ACCESS_KEY_ID=AKIA...            # distinctive format: high detection precision
-DB_PASS=Pr0d!2026#Ac9x                # no format: entropy only, high false-positive rate
-```
-**What rules it out (false positive)**
-- The value is an example, a placeholder, or a key for a documented test service (`sk_test_`, `CHANGEME`, deterministic fixture values).
-- The file is a template (`.env.example`) whose values are not real.
-
-**Minimal test**: prioritize by **distinctive format before entropy**. GitHub tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`) carry a **CRC32 checksum in Base62 in their last 6 characters, verifiable offline**: if it validates, the finding is critical with no further triage. For `AKIA…`, `sk-ant-…`, `xoxb-…` or `AIza…` the format gives high precision, but **it is not verified that they carry a published checksum**, so do not describe them as self-verifiable. **Never test a credential against the real service.**\
-**Traceability**: `CWE-798` · `CWE-540` · `CWE-522` · `CWE-312` · `A02:2025` · `A04:2025` · `CICD-SEC-6` · `SSDF PS` · `PS.1.1` · `NIST 800-53 IA` · `CCM CEK` · `ATT&CK T1552`\
-**Tooling**: `gitleaks dir . --report-format sarif --report-path out.sarif --redact --no-banner` (MIT, fully offline) as the baseline. `trufflehog filesystem . --no-verification --json` is **AGPL-3.0: invoke it as a subprocess and never import it as a library**; on top of that, **by default it verifies findings by calling the real APIs with the discovered credential**, which already touches third-party systems, so `--no-verification` is mandatory in an audit. `detect-secrets scan --all-files --no-verify .` (Apache-2.0) produces enormous numbers of false positives by design: its intended flow is scan, audit, then consolidate a baseline. Measured precision (Basak et al., ESEM 2023, SecretBench benchmark: 818 repositories, 97,479 candidates, 15,084 real secrets): **GitHub's scanner at 75% precision, gitleaks at 46%, TruffleHog far below with 85,556 absolute false positives**; **gitleaks recall at 88% versus TruffleHog's 52%**. Operationally: a gitleaks hit is false roughly one time in two, so verify each one by hand before reporting it.
-
-### SUP-17 Secrets in git history even when gone from HEAD
-**Where to look**
-- Old commits, reachable deleted branches, tags, `git stash`, and files removed in a later "cleanup" commit.
-- Commit messages and PR descriptions quoting credentials.
-
-**Vulnerable pattern**
-```bash
-git rm .env && git commit -m "remove credentials"   # the object is still in history
-```
-**What rules it out (false positive)**
-- The secret was **rotated** after exposure and there is evidence of the rotation. Deleting it from history without rotating rules out nothing.
-- The historical value belonged to a test environment already decommissioned.
-
-**Minimal test**: scan the entire history, not just the tree. When you find one, the correct deliverable is a **rotation plan with an owner and a date**, not a history rewrite: rewriting changes hashes, breaks forks, and revokes nothing.\
-**Traceability**: `CWE-798` · `CWE-522` · `A02:2025` · `A04:2025` · `CICD-SEC-6` · `SSDF PS` · `NIST 800-53 IA` · `CCM CEK`\
-**Tooling**: `gitleaks` in history mode (offline). Evidence for why history matters: Meli et al., **NDSS 2019** ("How Bad Can It Git?"), identified **201,642 valid secrets** and measured that **81% are never removed**; the same work showed that **distinctive-format patterns reach 99.29% precision** while entropy alone does not. GitGuardian 2026 adds the decisive argument: **64% of the valid secrets detected in 2022 were still live**.
-
-### SUP-18 Secrets outside the repository: CI, agent configuration and artifacts
-**Where to look**
-- CI logs (a `set -x` or an `echo` of variables), build artifacts uploaded with a `.env` inside, runner cache, images whose layers retain credentials.
-- Configuration files for MCP servers and AI agents with cleartext tokens; local tool configuration files synced by mistake.
-
-**Vulnerable pattern**
-```json
-{ "mcpServers": { "notes": { "env": { "API_KEY": "sk-..." } } } }
-```
-**What rules it out (false positive)**
-- The value resolves by reference to a secret manager or to a system environment variable; it is not in cleartext in the file.
-- The log shows a value masked by CI itself; check that masking applies to the specific format and not only to declared secrets.
-
-**Minimal test**: review published artifacts and agent configuration files with the same scanner you use on the repository; the audit perimeter does not end at `git ls-files`.\
-**Traceability**: `CWE-532` · `CWE-215` · `CWE-798` · `A02:2025` · `A09:2025` · `CICD-SEC-6` · `CICD-SEC-10` · `SSDF PS` · `NIST 800-53 AU` · `CCM LOG`\
-**Tooling**: `gitleaks dir . --redact` over the unpacked artifact and `trivy fs --scanners secret --offline-scan --skip-db-update`. Measured surface (GitGuardian State of Secrets Sprawl 2026): **24,008 unique secrets in MCP configuration files, 2,117 of them valid**, and **28% of incidents originate outside the repository**. Orca 2025-2026 also measures that **41.88% of organizations leak AI/ML credentials**, a secret family many scanners still cover poorly.
-
-## §9 Malware in dependencies
-
-### SUP-19 Behavioral indicators of a malicious package
-**Where to look**
-- Obfuscated or minified code in a package that ships sources; base64 or hex encoded strings followed by `eval`, `Function()`, `exec`, `child_process`; a full read of `process.env` followed by an outbound request.
-- Hooking of sensitive APIs: intercepting `fetch`/`XMLHttpRequest`, swapping addresses in the clipboard, wrapping wallet signing functions.
-- Conditional logic keyed on geolocation, `locale` or time zone inside a dependency.
-
-**Vulnerable pattern**
-```js
-const p = require("./payload.min.js");           // the package's only minified file
-if (Intl.DateTimeFormat().resolvedOptions().timeZone.startsWith("Europe/")) p.run();
-```
-**What rules it out (false positive)**
-- The minified bundle is the declared distribution artifact and its source is in the repository with a reproducible build you can compare against.
-- Environment access targets specific, documented keys rather than dumping everything.
-
-**Minimal test**: read the code, do not run it; if you must run it, do so in an isolated environment with no credentials and no network path to your own systems. **Reproducing the payload against real services is prohibited.**\
-**Traceability**: `CWE-506` · `CWE-507` · `CWE-94` · `CWE-829` · `A03:2025` · `A08:2025` · `SSDF RV` · `NIST 800-53 SR` · `ATT&CK T1195`\
-**Tooling**: manual review assisted by `semgrep scan --config ./rules/ --metrics=off --disable-version-check --json`. License warnings you must respect: the **semgrep engine is LGPL-2.1 but its ruleset carries a proprietary license that forbids redistributing it** (invoking it is fine, vendoring it is not), and `--config auto` contacts semgrep.dev and enables metrics (it sends a hash of the project URL, not the code), so turn it off. **The CodeQL CLI only permits analyzing open source code without GitHub Advanced Security**: using it against a private or commercial repository is prohibited. **Brakeman requires a paid commercial license for commercial use.** Reference cases: **event-stream / flatmap-stream** (2018), a maintainership handover followed by a new dependency carrying an obfuscated payload, at roughly 8 million downloads; **npm chalk/debug** (8 September 2025), a maintainer phished via `npmjs.help`, 18 packages with 2.6 billion weekly downloads, and a clipper hooking `eth_sendTransaction` and Solana signing; **Shai-Hulud 2.0** (21-23 November 2025), a self-replicating worm spanning **796 packages and 1,092 versions, more than 20 million weekly downloads, more than 27,000 malicious repositories and around 14,000 secrets exposed across 487 organizations**, which used TruffleHog to harvest credentials and persisted through GitHub Actions and self-hosted runners.
-
-### SUP-20 The published artifact does not match the source code
-**Where to look**
-- Differences between the published tarball or wheel and the git tree at the same tag: files present only in the release (`configure`, `*.m4`, `Makefile.in`), binary blobs under `tests/` or `fixtures/`, non-reproducible generated files.
-- Recent maintainer changes, package ownership transfers, and commits touching only the build machinery.
-
-**Vulnerable pattern**
-```text
-tag v5.6.1 in git      -> does not contain build-to-host.m4
-tarball v5.6.1 on the web -> it does, and a "test" blob feeds the payload
-```
-**What rules it out (false positive)**
-- The difference consists of autotools artifacts normally generated at packaging time and reproducible from source; regenerate them and compare.
-- The binaries under `tests/` are documented fixtures with a clear purpose and a stable hash across versions.
-
-**Minimal test**: download the release and the tag, and diff both trees. Apply the same logic to conditional behavior: check whether any dependency changes what it does based on country, language or time zone.\
-**Traceability**: `CWE-506` · `CWE-494` · `CWE-345` · `CWE-829` · `A03:2025` · `A08:2025` · `CICD-SEC-9` · `SLSA Build L3` · `SLSA Source L2` · `SSDF PS` · `NIST 800-53 SR`\
-**Tooling**: tree comparison plus `syft` over both to contrast inventories. Canonical case: **xz utils, CVE-2024-3094** (March 2024), where the backdoor was not in git but in a `build-to-host.m4` exclusive to the release tarball, with a precompiled object hidden among binary test files; generalizable signals: obfuscated logic in `configure.ac`, `*.m4`, `Makefile.am`, `build.rs` or `setup.py`, binary blobs under `tests/` or `fixtures/`, and a tarball-versus-tag discrepancy. On protestware, the **node-ipc / peacenotwar** case (over a million weekly downloads, deleting files based on geolocation) and the study by Finken et al. (arXiv:2409.19849) show that **10 of 12 targeted cases were hidden**: do not expect a notice in the README.
