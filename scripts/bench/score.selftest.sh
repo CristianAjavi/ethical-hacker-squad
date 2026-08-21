@@ -94,15 +94,24 @@ expect() {  # <name> <mode> <needle> [extra args...]
   fi
 }
 
+# The expected short-run recall is derived from the key, not written down: the
+# bench grows, and a hard-coded percentage would turn every new case into a
+# false failure of the scorer.
+SHORT=$(EHS_KEY="$KEY" python3 -c '
+import json, os
+n = len(json.load(open(os.environ["EHS_KEY"]))["planted"])
+print(f"recall {round((n - 1) / n * 100):.0f}%")')
+
 echo "=== self-test: scripts/bench/score.py ==="
 expect perfect-run        perfect        "recall 100%"
-expect one-missed         one-missed     "recall 90%"
+expect one-missed         one-missed     "$SHORT"
 expect decoy-reported     decoy-reported "decoys reported 1"
-expect near-miss-is-not-a-hit near-miss  "recall 90%"
+expect near-miss-is-not-a-hit near-miss  "$SHORT"
 
-# thresholds turn measuring into judging, and only when asked
+# Thresholds turn measuring into judging, and only when asked. The bar is just
+# under 1.0 so that a run one short of perfect fails it whatever the bench size.
 build one-missed "$TMP/th.json"
-python3 "$SCORE" --findings "$TMP/th.json" --min-recall 0.95 >/dev/null 2>&1
+python3 "$SCORE" --findings "$TMP/th.json" --min-recall 0.999 >/dev/null 2>&1
 if [ $? -eq 1 ]; then printf 'ok       %-28s threshold fails a short run\n' threshold-enforced; pass=$((pass+1))
 else printf 'FAILED   %-28s threshold did not fail\n' threshold-enforced; fail=$((fail+1)); fi
 

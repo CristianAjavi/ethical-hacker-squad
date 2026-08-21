@@ -89,7 +89,18 @@ for kind in ("planted", "decoys"):
         if not target.is_file():
             findings.append(f"{item['id']} points at {item['path']}, which does not exist in {item['case']}")
             continue
-        body = target.read_text(encoding="utf-8")
+        # When the symbol IS the file name, the file itself is the subject - a
+        # committed binary, a configuration file - and there is nothing to find
+        # inside it. Anything else must literally appear in the file.
+        if item["symbol"] == Path(item["path"]).name:
+            continue
+        try:
+            body = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            findings.append(
+                f"{item['id']} points at a symbol inside {item['path']}, which is not text: "
+                "name the file itself as the symbol when the file is the subject")
+            continue
         needle = item["symbol"].split()[-1] if " " in item["symbol"] else item["symbol"]
         # Word boundaries when the symbol is an identifier: `write_token` must not
         # be satisfied by `write_token_privately`, which is a DIFFERENT function
@@ -154,6 +165,28 @@ for name in cases:
         findings.append(
             f"case `{name}` has no decoys: a case with only planted defects measures the model's "
             "willingness to agree, not its judgement")
+
+# A declared file that git does not track exists on one machine and nowhere
+# else. CI found this the hard way: .gitignore excluded a .env.example
+# the key declares, so the gate failed on a file that was right there locally.
+import subprocess
+try:
+    tracked = set(subprocess.run(["git", "-C", str(root), "ls-files", "bench/cases"],
+                                 capture_output=True, text=True, check=True).stdout.split())
+except (OSError, subprocess.CalledProcessError):
+    tracked = None
+if tracked is not None:
+    for kind in ("planted", "decoys"):
+        for item in key.get(kind, []):
+            case = cases.get(item["case"])
+            if not case:
+                continue
+            rel = f"{case['path']}/{item['path']}"
+            checks += 1
+            if rel not in tracked:
+                findings.append(
+                    f"{item['id']} points at {rel}, which git does not track: it exists here "
+                    "and nowhere else, and any run elsewhere scores against a file that is missing")
 
 print(f"measured: {len(cases)} case(s), {len(key.get('planted', []))} planted, "
       f"{len(key.get('decoys', []))} decoys, {checks} checks")

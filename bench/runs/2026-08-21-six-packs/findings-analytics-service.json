@@ -1,0 +1,243 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run2/analytics-service/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs privacy-abuse specialist (bench run)",
+    "coverage_declaration": "Read-only review of the entire target: README.md and four Python modules (118 lines in total), all read in full. Nothing was executed: the service was not started, no database or network was touched, no file in the target was modified, and the target is not a git checkout so no commit is recorded. Sections exercised: PRV-01 (inventory, from the Customer dataclass, which is the only classification artifact present), PRV-02 (serializers), PRV-04 (retention and deletion), PRV-06 (third-party tags), PRV-07 (data entering the model) and PRV-09 (logs). Not exercised for want of an artifact in scope, each recorded under ruled_out: PRV-03 (non-use cannot be established from a four-file excerpt), PRV-05 (no tenant model, query layer or route), PRV-08 (only a deletion path is present; no export or rectification flow), PRV-10 and PRV-11 (no sign-up, login, recovery, invitation, referral or search flow), PRV-12 and PRV-13 (no infrastructure code, no admin or support path, no audit configuration). The target carries no wiring at all: no HTTP routes, no logging configuration, no template, no callers and no tests. Reachability is therefore inferred in every finding and each one names that inference, which is why no finding is reported as confirmed. The third parties named in the code (the model provider, cdn.metrics.example, ads.partner.example) were not contacted and their console settings were not seen. No finding rules on legal compliance; each states the observed technical fact and is labelled as a technical vulnerability, a privacy risk or a product decision."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Dashboard serializer returns the whole customer record, including the national ID and internal-only fields",
+      "procedure": "PRV-02",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "app/serializers.py", "line": 18, "component": "customer_response" },
+      "evidence": "app/serializers.py:18 -- `return asdict(customer)` over a dataclass that declares `national_id`, `internal_risk_score` and `support_notes` alongside `id`, `email` and `full_name` (lines 8-13). The same module declares the intended public projection three lines later: `PUBLIC_FIELDS = (\"id\", \"email\", \"full_name\")` (line 21). A response therefore carries `national_id`: [REDACTED:pii] and free-text `support_notes`: [REDACTED:pii] on top of the declared public set. Module docstring, line 1: \"API serializers for the customer-facing dashboard.\"",
+      "impact": "Over-exposure of data with a technical cause (a privacy risk, not a broken access control -- no cross-customer read was demonstrated and none is claimed). Three fields beyond the module's own declared public set leave the process on every serialized response: a direct identifier the dashboard does not display (`national_id`), an internal assessment about the person (`internal_risk_score`) and a free-text field that PRV-01 warns can hold more personal data than any field named `email` (`support_notes`). Once the object has left the server, not rendering those fields in the interface protects nothing: they are in the response body, in the browser cache and in any intermediary that stores it.",
+      "preconditions": "A request handler serializes with `customer_response()` rather than with `customer_response_public()`.",
+      "recommendation": "Make the projection the only way out rather than one of two options: remove `customer_response()`, or reduce it to a private helper that `customer_response_public()` filters, so no caller can reach `asdict()` directly. Pin the public shape with a test that fails when a field is added to the dataclass and not declared in `PUBLIC_FIELDS` -- the docstring on line 25 already claims such a test exists and no test file is present in the target.",
+      "inference": "Reachability. No route, view or caller exists anywhere in the target, so that the customer-facing dashboard calls `customer_response()` rather than its allowlisted sibling is read from the module and function docstrings, not observed.",
+      "traceability": ["CWE-200", "CWE-213", "A01:2025", "ASVS 5.0 V4", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`customer_response_public()` (app/serializers.py:24-26) is a sibling function, not a layer that cannot be skipped: the target contains no base serializer, no response middleware and no outbound schema between `asdict()` and the caller. A control that a caller has to choose -- and may forget -- is explicitly not this rule."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed and the code names it: the module docstring declares these serializers are for the customer-facing dashboard, so the second principal is the browser. `internal_risk_score` and `support_notes` are internal-audience content about the person, produced on one side of that boundary and delivered to the other."
+        }
+      ],
+      "limits": "Establishes what the function returns, not which endpoint returns it and not whether a caller can obtain another customer's record: no query, authorization or tenancy layer is in scope, so PRV-05 was not reached from here."
+    },
+    {
+      "id": "F-002",
+      "title": "Request logging writes the caller's email address and national ID into the log record",
+      "procedure": "PRV-09",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "app/logging_setup.py", "line": 11, "component": "log_request" },
+      "evidence": "app/logging_setup.py:11-12 -- `logger.info(\"request path=%s user=%s email=%s national_id=%s\", path, user[\"id\"], user[\"email\"], user[\"national_id\"])`, so each record carries email=[REDACTED:pii] and national_id=[REDACTED:pii]. `RedactingFormatter` is declared at line 20 and never installed: `grep -rn \"setFormatter|basicConfig|dictConfig|addHandler|getLogger\"` over the whole target returns no match, and `logger` is a parameter the caller supplies.",
+      "impact": "Personal data is copied into the log store, which carries none of the database's controls: different retention, usually no encryption at rest, and far broader read access (engineering plus whichever aggregator receives the stream). `national_id` is a direct identifier, so a log line is enough to re-identify without any join. Two routes reach the sink even where the formatter is attached: a handler configured without it, and any structured, JSON or APM handler that serializes `record.args` rather than the rendered string -- the redaction at line 25 rewrites the formatted text only, after the values are already on the record.",
+      "preconditions": "A caller uses `log_request()` rather than `log_request_redacted()`, and the logger it passes has at least one handler that does not apply `RedactingFormatter` or that consumes the record's arguments.",
+      "recommendation": "Remove `log_request()` or make it delegate to `log_request_redacted()`, so the opaque identifier is the only thing a caller can log. If the redaction is to stay as defence in depth, apply it on the record -- a `logging.Filter` over `args` and `extra` -- rather than on the rendered string, install it in the logging configuration that actually ships, and add the test PRV-09's exculpation requires: emit each field name through the configured logger and assert the value does not appear in the output.",
+      "inference": "Whether the deployed logging configuration attaches `RedactingFormatter` to every handler that receives these records. The call and the interpolated fields are observed in the code; the rendering at the sink is not, because no logging configuration exists in the target.",
+      "traceability": ["CWE-532", "CWE-359", "A09:2025", "ASVS 5.0 V16"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The redaction is not in a layer that cannot be skipped. `RedactingFormatter` (app/logging_setup.py:20-25) is per-handler, has no installation site anywhere in the target, and operates on the already-formatted string, so a handler without it or one that serializes `record.args` reaches the sink around it. PRV-09's exculpation additionally requires a test covering the field list, and the target contains none. The regex itself covers three field names in `key=value` form only, which is a narrower guarantee than the record holds."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The two values are direct identifiers of a natural person: `email` and `national_id` as declared on the Customer dataclass (app/serializers.py:9 and 11). PRV-01 decides that classification from the schema, and here the schema states it."
+        }
+      ],
+      "limits": "Does not establish where these logs land, who can read them, how long they are kept or whether they leave the organization: no aggregator, retention or APM configuration is in scope. No log output was produced -- nothing was executed."
+    },
+    {
+      "id": "F-003",
+      "title": "Full name, email and national ID are interpolated into the prompt sent to the external model provider",
+      "procedure": "PRV-07",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "app/assistant.py", "line": 12, "component": "summarize_account" },
+      "evidence": "app/assistant.py:12-13 builds `f\"Customer {customer['full_name']} ({customer['email']}, id {customer['national_id']}) had these events: {events}. ...\"` -- carrying [REDACTED:pii] in three interpolations -- and lines 15-18 pass it straight to `client.messages.create(...)` on the external client constructed at line 6. The whole `events` list is stringified as-is, including each event's free-text `note`, which the pseudonymous variant at line 25 explicitly strips.",
+      "impact": "Privacy risk arising from a designed transfer, not a broken control: on every summary, a direct identifier set (name, email address, national ID) plus the full event history including free text leaves the organization for a third-party processor. What happens next -- request logging, retention window, use for training -- is provider-side configuration that is not in this repository. If those requests are retained, the exposure is durable and not selectively deletable, which is the variant PRV-07 warns about; that is what would raise this above medium.",
+      "preconditions": "A caller uses `summarize_account()` rather than `summarize_account_pseudonymous()`.",
+      "recommendation": "Route every summary through the pseudonymous builder and delete the identifying one, keeping the token map inside the system so re-identification stays local. Strip free-text event fields on the way out rather than relying on the caller. Record the criterion for what a prompt may carry, not only today's field list, since a field that is necessary now stops being so after a product change. Separately, obtain and file the provider-side retention and training settings as an engagement artifact -- that is the only thing that can turn the FP-08 answer below into something other than UNKNOWN.",
+      "inference": "Two links are argued rather than observed: no caller in the target selects between the two prompt builders, and the provider-side retention configuration lives outside the repository, so what becomes of the prompt after transmission cannot be read here.",
+      "traceability": ["LLM02:2026", "CWE-359", "CWE-200", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`summarize_account_pseudonymous()` (app/assistant.py:21-31) is an alternative function, not an enforced layer: nothing routes prompt construction through it, and no scrubbing step sits between the f-string at line 12 and the `client.messages.create` call at line 15."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is organizational and named in the code: the payload leaves for an external provider through the client constructed at app/assistant.py:4 and 6. The provider is a second principal by construction."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The exculpation PRV-07 accepts -- a zero-retention or no-training arrangement verifiable in the provider configuration -- lives outside this repository, and no exported console setting, contract, ticket or written statement was provided with the target. Absence of that evidence is UNKNOWN and never HOLDS, and it is what caps this finding at probable."
+        }
+      ],
+      "limits": "Establishes only what leaves the process. It says nothing about what the provider does with the payload, and the provider console was not consulted -- that would require credentials and an authorization this engagement does not carry."
+    },
+    {
+      "id": "F-004",
+      "title": "Account deletion marks only the customers table, so the purge job clears one store while appearing to clear five",
+      "procedure": "PRV-04",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "jobs/lifecycle.py", "line": 10, "component": "delete_account / purge_expired" },
+      "evidence": "jobs/lifecycle.py:10 -- `UPDATE customers SET deleted_at = now() WHERE id = %s` is the only statement in the target that ever writes `deleted_at`, and it writes it in one table. jobs/lifecycle.py:15-17 then loops over `STORES = (\"customers\", \"events\", \"exports\", \"search_index\", \"backups\")` (line 5) issuing `DELETE FROM <store> WHERE deleted_at IS NOT NULL AND deleted_at < %s`. For the four stores other than `customers`, no path in the target ever satisfies `deleted_at IS NOT NULL`, so those four deletes match nothing.",
+      "impact": "Privacy risk in retention: after a deletion request the person's data survives indefinitely in the event stream, the exports, the search index and the backups, while the account row disappears after the 30-day window. The shape of the code is what makes it durable -- `purge_expired()` iterates every store and reads as full coverage, so a reviewer confirming that deletion propagates finds exactly the loop they were looking for. A later data-subject request would also be answered from `customers` alone while four other stores still hold the record.",
+      "preconditions": "No writer outside the target sets `deleted_at` on `events`, `exports`, `search_index` or `backups`.",
+      "recommendation": "Do not leave propagation implicit in a column nothing sets. Either have `delete_account()` mark every store in `STORES` in one transaction, or drive `purge_expired()` from the customer's `deleted_at` by key or join instead of from a per-store column. Handle the two stores that are not rows on their own terms: a search index needs a delete-by-document call and a backup set needs a rotation policy, neither of which a `DELETE` reaches. Prove it with the PRV-04 minimal test -- a synthetic account written into all five stores, then a count in each after the cutoff.",
+      "inference": "That no other writer sets `deleted_at` on the four derived stores. `delete_account()` is the only one inside the target, but the schema (DDL, triggers, defaults) and any other service that writes those tables are outside it.",
+      "traceability": ["CWE-212", "CWE-359", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A mandatory database-side layer -- `ON DELETE CASCADE` from `customers`, a trigger, a row-level policy -- would cover part of this, and no DDL is present in the target to check. Worth recording the shape such a control would have to take: `delete_account()` issues an UPDATE, so no referential cascade fires there at all; only the DELETE inside `purge_expired()` could cascade, and a cascade cannot reach a search index or a backup set. It could not be established from the artifact, so UNKNOWN, which caps this finding at probable."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The retention half -- bucket lifecycle rules, backup rotation, index reindexing -- lives in infrastructure outside this repository, and no exported configuration, policy document or written retention statement accompanied the target. Under FP-08 that is UNKNOWN, not HOLDS."
+        }
+      ],
+      "limits": "Does not establish the real retention of the backups or of the search index, nor whether an out-of-band process purges them. No database was touched and no row was counted; the conclusion is read from the two statements and the store list."
+    },
+    {
+      "id": "F-005",
+      "title": "Third-party analytics and advertising tags are emitted unconditionally, bypassing the consent gate that exists beside them",
+      "procedure": "PRV-06",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": { "path": "jobs/lifecycle.py", "line": 22, "component": "load_trackers" },
+      "evidence": "jobs/lifecycle.py:20-25 -- `load_trackers(page)` takes no consent argument and returns two third-party script tags with no condition: `cdn.metrics.example/collect.js` carrying a site identifier, and `ads.partner.example/px.js`. The consent-aware sibling at lines 28-32 takes a `consent` dict, returns `[]` when `consent[\"analytics\"]` is falsy, and returns the metrics tag only -- the advertising pixel appears in no accepted category anywhere in the target.",
+      "impact": "Two readings, and they should be reported separately. As a privacy risk: on any page rendering this list, the visitor's IP address, user agent, page path and whatever cookie each vendor sets reach an analytics vendor and an advertising vendor on first render, before any interaction and irrespective of what a consent manager recorded -- the pattern PRV-06 describes as the SDK that loads anyway and only flips a flag. As a product decision: the advertising pixel is absent from the consent-aware variant, so shipping it at all is a choice about which third parties the product feeds, and it belongs to the product owner with the cost of keeping it and the cost of dropping it stated, not to engineering as a defect.",
+      "preconditions": "A page template renders the list returned by `load_trackers()`.",
+      "recommendation": "Make the consent-aware function the only producer of tag markup and delete `load_trackers()`, so no template can reach the ungated list. Decide explicitly whether the advertising pixel belongs to any category rather than letting it inherit the analytics one, and give it its own if it is kept. Keep the list PRV-06 says nobody holds: which tag is emitted under which category, and what each vendor receives -- and confirm it against observed traffic, since the presence of a tag says nothing about what it sends.",
+      "inference": "Reachability. Neither function has a caller and no template exists in the target, so which of the two a page renders is read from their names and docstrings rather than observed.",
+      "traceability": ["CWE-359", "CWE-200", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consent check lives inside the alternative function (jobs/lifecycle.py:30) rather than in a layer on the way out. Nothing stops a template calling `load_trackers()` directly, and the target contains no tag manager, no CSP and no rendering middleware that could enforce the gate for both paths."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Two second principals are named in the code by their own domains: `cdn.metrics.example` and `ads.partner.example` (jobs/lifecycle.py:23-24). This is not first-party telemetry staying on project infrastructure; the data leaves for third parties."
+        }
+      ],
+      "limits": "Establishes what the function returns, not what those vendors collect -- only observed traffic would show that, and no request was made and no page was loaded. The consent manager itself is not in scope, so whether a recorded refusal is honoured anywhere else could not be checked."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Explicit field allowlist in the dashboard serializer -- examined as a PRV-02 candidate and not reported",
+      "procedure": "PRV-02",
+      "outcome": "refuted",
+      "where": "app/serializers.py:21-26. `customer_response_public()` projects only the declared `PUBLIC_FIELDS` tuple through `getattr`, so a field added to the dataclass cannot appear in the response by inheritance -- which is the exact exculpation PRV-02 names. Bound of the refutation: the docstring at line 25 claims a test fails when a new field appears, and no test exists anywhere in the target, so the refutation rests on the allowlist itself and not on the claimed test. That gap is written into F-001's recommendation instead of being reported here."
+    },
+    {
+      "class": "Redaction of personal fields in logging -- examined as a PRV-09 candidate and not reported",
+      "procedure": "PRV-09",
+      "outcome": "refuted",
+      "where": "app/logging_setup.py:15-17 and 20-25. `log_request_redacted()` emits only the opaque `user[\"id\"]` and the path, with no personal attribute, which is PRV-09's second exculpation. `RedactingFormatter` does rewrite `email=`, `national_id=` and `phone=` in the rendered string, so where it is installed it covers the exact fields F-002 logs. Bound: this refutes the redacted function and the formatter as written, not the module -- the formatter is never installed in the target, covers three field names in `key=value` form only, and acts after the values are already on the record. Those bounds are the substance of F-002, not a separate finding."
+    },
+    {
+      "class": "Pseudonymizing prompt builder -- examined as a PRV-07 candidate and not reported",
+      "procedure": "PRV-07",
+      "outcome": "refuted",
+      "where": "app/assistant.py:21-31. The customer is replaced by `tokens[customer['id']]`, a token reversible only inside the system, and each event is rebuilt without its free-text `note` key -- both halves of PRV-07's exculpation. Bound: the remaining event keys are not defined anywhere in the target, so this refutation covers the identifier substitution and the removal of the free-text field, not the whole event payload. Reporting the undefined remainder as a finding would be asserting a defect from an absence of schema."
+    },
+    {
+      "class": "Consent-gated third-party tags -- examined as a PRV-06 candidate and not reported",
+      "procedure": "PRV-06",
+      "outcome": "refuted",
+      "where": "jobs/lifecycle.py:28-32. The function returns nothing until `consent[\"analytics\"]` is truthy and drops the advertising pixel entirely, so the tag does not load before acceptance -- PRV-06's first exculpation. Bound: this is the code path, not observed traffic; and it refutes the gated function only, which is why the ungated sibling is reported as F-005."
+    },
+    {
+      "class": "SQL string interpolation in the purge job (would belong to the web-api role, cross-referenced here)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "jobs/lifecycle.py:17. The f-string interpolates `store`, which iterates the module-level literal tuple `STORES` at line 5 and is reachable from nothing else; the cutoff value travels as a bound parameter. FP-02 holds -- the value is not attacker-controlled, traced backwards to a constant in the same file. Recorded because the pattern will be flagged by any scanner run over this file."
+    },
+    {
+      "class": "Provider credential handling in the assistant",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "app/assistant.py:6. The API key is read from `os.environ` at import time; no key literal, token prefix or PEM block appears anywhere in the target. Bound: says nothing about how the environment variable is populated at deploy time, which is outside the repository."
+    },
+    {
+      "class": "Inventory and classification of personal data",
+      "procedure": "PRV-01",
+      "outcome": "inconclusive",
+      "where": "The Customer dataclass (app/serializers.py:6-13) is the only classification artifact present and it is what every other finding classifies from -- `email`, `full_name`, `national_id` as direct identifiers or personal attributes, `internal_risk_score` and `support_notes` as internal content about the person. No data map exists in the target, but the target is a four-file excerpt with a four-line README, so its absence here is not evidence of its absence in the project. Reported as inconclusive rather than as the PRV-01 finding for that reason."
+    },
+    {
+      "class": "Data collected and stored without use",
+      "procedure": "PRV-03",
+      "outcome": "inconclusive",
+      "where": "`internal_risk_score` and `support_notes` appear only in the dataclass and in the `asdict()` serialization; `grep` over the whole target finds no business logic consuming either. A four-file grep cannot establish non-use -- FP-08 and FP-09 both apply, since a job, report, email template or BI query in another repository would not be visible here. The over-exposure of both fields is reported under F-001, which does not depend on whether they are used."
+    },
+    {
+      "class": "Multitenant isolation and access by identifier",
+      "procedure": "PRV-05",
+      "outcome": "not executed",
+      "where": "No tenant model, no query layer, no route and no ownership check exist in the target; `delete_account()` is the only identifier-keyed statement and it is a job, not a request handler. Nothing to exercise -- not a statement that isolation is sound."
+    },
+    {
+      "class": "Data subject rights: export, portability, rectification",
+      "procedure": "PRV-08",
+      "outcome": "inconclusive",
+      "where": "A deletion path exists (jobs/lifecycle.py:8) and its propagation gap is reported as F-004. No export, portability or rectification path appears in the excerpt, and no identity-verification step is observable, but four files cannot establish that those flows do not exist elsewhere in the product."
+    },
+    {
+      "class": "User enumeration and directory scraping",
+      "procedure": "PRV-10",
+      "outcome": "not executed",
+      "where": "No sign-up, login, password recovery, invitation, user search or autocomplete endpoint is present in the target, and no request was issued against any running service -- the engagement is local and read-only."
+    },
+    {
+      "class": "Abuse of invitations, referrals and flows with economic value",
+      "procedure": "PRV-11",
+      "outcome": "not executed",
+      "where": "No invitation, referral, credit or balance flow is present in the target. Modelling the abuse economics on paper requires a flow to model."
+    },
+    {
+      "class": "Where the personal data physically lands, and where it is replicated",
+      "procedure": "PRV-12",
+      "outcome": "not executed",
+      "where": "No infrastructure code, no region or location argument and no declared jurisdiction exist in the target. The third parties that would carry data out (the model provider in app/assistant.py, and both vendor domains in jobs/lifecycle.py) have a processing region that is a console setting, and no console was consulted -- declared here as the part that could not be checked."
+    },
+    {
+      "class": "Traceability of reads over personal data",
+      "procedure": "PRV-13",
+      "outcome": "not executed",
+      "where": "No infrastructure code, no admin panel, no support tool and no audit-trail configuration is in the target; the data-plane switch this procedure looks for has no object to be attached to here. Cross-references INF-06 if an infra-cloud pass is run over the same product."
+    }
+  ]
+}

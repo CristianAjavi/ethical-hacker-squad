@@ -42,7 +42,24 @@ def load(path: Path):
 
 
 def norm(path: str) -> str:
-    return re.sub(r"^.*?(bench/cases/[^/]+/)?", "", path or "").strip("/")
+    """Reduce a reported path to one relative to the case root.
+
+    Findings arrive with the path the auditor saw: relative to the target, or
+    absolute inside a scratch workspace. The previous version of this function
+    used a regex that ate a leading character - `app/serializers.py` became
+    `pp/serializers.py` - and silently turned correct findings into unlabelled
+    ones. Explicit steps, no clever pattern.
+    """
+    p = (path or "").strip().replace("\\", "/")
+    m = re.search(r"bench/cases/[^/]+/(.+)$", p)
+    if m:
+        return m.group(1)
+    m = re.search(r"/target(?:-[a-z0-9-]+)?/(.+)$", p)
+    if m:
+        return m.group(1)
+    if p.startswith("./"):
+        p = p[2:]
+    return p
 
 
 def matches(finding: dict, item: dict) -> bool:
@@ -60,10 +77,25 @@ def matches(finding: dict, item: dict) -> bool:
     # fetch helper and the key named only the route.
     places = [{"path": item["path"], "lines": item.get("lines"), "symbol": item["symbol"]}]
     places += item.get("also_at", [])
-    place = next((pl for pl in places
-                  if fpath.endswith(norm(pl["path"])) or norm(pl["path"]).endswith(fpath)), None)
-    if place is None:
+    def same_file(a: str, b: str) -> bool:
+        # Anchored on a separator, and never the other way round: a finding at
+        # `main.tf` is NOT a finding at `modules/network/main.tf`, and treating
+        # it as one scored a correct report as a decoy in the six-pack run.
+        return a == b or a.endswith("/" + b)
+
+    candidates = [pl for pl in places if same_file(fpath, norm(pl["path"]))]
+    if not candidates:
         return False
+    # ANY declared place, not the first one that happens to name the same file:
+    # a defect with a helper and a caller in one file has two spans, and taking
+    # only the first scored a correct finding at the caller as a miss.
+    return any(_hits(finding, pl) for pl in candidates)
+
+
+def _hits(finding: dict, place: dict) -> bool:
+    # The file itself can be the subject: a committed binary has no line.
+    if place.get("symbol") == Path(place["path"]).name:
+        return True
 
     line = finding.get("location", {}).get("line")
     span = place.get("lines")
@@ -73,7 +105,9 @@ def matches(finding: dict, item: dict) -> bool:
     # No line, or no span for this item: fall back to the finding's TITLE, which
     # names its subject. Never the evidence or the impact, which discuss the
     # neighbourhood.
-    symbol = place.get("symbol", item["symbol"])
+    symbol = place.get("symbol", "")
+    if not symbol:
+        return False
     needle = symbol.split()[-1] if " " in symbol else symbol
     title = str(finding.get("title", ""))
     if re.fullmatch(r"\w+", needle):
@@ -93,7 +127,10 @@ def main() -> int:
     gt = load(Path(args.ground_truth))
     art = load(Path(args.findings))
     findings = [f for f in art.get("findings", []) if isinstance(f, dict)]
-    reportable = [f for f in findings if f.get("status") in ("confirmed", "probable")]
+    # `hardening` counts as reported: it reaches the client's document. Only
+    # `discarded` and `withdrawn` do not, and `candidate` may never ship at all.
+    REPORTED = ("confirmed", "probable", "hardening")
+    reportable = [f for f in findings if f.get("status") in REPORTED]
 
     detected, missed = [], []
     for item in gt["planted"]:
@@ -114,7 +151,9 @@ def main() -> int:
     recall = len(detected) / planted if planted else 0.0
 
     print(f"bench: {len(gt['cases'])} case(s), {planted} planted, {len(gt['decoys'])} decoys")
-    print(f"artifact: {len(findings)} finding(s), {len(reportable)} reportable (confirmed or probable)")
+    mix = {st: sum(1 for f in reportable if f.get("status") == st) for st in REPORTED}
+    print(f"artifact: {len(findings)} finding(s), {len(reportable)} reported "
+          f"({mix['confirmed']} confirmed, {mix['probable']} probable, {mix['hardening']} hardening)")
     print()
     print(f"detected        {len(detected)}/{planted}  (recall {recall:.0%} on this bench)")
     for item, hit in detected:

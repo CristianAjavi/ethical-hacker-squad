@@ -1,0 +1,448 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run2/terraform-platform/target (terraform-platform: one Terraform root, one network module, two GitHub Actions workflows)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs infra-cloud specialist (bench run)",
+    "coverage_declaration": "Exercised: infra-cloud.md §1 in full (INF-01..INF-06) against main.tf and modules/network/main.tf; infra-cloud-cicd-exposure.md §4 (INF-13..INF-16) against .github/workflows/deploy.yml and release.yml; §5 (INF-17) against the root and the module; and the documentary half only of §6 (INF-18), i.e. the inventory of security groups and internet-facing resources declared in the tree. Not exercised: §2 (INF-07..INF-09) and §3 (INF-10..INF-12) — the inventory contains no Dockerfile, compose file, Helm chart or Kubernetes manifest, so those procedures do not apply and nothing is reported from them; and the live half of INF-18 — no cloud account or host is in scope and no authorization was granted, so nothing was resolved, connected to, enumerated or scanned. No terraform command was run (no init, validate, plan or apply), no scanner (checkov, trivy, zizmor, actionlint, gitleaks) was executed, and no cloud or GitHub API was contacted: every finding below is read from the five files in the tree. The target carries no git metadata (.git is absent), so INF-17's history check for a committed *.tfstate and INF-05's history check for leaked keys could not be run, and no commit identifier is recorded. Controls that live outside the repository — repository visibility, organization rulesets, the default GITHUB_TOKEN permission, branch protection, required reviewers on the production environment, SCPs, permission boundaries, an organization CloudTrail or landing zone — were not evidenced in either direction; per FP-08 their absence is recorded as UNKNOWN and never as a rule-out. Files read: README.md, main.tf, modules/network/main.tf, .github/workflows/deploy.yml, .github/workflows/release.yml."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "pull_request_target builds the pull request head with a write-all token (pwn request)",
+      "procedure": "INF-13",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 4,
+        "component": "job preview"
+      },
+      "evidence": "deploy.yml:4 `on: pull_request_target` with `types: [opened, synchronize]`; :7 `permissions: write-all`; :13-15 `uses: actions/checkout@v4` with `ref: ${{ github.event.pull_request.head.sha }}`; :16 `run: npm ci && npm run build`. The job declares no `environment:` (contrast release.yml:13 `environment: production`) and does not set `persist-credentials: false` (contrast release.yml:20), so checkout leaves the write-all GITHUB_TOKEN in .git/config on the runner before `npm ci` executes the pull request author's package.json lifecycle scripts and its dependency tree.",
+      "impact": "Any pull request author obtains arbitrary code execution on the runner in the base-repository context. `pull_request_target` runs with the base branch's secrets and token, so the attacker's build scripts run alongside a GITHUB_TOKEN that has write on every scope — contents, packages, actions, id-token — and that same token is additionally readable from .git/config on disk. That is push access to the default branch, the ability to rewrite workflows, and package publication: full repository compromise, and a foothold on any cloud identity those workflows can reach.",
+      "preconditions": "The ability to open a pull request against the repository. The trigger fires on `opened` and `synchronize`, so no maintainer action — no label, no approval, no re-run — is required. On a public repository this is any GitHub account; on a private one it is any account with fork or branch access, which is by construction a lower privilege than the write-all token the job hands it.",
+      "recommendation": "Split the workflow. Build and test untrusted code on `pull_request`, which runs without repository secrets and with a read-only token. If privileged post-processing is genuinely needed, move it to a separate `workflow_run` job that consumes only the artifact produced by the untrusted job and never checks out the head SHA. If `pull_request_target` must stay for metadata (labelling, commenting), remove both the head-SHA checkout and the build step, declare `permissions:` per job at the minimum scope needed, set `persist-credentials: false` on any checkout, and gate any job that touches secrets behind an `environment:` with required reviewers.",
+      "traceability": ["CWE-94", "CWE-829", "A03:2025", "A08:2025", "CICD-SEC-4", "SSDF PW", "SLSA Build L2", "NIST 800-53 SA"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The control INF-13 names as unskippable — an `environment:` with required reviewers — is absent from this job; the repository shows it knows the construct, because release.yml:13 uses it. The hardening actions/checkout added on 2026-06-18 covers expression injection into checkout's own inputs, not a literal 40-hex `head.sha` ref, and a caller cannot rely on a third-party action to refuse a checkout it was explicitly asked to perform."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The benign reading of this trigger — `pull_request_target` used only to read metadata and label or comment — does not survive lines 13-16: the head SHA is checked out and then built."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named explicitly: the pull request author, whose privilege is strictly lower than the write-all GITHUB_TOKEN this job issues. That boundary is crossed whether the repository is public or private, so the unobserved repository visibility does not remove the principal, it only changes who the population is."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no build that could strip this path: the workflow is committed under .github/workflows/ and GitHub evaluates its trigger from the default branch, so the shipped artifact is the file itself."
+        }
+      ],
+      "limits": "No `secrets.*` reference appears in this job, so the exposure demonstrated from the file is the GITHUB_TOKEN and anything the runner can reach with it; repository and environment secrets are available to the `pull_request_target` context but are not injected into any step here, and which secrets exist could not be observed. Whether branch protection would blunt a push with the token is a repository setting outside the tree and was not evidenced."
+    },
+    {
+      "id": "F-002",
+      "title": "Pull request title interpolated directly into a run: block (command injection)",
+      "procedure": "INF-14",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 18,
+        "component": "step Comment"
+      },
+      "evidence": "deploy.yml:17-18 `- name: Comment` / `run: echo \"Preview for ${{ github.event.pull_request.title }}\"`. The expression is substituted into the script text before the shell parses it, so the title is code, not data. The same repository does it correctly one file over: release.yml:22-25 passes `github.event.head_commit.message` through `env: TITLE` and references it as a quoted shell variable `\"$TITLE\"`.",
+      "impact": "A crafted pull request title closes the echo and chains commands, giving the attacker shell on the runner in the same job as F-001 — the base-repository context with `permissions: write-all` (deploy.yml:7). The blast radius is the token and everything reachable from the runner; the difference from F-001 is only that the payload must fit the title field and its quoting, rather than being an entire attacker-controlled repository.",
+      "preconditions": "The ability to open or rename a pull request. The title is set by the author, needs no maintainer interaction, and `types: [opened, synchronize]` re-runs the job on every push to the branch.",
+      "recommendation": "Never interpolate `${{ github.event.* }}` into a `run:` body. Bind the value to an environment variable in the step's `env:` block and reference it quoted from the shell (`\"$TITLE\"`), exactly as release.yml:22-25 already does. Apply the same treatment to every author-controlled field — `.body`, `.head.ref`, `github.head_ref`, `github.event.comment.body`.",
+      "traceability": ["CWE-94", "CWE-78", "CWE-77", "A05:2025", "CICD-SEC-4", "SSDF PW", "NIST 800-53 SI"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation INF-14 names is the `env:` indirection with a quoted shell reference. This step has no `env:` block at all; the interpolation sits inline in the script text."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`github.event.pull_request.title` is written by whoever opens the pull request. It is not one of the fields the procedure lists as outside the attacker's reach (`github.sha`, `github.run_id`, `github.repository`), and no allowlist or sanitisation stands between it and the shell."
+        }
+      ],
+      "limits": "Exploitability was argued from the trigger and the interpolation, not demonstrated: no payload was crafted and nothing was executed anywhere. The exact quoting a title must satisfy was not enumerated."
+    },
+    {
+      "id": "F-003",
+      "title": "permissions: write-all on a fork-triggerable workflow",
+      "procedure": "INF-15",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 7
+      },
+      "evidence": "deploy.yml:7 `permissions: write-all`, declared at workflow level on a workflow whose only trigger is `pull_request_target` (:4). The job needs nothing beyond reading the repository to run `npm ci && npm run build` (:16); it writes no comment through the API and calls no step that needs a token. Compare release.yml:7-8 (`permissions: contents: read`) and :14-16, which grants `id-token: write` per job for provenance and nothing else.",
+      "impact": "Every job in this workflow receives a GITHUB_TOKEN with write on all scopes — contents, packages, actions, deployments, issues, pull requests — regardless of what it needs. On its own this is a least-privilege failure that turns any code-execution defect in the workflow into repository write instead of repository read; here it is what converts F-001 and F-002 from runner access into repository compromise.",
+      "preconditions": "Any path that executes code or an action inside this workflow. The permission itself is granted unconditionally on every run.",
+      "recommendation": "Delete the `write-all` line and declare `permissions:` per job at the minimum the job actually needs — for a build-and-comment preview that is `contents: read`, plus `pull-requests: write` only on a job that genuinely posts a comment through the API, and only in a workflow that does not execute untrusted code. Set the repository or organization default GITHUB_TOKEN permission to read-only so an omitted block fails closed.",
+      "traceability": ["CWE-284", "CWE-732", "CWE-522", "A01:2025", "CICD-SEC-2", "CICD-SEC-5", "SSDF PO", "NIST 800-53 AC", "CCM IAM"],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation is a job holding privilege that a fork cannot reach — `push` to main, or `release`. This workflow's only trigger is `pull_request_target` (:4), which is precisely the fork-reachable one, and it fires without maintainer approval."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-08's exculpation here is an organization that pins the default GITHUB_TOKEN to read-only, and it only bites when the `permissions:` block is missing. The block is present and explicit at :7, and an explicit workflow-level block overrides the repository or organization default upward, so no setting outside the tree changes what this line grants."
+        }
+      ],
+      "limits": "Which repository or environment secrets exist, and whether branch protection would reject a push made with this token, are settings outside the tree and were not evidenced."
+    },
+    {
+      "id": "F-004",
+      "title": "Inline IAM policy grants Action \"*\" on Resource \"*\" to the worker role",
+      "procedure": "INF-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 49,
+        "component": "aws_iam_role_policy.worker"
+      },
+      "evidence": "main.tf:42-53 `aws_iam_role_policy.worker` attaches to `aws_iam_role.worker` a single statement with `Effect = \"Allow\"`, `Action = \"*\"` (:49) and `Resource = \"*\"` (:50), with no `Condition` block. The role is assumable by the `ec2.amazonaws.com` service principal (main.tf:80-83 with data.aws_iam_policy_document.assume at :90-98), so it is a standing instance-profile role, not an ephemeral session. No SCP, permission boundary or second narrowing statement exists anywhere in the tree — the only other inline policy, `aws_iam_role_policy.deployer` (:55-67), is scoped and carries an `aws:ResourceAccount` condition, which is the shape this one lacks.",
+      "impact": "Anything that executes on an instance carrying this role holds administrator over the whole AWS account: read and exfiltrate the billing reports bucket, read or delete the billing database, create IAM users and access keys for persistence, disable logging. A server-side request forgery or a code-execution bug on the workload becomes account takeover through the instance metadata service, with no further privilege escalation step needed.",
+      "preconditions": "Code execution, SSRF or credential access on a workload that carries the worker instance profile — the wildcard is not reachable from the internet on its own.",
+      "recommendation": "Replace the wildcard with the actions the worker genuinely performs, scoped to the specific resource ARNs, and add a condition narrowing the account (`aws:ResourceAccount`) or a tag, following the shape `aws_iam_role_policy.deployer` already uses at :55-67. Attach an IAM permission boundary to the role so a future wildcard cannot exceed it, and enforce IMDSv2 (`http_tokens = \"required\"`) on any instance that carries the profile so SSRF cannot mint the credentials.",
+      "traceability": ["CWE-284", "CWE-732", "CWE-269", "A01:2025", "CICD-SEC-2", "SSDF PO", "NIST 800-53 AC", "CCM IAM", "CIS v8.1 Control 6", "ATT&CK T1078"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No condition on the statement, and no SCP, Azure Policy or permission boundary anywhere in the tree — grep for `Condition`, `boundary` and `organizations` returns only the deployer policy's `aws:ResourceAccount` at :64, which applies to a different role."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bounded reading INF-01 allows is a wildcard in an ephemeral deployment role with a short session and another statement narrowing the real ARN. This role is assumed by the EC2 service (:80-83), which is a standing instance profile, the policy has exactly one statement, and nothing narrows it."
+        }
+      ],
+      "limits": "Which workloads carry this instance profile is not declared in the repository — no aws_instance, launch template or autoscaling group exists here — so the population of principals that can reach the wildcard was not established, only that the grant itself is unconditional."
+    },
+    {
+      "id": "F-005",
+      "title": "S3 public-access guardrail explicitly disabled on the billing reports bucket",
+      "procedure": "INF-02",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 15,
+        "component": "aws_s3_bucket_public_access_block.reports"
+      },
+      "evidence": "main.tf:13-19 sets all four flags of `aws_s3_bucket_public_access_block.reports` to false — `block_public_acls`, `block_public_policy`, `ignore_public_acls`, `restrict_public_buckets` — on `aws_s3_bucket.reports` (`acme-billing-reports-${var.env}`, :9-11). The bucket is the write target of the deployer role (:63 `Resource = \"${aws_s3_bucket.reports.arn}/*\"`, actions `s3:PutObject`, `s3:GetObject`). No CloudFront distribution or origin access identity is associated with it; the OAI at :25-27 belongs to the marketing bucket.",
+      "impact": "The account-level guardrail that makes accidental public exposure impossible is switched off for the bucket that holds billing reports. With all four flags false, a single object ACL set by whatever writes to the bucket, or one bucket policy with `Principal = \"*\"`, makes billing data anonymously readable immediately and silently — no second control stands in the way, and the block that would have neutralised such a grant is gone.",
+      "preconditions": "A public grant must still be created — a `public-read` object ACL at upload time, or a bucket policy naming a wildcard principal. Nothing in the tree creates one today, which is why this is the removal of a guardrail rather than a live exposure.",
+      "recommendation": "Set all four flags to true, which is the AWS default for buckets created since April 2023 and the reason this resource had to be written explicitly to defeat it. If some object genuinely must be public, serve it from the marketing bucket through CloudFront with the origin access identity pattern already used at :25-40, and leave the reports bucket blocked. Add `aws:SecureTransport` denial and access logging on the same bucket while it is being changed.",
+      "traceability": ["CWE-668", "CWE-552", "CWE-200", "A01:2025", "A02:2025", "NIST 800-53 AC", "CCM DSP", "CIS v8.1 Control 3"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating pattern INF-02 names — public access served by a CDN with an origin identity while the bucket itself stays blocked — is present in this file, but for a different bucket: the OAI at :25-27 and the policy at :29-40 belong to `public_site`. Nothing fronts `reports`."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bucket is not a public-assets bucket by design: it is named `acme-billing-reports-${var.env}` and the only declared writer is the deployer role's `s3:PutObject` (:62-63). INF-02 asks what the pipeline writes there, and what it writes is billing reports."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The four flags are literal `false` values in the resource, not variables an environment could set to true; no `var.` or conditional stands between the code and the API call."
+        }
+      ],
+      "limits": "This establishes that the guardrail is disabled, not that any object is public today: no ACL or bucket policy granting an anonymous principal exists in the tree, and no bucket was enumerated or requested. What the pipeline actually uploads was not observed either — only the ARN pattern it is permitted to write."
+    },
+    {
+      "id": "F-006",
+      "title": "Billing RDS instance created with storage encryption explicitly disabled",
+      "procedure": "INF-03",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 76,
+        "component": "aws_db_instance.billing"
+      },
+      "evidence": "main.tf:69-78 `aws_db_instance.billing`, engine postgres, 100 GB allocated, with `storage_encrypted = false` at :76 — written explicitly rather than omitted. No `kms_key_id` appears anywhere in the tree, and no other encryption attribute is set on the instance.",
+      "impact": "The volume holding the billing database, its automated backups and every snapshot taken from it are stored unencrypted. Anyone who reaches the storage layer or obtains a snapshot — a snapshot copied or shared to another account, a restore performed by a lower-privileged operator, the wildcard worker role of F-004 calling rds:CreateDBSnapshot — reads customer billing records without needing the database credentials at all. It also forecloses the KMS key policy as a second authorisation gate over that data.",
+      "preconditions": "Access to a snapshot, a restore, or the underlying storage. The unencrypted state is not itself reachable from the network.",
+      "recommendation": "Set `storage_encrypted = true` with a customer-managed `kms_key_id` whose key policy is separate from the database's IAM permissions. This attribute cannot be changed in place: the instance must be snapshotted, the snapshot copied with encryption enabled, and the instance restored from the encrypted copy — plan it as a maintenance window, not as a one-line edit. Encrypt existing snapshots or delete them once the migration is complete.",
+      "traceability": ["CWE-311", "CWE-319", "A04:2025", "A02:2025", "NIST 800-53 SC", "CCM CEK", "CIS v8.1 Control 3", "PCI DSS v4.0.1 req. 4"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation INF-03 offers is a provider that encrypts the service by default, which would reduce the finding to 'no customer-managed key'. It does not apply to RDS: storage encryption is opt-in, must be chosen at creation and is immutable afterwards — and here it is not merely omitted, it is set to `false` at :76, which defeats any account-level default."
+        }
+      ],
+      "limits": "Encryption in transit was not assessed for this instance: no parameter group is declared in the tree, so whether `rds.force_ssl` is enforced on the postgres endpoint could not be read from the repository. What data the database actually holds is inferred from its identifier and the product description in README.md; data classification is the client's call."
+    },
+    {
+      "id": "F-007",
+      "title": "Security group opens SSH (22/tcp) to 0.0.0.0/0",
+      "procedure": "INF-04",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "modules/network/main.tf",
+        "line": 10,
+        "component": "aws_security_group.admin"
+      },
+      "evidence": "modules/network/main.tf:1-12 `aws_security_group.admin` (name `admin-ssh`, description \"operator access to the bastion\") with an ingress of `from_port = 22`, `to_port = 22`, `protocol = \"tcp\"`, `cidr_blocks = [\"0.0.0.0/0\"]` at :10. The CIDR is a literal, not a variable: a calling root cannot narrow it. No NACL, managed firewall or VPN resource is declared anywhere in the tree, and no root module instantiates modules/network (grep for `module \"` across the target returns nothing).",
+      "impact": "If this group is attached to the bastion it describes, the management port of the host that fronts the private network is reachable from the entire internet. That exposes the SSH service to credential-stuffing and key-brute-force at internet scale and to any pre-authentication vulnerability in the daemon, and it makes the bastion — whose purpose is to be the single narrow door into the VPC — the widest surface in the account.",
+      "preconditions": "The module must be instantiated and the group attached to an instance with a public address or an internet-routable path.",
+      "recommendation": "Remove the 0.0.0.0/0 ingress on 22. Replace bastion SSH with AWS Systems Manager Session Manager, which needs no inbound rule at all; if a bastion must remain, expose the port only to a `var.admin_cidrs` list the caller must supply (no permissive default) or to the VPN's security group, and let the module fail rather than default to the world. Keep the CIDR parameterised so the permissive value cannot be baked into every consumer of the module.",
+      "inference": "That the group is created and attached to a host with an internet route. No root in the repository calls modules/network, and no instance, subnet, route table or ENI association is declared anywhere in the tree, so creation and reachability were inferred from the module's stated purpose ('operator access to the bastion') and from the resource being shipped as a reusable unit — not observed.",
+      "traceability": ["CWE-1327", "CWE-284", "CWE-923", "A01:2025", "A02:2025", "NIST 800-53 SC", "CCM IVS", "CIS v8.1 Control 12"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "INF-04 allows a NACL or managed firewall in front only when it is declared in the same repository, and instructs that it must not be assumed otherwise. Grep across the target finds no aws_network_acl, no aws_networkfirewall_* and no VPN resource."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The intended-exposure construct is the sibling group in the same file: `aws_security_group.public_alb` (:14-25) opens 443 to the world, which is the point of an internet-facing load balancer and is ruled out below. This group is 22/tcp on a bastion, which the procedure classifies as a finding rather than a review item."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The 'it is a module, not a root' reading is true of the directory but does not make the construct benign here: the CIDR is a hardcoded literal rather than a variable with a permissive default, so no consuming root can override it — the module reading aggravates the defect instead of excusing it."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "Whether this path exists in what is actually applied could not be established: no root in the repository instantiates modules/network, there is no state, no plan output and no git history to consult, and Terraform has no build artifact that would settle it. Per the invariant, this caps the finding at `probable`."
+        }
+      ],
+      "limits": "No reachability was established and none could be: no scanner resolves a route table, no subnet or instance is declared here, and nothing was resolved, connected to or scanned. This finding is about what the module grants when used, not about a host confirmed to be listening."
+    },
+    {
+      "id": "F-008",
+      "title": "Terraform root declares no backend: state with the database password lands on local disk",
+      "procedure": "INF-17",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "main.tf",
+        "line": 1,
+        "component": "terraform block"
+      },
+      "evidence": "main.tf:1-3 `terraform { required_version = \">= 1.6\" }` — no `backend` block and no `cloud` block; grep for `backend \"` across the target returns nothing. This directory is a root, not a module: it declares `provider \"aws\"` (:5-7), variables (:100-106) and resources. `var.db_password` (:103-106, `sensitive = true`) feeds `aws_db_instance.billing.password` (:75). No Terragrunt or wrapper configuration exists in the tree that would generate a backend.",
+      "impact": "Without a backend, state is written to terraform.tfstate on whatever machine runs apply. State records resource attributes in cleartext — including the RDS master password, which `sensitive = true` only masks in CLI output and never in the state file — so the credential ends up on operator laptops and in backups, with no encryption at rest, no versioning to recover a corrupted apply and no locking to prevent two concurrent applies from diverging. It is also the file most commonly committed by accident, at which point the password is compromised and must be rotated rather than deleted.",
+      "preconditions": "Someone runs terraform against this root. Reading the credential afterwards requires access to that machine or to whatever the file is copied into.",
+      "recommendation": "Declare a remote backend with encryption, versioning and locking — for S3, a dedicated state bucket with `encrypt = true`, a KMS key, versioning and object lock, plus a DynamoDB table or S3 native locking — and give each environment its own key or workspace rather than one shared state. Add `*.tfstate*` to .gitignore. Stop passing the master password through a variable at all: let RDS manage it (`manage_master_user_password = true`) or source it from Secrets Manager, so the value never enters state or a tfvars file.",
+      "inference": "How and where this root is actually applied. No workflow in the repository runs terraform — deploy.yml runs npm and release.yml runs npm publish — so the machine that holds the state file, and whether an operator supplies a backend on the command line through an out-of-tree wrapper, was not observed. What is observed is that the configuration as committed defaults to local state.",
+      "traceability": ["CWE-312", "CWE-200", "CWE-668", "A02:2025", "A04:2025", "CICD-SEC-1", "CICD-SEC-7", "NIST 800-53 CM", "CCM DSP"],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second exculpation INF-17 offers — remote state exists and a stray local .tfstate is just a trial-run artifact — does not apply: no .tfstate or .tfstate.backup is present in the tree (the target holds five files) and no backend is declared for one to be an artifact of."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation is 'the directory is a reusable module, not a root'. This directory has a provider block (:5), variables and resources, which makes it a root. The module in this repository, modules/network, correctly declares no backend and is ruled out below."
+        }
+      ],
+      "limits": "The target carries no git metadata, so INF-17's second check — whether a state file was ever committed — could not be run in either direction. If history shows one, the database credential is to be treated as compromised and the deliverable becomes a rotation plan."
+    },
+    {
+      "id": "F-009",
+      "title": "No audit logging, flow logs or alerting defined for any resource in the infrastructure",
+      "procedure": "INF-06",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "main.tf",
+        "line": 1
+      },
+      "evidence": "Grep across the target for `cloudtrail`, `flow_log`, `logging`, `diagnostic_setting` and `logging_project_sink` returns no hits. The tree declares two S3 buckets (:9-11, :21-23) with no `aws_s3_bucket_logging`, an RDS instance (:69-78) with no `enabled_cloudwatch_logs_exports`, two IAM roles with inline policies and no alerting on policy change, a network module with security groups and no `aws_flow_log`, and no `aws_cloudwatch_log_group` or metric alarm anywhere.",
+      "impact": "There is no record from which to reconstruct who read the billing reports bucket, who used the wildcard worker role, or when a security group changed. An attacker who reaches any of the findings above operates without a trail, and the incident response that follows has nothing to query: detection time is unbounded rather than long, and A09:2025 covers the missing alerting as well as the missing log.",
+      "preconditions": "None — this is the absence of a control, not a reachable path.",
+      "recommendation": "Declare, in this repository, a multi-region `aws_cloudtrail` with log file integrity validation writing to a dedicated bucket with object lock and retention, `aws_flow_log` on the VPC the network module attaches to, `aws_s3_bucket_logging` on the reports bucket, and CloudWatch metric alarms on IAM policy changes, access key creation and CloudTrail configuration changes. If logging is genuinely centralised in a security account, attach the exported organization CloudTrail configuration or the landing-zone policy to the deliverable so this finding can be closed against evidence.",
+      "inference": "Whether an organization-level CloudTrail, a landing zone or an out-of-repository observability platform already covers this account. Nothing in the tree indicates one either way, and no exported configuration, ticket or written statement was provided; the finding asserts the gap in the infrastructure definition, and its real severity depends on that unobserved layer.",
+      "traceability": ["CWE-778", "A09:2025", "CICD-SEC-10", "SSDF PO", "NIST 800-53 AU", "CCM LOG", "CIS v8.1 Control 8"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The exculpation is centralised logging managed outside this repository by a security account or an organization policy. No exported artifact, ticket or written statement arrived, and INF-06 states that 'the landing zone turns it on' is not evidence. Absence of evidence is never HOLDS, so this is UNKNOWN and the finding cannot be reported as confirmed."
+        }
+      ],
+      "limits": "This is audited by absence in the repository, not by a scanner rule and not against the account. It establishes that the infrastructure definition creates no audit trail; it does not establish that no audit trail exists."
+    },
+    {
+      "id": "F-010",
+      "title": "Production database deletable with no final snapshot and no deletion protection",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 77,
+        "component": "aws_db_instance.billing"
+      },
+      "evidence": "main.tf:77 `skip_final_snapshot = true` on `aws_db_instance.billing`. The resource declares no `deletion_protection` and no `final_snapshot_identifier` (:69-78), and the root is parameterised by `var.env` (:101) with no conditional on it, so the same setting applies to every environment this root builds, production included.",
+      "impact": "A delete — by a mistaken `terraform destroy`, a resource rename that forces replacement, or a principal holding the wildcard policy of F-004 — removes the billing database and deliberately discards the final snapshot that would allow it to be restored. No exploit path is claimed for this item on its own; it is the control that decides whether such an event is an outage or a permanent loss of billing records.",
+      "preconditions": "Any action that deletes or replaces the instance, whether by an operator or by a compromised principal with rds permissions.",
+      "recommendation": "Set `deletion_protection = true` and `skip_final_snapshot = false` with an explicit `final_snapshot_identifier` for any environment that is not disposable, and drive the pair from `var.env` if ephemeral environments genuinely need the current behaviour. Confirm `backup_retention_period` explicitly rather than relying on the API default, and add `prevent_destroy` in a lifecycle block for the production instance.",
+      "traceability": ["NIST 800-53 CP", "CCM BCR", "CIS v8.1 Control 11"],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`skip_final_snapshot = true` is a legitimate intent in a disposable environment, but this root is not environment-specific: `var.env` only interpolates bucket names (:10, :22) and the database identifier (:70), and no conditional restricts the setting, so the same value ships to production."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-10 would apply if the impact did not reach the user. Irrecoverable loss of the billing database reaches them directly, so this is recorded at `low` with status `hardening` because no exploit path is asserted — not downgraded to informational."
+        }
+      ],
+      "limits": "Recoverability outside Terraform was not established: `backup_retention_period` is not declared, so automated backups fall to the AWS API default rather than to a value this repository sets, and whether snapshots are copied elsewhere could not be observed."
+    },
+    {
+      "id": "F-011",
+      "title": "actions/checkout pinned to a mutable tag in the deploy workflow",
+      "procedure": "INF-16",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 13
+      },
+      "evidence": "deploy.yml:13 `uses: actions/checkout@v4` — a tag, which is a mutable pointer. The same repository pins correctly one file over: release.yml:18 `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2`. Both jobs run on `runs-on: ubuntu-latest` (GitHub-hosted), so the self-hosted-runner half of INF-16 does not arise.",
+      "impact": "If the tag were ever repointed — the tj-actions/changed-files pattern, CVE-2025-30066, where every tag from v1 to v45.0.7 was moved to a commit that dumped runner secrets — this job would consume the new code on its next run with no change to the repository. Today this grants an attacker nothing: the tag belongs to GitHub's own `actions` organization and no compromise is claimed or observed. It is recorded because the inconsistency with release.yml means the practice exists in the repository and was simply not applied here.",
+      "preconditions": "Compromise of the upstream tag, which is outside the target and not demonstrated.",
+      "recommendation": "Pin every `uses:` by 40-character commit SHA with the version in a trailing comment, exactly as release.yml:18 does, and let Dependabot or Renovate bump the pins. Extend the same rule to any `container:` or `services:` image tag.",
+      "traceability": ["CWE-829", "CWE-494", "CWE-345", "A03:2025", "A08:2025", "CICD-SEC-3", "CICD-SEC-9", "SLSA Build L2", "SSDF PW"],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`actions/checkout` belongs to the `actions` organization, not to the owner of this repository, so the same-perimeter exculpation does not apply — although it is the highest-trust third party in the ecosystem, which is why the severity is informational."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "INF-16's own tooling note says `unpinned-uses` is flagged even where it is hardening rather than an exploitable finding today, and that is the case here: a first-party GitHub action, no compromise observed, no attacker capability granted. The finding is bounded to informational and kept, not deleted."
+        }
+      ],
+      "limits": "No dependency of the action was resolved and nothing was fetched from GitHub; whether the tag currently points at the commit release.yml pins was not checked, because that requires an online query against a third party."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Object storage readable by anyone — aws_s3_bucket.public_site and its bucket policy",
+      "procedure": "INF-02",
+      "outcome": "refuted",
+      "where": "main.tf:21-40. The name reads as public and there is no aws_s3_bucket_public_access_block for this bucket, but the policy grants `s3:GetObject` to `Principal = { AWS = aws_cloudfront_origin_access_identity.site.iam_arn }` (:35) — a specific IAM principal, not `*`, `allUsers` or `allAuthenticatedUsers`. This is exactly the construct INF-02 names as ruled out (FP-01: public access served through a CDN with an origin identity) and FP-05 (a marketing-site bucket by design, with no regulated data written to it by anything in this tree). Bound: buckets created since April 2023 block public access by default, so the missing block resource is not a grant; and no aws_cloudfront_distribution is declared here, so the distribution's own TLS and viewer-protocol settings were not assessed."
+    },
+    {
+      "class": "IAM wildcard — aws_iam_role_policy.deployer",
+      "procedure": "INF-01",
+      "outcome": "refuted",
+      "where": "main.tf:55-67. Actions are enumerated (`s3:PutObject`, `s3:GetObject`), the resource is a single bucket ARN prefix, and the statement carries `Condition = { StringEquals = { \"aws:ResourceAccount\" = var.account_id } }` at :64 — the precise condition FP-01 names for this procedure. Bound: `var.account_id` has no default and no tfvars is committed, so the value it takes at apply time was not observed."
+    },
+    {
+      "class": "Network rule open to 0.0.0.0/0 — aws_security_group.public_alb",
+      "procedure": "INF-04",
+      "outcome": "refuted",
+      "where": "modules/network/main.tf:14-25. Ingress 443/tcp from 0.0.0.0/0 on a group described as 'internet-facing load balancer'. FP-05 holds: opening 443 to the world is the purpose of a public balancer. Per the procedure the finding moves rather than disappearing — to the security groups of the instances behind it, which must accept only the balancer's group; those groups are not declared anywhere in this repository, so the moved finding could not be evaluated and is recorded as a bound, not as a clean result."
+    },
+    {
+      "class": "Template expression injection — release.yml head_commit.message",
+      "procedure": "INF-14",
+      "outcome": "refuted",
+      "where": ".github/workflows/release.yml:22-25. `github.event.head_commit.message` is attacker-influenced, but it reaches the shell through `env: TITLE:` and is referenced as a quoted variable `\"$TITLE\"`, never interpolated into the script text. That is the exculpation INF-14 names under FP-01 and FP-02, and it is the correct pattern that deploy.yml:18 fails to use."
+    },
+    {
+      "class": "Supply chain and credential handling in the release workflow",
+      "procedure": "INF-16",
+      "outcome": "refuted",
+      "where": ".github/workflows/release.yml. checkout is pinned by 40-character SHA (:18), `persist-credentials: false` (:20) keeps the token out of .git/config, workflow permissions are `contents: read` (:7-8) with `id-token: write` granted per job only for provenance (:14-16), the job sits behind `environment: production` (:13), and the trigger is `push` on tags (:4-5), unreachable from a fork. Nothing to report in this file."
+    },
+    {
+      "class": "Long-lived static cloud credentials instead of OIDC federation",
+      "procedure": "INF-05",
+      "outcome": "refuted",
+      "where": "Whole target. No aws_iam_access_key, google_service_account_key or azuread_application_password resource, no output exposing a secret, and no `secrets.AWS_*` reference in either workflow (grep for `access_key` and `secrets.` returns no hits). The one workflow that authenticates outward uses OIDC: `id-token: write` with `npm publish --provenance` (release.yml:16, :26)."
+    },
+    {
+      "class": "Hardcoded database credential",
+      "procedure": "INF-17",
+      "outcome": "refuted",
+      "where": "main.tf:75 and :103-106. The RDS password is supplied by `var.db_password`, a typed variable declared `sensitive = true` with no default; no .tfvars, .auto.tfvars or environment file is present in the tree and no literal credential appears in any of the five files. FP-02 holds — the value is not in the repository. The related residual risk, that the variable's value lands in cleartext state, is reported separately as F-008."
+    },
+    {
+      "class": "Missing S3 server-side encryption configuration",
+      "procedure": "INF-03",
+      "outcome": "refuted",
+      "where": "main.tf:9-11 and :21-23. Neither bucket declares an aws_s3_bucket_server_side_encryption_configuration, which a scanner flags, but SSE-S3 has applied to all new objects by default since January 2023 — the FP-01 exculpation the procedure states verbatim ('the provider encrypts that service by default'). The residual would be 'no customer-managed key', which INF-03 itself rates lower and which is not warranted for these buckets on the evidence here. Not reported; contrast RDS, where the same rule does not apply and F-006 stands."
+    },
+    {
+      "class": "Publicly accessible database instance",
+      "procedure": "INF-18",
+      "outcome": "refuted",
+      "where": "main.tf:69-78. `publicly_accessible` is not set, so it takes the provider default of false; no aws_eip, no `associate_public_ip_address` and no aws_db_subnet_group appears anywhere in the tree. Bound: the subnet group is not declared here, so the instance's effective network placement was not established — only that nothing in this repository asks for a public endpoint."
+    },
+    {
+      "class": "Over-permissive trust policy on the IAM roles",
+      "procedure": "INF-01",
+      "outcome": "refuted",
+      "where": "main.tf:90-98. The shared assume-role document names `Service` principal `ec2.amazonaws.com`, not `Principal = \"*\"` and not an external account, so the confused-deputy conditions INF-01 asks for (`sts:ExternalId`, an account condition) do not apply to a service principal. The wildcard problem in this file is the permission policy, reported as F-004, not the trust policy."
+    },
+    {
+      "class": "Terraform module without a backend block",
+      "procedure": "INF-17",
+      "outcome": "refuted",
+      "where": "modules/network/main.tf. The directory declares no backend, which is correct and is FP-09's stated exculpation: it holds only resources and `variable \"vpc_id\"` (:27), with no provider block, so it is a reusable module rather than a root. Reporting it would be the mirror-image error of F-008, which is about main.tf and is a root."
+    },
+    {
+      "class": "Containers, images and Kubernetes workloads",
+      "procedure": "INF-07",
+      "outcome": "not executed",
+      "where": "§2 and §3 of the pack (INF-07..INF-12) were not run: the inventory contains no Dockerfile, Containerfile, compose file, Helm chart or manifest with a `kind:`. Per the pack's contract, a pattern absent from the repository means the procedure does not apply and nothing is reported."
+    },
+    {
+      "class": "Effective network exposure against live infrastructure",
+      "procedure": "INF-18",
+      "outcome": "blocked",
+      "where": "Only the documentary half was performed — the inventory of security groups and internet-facing constructs declared in the tree, which produced F-007 and the public_alb rule-out. Nothing was resolved, connected to, enumerated or scanned. What would unblock the live half: written authorization naming scope, window and contact, plus an account identifier, per the NIST SP 800-115 framing the procedure requires."
+    }
+  ]
+}

@@ -77,8 +77,23 @@ if ensure_zizmor; then
     ZARGS="$ZARGS --no-online-audits"
     gate_info "zizmor: online audits DISABLED - impostor-commit, known-vulnerable-actions and stale-action-refs were NOT checked (that runs in the supply-chain-audit workflow)"
   fi
+  # Scoped to THIS repository's own workflows, not the whole tree. bench/cases/
+  # ships workflows written to be insecure - that is what the evaluation bench
+  # is - and auditing them here would mean the gate reports the bench's planted
+  # defects as our own. The scoping is not a hole: the check below fails if a
+  # workflow appears anywhere outside the audited directory and outside the
+  # bench, which is the only way this exclusion could hide a real one.
+  stray="$(find "$ROOT" -path "$ROOT/.git" -prune -o -path '*/.github/workflows/*' -type f \
+            \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null \
+            | grep -v "^$ROOT/.github/workflows/" | grep -v "^$ROOT/bench/cases/" || true)"
+  if [ -n "$stray" ]; then
+    gate_fail "workflow file(s) outside the audited directory and outside bench/cases:"
+    printf '%s\n' "$stray" | while IFS= read -r f; do gate_log "        ${f#"$ROOT"/}"; done
+    FAILURES=$((${FAILURES:-0} + 1))
+  fi
+
   # shellcheck disable=SC2086
-  "$ZIZMOR_BIN" $ZARGS "$ROOT" > "$ZOUT" 2>&1
+  "$ZIZMOR_BIN" $ZARGS "$ROOT/.github" > "$ZOUT" 2>&1
   zrc=$?
   case "$zrc" in
     0)  gate_ok "zizmor $ZIZMOR_VERSION: no findings" ;;

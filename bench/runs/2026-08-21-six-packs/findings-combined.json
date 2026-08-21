@@ -1,0 +1,1651 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "bench/cases (six)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "six blinded specialists"
+  },
+  "findings": [
+    {
+      "id": "F-1001",
+      "title": "Caller identity and role are resolved from an unverified JWT (`jwt.decode`)",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/auth.js",
+        "line": 6,
+        "component": "currentUser(req)"
+      },
+      "evidence": "The whole chain is inside one function. Source: `req.headers.authorization`, attacker-controlled on every request. Transformation: `const bearer = (req.headers.authorization || '').replace('Bearer ', ''); const claims = jwt.decode(bearer);`. Sink: `return { id: claims && claims.sub, role: claims && claims.role };`. `jsonwebtoken@9.0.2` (package.json:8) documents `decode` as a parser that does not check the signature, the algorithm or `exp`; the verifying entry point is `jwt.verify`, which does not appear anywhere in the scope (`grep -rn 'jwt.verify' target-express` returns nothing). Both `alg: none` and a token signed with an arbitrary key are therefore accepted, and so is an expired one.",
+      "impact": "Anyone who can reach the API asserts any identity and any role by base64-encoding a JSON payload; no credential, session or prior access is required. The `sub` claim it returns is the same value the handlers use as the ownership filter (`owner_id = $2` with `req.user.id`, routes/invoices.js:16 and 24 and 32), so identity forgery collapses those filters and turns every scoped query into a read of any chosen user's rows. The `role` claim it returns carries whatever privilege the consuming code attaches to a role name.",
+      "preconditions": "Network reach to any endpoint whose handler consumes `currentUser`. No authentication, no valid token and no user interaction.",
+      "recommendation": "Replace `jwt.decode` with `jwt.verify(bearer, key, { algorithms: ['RS256'], issuer, audience })` - an explicit single-algorithm allowlist, a pinned key, and `iss`/`aud` checked - and fail closed when verification throws, returning 401 rather than an object with undefined fields. Add a unit test that feeds the verifier a token with `alg: none` and a token signed with a foreign key and asserts both are rejected; keep `decode` only where the result never reaches an access decision, as `tagRequest` does.",
+      "traceability": [
+        "CWE-347",
+        "CWE-345",
+        "CWE-287",
+        "ASVS 5.0 V9",
+        "A07:2025",
+        "API2:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer verifies the token before or after this call. `jwt.verify` appears nowhere in the scope, and `currentUser` returns its object unconditionally - there is no branch that rejects a token, so there is no control to skip around."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation the procedure names for this class is `decode` feeding only logs or metrics while authorization comes from a server-side session. That reading fits the sibling `tagRequest` and not this function: `currentUser` returns `id` and `role`, which is an identity object and not telemetry, and it never touches `req.session`."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: `jsonwebtoken` is the real dependency (package.json:8), `decode` is that library's non-verifying parser, and the function name, the comment at lib/auth.js:3 and the returned shape all state that this is the caller resolver."
+        }
+      ],
+      "limits": "The assignment `req.user = currentUser(req)` is not present in the scoped files - there is no application bootstrap or middleware registry here. What is observed end to end is the defect as reported: this function derives identity and role from an unverified token. The blast radius stated under impact rests on the routes reading `req.user.id`, which is read in routes/invoices.js but whose producer was not seen; whether an admin-gated function exists that the forged `role` would open could not be measured in this scope."
+    },
+    {
+      "id": "F-1002",
+      "title": "Invoice detail is fetched by client-supplied id with no ownership or tenant filter (BOLA)",
+      "procedure": "WEB-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 8,
+        "component": "GET /invoices/:id"
+      },
+      "evidence": "`const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice);`. The only predicate is the identifier the client typed into the path. The handler never reads `req.user`, there is no `router.use` on this file, and no `Policy`, guard or scope call appears between the request and the query. The contrast is inside the same file and settles it: the sibling handler for the same screen, `GET /receipts/:id` at line 13, issues `SELECT * FROM receipts WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]` - the same author, the same shape, the ownership predicate present. Its absence here is an omission, not a design where the object is public: the other three handlers in the file (lines 15, 24, 32) all carry `owner_id`, so invoices are owner-scoped data.",
+      "impact": "Any caller who reaches the endpoint reads any invoice in the table by iterating or guessing `:id` - billing amounts, line items and whatever else the row carries, for every customer. The parameterized placeholder makes this invisible to an injection scanner: the query is safe from injection and wide open on authorization.",
+      "preconditions": "Whatever authentication the unseen upstream middleware imposes; nothing beyond it. No role and no relationship to the target invoice is needed. Chained with F-001 the precondition disappears entirely.",
+      "recommendation": "Scope the query to the subject the way the receipts handler already does: `SELECT * FROM invoices WHERE id = $1 AND owner_id = $2` with `[req.params.id, req.user.id]`, and return 404 rather than 403 so the endpoint does not confirm the existence of other tenants' rows. Better, make the scope unskippable rather than per-handler - a repository layer that requires the subject, or row-level security in the database - so a future handler cannot forget it. Cover it with an integration test where user A requests user B's invoice on read, update and delete.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-284",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mandatory scoping layer. `db.query` receives a finished SQL string and a parameter array (lib/db.js:2), so nothing between the handler and the database can inject a tenant predicate; and the file's own convention is per-handler scoping, which the sibling routes apply by hand and this one omits."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The router is the package entry point (`\"main\": \"routes/invoices.js\"`, package.json:5). The route is registered unconditionally - no environment flag, no debug guard, no build step that could strip it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing marks this endpoint as intentionally public: the comment at routes/invoices.js:6 places it on the billing screen, and the three sibling handlers filter the same class of data by `owner_id`."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoices are per-customer financial records - the table is filtered by `owner_id` elsewhere in this same file, which is the author's own statement that its rows belong to somebody."
+        }
+      ],
+      "limits": "The invoice model is not in scope, so the exact columns `SELECT *` returns could not be enumerated; the finding rests on the row being owner-scoped, which the sibling queries establish, not on any particular column."
+    },
+    {
+      "id": "F-1003",
+      "title": "SQL injection through an unvalidated `ORDER BY` interpolated from `req.query.order`",
+      "procedure": "WEB-07",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/routes/invoices.js",
+        "line": 24,
+        "component": "GET /invoices"
+      },
+      "evidence": "`const order = req.query.order || 'created_at';` then `db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id])`. The default `'created_at'` applies only when the parameter is absent; any non-empty value passes through untouched - no allowlist, no map, no cast, no identifier quoting - and is concatenated into the SQL text. `owner_id` is correctly bound as `$1`, which is precisely what makes the construct look safe at a glance: the injection is in the clause that cannot take a placeholder. The same file shows the author knows the right control: `GET /payments` at line 29-32 resolves its sort column through the `SORTABLE` map, so the string that reaches its `ORDER BY` is a code literal.",
+      "impact": "The attacker writes arbitrary SQL expression text into the query. `ORDER BY` accepts subqueries and CASE expressions, so a boolean-ordering oracle - `ORDER BY (CASE WHEN (SELECT ...) THEN 1 ELSE 2 END)` - extracts rows the `owner_id = $1` filter was meant to withhold, one bit per request, including other tenants' data and anything else the database role can read. Type and syntax errors also surface as database error text if the error handler propagates it. The bound filter gives no protection here: it constrains which rows are returned, not what the injected expression may read.",
+      "preconditions": "Reaching the endpoint and setting one query-string parameter. No role, no special configuration, no user interaction.",
+      "recommendation": "Resolve the sort key through a closed map exactly as `/payments` does - `const column = SORTABLE_INVOICES[req.query.order] || SORTABLE_INVOICES.date;` - so the value that reaches the SQL text is always a literal from the server's own table, and validate the direction the same way instead of accepting `asc`/`desc` from the client as text. Reject unknown keys explicitly rather than silently falling back, so the tests can see the rejection. Never interpolate an identifier that has passed through a request.",
+      "traceability": [
+        "CWE-89",
+        "CWE-20",
+        "WSTG-INPV-05",
+        "ASVS 5.0 V1",
+        "A05:2025",
+        "CAPEC-66"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer normalizes the value: it goes from `req.query` to the template literal in one statement, and `db.query` takes the SQL text already assembled (lib/db.js:2), so nothing downstream can re-parse or reject it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, `order` is `req.query.order` - the raw query string, chosen by the caller. It is neither a literal nor allowlist-constrained; the `|| 'created_at'` fallback fires only on an absent or empty value and therefore constrains nothing an attacker sends."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "lib/db.js is a declared stand-in for the bench (lib/db.js:1), so no statement executes in this tree, but the sink is a SQL execution point by contract: the call shape `query(text, params)` with `$1` placeholders is node-postgres, and the first argument is the statement text. Reading it as anything but SQL would ignore what every call site in routes/invoices.js does with it."
+        }
+      ],
+      "limits": "The real driver is not present, so the dialect's exact capabilities were not observed. Under the node-postgres extended protocol that `$1` implies, stacked statements are not available, which is why the impact is stated as expression-level exfiltration through an ordering oracle rather than arbitrary statement execution; on a driver that allows multiple statements the ceiling is higher."
+    },
+    {
+      "id": "F-1004",
+      "title": "Server-side request forgery: `POST /branding/preview` fetches any URL the client supplies and returns the response body",
+      "procedure": "WEB-10",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/remote.js",
+        "line": 6,
+        "component": "fetchLogo(url), reached from routes/invoices.js:38"
+      },
+      "evidence": "The chain is observed end to end across two files. Source: `req.body.logoUrl` (routes/invoices.js:38). Call: `const image = await fetchLogo(req.body.logoUrl);`. Sink: `const response = await fetch(url, { redirect: 'follow' });` (lib/remote.js:6) - the URL is passed to `node-fetch@2.7.0` unparsed and unchecked, with redirect following left on. Return path: `res.type('image/png').send(image)` (routes/invoices.js:39) sends the fetched bytes back to the caller, so the forged request is not blind. The module holds the correct control one function away and does not use it here: `fetchAsset` (lib/remote.js:11-15) parses the URL, tests `ALLOWED.has(parsed.hostname)` against the set declared at line 2 and calls fetch with `redirect: 'error'`. `fetchLogo` performs none of those three steps.",
+      "impact": "The server issues the request from its own network position and hands the response body back verbatim. That reaches loopback services, anything routable inside the private network, and the cloud instance metadata endpoint on 169.254.169.254 - which on a default IMDSv1 instance yields role credentials. `node-fetch` also honours schemes the caller chooses, so `file://` and non-HTTP schemes are worth testing on this path. Because redirects are followed, an allowlist added later at the string level would still be defeated by a permitted host redirecting to an internal address.",
+      "preconditions": "The ability to POST to the endpoint with a JSON body. No role is required and no authentication check is present in the handler.",
+      "recommendation": "Route this path through the control that already exists: parse the URL, require `https:`, test the hostname against `ALLOWED`, and set `redirect: 'error'` - that is, make `fetchLogo` call `fetchAsset` rather than `fetch`. Where arbitrary customer hosts really are a requirement, resolve the hostname and reject addresses in loopback, link-local, private and unique-local ranges (v4 and v6, and their decimal and mixed notations), re-check after every redirect hop rather than once before the first, and pin the connection to the address you validated to close the DNS-rebinding window. Cap the response size and content type, and prefer an egress proxy the application cannot bypass. Also confirm the endpoint requires an authenticated caller.",
+      "traceability": [
+        "CWE-918",
+        "CWE-20",
+        "ASVS 5.0 V4",
+        "A01:2025",
+        "API7:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating control exists in the same module but is not on this path: `ALLOWED` (lib/remote.js:2) is consulted only inside `fetchAsset` (line 13). `fetchLogo` is exported separately (line 18) and the route calls it directly, so the allowlist is a control a caller may forget - which the rule's own text excludes - and here the caller did forget it. No egress restriction, proxy configuration or network policy is present anywhere in the scope."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, the argument is `req.body.logoUrl` at routes/invoices.js:38 - a request body field, fully attacker-controlled, with no parse, scheme check or host check between it and `fetch`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The route is registered unconditionally in the package's main module (package.json:5, routes/invoices.js:37) and `fetchLogo` is a published export of lib/remote.js; no flag, build step or test guard removes either."
+        }
+      ],
+      "limits": "Not exercised: the safety contract forbids network access, so no canary request was made and the reachability of any particular internal target from the deployment's network position is not established here - what is established is that the destination is chosen by the caller. Whether the endpoint sits behind authentication could not be determined: there is no application bootstrap in scope."
+    },
+    {
+      "id": "F-1005",
+      "title": "Invoice note is interpolated into HTML without escaping (stored XSS sink)",
+      "procedure": "WEB-13",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-run/target-express/lib/render.js",
+        "line": 5,
+        "component": "invoiceNote(note)"
+      },
+      "evidence": "`return `<div class=\"note\">${note}</div>`;` - the argument is concatenated into markup with no transformation at all. The module imports `escape-html@1.0.3` at line 1 and applies it in the sibling function on the very next lines: `customerName` returns `<span class=\"name\">${escapeHtml(name)}</span>` (line 10), and `footer` coerces with `Number(year)` (line 15). Two of the three composers neutralize their input and this one does not, while its comment (lib/render.js:3) describes the argument as \"Free-text note the customer typed on the invoice\". A payload such as [REDACTED:payload] passed as `note` emerges as live markup inside the element.",
+      "impact": "Markup and script authored by whoever writes the invoice note execute in the browser of everyone who views the rendered invoice - typically the issuing company's billing staff, i.e. a different principal from the author. That yields session-riding actions in the viewer's context and disclosure of whatever the page holds. Severity is held at medium because the viewer population and the delivery path are not observed in this scope; if the note is rendered into an authenticated back-office page, it is a high.",
+      "preconditions": "The ability to set the note text on an invoice, and a victim who views the rendered invoice.",
+      "recommendation": "Apply the module's own control: `return `<div class=\"note\">${escapeHtml(note)}</div>`;`. If the note is meant to carry formatting, run it through an allowlist sanitizer (`sanitize-html`, DOMPurify) after the last transformation rather than before, and never with escaping disabled. Add a rendering test that feeds an inert marker payload and asserts the output contains the escaped form. Serve a CSP with a nonce and without `unsafe-inline` as depth, not as the fix.",
+      "inference": "Reachability with attacker-controlled text. No caller of `invoiceNote` exists in the scoped files - lib/render.js is exported (line 18) but nothing in routes/invoices.js imports it - so that the `note` argument carries request data was read from the function's declared purpose (comment, lib/render.js:3) and from its siblings escaping the same class of value, not observed as a source-to-sink trace.",
+      "traceability": [
+        "CWE-79",
+        "CWE-116",
+        "ASVS 5.0 V1",
+        "A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer escapes for it: the function returns a raw string, and escaping in this module is applied per-composer by hand (line 10), which is exactly the kind of control a caller can omit - as this one does."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The value's origin could not be traced backwards past the function's own parameter, because no caller is present in the scope. The declared provenance (lib/render.js:3, \"the customer typed\") points at user input, but I did not see the assignment. This is the single reason the finding is `probable` rather than `confirmed`."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No CSP, no server-side sanitizer and no downstream escaping exists anywhere in the scope that would bound the impact to informational - and per the procedure a CSP would adjust severity rather than close the finding in any case."
+        }
+      ],
+      "limits": "The consuming template, the response headers and the audience of the rendered invoice are all outside the scope, so the finding is stated at the sink. Confirming it needs one line: the call site that passes a persisted note into `invoiceNote`."
+    },
+    {
+      "id": "F-2001",
+      "title": "Archive extraction without a filter writes outside the destination (packer unpack)",
+      "procedure": "LOC-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "packer.py",
+        "line": 18,
+        "component": "unpack()"
+      },
+      "evidence": "packer.py:15-18 - unpack() opens a caller-supplied tar with tarfile.open(archive) and calls tf.extractall(dest) with no filter= argument, no member iteration and no canonicalization of the joined path. main() at packer.py:91-92 dispatches the only implemented subcommand to it with the destination hardcoded to the current working directory: unpack(args.value, \".\"). A member named ../../.ssh/authorized_keys, a member with an absolute name, or a symlink member followed by a later regular member written through it, all land wherever the archive's author chose. The same module carries the correct form six lines below, at packer.py:24: tf.extractall(dest, filter=\"data\") - and main() never calls it.",
+      "impact": "The author of the archive, not the person running the tool, decides where files are written. Escaping the destination reaches the invoking user's home tree - ~/.ssh/authorized_keys, ~/.bashrc, ~/.config - which turns an unpack into code execution or persistent access as that user at their next login or shell. Because the destination is the current working directory, even a non-traversing archive scatters attacker-chosen files over whatever directory the victim happened to be standing in.",
+      "preconditions": "The victim runs `packer unpack <archive>` on an archive they did not build - a download, an attachment, a bundle from a registry. No privileges, no second local account and no network access are needed.",
+      "recommendation": "Pass filter=\"data\" on the extraction, as unpack_safely already does, and make that the only extraction path in the module - remove the unfiltered function instead of shipping both next to each other. Where the filter argument is not available, iterate the members and resolve each joined path with os.path.realpath against the canonicalized destination, aborting on the first member that escapes it and rejecting absolute names, .. segments, symlink, hardlink and device members. Separately, stop defaulting the destination to the current working directory: require an explicit destination flag and create that directory for the operation.",
+      "traceability": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-59",
+        "CAPEC-126",
+        "ASVS 5.0 V5"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "unpack_safely at packer.py:21-24 is a sibling function, not a layer that cannot be skipped: main() at packer.py:91-92 calls unpack directly, so no control sits between the archive and the extractall on line 18."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the member names are read out of the tar file named on the command line, which is precisely the object the attacker authors; the destination is a literal, but the names that are joined to it are not."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the path exists in what ships and is the only implemented subcommand - main() packer.py:91-92 has one branch and it is this one."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is local-app.md \u00a70's 'a file the tool is pointed at': the archive author. The boundary crossed is file to process - the victim supplies the run, the attacker supplies the content."
+        }
+      ],
+      "limits": "This does not establish which CPython version would execute the file: there is no shebang version, no pyproject.toml, no setup.py, no requirements file and no .python-version anywhere in the target. On an interpreter whose default extraction filter is already the data filter, the runtime would refuse the write - but nothing in the target claims, documents or pins that dependency, and the sibling function's explicit filter=\"data\" shows the safe form was available and deliberately not used on this path. Decompression-bomb behaviour of tarfile.open was not examined. Nothing was extracted: no archive was built and the tool was not run."
+    },
+    {
+      "id": "F-2002",
+      "title": "Bundle staged at a predictable path inside a shared /tmp directory",
+      "procedure": "LOC-03",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 30,
+        "component": "stage()"
+      },
+      "evidence": "packer.py:12 fixes CACHE = Path(\"/tmp/packer-cache\") - a literal /tmp path, not TMPDIR and not tempfile. stage() at packer.py:27-32 then calls CACHE.mkdir(exist_ok=True), builds CACHE / f\"stage-{os.getpid()}-{name}\" and creates it with path.write_bytes(b\"\"), which opens O_WRONLY|O_CREAT|O_TRUNC and follows symlinks. Both halves of the name are guessable: the pid is a small enumerable integer and name is the caller's bundle name. exist_ok=True on line 29 silently accepts a /tmp/packer-cache that another user created first and still owns, with whatever mode they gave it. The correct construction sits five lines below at packer.py:35-40, where stage_privately uses tempfile.mkdtemp plus tempfile.mkstemp.",
+      "impact": "Another local user who pre-creates /tmp/packer-cache, or who plants stage-<pid>-<name> inside it as a symlink, makes the tool create or truncate a file of their choosing with the invoking user's privileges. They also own the directory holding a bundle that the comment on packer.py:28 says is about to be signed, so they choose the bytes that get signed and the signature is applied to content the victim never produced.",
+      "preconditions": "A machine with a second local account - a shared host, a shared CI runner, a multi-user container - and a run in which stage() is reached. The attacker needs no privileges beyond the ability to write in /tmp.",
+      "recommendation": "Delete the fixed /tmp cache and use stage_privately's construction on every staging path: a per-run tempfile.mkdtemp() directory, which the OS creates 0700 and owned by the process, plus tempfile.mkstemp() for each file, so creation is atomic and exclusive and the name cannot be guessed. If a cache genuinely has to persist between runs, place it under a per-user directory the program creates with mode 0700, and when it already exists verify its owner and mode instead of accepting it with exist_ok=True.",
+      "traceability": [
+        "CWE-377",
+        "CWE-378",
+        "CWE-379",
+        "CWE-59",
+        "ASVS 5.0 V5"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nothing on this path is atomic or exclusive: write_bytes is a plain truncating open with no O_EXCL and no O_NOFOLLOW, and mkdir(exist_ok=True) on line 29 is the opposite of a control - it explicitly accepts a directory the process did not create."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user, per \u00a70, and the boundary is user to user through the world-writable /tmp named at packer.py:12."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the comment at packer.py:28 states the staged bundle is what gets signed, so its integrity is load-bearing rather than incidental; this is not public throwaway content."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the platform control that would rule this out - a per-user TMPDIR the OS creates 0700, which macOS provides by default - is bypassed by construction: packer.py:12 hardcodes /tmp instead of going through tempfile, so no environment or OS setting is in this path at all."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "stage() is present in the shipped file but main() at packer.py:86-92 dispatches only the unpack branch; no call site for stage exists anywhere in the target and none could be established, so whether this path runs in practice was not observed."
+        }
+      ],
+      "inference": "That anything calls stage(). The function ships in the file and README.md:5-6 describes a stage-sign-publish flow, but main() implements only the unpack branch, so the call site was argued from the module's shape rather than observed.",
+      "limits": "No race was demonstrated and no win rate was measured: nothing was executed, no directory was created in /tmp and no symlink was planted. The finding rests on the two syscalls and on the ownership the code accepts, which is a property of the code rather than of a single run."
+    },
+    {
+      "id": "F-2003",
+      "title": "Publishing token written in cleartext into a world-readable /tmp cache",
+      "procedure": "LOC-15",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 63,
+        "component": "write_token()"
+      },
+      "evidence": "write_token() at packer.py:59-64 stores the credential with path.write_text(token) into CACHE / \"token\", where CACHE is the literal /tmp/packer-cache of packer.py:12. write_text creates the file with mode 0o666 masked by the process umask - 0644 under the common default - so every account on the machine can read it, and it lands in a directory obtained on line 62 with CACHE.mkdir(exist_ok=True), which accepts without complaint a /tmp/packer-cache that another user created and still owns. No mode is passed, no umask is set, no chmod narrows the file afterwards and no keystore is involved. The correct form is in the same file at packer.py:67-75, where write_token_privately creates ~/.config/packer with mode=0o700 and opens the file with os.open(..., O_WRONLY|O_CREAT|O_TRUNC, 0o600).",
+      "impact": "Any other local account reads the publishing token and can publish to the internal mirror as its owner - which is the token's stated purpose, per the comment at packer.py:60 and publish() at packer.py:54-56. Where the attacker owns the cache directory instead, they can replace the token or harvest every future one. A stolen publishing credential is a supply-chain position against everyone who consumes that mirror, not merely a local disclosure.",
+      "preconditions": "A second local account on the machine, and a run that stores the token. On a shared host or CI runner no timing is needed: the file simply sits there readable until something removes it.",
+      "recommendation": "Store the token the way write_token_privately already does - a per-user directory created with mode 0700 and a file opened with an explicit 0600 mode - and delete the /tmp variant so the unsafe path cannot be selected by accident. Better still, hand the secret to the OS keystore (Keychain, libsecret, the Windows credential manager) and keep only a handle on disk. Never accept a pre-existing cache directory without checking its owner and mode, and never rely on the ambient umask for a credential file.",
+      "traceability": [
+        "CWE-312",
+        "CWE-522",
+        "CWE-276",
+        "CWE-732",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no control to skip: the program sets no umask, passes no mode to write_text on packer.py:63 and performs no chmod afterwards, so nothing anywhere can force 0600 on this file."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the second principal is another local user reading /tmp - \u00a70's user-to-user crossing. The exculpation that applies to write_token_privately (a 0600 file inside a 0700 per-user directory) is absent here: the directory is shared and its mode is whatever its creator chose."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is a publishing credential by the comment at packer.py:60 and by the publish() flow at packer.py:54-56; it is the definition of data with security value."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "write_token() ships in the file but has no call site: main() at packer.py:86-92 dispatches only unpack, so it could not be established that this path executes in the delivered tool."
+        }
+      ],
+      "inference": "That anything calls write_token(). The sink and the mode are read end to end in the source, but the caller that would supply a real token is not present in the target - main() has one branch and it is unpack.",
+      "limits": "The file was never created and its actual mode was never observed on a filesystem; 0644 is the documented result of Path.write_text under a default 022 umask, not a measurement taken here. The target contains no real credential, so nothing needed redaction. Whether the process runs with a hardened umask in some deployment is unknown, and a hardened umask would narrow but not remove the exposure, since the containing directory can still be owned by another user."
+    },
+    {
+      "id": "F-2004",
+      "title": "Filename reaches gpg without a -- terminator, so a leading dash becomes an option",
+      "procedure": "LOC-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 45,
+        "component": "sign()"
+      },
+      "evidence": "sign() at packer.py:43-45 builds the vector [\"gpg\", \"--local-user\", key_id, \"--detach-sign\", path]. path is a positional value with no -- before it, no validation and no resolution, so a name beginning with - is consumed by gpg as an option rather than as a file; passing a list instead of a shell string prevents shell metacharacters, not this. key_id lands in the same vector immediately after --local-user. The correct form is six lines below at packer.py:48-51: verify() first reduces its input with Path(path).resolve(strict=True) and then places an explicit -- before it in [\"gpg\", \"--verify\", \"--\", str(resolved)].",
+      "impact": "A bundle name chosen by someone else turns the signing step into an attacker-directed gpg invocation running as the victim. The high-value options are the ones that write or redirect: --output places gpg's output at a path of the attacker's choosing with the invoking user's privileges, and --homedir or --options point gpg at a keyring and a configuration file the attacker controls, so what is signed, with which key and under which settings stops being the program's decision.",
+      "preconditions": "A bundle name that reaches sign() from outside the program - a member name taken from an archive that was just unpacked, a filename found in a working directory someone else produced, or a value passed through by a caller. No such call site exists in the target, so this precondition is argued rather than observed.",
+      "recommendation": "Place -- before every positional value, exactly as verify() does on packer.py:51, and resolve the path first so what reaches the vector is a canonical path to an existing file inside a directory the program knows, not a raw string; reject names beginning with - before that point. Constrain key_id to an allowlist of key identifiers rather than forwarding it verbatim after --local-user.",
+      "traceability": [
+        "CWE-88",
+        "CWE-78",
+        "CAPEC-6",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "this call has neither the -- terminator nor an allowlist nor a prior resolution; the control that exists in the module (packer.py:50-51) lives in a different function and does not sit on this path."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "the origin of path could not be traced backwards: sign() has no caller in the target, so whether an attacker chooses the filename is argued from the tool's stated purpose - signing bundles - rather than observed. It is demonstrably not a literal, since it is a parameter, but that is not the same as demonstrating attacker control."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "sign() ships in the file but main() at packer.py:86-92 dispatches only unpack, so no execution path to this vector could be established in what is delivered."
+        }
+      ],
+      "inference": "That path carries a value an attacker chose. The sink is observed in full - the exact argument vector on packer.py:45, with no terminator - but the source is not, because the function has no call site in the shipped dispatch.",
+      "limits": "gpg was not invoked and no option-shaped filename was tried. The set of gpg options that would be exploitable here is read from gpg's documented interface, not demonstrated against a binary, and the concrete effect would depend on the gpg version installed on the victim's machine, which the target does not constrain."
+    },
+    {
+      "id": "F-2005",
+      "title": "Bare uploader resolved through the inherited PATH in a command documented to run under sudo",
+      "procedure": "LOC-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "packer.py",
+        "line": 56,
+        "component": "publish()"
+      },
+      "evidence": "publish() at packer.py:54-56 runs subprocess.run([\"uploader\", bundle], check=True). The executable is named, not located: resolution goes through whatever PATH the process inherited, and uploader is not a standard system binary, so by construction it is expected to be found somewhere outside the base system directories. README.md:5-6 states that the publish command is documented as running under sudo, and calls that part of the case. Nothing in the module pins an absolute path, checks the ownership or mode of what was resolved, or scrubs the environment before spawning the child - contrast verify() at packer.py:50, which at least reduces its input with resolve(strict=True) before use. bundle is additionally a positional value with no -- before it.",
+      "impact": "Whoever controls a directory that appears on the elevated process's PATH decides which binary root executes: another local user with write access to a loosely permissioned install directory, or the unprivileged invoker themselves where sudo passes their PATH through. That is local privilege escalation to root out of the one command the documentation tells users to run with sudo. The missing -- gives a second, smaller lever if uploader accepts option-shaped values.",
+      "preconditions": "publish() is reached while elevated, and at least one directory on the PATH the elevated process resolves against is writable by an account other than root - or sudo is configured without secure_path and env_reset, so the caller's own PATH survives into the privileged process.",
+      "recommendation": "Invoke the helper by absolute path, and before executing it verify that the file and every directory above it are owned by root and are not group- or world-writable. Scrub the environment for the child rather than inheriting it - an explicit allowlist, or the equivalent of env -i with a fixed PATH. Do not run the whole command under sudo: isolate the single operation that needs privilege, elevate only that, and describe to the user what is about to happen. Add -- before bundle so a name beginning with a dash cannot become an option.",
+      "traceability": [
+        "CWE-426",
+        "CWE-427",
+        "CWE-250",
+        "CAPEC-38",
+        "ATT&CK T1574"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "there is no verification to skip: packer.py:56 puts a bare name straight into subprocess.run, with no absolute path, no ownership check on the resolved binary and no environment scrubbing anywhere in the module."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "two principals are named, per \u00a70: another local user who can write a directory on the search path, and the unprivileged invoker crossing into a root process. The boundary is user to user under elevation, which is the crossing that makes this more than a hardening note."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "publish() ships in the file but main() at packer.py:86-92 dispatches only unpack, and the sudo invocation is asserted in README.md:5-6 rather than shown - the target contains no wrapper script, sudoers fragment, launchd plist, systemd unit or installer that would demonstrate how it is really launched."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "whether sudo on the target machine is configured with secure_path and env_reset - which would replace the inherited PATH and blunt this - is a control that lives outside the repository, and no sudoers export, packaging script, install document or written statement accompanies the target. Per FP-08, the absence of that evidence is UNKNOWN and never HOLDS."
+        }
+      ],
+      "inference": "That publish() actually executes with elevated privileges. The elevation is stated in README.md:5-6 and nowhere else: no wrapper, no sudoers fragment, no unit file and no installer exists in the target, and main() never dispatches publish, so the elevated execution was read from documentation rather than observed in code.",
+      "limits": "The PATH seen by an elevated process was not observed, no real install directory was inspected for ownership or mode, and uploader does not exist in the target, so its own argument handling is unknown. Nothing was executed and no privileged operation was attempted, in line with the audit-mode safety contract."
+    },
+    {
+      "id": "F-3001",
+      "title": "pull_request_target builds the pull request head with a write-all token (pwn request)",
+      "procedure": "INF-13",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 4,
+        "component": "job preview"
+      },
+      "evidence": "deploy.yml:4 `on: pull_request_target` with `types: [opened, synchronize]`; :7 `permissions: write-all`; :13-15 `uses: actions/checkout@v4` with `ref: ${{ github.event.pull_request.head.sha }}`; :16 `run: npm ci && npm run build`. The job declares no `environment:` (contrast release.yml:13 `environment: production`) and does not set `persist-credentials: false` (contrast release.yml:20), so checkout leaves the write-all GITHUB_TOKEN in .git/config on the runner before `npm ci` executes the pull request author's package.json lifecycle scripts and its dependency tree.",
+      "impact": "Any pull request author obtains arbitrary code execution on the runner in the base-repository context. `pull_request_target` runs with the base branch's secrets and token, so the attacker's build scripts run alongside a GITHUB_TOKEN that has write on every scope \u2014 contents, packages, actions, id-token \u2014 and that same token is additionally readable from .git/config on disk. That is push access to the default branch, the ability to rewrite workflows, and package publication: full repository compromise, and a foothold on any cloud identity those workflows can reach.",
+      "preconditions": "The ability to open a pull request against the repository. The trigger fires on `opened` and `synchronize`, so no maintainer action \u2014 no label, no approval, no re-run \u2014 is required. On a public repository this is any GitHub account; on a private one it is any account with fork or branch access, which is by construction a lower privilege than the write-all token the job hands it.",
+      "recommendation": "Split the workflow. Build and test untrusted code on `pull_request`, which runs without repository secrets and with a read-only token. If privileged post-processing is genuinely needed, move it to a separate `workflow_run` job that consumes only the artifact produced by the untrusted job and never checks out the head SHA. If `pull_request_target` must stay for metadata (labelling, commenting), remove both the head-SHA checkout and the build step, declare `permissions:` per job at the minimum scope needed, set `persist-credentials: false` on any checkout, and gate any job that touches secrets behind an `environment:` with required reviewers.",
+      "traceability": [
+        "CWE-94",
+        "CWE-829",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "SLSA Build L2",
+        "NIST 800-53 SA"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The control INF-13 names as unskippable \u2014 an `environment:` with required reviewers \u2014 is absent from this job; the repository shows it knows the construct, because release.yml:13 uses it. The hardening actions/checkout added on 2026-06-18 covers expression injection into checkout's own inputs, not a literal 40-hex `head.sha` ref, and a caller cannot rely on a third-party action to refuse a checkout it was explicitly asked to perform."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The benign reading of this trigger \u2014 `pull_request_target` used only to read metadata and label or comment \u2014 does not survive lines 13-16: the head SHA is checked out and then built."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named explicitly: the pull request author, whose privilege is strictly lower than the write-all GITHUB_TOKEN this job issues. That boundary is crossed whether the repository is public or private, so the unobserved repository visibility does not remove the principal, it only changes who the population is."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no build that could strip this path: the workflow is committed under .github/workflows/ and GitHub evaluates its trigger from the default branch, so the shipped artifact is the file itself."
+        }
+      ],
+      "limits": "No `secrets.*` reference appears in this job, so the exposure demonstrated from the file is the GITHUB_TOKEN and anything the runner can reach with it; repository and environment secrets are available to the `pull_request_target` context but are not injected into any step here, and which secrets exist could not be observed. Whether branch protection would blunt a push with the token is a repository setting outside the tree and was not evidenced."
+    },
+    {
+      "id": "F-3002",
+      "title": "Pull request title interpolated directly into a run: block (command injection)",
+      "procedure": "INF-14",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 18,
+        "component": "step Comment"
+      },
+      "evidence": "deploy.yml:17-18 `- name: Comment` / `run: echo \"Preview for ${{ github.event.pull_request.title }}\"`. The expression is substituted into the script text before the shell parses it, so the title is code, not data. The same repository does it correctly one file over: release.yml:22-25 passes `github.event.head_commit.message` through `env: TITLE` and references it as a quoted shell variable `\"$TITLE\"`.",
+      "impact": "A crafted pull request title closes the echo and chains commands, giving the attacker shell on the runner in the same job as F-001 \u2014 the base-repository context with `permissions: write-all` (deploy.yml:7). The blast radius is the token and everything reachable from the runner; the difference from F-001 is only that the payload must fit the title field and its quoting, rather than being an entire attacker-controlled repository.",
+      "preconditions": "The ability to open or rename a pull request. The title is set by the author, needs no maintainer interaction, and `types: [opened, synchronize]` re-runs the job on every push to the branch.",
+      "recommendation": "Never interpolate `${{ github.event.* }}` into a `run:` body. Bind the value to an environment variable in the step's `env:` block and reference it quoted from the shell (`\"$TITLE\"`), exactly as release.yml:22-25 already does. Apply the same treatment to every author-controlled field \u2014 `.body`, `.head.ref`, `github.head_ref`, `github.event.comment.body`.",
+      "traceability": [
+        "CWE-94",
+        "CWE-78",
+        "CWE-77",
+        "A05:2025",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "NIST 800-53 SI"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation INF-14 names is the `env:` indirection with a quoted shell reference. This step has no `env:` block at all; the interpolation sits inline in the script text."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`github.event.pull_request.title` is written by whoever opens the pull request. It is not one of the fields the procedure lists as outside the attacker's reach (`github.sha`, `github.run_id`, `github.repository`), and no allowlist or sanitisation stands between it and the shell."
+        }
+      ],
+      "limits": "Exploitability was argued from the trigger and the interpolation, not demonstrated: no payload was crafted and nothing was executed anywhere. The exact quoting a title must satisfy was not enumerated."
+    },
+    {
+      "id": "F-3003",
+      "title": "permissions: write-all on a fork-triggerable workflow",
+      "procedure": "INF-15",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 7
+      },
+      "evidence": "deploy.yml:7 `permissions: write-all`, declared at workflow level on a workflow whose only trigger is `pull_request_target` (:4). The job needs nothing beyond reading the repository to run `npm ci && npm run build` (:16); it writes no comment through the API and calls no step that needs a token. Compare release.yml:7-8 (`permissions: contents: read`) and :14-16, which grants `id-token: write` per job for provenance and nothing else.",
+      "impact": "Every job in this workflow receives a GITHUB_TOKEN with write on all scopes \u2014 contents, packages, actions, deployments, issues, pull requests \u2014 regardless of what it needs. On its own this is a least-privilege failure that turns any code-execution defect in the workflow into repository write instead of repository read; here it is what converts F-001 and F-002 from runner access into repository compromise.",
+      "preconditions": "Any path that executes code or an action inside this workflow. The permission itself is granted unconditionally on every run.",
+      "recommendation": "Delete the `write-all` line and declare `permissions:` per job at the minimum the job actually needs \u2014 for a build-and-comment preview that is `contents: read`, plus `pull-requests: write` only on a job that genuinely posts a comment through the API, and only in a workflow that does not execute untrusted code. Set the repository or organization default GITHUB_TOKEN permission to read-only so an omitted block fails closed.",
+      "traceability": [
+        "CWE-284",
+        "CWE-732",
+        "CWE-522",
+        "A01:2025",
+        "CICD-SEC-2",
+        "CICD-SEC-5",
+        "SSDF PO",
+        "NIST 800-53 AC",
+        "CCM IAM"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation is a job holding privilege that a fork cannot reach \u2014 `push` to main, or `release`. This workflow's only trigger is `pull_request_target` (:4), which is precisely the fork-reachable one, and it fires without maintainer approval."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-08's exculpation here is an organization that pins the default GITHUB_TOKEN to read-only, and it only bites when the `permissions:` block is missing. The block is present and explicit at :7, and an explicit workflow-level block overrides the repository or organization default upward, so no setting outside the tree changes what this line grants."
+        }
+      ],
+      "limits": "Which repository or environment secrets exist, and whether branch protection would reject a push made with this token, are settings outside the tree and were not evidenced."
+    },
+    {
+      "id": "F-3004",
+      "title": "Inline IAM policy grants Action \"*\" on Resource \"*\" to the worker role",
+      "procedure": "INF-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 49,
+        "component": "aws_iam_role_policy.worker"
+      },
+      "evidence": "main.tf:42-53 `aws_iam_role_policy.worker` attaches to `aws_iam_role.worker` a single statement with `Effect = \"Allow\"`, `Action = \"*\"` (:49) and `Resource = \"*\"` (:50), with no `Condition` block. The role is assumable by the `ec2.amazonaws.com` service principal (main.tf:80-83 with data.aws_iam_policy_document.assume at :90-98), so it is a standing instance-profile role, not an ephemeral session. No SCP, permission boundary or second narrowing statement exists anywhere in the tree \u2014 the only other inline policy, `aws_iam_role_policy.deployer` (:55-67), is scoped and carries an `aws:ResourceAccount` condition, which is the shape this one lacks.",
+      "impact": "Anything that executes on an instance carrying this role holds administrator over the whole AWS account: read and exfiltrate the billing reports bucket, read or delete the billing database, create IAM users and access keys for persistence, disable logging. A server-side request forgery or a code-execution bug on the workload becomes account takeover through the instance metadata service, with no further privilege escalation step needed.",
+      "preconditions": "Code execution, SSRF or credential access on a workload that carries the worker instance profile \u2014 the wildcard is not reachable from the internet on its own.",
+      "recommendation": "Replace the wildcard with the actions the worker genuinely performs, scoped to the specific resource ARNs, and add a condition narrowing the account (`aws:ResourceAccount`) or a tag, following the shape `aws_iam_role_policy.deployer` already uses at :55-67. Attach an IAM permission boundary to the role so a future wildcard cannot exceed it, and enforce IMDSv2 (`http_tokens = \"required\"`) on any instance that carries the profile so SSRF cannot mint the credentials.",
+      "traceability": [
+        "CWE-284",
+        "CWE-732",
+        "CWE-269",
+        "A01:2025",
+        "CICD-SEC-2",
+        "SSDF PO",
+        "NIST 800-53 AC",
+        "CCM IAM",
+        "CIS v8.1 Control 6",
+        "ATT&CK T1078"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No condition on the statement, and no SCP, Azure Policy or permission boundary anywhere in the tree \u2014 grep for `Condition`, `boundary` and `organizations` returns only the deployer policy's `aws:ResourceAccount` at :64, which applies to a different role."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bounded reading INF-01 allows is a wildcard in an ephemeral deployment role with a short session and another statement narrowing the real ARN. This role is assumed by the EC2 service (:80-83), which is a standing instance profile, the policy has exactly one statement, and nothing narrows it."
+        }
+      ],
+      "limits": "Which workloads carry this instance profile is not declared in the repository \u2014 no aws_instance, launch template or autoscaling group exists here \u2014 so the population of principals that can reach the wildcard was not established, only that the grant itself is unconditional."
+    },
+    {
+      "id": "F-3005",
+      "title": "S3 public-access guardrail explicitly disabled on the billing reports bucket",
+      "procedure": "INF-02",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 15,
+        "component": "aws_s3_bucket_public_access_block.reports"
+      },
+      "evidence": "main.tf:13-19 sets all four flags of `aws_s3_bucket_public_access_block.reports` to false \u2014 `block_public_acls`, `block_public_policy`, `ignore_public_acls`, `restrict_public_buckets` \u2014 on `aws_s3_bucket.reports` (`acme-billing-reports-${var.env}`, :9-11). The bucket is the write target of the deployer role (:63 `Resource = \"${aws_s3_bucket.reports.arn}/*\"`, actions `s3:PutObject`, `s3:GetObject`). No CloudFront distribution or origin access identity is associated with it; the OAI at :25-27 belongs to the marketing bucket.",
+      "impact": "The account-level guardrail that makes accidental public exposure impossible is switched off for the bucket that holds billing reports. With all four flags false, a single object ACL set by whatever writes to the bucket, or one bucket policy with `Principal = \"*\"`, makes billing data anonymously readable immediately and silently \u2014 no second control stands in the way, and the block that would have neutralised such a grant is gone.",
+      "preconditions": "A public grant must still be created \u2014 a `public-read` object ACL at upload time, or a bucket policy naming a wildcard principal. Nothing in the tree creates one today, which is why this is the removal of a guardrail rather than a live exposure.",
+      "recommendation": "Set all four flags to true, which is the AWS default for buckets created since April 2023 and the reason this resource had to be written explicitly to defeat it. If some object genuinely must be public, serve it from the marketing bucket through CloudFront with the origin access identity pattern already used at :25-40, and leave the reports bucket blocked. Add `aws:SecureTransport` denial and access logging on the same bucket while it is being changed.",
+      "traceability": [
+        "CWE-668",
+        "CWE-552",
+        "CWE-200",
+        "A01:2025",
+        "A02:2025",
+        "NIST 800-53 AC",
+        "CCM DSP",
+        "CIS v8.1 Control 3"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating pattern INF-02 names \u2014 public access served by a CDN with an origin identity while the bucket itself stays blocked \u2014 is present in this file, but for a different bucket: the OAI at :25-27 and the policy at :29-40 belong to `public_site`. Nothing fronts `reports`."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bucket is not a public-assets bucket by design: it is named `acme-billing-reports-${var.env}` and the only declared writer is the deployer role's `s3:PutObject` (:62-63). INF-02 asks what the pipeline writes there, and what it writes is billing reports."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The four flags are literal `false` values in the resource, not variables an environment could set to true; no `var.` or conditional stands between the code and the API call."
+        }
+      ],
+      "limits": "This establishes that the guardrail is disabled, not that any object is public today: no ACL or bucket policy granting an anonymous principal exists in the tree, and no bucket was enumerated or requested. What the pipeline actually uploads was not observed either \u2014 only the ARN pattern it is permitted to write."
+    },
+    {
+      "id": "F-3006",
+      "title": "Billing RDS instance created with storage encryption explicitly disabled",
+      "procedure": "INF-03",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 76,
+        "component": "aws_db_instance.billing"
+      },
+      "evidence": "main.tf:69-78 `aws_db_instance.billing`, engine postgres, 100 GB allocated, with `storage_encrypted = false` at :76 \u2014 written explicitly rather than omitted. No `kms_key_id` appears anywhere in the tree, and no other encryption attribute is set on the instance.",
+      "impact": "The volume holding the billing database, its automated backups and every snapshot taken from it are stored unencrypted. Anyone who reaches the storage layer or obtains a snapshot \u2014 a snapshot copied or shared to another account, a restore performed by a lower-privileged operator, the wildcard worker role of F-004 calling rds:CreateDBSnapshot \u2014 reads customer billing records without needing the database credentials at all. It also forecloses the KMS key policy as a second authorisation gate over that data.",
+      "preconditions": "Access to a snapshot, a restore, or the underlying storage. The unencrypted state is not itself reachable from the network.",
+      "recommendation": "Set `storage_encrypted = true` with a customer-managed `kms_key_id` whose key policy is separate from the database's IAM permissions. This attribute cannot be changed in place: the instance must be snapshotted, the snapshot copied with encryption enabled, and the instance restored from the encrypted copy \u2014 plan it as a maintenance window, not as a one-line edit. Encrypt existing snapshots or delete them once the migration is complete.",
+      "traceability": [
+        "CWE-311",
+        "CWE-319",
+        "A04:2025",
+        "A02:2025",
+        "NIST 800-53 SC",
+        "CCM CEK",
+        "CIS v8.1 Control 3",
+        "PCI DSS v4.0.1 req. 4"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation INF-03 offers is a provider that encrypts the service by default, which would reduce the finding to 'no customer-managed key'. It does not apply to RDS: storage encryption is opt-in, must be chosen at creation and is immutable afterwards \u2014 and here it is not merely omitted, it is set to `false` at :76, which defeats any account-level default."
+        }
+      ],
+      "limits": "Encryption in transit was not assessed for this instance: no parameter group is declared in the tree, so whether `rds.force_ssl` is enforced on the postgres endpoint could not be read from the repository. What data the database actually holds is inferred from its identifier and the product description in README.md; data classification is the client's call."
+    },
+    {
+      "id": "F-3007",
+      "title": "Security group opens SSH (22/tcp) to 0.0.0.0/0",
+      "procedure": "INF-04",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "modules/network/main.tf",
+        "line": 10,
+        "component": "aws_security_group.admin"
+      },
+      "evidence": "modules/network/main.tf:1-12 `aws_security_group.admin` (name `admin-ssh`, description \"operator access to the bastion\") with an ingress of `from_port = 22`, `to_port = 22`, `protocol = \"tcp\"`, `cidr_blocks = [\"0.0.0.0/0\"]` at :10. The CIDR is a literal, not a variable: a calling root cannot narrow it. No NACL, managed firewall or VPN resource is declared anywhere in the tree, and no root module instantiates modules/network (grep for `module \"` across the target returns nothing).",
+      "impact": "If this group is attached to the bastion it describes, the management port of the host that fronts the private network is reachable from the entire internet. That exposes the SSH service to credential-stuffing and key-brute-force at internet scale and to any pre-authentication vulnerability in the daemon, and it makes the bastion \u2014 whose purpose is to be the single narrow door into the VPC \u2014 the widest surface in the account.",
+      "preconditions": "The module must be instantiated and the group attached to an instance with a public address or an internet-routable path.",
+      "recommendation": "Remove the 0.0.0.0/0 ingress on 22. Replace bastion SSH with AWS Systems Manager Session Manager, which needs no inbound rule at all; if a bastion must remain, expose the port only to a `var.admin_cidrs` list the caller must supply (no permissive default) or to the VPN's security group, and let the module fail rather than default to the world. Keep the CIDR parameterised so the permissive value cannot be baked into every consumer of the module.",
+      "inference": "That the group is created and attached to a host with an internet route. No root in the repository calls modules/network, and no instance, subnet, route table or ENI association is declared anywhere in the tree, so creation and reachability were inferred from the module's stated purpose ('operator access to the bastion') and from the resource being shipped as a reusable unit \u2014 not observed.",
+      "traceability": [
+        "CWE-1327",
+        "CWE-284",
+        "CWE-923",
+        "A01:2025",
+        "A02:2025",
+        "NIST 800-53 SC",
+        "CCM IVS",
+        "CIS v8.1 Control 12"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "INF-04 allows a NACL or managed firewall in front only when it is declared in the same repository, and instructs that it must not be assumed otherwise. Grep across the target finds no aws_network_acl, no aws_networkfirewall_* and no VPN resource."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The intended-exposure construct is the sibling group in the same file: `aws_security_group.public_alb` (:14-25) opens 443 to the world, which is the point of an internet-facing load balancer and is ruled out below. This group is 22/tcp on a bastion, which the procedure classifies as a finding rather than a review item."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The 'it is a module, not a root' reading is true of the directory but does not make the construct benign here: the CIDR is a hardcoded literal rather than a variable with a permissive default, so no consuming root can override it \u2014 the module reading aggravates the defect instead of excusing it."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "Whether this path exists in what is actually applied could not be established: no root in the repository instantiates modules/network, there is no state, no plan output and no git history to consult, and Terraform has no build artifact that would settle it. Per the invariant, this caps the finding at `probable`."
+        }
+      ],
+      "limits": "No reachability was established and none could be: no scanner resolves a route table, no subnet or instance is declared here, and nothing was resolved, connected to or scanned. This finding is about what the module grants when used, not about a host confirmed to be listening."
+    },
+    {
+      "id": "F-3008",
+      "title": "Terraform root declares no backend: state with the database password lands on local disk",
+      "procedure": "INF-17",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "main.tf",
+        "line": 1,
+        "component": "terraform block"
+      },
+      "evidence": "main.tf:1-3 `terraform { required_version = \">= 1.6\" }` \u2014 no `backend` block and no `cloud` block; grep for `backend \"` across the target returns nothing. This directory is a root, not a module: it declares `provider \"aws\"` (:5-7), variables (:100-106) and resources. `var.db_password` (:103-106, `sensitive = true`) feeds `aws_db_instance.billing.password` (:75). No Terragrunt or wrapper configuration exists in the tree that would generate a backend.",
+      "impact": "Without a backend, state is written to terraform.tfstate on whatever machine runs apply. State records resource attributes in cleartext \u2014 including the RDS master password, which `sensitive = true` only masks in CLI output and never in the state file \u2014 so the credential ends up on operator laptops and in backups, with no encryption at rest, no versioning to recover a corrupted apply and no locking to prevent two concurrent applies from diverging. It is also the file most commonly committed by accident, at which point the password is compromised and must be rotated rather than deleted.",
+      "preconditions": "Someone runs terraform against this root. Reading the credential afterwards requires access to that machine or to whatever the file is copied into.",
+      "recommendation": "Declare a remote backend with encryption, versioning and locking \u2014 for S3, a dedicated state bucket with `encrypt = true`, a KMS key, versioning and object lock, plus a DynamoDB table or S3 native locking \u2014 and give each environment its own key or workspace rather than one shared state. Add `*.tfstate*` to .gitignore. Stop passing the master password through a variable at all: let RDS manage it (`manage_master_user_password = true`) or source it from Secrets Manager, so the value never enters state or a tfvars file.",
+      "inference": "How and where this root is actually applied. No workflow in the repository runs terraform \u2014 deploy.yml runs npm and release.yml runs npm publish \u2014 so the machine that holds the state file, and whether an operator supplies a backend on the command line through an out-of-tree wrapper, was not observed. What is observed is that the configuration as committed defaults to local state.",
+      "traceability": [
+        "CWE-312",
+        "CWE-200",
+        "CWE-668",
+        "A02:2025",
+        "A04:2025",
+        "CICD-SEC-1",
+        "CICD-SEC-7",
+        "NIST 800-53 CM",
+        "CCM DSP"
+      ],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second exculpation INF-17 offers \u2014 remote state exists and a stray local .tfstate is just a trial-run artifact \u2014 does not apply: no .tfstate or .tfstate.backup is present in the tree (the target holds five files) and no backend is declared for one to be an artifact of."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation is 'the directory is a reusable module, not a root'. This directory has a provider block (:5), variables and resources, which makes it a root. The module in this repository, modules/network, correctly declares no backend and is ruled out below."
+        }
+      ],
+      "limits": "The target carries no git metadata, so INF-17's second check \u2014 whether a state file was ever committed \u2014 could not be run in either direction. If history shows one, the database credential is to be treated as compromised and the deliverable becomes a rotation plan."
+    },
+    {
+      "id": "F-3009",
+      "title": "No audit logging, flow logs or alerting defined for any resource in the infrastructure",
+      "procedure": "INF-06",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "main.tf",
+        "line": 1
+      },
+      "evidence": "Grep across the target for `cloudtrail`, `flow_log`, `logging`, `diagnostic_setting` and `logging_project_sink` returns no hits. The tree declares two S3 buckets (:9-11, :21-23) with no `aws_s3_bucket_logging`, an RDS instance (:69-78) with no `enabled_cloudwatch_logs_exports`, two IAM roles with inline policies and no alerting on policy change, a network module with security groups and no `aws_flow_log`, and no `aws_cloudwatch_log_group` or metric alarm anywhere.",
+      "impact": "There is no record from which to reconstruct who read the billing reports bucket, who used the wildcard worker role, or when a security group changed. An attacker who reaches any of the findings above operates without a trail, and the incident response that follows has nothing to query: detection time is unbounded rather than long, and A09:2025 covers the missing alerting as well as the missing log.",
+      "preconditions": "None \u2014 this is the absence of a control, not a reachable path.",
+      "recommendation": "Declare, in this repository, a multi-region `aws_cloudtrail` with log file integrity validation writing to a dedicated bucket with object lock and retention, `aws_flow_log` on the VPC the network module attaches to, `aws_s3_bucket_logging` on the reports bucket, and CloudWatch metric alarms on IAM policy changes, access key creation and CloudTrail configuration changes. If logging is genuinely centralised in a security account, attach the exported organization CloudTrail configuration or the landing-zone policy to the deliverable so this finding can be closed against evidence.",
+      "inference": "Whether an organization-level CloudTrail, a landing zone or an out-of-repository observability platform already covers this account. Nothing in the tree indicates one either way, and no exported configuration, ticket or written statement was provided; the finding asserts the gap in the infrastructure definition, and its real severity depends on that unobserved layer.",
+      "traceability": [
+        "CWE-778",
+        "A09:2025",
+        "CICD-SEC-10",
+        "SSDF PO",
+        "NIST 800-53 AU",
+        "CCM LOG",
+        "CIS v8.1 Control 8"
+      ],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The exculpation is centralised logging managed outside this repository by a security account or an organization policy. No exported artifact, ticket or written statement arrived, and INF-06 states that 'the landing zone turns it on' is not evidence. Absence of evidence is never HOLDS, so this is UNKNOWN and the finding cannot be reported as confirmed."
+        }
+      ],
+      "limits": "This is audited by absence in the repository, not by a scanner rule and not against the account. It establishes that the infrastructure definition creates no audit trail; it does not establish that no audit trail exists."
+    },
+    {
+      "id": "F-3010",
+      "title": "Production database deletable with no final snapshot and no deletion protection",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "main.tf",
+        "line": 77,
+        "component": "aws_db_instance.billing"
+      },
+      "evidence": "main.tf:77 `skip_final_snapshot = true` on `aws_db_instance.billing`. The resource declares no `deletion_protection` and no `final_snapshot_identifier` (:69-78), and the root is parameterised by `var.env` (:101) with no conditional on it, so the same setting applies to every environment this root builds, production included.",
+      "impact": "A delete \u2014 by a mistaken `terraform destroy`, a resource rename that forces replacement, or a principal holding the wildcard policy of F-004 \u2014 removes the billing database and deliberately discards the final snapshot that would allow it to be restored. No exploit path is claimed for this item on its own; it is the control that decides whether such an event is an outage or a permanent loss of billing records.",
+      "preconditions": "Any action that deletes or replaces the instance, whether by an operator or by a compromised principal with rds permissions.",
+      "recommendation": "Set `deletion_protection = true` and `skip_final_snapshot = false` with an explicit `final_snapshot_identifier` for any environment that is not disposable, and drive the pair from `var.env` if ephemeral environments genuinely need the current behaviour. Confirm `backup_retention_period` explicitly rather than relying on the API default, and add `prevent_destroy` in a lifecycle block for the production instance.",
+      "traceability": [
+        "NIST 800-53 CP",
+        "CCM BCR",
+        "CIS v8.1 Control 11"
+      ],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`skip_final_snapshot = true` is a legitimate intent in a disposable environment, but this root is not environment-specific: `var.env` only interpolates bucket names (:10, :22) and the database identifier (:70), and no conditional restricts the setting, so the same value ships to production."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-10 would apply if the impact did not reach the user. Irrecoverable loss of the billing database reaches them directly, so this is recorded at `low` with status `hardening` because no exploit path is asserted \u2014 not downgraded to informational."
+        }
+      ],
+      "limits": "Recoverability outside Terraform was not established: `backup_retention_period` is not declared, so automated backups fall to the AWS API default rather than to a value this repository sets, and whether snapshots are copied elsewhere could not be observed."
+    },
+    {
+      "id": "F-3011",
+      "title": "actions/checkout pinned to a mutable tag in the deploy workflow",
+      "procedure": "INF-16",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/deploy.yml",
+        "line": 13
+      },
+      "evidence": "deploy.yml:13 `uses: actions/checkout@v4` \u2014 a tag, which is a mutable pointer. The same repository pins correctly one file over: release.yml:18 `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2`. Both jobs run on `runs-on: ubuntu-latest` (GitHub-hosted), so the self-hosted-runner half of INF-16 does not arise.",
+      "impact": "If the tag were ever repointed \u2014 the tj-actions/changed-files pattern, CVE-2025-30066, where every tag from v1 to v45.0.7 was moved to a commit that dumped runner secrets \u2014 this job would consume the new code on its next run with no change to the repository. Today this grants an attacker nothing: the tag belongs to GitHub's own `actions` organization and no compromise is claimed or observed. It is recorded because the inconsistency with release.yml means the practice exists in the repository and was simply not applied here.",
+      "preconditions": "Compromise of the upstream tag, which is outside the target and not demonstrated.",
+      "recommendation": "Pin every `uses:` by 40-character commit SHA with the version in a trailing comment, exactly as release.yml:18 does, and let Dependabot or Renovate bump the pins. Extend the same rule to any `container:` or `services:` image tag.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-3",
+        "CICD-SEC-9",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`actions/checkout` belongs to the `actions` organization, not to the owner of this repository, so the same-perimeter exculpation does not apply \u2014 although it is the highest-trust third party in the ecosystem, which is why the severity is informational."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "INF-16's own tooling note says `unpinned-uses` is flagged even where it is hardening rather than an exploitable finding today, and that is the case here: a first-party GitHub action, no compromise observed, no attacker capability granted. The finding is bounded to informational and kept, not deleted."
+        }
+      ],
+      "limits": "No dependency of the action was resolved and nothing was fetched from GitHub; whether the tag currently points at the commit release.yml pins was not checked, because that requires an online query against a third party."
+    },
+    {
+      "id": "F-4001",
+      "title": "preinstall lifecycle script executes attacker-relevant code on every consumer install",
+      "procedure": "SUP-03",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "package.json",
+        "line": 8,
+        "component": "@acme/billing-cli scripts.preinstall"
+      },
+      "evidence": "package.json:7-11 declares \"scripts\": { \"preinstall\": \"node scripts/fetch-native.js\", ... }. package.json has no \"files\" allowlist and the tree has no .npmignore, so scripts/ is packed into the published tarball and the hook is present in what consumers receive. npm runs preinstall before any application code, test or review step, and it is the only lifecycle hook declared. The script it runs is analysed in F-002.",
+      "impact": "Every `npm install` of this published package -- on developer laptops and inside consumer CI runners alike -- executes first-party code from the maintainer under the invoking user's identity, before any dependency is audited and before any test runs. This converts a compromise of the package, of the maintainer account, or of the host the script contacts, into code execution on every consumer of @acme/billing-cli. Backstabber's Knife Collection (DIMVA 2020) measured that 56% of 174 real malicious packages trigger at install time; this is that surface, opened deliberately.",
+      "preconditions": "The consumer installs with lifecycle scripts enabled, which is npm's default. `npm ci --ignore-scripts` neutralises it, but nothing in this package can require the consumer to use it.",
+      "recommendation": "Remove the install-time hook and ship the native helper as an optional platform-specific package resolved by `optionalDependencies` with `os`/`cpu` fields, so npm selects a registry artifact covered by the lock and the integrity hash instead of running code. If an install hook is genuinely unavoidable, move it to `postinstall`, make it fail closed, and give it the verification F-002 asks for; then document `--ignore-scripts` compatibility so consumers who disable scripts still get a working CLI rather than a silently broken one.",
+      "traceability": [
+        "CWE-94",
+        "CWE-506",
+        "CWE-829",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SSDF PW",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-03's compensating control is an environment that installs with `--ignore-scripts` and a pipeline that enforces it. No such control exists anywhere in scope: there is no CI configuration, and .npmrc (2 lines) sets only registry mappings -- it carries no `ignore-scripts=true`. A control that each consumer may or may not remember to apply is explicitly not FP-01."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-03's bounded-exposure exculpation requires that the script compile a native binding or download from the project's official domain WITH hash verification. Neither bound is present: scripts/fetch-native.js:17-20 fetches an unverified artifact from a third-party host and writes it outside the package directory (see F-002), so the exposure is neither verified nor confined to the package tree."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally to test whether the hook ships. It does: package.json declares no \"files\" field and no .npmignore exists, so both package.json's scripts block and scripts/fetch-native.js are packed into the published tarball. This is not a development-only path."
+        }
+      ],
+      "limits": "Establishes that install-time code execution is opened on consumers, not that the code currently run is malicious -- the first-party script was read and contains no obfuscation, no base64/eval chain and no environment dump (SUP-19, refuted below). It says nothing about lifecycle scripts inside the declared dependencies: no dependency tree was resolved, so `node_modules/*/package.json` was never enumerated."
+    },
+    {
+      "id": "F-4002",
+      "title": "Install hook downloads an unverified remote binary to /usr/local/bin and marks it executable",
+      "procedure": "SUP-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "scripts/fetch-native.js",
+        "line": 17,
+        "component": "download() / main()"
+      },
+      "evidence": "scripts/fetch-native.js:17 `const url = 'https://downloads.example.net/billing-native/latest/billing-native';` -- a mutable `latest` path on a host that is not the package's own scope. Line 18 `const dest = '/usr/local/bin/billing-native';` -- a directory on the default PATH, outside the package. Lines 8-12: the response body is piped straight to the file with no HTTP status-code check, so a 3xx/4xx/5xx body is written as the artifact. Lines 19-20: `await download(url, dest); execSync(`chmod +x ${dest}`);` -- the file is made executable with no digest check, no signature check and no size check anywhere in the file. The repository already implements the correct pattern 30 lines away: scripts/fetch-schema.js:5,17-20 pins a SHA-256 and throws `schema digest mismatch, refusing to build` before writing. That control was not applied on this path.",
+      "impact": "Whoever controls downloads.example.net, its CDN cache, or the `latest` pointer behind it chooses the contents of an executable placed on the PATH of every machine that installs @acme/billing-cli, and it is made executable in the same breath. Because the path is `latest` rather than a version, the content can change after the package is published and after any review of the tarball, so auditing release 2.3.0 does not bound what a consumer receives from it tomorrow. Missing status-code handling widens this: a captive portal, a proxy error page or a CDN 404 body is written to /usr/local/bin and chmod'ed +x, giving a PATH-resident file of arbitrary content. This is the class of CVE-2024-3094 (xz utils): the payload never has to appear in the source that was read.",
+      "preconditions": "The install runs with write permission to /usr/local/bin -- root in CI containers and on many Linux images, and the ordinary case on Homebrew-managed macOS where /usr/local/bin is user-writable. The attacker must control the download host, the CDN edge, the `latest` pointer, or a CA-trusted TLS path to them.",
+      "recommendation": "Pin the artifact by immutable version and verify it before it touches the filesystem: fetch to a temporary path, compare a SHA-256 (or verify a detached signature / a cosign attestation) against a constant committed in this repository, and only then move it into place -- the exact shape scripts/fetch-schema.js already uses. Check `res.statusCode === 200` and fail closed on anything else, and fail closed on a digest mismatch rather than leaving a partial file. Do not write outside the package directory: install the helper under the package's own path and resolve it from the CLI, so the install cannot alter the consumer's PATH. Best of all, distribute the binary as an npm optional platform package so the lock file and registry integrity hash cover it (see F-001).",
+      "traceability": [
+        "CWE-494",
+        "CWE-829",
+        "CWE-345",
+        "CWE-427",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-4",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-04's compensating control is a download pinned by digest and verified with `sha256sum -c` or a signature before it executes. scripts/fetch-native.js contains no hash, no signature check and no `crypto` import at all; the only verification in the repository lives in the sibling scripts/fetch-schema.js and is not reached from this path. The project's own code proves the control exists and was not wired here."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-04's other exculpation is that the step runs only in a documented local development environment and is not part of what ships. The opposite is true: the script is bound to `preinstall` in package.json:8, and with no \"files\" allowlist and no .npmignore both files are packed into the published tarball, so this runs on the consumer, not on the maintainer's workstation."
+        }
+      ],
+      "limits": "The download host was never contacted, so nothing here characterises what downloads.example.net currently serves; the finding is about the absence of verification, which is a property of the code and is settled by reading it. `execSync` is not reported as command injection: `dest` at line 18 is a constant string, so no attacker-controlled value reaches the shell (FP-02 would hold for that separate claim, which is therefore not made)."
+    },
+    {
+      "id": "F-4003",
+      "title": "Live-format API credential committed in config/runtime.json and packed into the published tarball",
+      "procedure": "SUP-16",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "config/runtime.json",
+        "line": 5,
+        "component": "reporting.token"
+      },
+      "evidence": "config/runtime.json:3-6 -- `\"reporting\": { \"endpoint\": \"https://reports.acme.example/v1\", \"token\": \"acme_live_[REDACTED:secret]\" }`. Format class: vendor prefix `acme_live_` followed by 32 lowercase hexadecimal characters, 42 characters in total; the `live` segment is the vendor's own production-versus-test marker. The value is paired in the same object with the endpoint it authenticates to. The repository's actual placeholder convention is visible one directory up and is entirely different: .env.example uses `replace-me`, an all-zero `sk_test_` value and `user:password@localhost`. package.json declares no \"files\" allowlist and no .npmignore exists, so config/runtime.json is inside the published tarball -- npm's default exclusions do not cover it.",
+      "impact": "A bearer credential marked as production is distributed to every consumer of @acme/billing-cli and to anyone who fetches the tarball from the public registry, alongside the exact endpoint it opens. Whoever reads it can act as the billing CLI against the reporting service for as long as the token lives -- submitting, altering or reading whatever that API exposes -- with no account, no exploit and no interaction with the victim. Publication is irreversible: unpublishing the version does not recall copies already in consumer lock files, mirrors and caches. GitGuardian 2026 measured that 64% of valid secrets detected in 2022 were still live, which is why rotation, not deletion, is the deliverable.",
+      "preconditions": "None on the attacker's side beyond reading a published package or the repository. The token must still be valid, which was deliberately not tested.",
+      "recommendation": "Treat the credential as compromised and rotate it at the reporting provider now, with a named owner and a date -- deleting the line first only removes the evidence. Then remove the secret from the file and read it from the environment or a secret manager at runtime, leaving `config/runtime.json` with non-sensitive fields (endpoint, feature flags) only. Add a `\"files\"` allowlist to package.json so the tarball carries only what the CLI needs, add a pre-commit secret scan (`gitleaks dir . --redact`, offline), and review the reporting service's access log for use of this token from outside your own infrastructure. If this repository is ever placed under version control with this file in it, the value must be considered exposed in history as well (SUP-17).",
+      "traceability": [
+        "CWE-798",
+        "CWE-540",
+        "CWE-522",
+        "CWE-312",
+        "A02:2025",
+        "A04:2025",
+        "CICD-SEC-6",
+        "SSDF PS",
+        "PS.1.1",
+        "NIST 800-53 IA",
+        "CCM CEK",
+        "ATT&CK T1552"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-16's exculpation covers examples, placeholders and documented test-service keys. This value is none of those: it carries an explicit `live` environment marker rather than a test marker, its 32 hex characters are high-entropy rather than a repeating or zeroed pattern, and it does not follow this repository's own placeholder convention, which is demonstrated in .env.example three files away (`replace-me`, an all-zero `sk_test_` value). A file-level descriptive `note` field is content of the audited artifact, not a control, and does not change the format class of the value beside it."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data is not public content or a synthetic record: it is a bearer token stored next to the endpoint it authorises (reports.acme.example/v1), so its whole security value is that it grants access there."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally to test whether the file reaches consumers. package.json has no \"files\" field and the tree has no .npmignore; config/runtime.json is not covered by npm's built-in exclusion list, so it is packed into the published artifact rather than being a source-only path."
+        }
+      ],
+      "limits": "Whether the credential is currently valid was not established: validating a credential against its provider is prohibited by the engagement contract, and no request was made to reports.acme.example. The finding rests on format class, the production marker, and the file's presence in what ships -- which is why the deliverable is rotation with an owner and a date rather than a validity verdict. It also does not establish how long the value has been present: with no .git directory in scope there is no blame or history to read."
+    },
+    {
+      "id": "F-4004",
+      "title": "Runtime dependency `lodahs` is a single-character transposition of `lodash`",
+      "procedure": "SUP-07",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "package.json",
+        "line": 16,
+        "component": "dependencies.lodahs@1.0.1"
+      },
+      "evidence": "package.json:16 `\"lodahs\": \"1.0.1\"`, declared in `dependencies` (production), not `devDependencies`. The name differs from `lodash` -- one of the most-installed packages on npm -- only by the transposition of the final two characters. It is the sole exact-pinned dependency other than node-fetch, and the only one pinned to a `1.0.1` first-minor version. No file in scope imports it: the two JavaScript files present require only the node builtins fs, https, crypto and child_process, and the declared entry point bin/billing.js (package.json:6) does not exist in the tree.",
+      "impact": "If the registry name is a squat rather than a legitimate project, it is installed as a production dependency on every consumer and its own lifecycle scripts run at install time -- the same window F-001 opens for the first-party script, and the one Backstabber's Knife Collection measured as carrying 56% of real npm malware. Import is not required for that payload to run. Sonatype's 2026 figures put 454,600 new malicious packages in 2025 with more than 99% of open-source malware in npm, so the base rate for this construct is not low.",
+      "preconditions": "The consumer installs with lifecycle scripts enabled (npm's default) for the install-time payload; for a runtime payload, application code would have to import the module, which cannot be assessed here because the entry point is absent from the tree.",
+      "recommendation": "Before anything else, determine what this dependency is for -- nothing in the tree uses it, and a dependency nobody imports is a dependency you can delete. If a utility library is genuinely needed, depend on `lodash` (or a specific `lodash.*` module) by its correct name. In parallel, run SUP-07's four-signal check against the registry as a read-only query -- existence, age of first publication, download volume, and whether the maintainer matches the declared repository -- and if the package proves to be a squat, treat every machine that has installed it as exposed and rotate credentials reachable from those machines. Wire a lock-diff review into pull requests so a name like this is seen when it is added rather than in an audit.",
+      "traceability": [
+        "CWE-1357",
+        "CWE-829",
+        "CWE-506",
+        "A03:2025",
+        "A08:2025",
+        "SSDF PW",
+        "NIST 800-53 SR",
+        "ATT&CK T1195"
+      ],
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "UNKNOWN",
+          "reason": "SUP-07's exculpation is that the package is a recognised official fork or port with a long history and a matching maintainer, or that the similar name predates the popular one. Settling that requires the four registry signals SUP-07's minimal test names, and this engagement is offline with no registry query permitted, so none of the four -- existence, first-publication date, download volume, maintainer-versus-repository -- could be obtained. The condition could not be established in either direction, which caps this finding at `probable` and forbids `confirmed`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoked additionally, because absence of an import is the tempting way to dismiss this. It does not apply: the entry sits in `dependencies`, not `devDependencies`, so the package is fetched and its install hooks run on every consumer install regardless of whether any code imports it. The shipped-path question is settled by the manifest, not by the call graph."
+        }
+      ],
+      "inference": "That `lodahs` is not a legitimate package is inferred, not observed. What was observed is the name's single-character distance from `lodash`, its placement in production dependencies, and that nothing in the tree imports it. The registry evidence that would confirm or refute it -- SUP-07's four signals -- was unobtainable offline, and the package body was never present to read.",
+      "limits": "Says nothing about what the published `lodahs@1.0.1` contains: no dependency code was available and none was fetched. It also does not assert the reverse -- a package with a confusable name can be benign, and the recommendation is written so the read-only registry check settles it before anyone treats machines as compromised."
+    },
+    {
+      "id": "F-4005",
+      "title": "Non-text artifact tracked and published under vendor/ with no build recipe and no reader",
+      "procedure": "SUP-23",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "vendor/billing-native",
+        "component": "vendor/billing-native (42 bytes)"
+      },
+      "evidence": "`file vendor/billing-native` reports `ELF 64-bit LSB *unknown arch 0x7574* (SYSV)`; the first eight bytes are a genuine ELF ident (7f 45 4c 46 02 01 01 00), so this is a non-text tracked artifact rather than a misclassified text file. Its provenance is disclaimed by the repository itself at vendor/README.md:1-2: \"`billing-native` is a fixture standing in for a compiled helper. It is not the output of any recipe in this repository.\" A search of every file in scope for a reader (`grep -rn 'billing-native|vendor/'`) returns only that README and the two constants in scripts/fetch-native.js:17-18, which name a same-named artifact fetched from the network to /usr/local/bin -- a different file, not this one. No build step, script or shipped file reads vendor/billing-native. With no \"files\" allowlist in package.json and no .npmignore, it is nevertheless packed into the published tarball.",
+      "impact": "The package distributes an opaque, non-reviewable artifact whose origin the repository explicitly cannot account for, and which no scanner in this discipline can see -- osv-scanner, trivy and grype are structurally blind to a blob with no manifest entry and no version, so a clean run over this repository would prove nothing about it. Today it is dead weight in the tarball rather than an execution path; the risk it carries is that a future build step or entry point can start reading it without anyone re-deriving where it came from, which is precisely the half of CVE-2024-3094 that lived inside the repository rather than in the release.",
+      "preconditions": "For any execution impact, a build step or shipped code would have to read or execute the file. None does in the tree as read.",
+      "recommendation": "Either delete it, or make it accountable: commit the recipe that produces it in this repository so it can be regenerated and diffed, or replace it with an upstream artifact pinned by digest whose source you can compare. Whichever way, add a `\"files\"` allowlist to package.json so unaccounted files cannot ride along into the tarball, and add a check that fails the build when a tracked non-text file has no documented origin (`git ls-files -z | xargs -0 file --mime-encoding | grep -w binary`, minus a declared allowlist).",
+      "traceability": [
+        "CWE-506",
+        "CWE-494",
+        "CWE-829",
+        "CWE-1357",
+        "A03:2025",
+        "A08:2025",
+        "SLSA Source L2",
+        "SSDF PS",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-23's exculpation is that the binary is the declared output of a recipe living in the same repository and can be regenerated, or is a vendored artifact pinned by digest whose upstream source can be diffed. The repository rules this out in its own words at vendor/README.md:1-2 -- it is not the output of any recipe here -- and no digest, version or upstream reference for it appears anywhere in scope."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-23's classifier caveat is that an unusual encoding or one enormous minified line made `file` call a text file binary. That is not the case: the file opens with the ELF magic number and NUL bytes and is classified as ELF, not as text with odd encoding. The second exculpation -- inert data such as an image, font or golden file -- was tested the way SUP-23 requires, by looking for the reader rather than by the file's location, and no reader exists; but 'nobody reads it' makes it dead weight, not accounted-for data, which is why this is reported as hardening rather than dropped."
+        }
+      ],
+      "limits": "The blob is 42 bytes and carries an unknown machine architecture, so it cannot be a functioning executable as it stands; this is reported as a provenance and packaging defect, not as a live payload, and the evidence states the size rather than implying more. The search for a reader covered only the 9 files in scope: the entry point declared at package.json:6 (bin/billing.js) is absent from the tree, so a reader could exist in code this audit never saw -- that is the one path by which this would stop being hardening."
+    },
+    {
+      "id": "F-4006",
+      "title": "Published artifact carries no provenance attestation and no signature",
+      "procedure": "SUP-12",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "package.json",
+        "line": 10,
+        "component": "scripts.release"
+      },
+      "evidence": "package.json:10 `\"release\": \"npm publish\"` -- a bare publish with no `--provenance` flag. `grep -rn 'cosign|slsa-verifier|gh attestation|gpg --verify|sha256sum'` over the whole scope returns nothing, so no signing or verification step exists anywhere in the tree, and there is no .github/ or other CI configuration that could attach an attestation. package.json:4 `\"private\": false` confirms the package is meant for a public registry. The result is SLSA Build L0 for an artifact that, per F-001 and F-002, runs code on its consumers at install time.",
+      "impact": "A consumer has no way to bind the tarball they install to a source commit, a builder or an identity: nothing distinguishes a release built from this repository from one produced by whoever holds the publishing credential. This grants an attacker nothing on its own -- it removes a detection and attribution control rather than opening a path -- which is why it is recorded at informational. It matters more than usual here only because the package executes an install hook, so the artifact consumers cannot verify is also the artifact that runs.",
+      "preconditions": "Becomes load-bearing only if the publishing credential or the maintainer account is compromised; SUP-10 is the procedure for that question, and it could not be exercised (see ruled_out).",
+      "recommendation": "Publish from CI with npm's OIDC Trusted Publishing (`permissions: id-token: write`) and `npm publish --provenance`, so each release carries a signed attestation naming the commit and the builder; npm classic tokens were revoked on 9 December 2025 and granular write tokens are capped at 90 days, so a stored NPM_TOKEN is no longer the right shape regardless. Then state the SLSA Build level the project targets and check releases against it, rather than treating provenance as optional documentation.",
+      "traceability": [
+        "CWE-347",
+        "CWE-345",
+        "CWE-494",
+        "A08:2025",
+        "CICD-SEC-9",
+        "SLSA Build L1",
+        "SLSA Build L2",
+        "SSDF PS",
+        "NIST 800-53 SR"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-12's exculpation is that the registry already stores provenance attestations from a hosted builder which the consumer verifies. There is no hosted build path in scope at all -- `release` is a bare `npm publish` run from wherever the maintainer stands -- so no unskippable layer produces an attestation."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-12's other exculpation is an artifact consumed only internally, by immutable digest, from an access-controlled registry. package.json:4 sets `\"private\": false` and .npmrc:1 points the unscoped default registry at registry.npmjs.org, so the consumer is a second principal outside the publisher's perimeter."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "Real but bounded to informational. No exploit path is asserted: the absent attestation is a defence-in-depth and attribution control, and its absence gives an attacker no capability they did not already have. Recorded rather than deleted, exactly as FP-10 requires, because it is the control that would have contained F-001 and F-002 had the publishing account been misused."
+        }
+      ],
+      "limits": "Established from the tree only. Whether the npm registry already holds attestations for previously published versions of @acme/billing-cli was not checked -- that requires a registry query, which this engagement did not perform -- so this describes the release path as configured here, not the history of the published package."
+    },
+    {
+      "id": "F-5001",
+      "title": "Lethal trifecta in one support agent: customer-written text, billing data and credentials, and an unrestricted outbound and execution channel",
+      "procedure": "AI-01",
+      "status": "probable",
+      "severity": "critical",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 48,
+        "component": "support assistant (answer.py + memory.py + config/mcp.json)"
+      },
+      "evidence": "Per-agent capability inventory built from the files in scope, one row per capability. (1) Private data and credentials: agent/answer.py:59-64 `issue_refund`/`lookup` operate on billing accounts; agent/answer.py:7 reads ANTHROPIC_API_KEY from the process environment; config/mcp.json:3-7 places a literal billing API key in the `billing` server's env, in the same deployment. (2) Untrusted ingestion: agent/memory.py:26-28 `ingest_ticket` indexes `ticket[\"body\"]`, text written by whoever files a support ticket, and agent/answer.py:11-13 `build_prompt` concatenates retrieved documents into the same flat string as SYSTEM. (3) Outbound and execution channel: agent/answer.py:48 `subprocess.run(model_output, shell=True, ...)` reaches the whole shell grammar and therefore the network and every credential the process user holds; agent/answer.py:30 `issue_refund(decision[\"account_id\"], decision[\"amount\"])` is a state-changing effect whose destination the model names. Three marks on one agent.",
+      "impact": "An attacker who files a support ticket writes text that the agent reads with the standing of an instruction, and that agent holds both the billing credentials and a shell. The attacker does not need a flaw in any component: the composition is the flaw. The reachable outcomes are refunds to an attacker-chosen account, disclosure of another account's data through `lookup`, and arbitrary command execution on the host with ANTHROPIC_API_KEY and the billing key in the environment.",
+      "preconditions": "The attacker can put text into the retrieval corpus, which for a support product means filing a ticket. No account on the target system and no authentication beyond that is required.",
+      "recommendation": "Break a leg; do not add a sentence to SYSTEM asking the model to ignore instructions in data, which is a request rather than a control. In order of effect: (a) delete `summarize_and_run` and remove the shell entirely, since nothing in a support assistant needs it; (b) route every tool through `run_tool_scoped`'s shape, so the authenticated subject and not the model names the object, and keep refunds outside the assistant's reach; (c) isolate ingestion behind the Dual LLM or Plan-Then-Execute pattern, where the component that reads ticket text holds no credentials and returns typed values to a privileged orchestrator, or enforce capabilities at the call site as CaMeL (arXiv:2503.18813) does.",
+      "traceability": [
+        "LLM01:2026",
+        "LLM02:2026",
+        "LLM03:2026",
+        "ASI01",
+        "ASI02",
+        "AML.T0051.001",
+        "CWE-284"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer sits between ingestion and the sensitive capabilities that a call must pass through. The four safer variants in the tree (build_prompt_marked at answer.py:16, run_tool_scoped at answer.py:36, summarize_and_render at answer.py:51, ingest_ticket_marked at memory.py:31) are sibling functions a caller may simply not choose, and triage.md FP-01 states explicitly that a control a caller may forget is not this rule."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named: the ticket author at memory.py:28 is not the account holder whose records `lookup` returns and whose money `issue_refund` moves at answer.py:59-64. The two identities are distinct and the boundary between them is crossed inside one agent."
+        }
+      ],
+      "inference": "That one agent holds all three legs at the same time. The three capabilities are located in one module set, one process environment and one MCP configuration, but agent/answer.py:7 builds an Anthropic client that is never called, so there is no agent loop in scope proving the legs are composed in a single session rather than belonging to separate entry points.",
+      "limits": "Establishes the composition from the code that is present. It does not establish that the deployment wires the unsafe variants rather than the safe ones, and it does not enumerate egress channels outside these files: no renderer, HTTP layer or CSP is in scope, so a markdown-image channel (AI-16) would be an additional leg neither confirmed nor excluded here."
+    },
+    {
+      "id": "F-5002",
+      "title": "Model output executed as a shell command with shell=True",
+      "procedure": "AI-15",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 48
+      },
+      "evidence": "agent/answer.py:46-48\n\n    def summarize_and_run(model_output: str) -> str:\n        \"\"\"Runs the shell snippet the model produced for the operator.\"\"\"\n        return subprocess.run(model_output, shell=True, capture_output=True, text=True).stdout\n\nThe function's only parameter is the model's text, the docstring names it as such, and it reaches `subprocess.run` with `shell=True` without validation, quoting, allowlist or sandbox. Source, transformation and sink are one line apart; AI-15's minimal test is static reachability and nothing needs to be executed.",
+      "impact": "Whoever can steer a single line of the model's output runs arbitrary commands as the agent's process user. That process holds ANTHROPIC_API_KEY (answer.py:7) and sits in the deployment that carries the billing key (config/mcp.json:6), so the first command an attacker runs is the one that reads them. `shell=True` also means the shell metacharacters are live, so a benign-looking summary with a trailing `; curl ...` is enough \u2014 the payload does not have to look like a command.",
+      "preconditions": "Influence over the model's output, which the retrieval path of F-004 and F-005 supplies to any customer who files a ticket.",
+      "recommendation": "Delete the function. A support assistant has no operator-shell use case that justifies it, and the safe counterpart the file already contains (`summarize_and_render`, answer.py:51-56) shows the intended shape: validate the model's output against a closed set of operations and return data. If some operator tooling genuinely needs to run commands, the model may select an identifier from a fixed list of parameterised commands \u2014 never compose the string \u2014 and the execution must move into a process with no credentials, no network and an ephemeral filesystem.",
+      "traceability": [
+        "LLM10:2026",
+        "ASI05",
+        "A05:2025",
+        "CWE-94",
+        "CWE-78",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists on this path: no sandbox declaration, container spec, seccomp profile, allowlist or schema validation appears anywhere in the target, and the call passes the raw string straight to a shell. The closed-list validation that would be this rule's artifact lives in a different function (answer.py:51-56) that this one does not call."
+        }
+      ],
+      "limits": "Establishes that model output reaches a shell sink in the code as written. No caller of `summarize_and_run` exists in the audited files, so how a deployment reaches it, and therefore its live blast radius, was not established \u2014 that bound is why severity is `high` rather than `critical`."
+    },
+    {
+      "id": "F-5003",
+      "title": "Refund authorization decided by the model's text, with the authenticated subject discarded",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 29
+      },
+      "evidence": "agent/answer.py:27-33\n\n    def run_tool(decision: dict, session: dict) -> str:\n        \"\"\"Executes the tool the model asked for.\"\"\"\n        if decision[\"tool\"] == \"refund\":\n            return issue_refund(decision[\"account_id\"], decision[\"amount\"])\n        if decision[\"tool\"] == \"lookup\":\n            return lookup(decision[\"account_id\"])\n        return \"unknown tool\"\n\nBoth the operation and its object come out of `decision`, the model's own output. `session` is accepted on line 27 and never read \u2014 the authenticated identity was in the function's hands and was dropped. `issue_refund` and `lookup` (answer.py:59-64) take the account id as a plain string and act on it; no role check, no object-level authorization and no downstream token appears on the path. No tool with an irreversible effect is behind a confirmation gate anywhere in the target (AI-07: the set of side-effecting tools is {issue_refund, summarize_and_run, remember_from_reply}; the set of gated tools is empty).",
+      "impact": "A model that has read attacker text emits `{\"tool\": \"refund\", \"account_id\": <attacker>, \"amount\": <attacker>}` and the money moves. The same primitive reads any account through `lookup`, so it is a disclosure path across customers as well as a payment path. The permission rule this code needs \u2014 act only on the caller's own account, never refund \u2014 exists in the file at answer.py:36-43 and is simply not the function being audited here.",
+      "preconditions": "Influence over the model's decision output; for a support assistant that is ticket text, per F-004 and F-005.",
+      "recommendation": "Replace the body with `run_tool_scoped`'s discipline: take the object from `session[\"authenticated_account_id\"]` and never from the model, and keep `refund` off the assistant's tool surface entirely, as that function already does by raising PermissionError. Authorize inside `issue_refund` and `lookup` against the concrete object rather than at the dispatcher, so no future caller can reintroduce the gap, and add a unit test that calls a sensitive tool with a session lacking permission and asserts it fails in authorization rather than in argument validation. Separately, put every irreversible effect behind a confirmation that renders the literal arguments (AI-07), not a summary the model wrote.",
+      "traceability": [
+        "LLM03:2026",
+        "ASI02",
+        "ASI03",
+        "ASI09",
+        "A01:2025",
+        "CWE-862",
+        "CWE-863",
+        "ASVS 5.0 V8"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer authorizes this. `issue_refund` and `lookup` at answer.py:59-64 are the terminal implementations in scope and they perform the operation on the string they are handed; there is no middleware, no row-level policy and no end-user token forwarded to a backend that could authorize per object. The unused `session` parameter on line 27 is the positive evidence that identity was available at the decision point and was not applied."
+        }
+      ],
+      "limits": "Establishes that the dispatcher decides authorization from model-controlled text. The implementations of `issue_refund` and `lookup` in scope are stubs returning formatted strings, so the audit did not observe a real billing system being reached, nor whether one exists behind them that applies its own authorization."
+    },
+    {
+      "id": "F-5004",
+      "title": "Retrieved documents interpolated into the prompt with no delimitation or provenance marking",
+      "procedure": "AI-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 13
+      },
+      "evidence": "agent/answer.py:11-13\n\n    def build_prompt(question: str, docs: list[str]) -> str:\n        joined = \"\\n\".join(docs)\n        return f\"{SYSTEM}\\n\\nKnowledge:\\n{joined}\\n\\nCustomer question: {question}\"\n\n`docs` is `list[str]` \u2014 the type itself has no room for an origin or a trust level \u2014 and the documents land in the same flat string as SYSTEM, separated only by the literal word `Knowledge:`, which a document can also contain. There is no delimiter the data cannot forge, no per-token marking of the data span, and no encoding of the block. The corpus these documents come from is written by `ingest_ticket` (memory.py:26-28) from customer ticket bodies.",
+      "impact": "Text written by a customer arrives in the model's context indistinguishable from the operator's instructions, which is the precondition for every downstream effect in this audit: it is what turns F-003's dispatcher into an attacker-controlled refund and F-002's shell into attacker-controlled command execution. The NCSC's 2025-12-08 framing applies directly \u2014 there is no parameterised-query equivalent here, so no phrasing added to SYSTEM repairs it.",
+      "preconditions": "The attacker can get a document into the retrieval corpus; filing a support ticket does it.",
+      "recommendation": "Use `build_prompt_marked` (answer.py:16-24), which the file already contains and which is the correct shape: one text block per document, wrapped with its `source` and `trust` attributes, in a user-role turn distinct from SYSTEM. Then delete `build_prompt` so the unsafe path cannot be selected. Add a test that indexes a document containing an instruction and an inert marker and asserts the marker never appears in the answer \u2014 spotlighting (arXiv:2403.14720) reports attack success dropping from over 50% to under 2% with this class of change. Pair it with F-005 so the `trust` attribute the marked builder renders is actually populated at ingestion.",
+      "traceability": [
+        "LLM01:2026",
+        "ASI01",
+        "AML.T0051.001",
+        "CWE-77"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no sanitizer, normalizer or delimiting layer between the retrieval store and this f-string; the target contains no filter of any kind on ingested text (the AI-20 sweep found no normalization code and no non-ASCII input handling). The delimited construction exists only as a separate function at answer.py:16 that this one does not call."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is attacker-controlled. `docs` is fed by the retrieval corpus, and memory.py:26-28 writes `ticket[\"body\"]` \u2014 the free text of a customer support ticket \u2014 into that corpus with no review step, no closed-domain list and no approval gate. Tracing the value backwards ends at an external writer, not at a constant."
+        }
+      ],
+      "inference": "The link from the corpus that `ingest_ticket` writes to the `docs` parameter this function reads. No retrieval call \u2014 no `similarity_search`, retriever, or query \u2014 exists anywhere in the audited files, so that the indexed ticket bodies are the documents reaching `build_prompt` is inferred from the module structure and the shared `index` object, not observed in code.",
+      "limits": "Does not establish which builder a deployment calls, since neither has a caller in scope, and does not measure how much of a document survives into the context, since no retrieval or truncation logic is present."
+    },
+    {
+      "id": "F-5005",
+      "title": "Customer tickets indexed into the retrieval corpus with no origin or trust metadata",
+      "procedure": "AI-12",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/memory.py",
+        "line": 28
+      },
+      "evidence": "agent/memory.py:26-28\n\n    def ingest_ticket(ticket: dict, index) -> None:\n        \"\"\"Indexes a customer ticket into the retrieval store.\"\"\"\n        index.add_texts([ticket[\"body\"]])\n\n`add_texts` is called with the body alone. No `metadatas` argument, so the chunk enters the index carrying no origin, no trust level and no ticket identifier. The same file proves the API accepts all three: `ingest_ticket_marked` at memory.py:31-36 passes `metadatas=[{\"origin\": \"customer-ticket\", \"trust\": \"untrusted\", \"ticket_id\": ticket[\"id\"]}]`.",
+      "impact": "The write path into the corpus is open to any customer, and once a chunk is in the index nothing records who contributed it. Three consequences follow from that single omission: retrieval cannot filter on trust, so there is no way to keep untrusted chunks out of a privileged answer; a poisoned document cannot be selectively reverted, only the whole index rebuilt; and no post-incident question about which ticket produced which answer can be answered. PoisonedRAG (USENIX Security 2025) sets the scale \u2014 five injected texts among 2.6 million documents forced the target answer 97% of the time \u2014 so the defence is provenance, not volume.",
+      "preconditions": "The attacker files a support ticket, which is the intended use of the channel.",
+      "recommendation": "Use `ingest_ticket_marked` (memory.py:31-36) and delete the unmarked function, so no chunk can enter the index without an origin, a trust level and a revert key. Then make the metadata load-bearing on the read side: require a trust filter in the retrieval call's signature so a caller cannot omit it, and feed the stored `origin`/`trust` into `build_prompt_marked`'s document attributes (F-004), which currently expects fields that the unmarked ingestion never writes.",
+      "traceability": [
+        "LLM05:2026",
+        "LLM09:2026",
+        "ASI06",
+        "CWE-349",
+        "ASVS 5.0 V2"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Neither exculpation applies on this path. There is no origin or trust metadata for retrieval to filter on \u2014 that is the finding \u2014 and there is no human approval step or closed domain list: `ingest_ticket` takes a ticket dict and writes it to the index in one statement, with no queue, review flag or allowlist anywhere in the target."
+        }
+      ],
+      "inference": "That the indexed content reaches an answer. The retrieval read side is absent from the audited files \u2014 no `similarity_search`, `as_retriever` or query call exists \u2014 so the step from a poisoned chunk to a generated answer is argued from the module's stated purpose rather than observed.",
+      "limits": "Severity is held at `medium` deliberately: the boundary-crossing impact of untrusted text governing generation is already counted once, in F-004. What this finding adds on its own is that the corpus is unauditable and cannot be selectively reverted, which is real and bounded. The audit also did not see the index implementation, so whether the engine records provenance of its own accord could not be checked."
+    },
+    {
+      "id": "F-5006",
+      "title": "Free-text model replies appended to a shared long-lived memory store",
+      "procedure": "AI-13",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/memory.py",
+        "line": 13
+      },
+      "evidence": "agent/memory.py:6 and 10-14\n\n    STORE = Path(\"/var/lib/acme/agent-memory.json\")\n    ...\n    def remember_from_reply(reply: str) -> None:\n        \"\"\"Persists whatever the model decided is worth keeping.\"\"\"\n        data = json.loads(STORE.read_text()) if STORE.exists() else {}\n        data.setdefault(\"notes\", []).append(reply)\n        STORE.write_text(json.dumps(data))\n\nThe whole reply string is appended verbatim to `notes`. No schema, no key allowlist, no origin mark, no expiry and no size bound sit between the model's text and the file \u2014 the docstring states the design plainly. The destination is a single process-wide path with no subject in it, so `notes` is one list shared by every session that loads the store.",
+      "impact": "This is the persistence half of the injection problem. An instruction that survives into a reply \u2014 which, per F-004, may be text a customer wrote \u2014 is written to disk and re-enters later sessions carrying the authority of the assistant's own history, after the ticket that carried it is long gone. Because the store has no subject key, what one session writes is read back by every session, so a single successful injection becomes a durable, cross-user condition rather than a per-conversation one. MINJA (arXiv:2503.03704) reports over 95% injection success through queries alone with no access to the store, and SpAIware (2024-09) documented the consequence as continuous exfiltration across future sessions.",
+      "preconditions": "One reply containing attacker-influenced text, plus the store being read back on a later turn.",
+      "recommendation": "Delete `remember_from_reply` and route all persistence through `remember_preference` (memory.py:17-23), which is already the correct pattern: a closed key set, a typed value and a TTL. If a free-text note is genuinely required, it must be extracted into a typed field by a deterministic parser rather than copied, stored with its origin and trust level, expired, and made inspectable and deletable by the user. Key the store by authenticated subject either way, so one identity's memory cannot become another's.",
+      "traceability": [
+        "LLM01:2026",
+        "LLM05:2026",
+        "ASI06",
+        "AML.T0051.001",
+        "CWE-349"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Neither exculpation applies to this function. It stores free text derived from model output rather than fields from a closed schema \u2014 `ALLOWED_KEYS` at memory.py:7 exists but is enforced only in `remember_preference`, never here \u2014 and there is no expiry: the `ttl_days` field is written at memory.py:22 on the preference path only, while `notes` entries carry no expiry and no deletion path appears anywhere in the target."
+        }
+      ],
+      "inference": "That the persisted notes are read back into a later context. No reader of the `notes` array exists in the audited files, so the re-injection loop that produces the cross-session impact is argued from the module's declared role ('Long-lived assistant memory') and the persistence of the file, rather than observed in code.",
+      "limits": "Establishes the write path and the absence of any schema, mark or expiry on it. It does not establish which component calls the function or how the store is loaded into a prompt, and it does not assess per-user partitioning, which cannot be settled without the caller."
+    },
+    {
+      "id": "F-5007",
+      "title": "Live-format billing credential written in plaintext into the MCP configuration",
+      "procedure": "AI-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "config/mcp.json",
+        "line": 6
+      },
+      "evidence": "config/mcp.json:3-7\n\n    \"billing\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@acme/billing-mcp@latest\"],\n      \"env\": { \"BILLING_API_KEY\": \"[REDACTED:secret]\" }\n    }\n\nThe value is a literal, not a reference. Format class recorded rather than reproduced: vendor prefix `sk-acme-` followed by 32 lowercase hexadecimal characters, 40 characters in total. It was not tested against any provider, per the engagement contract. The sibling entry at config/mcp.json:11 sets `\"DOCS_TOKEN\": \"${DOCS_TOKEN}\"`, which establishes that the substitution idiom was available in this very file and was not used for the billing key.",
+      "impact": "Everyone who can read the repository or the deployed configuration holds the billing API key, and any process that can read the file \u2014 including the agent itself through the shell of F-002 \u2014 can exfiltrate it. Because it is written into the environment of the `billing` MCP server, it is also the credential handed to the unpinned third-party package of F-008: a registry compromise there does not have to steal the key, it is given it at startup. GitGuardian (2026) found 24,008 unique secrets in MCP configuration files, 2,117 still valid, so this is the modal instance of a measured class rather than an unusual one.",
+      "preconditions": "Read access to the configuration file, which every developer, every CI job and every process on the host that runs the agent has.",
+      "recommendation": "Treat the value as compromised: rotate it at the provider first, then remove the literal. Replace it with `\"${BILLING_API_KEY}\"` to match line 11, and supply the value from a secret manager at process start. Confirm the key's absence from history at the source repository (`git log -p -- config/mcp.json`) \u2014 the audited copy is not a git repository, so prior versions could not be checked here \u2014 and scope the replacement key to the operations the assistant actually needs, with a spending limit.",
+      "traceability": [
+        "LLM02:2026",
+        "LLM04:2026",
+        "ASI03",
+        "A02:2025",
+        "CWE-798",
+        "CWE-312"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a placeholder and not an obviously invalid example. It is a concrete 40-character value with a structured vendor prefix and a full 32-hex-character body, not `${VAR}`, `changeme` or a truncated sample. The `${DOCS_TOKEN}` form four lines below is the placeholder this file uses when it means one."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "config/mcp.json is a runtime configuration consumed verbatim by the MCP client at startup; it is not compiled, minified or filtered by any build. The target contains no build script, packaging manifest, environment flag or test marker that would strip or override this entry, and the file is not under a test or fixture directory."
+        }
+      ],
+      "limits": "The key's validity was deliberately not tested \u2014 AI-11 directs escalation rather than verification against the provider \u2014 so the finding establishes that a credential-format literal is committed in configuration, not that this particular key currently authenticates. If the value turns out to be synthetic, the finding stands at the same location as the practice of writing literals where the file's own placeholder idiom exists, with the impact reduced accordingly."
+    },
+    {
+      "id": "F-5008",
+      "title": "Third-party MCP server installed unpinned at every startup with a credential in its environment",
+      "procedure": "AI-09",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "config/mcp.json",
+        "line": 5
+      },
+      "evidence": "config/mcp.json:3-7\n\n    \"command\": \"npx\",\n    \"args\": [\"-y\", \"@acme/billing-mcp@latest\"],\n    \"env\": { \"BILLING_API_KEY\": \"[REDACTED:secret]\" }\n\nThe classification AI-09 asks for: third-party (a scoped registry package, not a path in this repository), unpinned (`@latest` resolves at every startup and `-y` suppresses the install prompt), no lockfile or integrity hash anywhere in the target, network-capable, and carrying a credential in its environment. That is the exact combination the procedure names as the finding. The `docs` entry at config/mcp.json:8-12 is the contrast: `node ./servers/docs/index.js`, a local path, with a placeholder token.",
+      "impact": "The code that runs is whatever was published under `@acme/billing-mcp` at the moment the agent last started, so the version reviewed and the version executed are not the same artifact by construction. Whoever gains control of that package name \u2014 a compromised maintainer account, a hijacked scope, a typosquat that the config is edited toward \u2014 executes on the host with the billing key already in the environment (F-007) and every other credential the process user holds. It is also the position from which tool poisoning and a rug pull operate: tool descriptions the client renders into the model's context can change between startups with nothing to compare them against.",
+      "preconditions": "Control of the published package under that name, or of the registry path to it. No access to the target's own systems is required.",
+      "recommendation": "Pin to an exact version with lockfile integrity, or run the server from a container image referenced by digest; drop `-y` so an unexpected install is visible. Record a hash per tool description at first approval and compare it at every startup, which converts a rug pull from an invisible change into a startup failure. Remove the credential from the server's environment per F-007 and scope the replacement to the minimum the billing tools need, so a supply-chain compromise does not inherit full billing authority. Vendor the server or move it first-party if the integration is long-lived.",
+      "traceability": [
+        "LLM04:2026",
+        "ASI04",
+        "A03:2025",
+        "A08:2025",
+        "CWE-829",
+        "CWE-1104"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No integrity layer sits in the path. The target contains no package-lock.json, no npm-shrinkwrap, no Dockerfile and no digest reference; `npx -y` with a floating tag resolves and executes directly with nothing to verify against. There is no allowlist or signature check the resolution must pass."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "What executes is publisher-controlled, not fixed. `@latest` is a mutable pointer resolved at startup, so the artifact is chosen by whoever can publish under that name rather than by anything in this repository. The exculpating form \u2014 an exact version with lockfile integrity, or a local path such as the `docs` entry at line 10 \u2014 is absent here and present four lines below, which is what distinguishes the two entries."
+        }
+      ],
+      "limits": "This is supply-chain exposure, not an incident: nothing in this audit indicates the package is currently malicious, and it was deliberately not downloaded or executed. The server's own tool descriptions could not be inspected for the reason recorded in the AI-08 ruled_out entry."
+    },
+    {
+      "id": "F-6001",
+      "title": "Dashboard serializer returns the whole customer record, including the national ID and internal-only fields",
+      "procedure": "PRV-02",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "app/serializers.py",
+        "line": 18,
+        "component": "customer_response"
+      },
+      "evidence": "app/serializers.py:18 -- `return asdict(customer)` over a dataclass that declares `national_id`, `internal_risk_score` and `support_notes` alongside `id`, `email` and `full_name` (lines 8-13). The same module declares the intended public projection three lines later: `PUBLIC_FIELDS = (\"id\", \"email\", \"full_name\")` (line 21). A response therefore carries `national_id`: [REDACTED:pii] and free-text `support_notes`: [REDACTED:pii] on top of the declared public set. Module docstring, line 1: \"API serializers for the customer-facing dashboard.\"",
+      "impact": "Over-exposure of data with a technical cause (a privacy risk, not a broken access control -- no cross-customer read was demonstrated and none is claimed). Three fields beyond the module's own declared public set leave the process on every serialized response: a direct identifier the dashboard does not display (`national_id`), an internal assessment about the person (`internal_risk_score`) and a free-text field that PRV-01 warns can hold more personal data than any field named `email` (`support_notes`). Once the object has left the server, not rendering those fields in the interface protects nothing: they are in the response body, in the browser cache and in any intermediary that stores it.",
+      "preconditions": "A request handler serializes with `customer_response()` rather than with `customer_response_public()`.",
+      "recommendation": "Make the projection the only way out rather than one of two options: remove `customer_response()`, or reduce it to a private helper that `customer_response_public()` filters, so no caller can reach `asdict()` directly. Pin the public shape with a test that fails when a field is added to the dataclass and not declared in `PUBLIC_FIELDS` -- the docstring on line 25 already claims such a test exists and no test file is present in the target.",
+      "inference": "Reachability. No route, view or caller exists anywhere in the target, so that the customer-facing dashboard calls `customer_response()` rather than its allowlisted sibling is read from the module and function docstrings, not observed.",
+      "traceability": [
+        "CWE-200",
+        "CWE-213",
+        "A01:2025",
+        "ASVS 5.0 V4",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`customer_response_public()` (app/serializers.py:24-26) is a sibling function, not a layer that cannot be skipped: the target contains no base serializer, no response middleware and no outbound schema between `asdict()` and the caller. A control that a caller has to choose -- and may forget -- is explicitly not this rule."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed and the code names it: the module docstring declares these serializers are for the customer-facing dashboard, so the second principal is the browser. `internal_risk_score` and `support_notes` are internal-audience content about the person, produced on one side of that boundary and delivered to the other."
+        }
+      ],
+      "limits": "Establishes what the function returns, not which endpoint returns it and not whether a caller can obtain another customer's record: no query, authorization or tenancy layer is in scope, so PRV-05 was not reached from here."
+    },
+    {
+      "id": "F-6002",
+      "title": "Request logging writes the caller's email address and national ID into the log record",
+      "procedure": "PRV-09",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "app/logging_setup.py",
+        "line": 11,
+        "component": "log_request"
+      },
+      "evidence": "app/logging_setup.py:11-12 -- `logger.info(\"request path=%s user=%s email=%s national_id=%s\", path, user[\"id\"], user[\"email\"], user[\"national_id\"])`, so each record carries email=[REDACTED:pii] and national_id=[REDACTED:pii]. `RedactingFormatter` is declared at line 20 and never installed: `grep -rn \"setFormatter|basicConfig|dictConfig|addHandler|getLogger\"` over the whole target returns no match, and `logger` is a parameter the caller supplies.",
+      "impact": "Personal data is copied into the log store, which carries none of the database's controls: different retention, usually no encryption at rest, and far broader read access (engineering plus whichever aggregator receives the stream). `national_id` is a direct identifier, so a log line is enough to re-identify without any join. Two routes reach the sink even where the formatter is attached: a handler configured without it, and any structured, JSON or APM handler that serializes `record.args` rather than the rendered string -- the redaction at line 25 rewrites the formatted text only, after the values are already on the record.",
+      "preconditions": "A caller uses `log_request()` rather than `log_request_redacted()`, and the logger it passes has at least one handler that does not apply `RedactingFormatter` or that consumes the record's arguments.",
+      "recommendation": "Remove `log_request()` or make it delegate to `log_request_redacted()`, so the opaque identifier is the only thing a caller can log. If the redaction is to stay as defence in depth, apply it on the record -- a `logging.Filter` over `args` and `extra` -- rather than on the rendered string, install it in the logging configuration that actually ships, and add the test PRV-09's exculpation requires: emit each field name through the configured logger and assert the value does not appear in the output.",
+      "inference": "Whether the deployed logging configuration attaches `RedactingFormatter` to every handler that receives these records. The call and the interpolated fields are observed in the code; the rendering at the sink is not, because no logging configuration exists in the target.",
+      "traceability": [
+        "CWE-532",
+        "CWE-359",
+        "A09:2025",
+        "ASVS 5.0 V16"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The redaction is not in a layer that cannot be skipped. `RedactingFormatter` (app/logging_setup.py:20-25) is per-handler, has no installation site anywhere in the target, and operates on the already-formatted string, so a handler without it or one that serializes `record.args` reaches the sink around it. PRV-09's exculpation additionally requires a test covering the field list, and the target contains none. The regex itself covers three field names in `key=value` form only, which is a narrower guarantee than the record holds."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The two values are direct identifiers of a natural person: `email` and `national_id` as declared on the Customer dataclass (app/serializers.py:9 and 11). PRV-01 decides that classification from the schema, and here the schema states it."
+        }
+      ],
+      "limits": "Does not establish where these logs land, who can read them, how long they are kept or whether they leave the organization: no aggregator, retention or APM configuration is in scope. No log output was produced -- nothing was executed."
+    },
+    {
+      "id": "F-6003",
+      "title": "Full name, email and national ID are interpolated into the prompt sent to the external model provider",
+      "procedure": "PRV-07",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "app/assistant.py",
+        "line": 12,
+        "component": "summarize_account"
+      },
+      "evidence": "app/assistant.py:12-13 builds `f\"Customer {customer['full_name']} ({customer['email']}, id {customer['national_id']}) had these events: {events}. ...\"` -- carrying [REDACTED:pii] in three interpolations -- and lines 15-18 pass it straight to `client.messages.create(...)` on the external client constructed at line 6. The whole `events` list is stringified as-is, including each event's free-text `note`, which the pseudonymous variant at line 25 explicitly strips.",
+      "impact": "Privacy risk arising from a designed transfer, not a broken control: on every summary, a direct identifier set (name, email address, national ID) plus the full event history including free text leaves the organization for a third-party processor. What happens next -- request logging, retention window, use for training -- is provider-side configuration that is not in this repository. If those requests are retained, the exposure is durable and not selectively deletable, which is the variant PRV-07 warns about; that is what would raise this above medium.",
+      "preconditions": "A caller uses `summarize_account()` rather than `summarize_account_pseudonymous()`.",
+      "recommendation": "Route every summary through the pseudonymous builder and delete the identifying one, keeping the token map inside the system so re-identification stays local. Strip free-text event fields on the way out rather than relying on the caller. Record the criterion for what a prompt may carry, not only today's field list, since a field that is necessary now stops being so after a product change. Separately, obtain and file the provider-side retention and training settings as an engagement artifact -- that is the only thing that can turn the FP-08 answer below into something other than UNKNOWN.",
+      "inference": "Two links are argued rather than observed: no caller in the target selects between the two prompt builders, and the provider-side retention configuration lives outside the repository, so what becomes of the prompt after transmission cannot be read here.",
+      "traceability": [
+        "LLM02:2026",
+        "CWE-359",
+        "CWE-200",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`summarize_account_pseudonymous()` (app/assistant.py:21-31) is an alternative function, not an enforced layer: nothing routes prompt construction through it, and no scrubbing step sits between the f-string at line 12 and the `client.messages.create` call at line 15."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is organizational and named in the code: the payload leaves for an external provider through the client constructed at app/assistant.py:4 and 6. The provider is a second principal by construction."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The exculpation PRV-07 accepts -- a zero-retention or no-training arrangement verifiable in the provider configuration -- lives outside this repository, and no exported console setting, contract, ticket or written statement was provided with the target. Absence of that evidence is UNKNOWN and never HOLDS, and it is what caps this finding at probable."
+        }
+      ],
+      "limits": "Establishes only what leaves the process. It says nothing about what the provider does with the payload, and the provider console was not consulted -- that would require credentials and an authorization this engagement does not carry."
+    },
+    {
+      "id": "F-6004",
+      "title": "Account deletion marks only the customers table, so the purge job clears one store while appearing to clear five",
+      "procedure": "PRV-04",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "jobs/lifecycle.py",
+        "line": 10,
+        "component": "delete_account / purge_expired"
+      },
+      "evidence": "jobs/lifecycle.py:10 -- `UPDATE customers SET deleted_at = now() WHERE id = %s` is the only statement in the target that ever writes `deleted_at`, and it writes it in one table. jobs/lifecycle.py:15-17 then loops over `STORES = (\"customers\", \"events\", \"exports\", \"search_index\", \"backups\")` (line 5) issuing `DELETE FROM <store> WHERE deleted_at IS NOT NULL AND deleted_at < %s`. For the four stores other than `customers`, no path in the target ever satisfies `deleted_at IS NOT NULL`, so those four deletes match nothing.",
+      "impact": "Privacy risk in retention: after a deletion request the person's data survives indefinitely in the event stream, the exports, the search index and the backups, while the account row disappears after the 30-day window. The shape of the code is what makes it durable -- `purge_expired()` iterates every store and reads as full coverage, so a reviewer confirming that deletion propagates finds exactly the loop they were looking for. A later data-subject request would also be answered from `customers` alone while four other stores still hold the record.",
+      "preconditions": "No writer outside the target sets `deleted_at` on `events`, `exports`, `search_index` or `backups`.",
+      "recommendation": "Do not leave propagation implicit in a column nothing sets. Either have `delete_account()` mark every store in `STORES` in one transaction, or drive `purge_expired()` from the customer's `deleted_at` by key or join instead of from a per-store column. Handle the two stores that are not rows on their own terms: a search index needs a delete-by-document call and a backup set needs a rotation policy, neither of which a `DELETE` reaches. Prove it with the PRV-04 minimal test -- a synthetic account written into all five stores, then a count in each after the cutoff.",
+      "inference": "That no other writer sets `deleted_at` on the four derived stores. `delete_account()` is the only one inside the target, but the schema (DDL, triggers, defaults) and any other service that writes those tables are outside it.",
+      "traceability": [
+        "CWE-212",
+        "CWE-359",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A mandatory database-side layer -- `ON DELETE CASCADE` from `customers`, a trigger, a row-level policy -- would cover part of this, and no DDL is present in the target to check. Worth recording the shape such a control would have to take: `delete_account()` issues an UPDATE, so no referential cascade fires there at all; only the DELETE inside `purge_expired()` could cascade, and a cascade cannot reach a search index or a backup set. It could not be established from the artifact, so UNKNOWN, which caps this finding at probable."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The retention half -- bucket lifecycle rules, backup rotation, index reindexing -- lives in infrastructure outside this repository, and no exported configuration, policy document or written retention statement accompanied the target. Under FP-08 that is UNKNOWN, not HOLDS."
+        }
+      ],
+      "limits": "Does not establish the real retention of the backups or of the search index, nor whether an out-of-band process purges them. No database was touched and no row was counted; the conclusion is read from the two statements and the store list."
+    },
+    {
+      "id": "F-6005",
+      "title": "Third-party analytics and advertising tags are emitted unconditionally, bypassing the consent gate that exists beside them",
+      "procedure": "PRV-06",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "jobs/lifecycle.py",
+        "line": 22,
+        "component": "load_trackers"
+      },
+      "evidence": "jobs/lifecycle.py:20-25 -- `load_trackers(page)` takes no consent argument and returns two third-party script tags with no condition: `cdn.metrics.example/collect.js` carrying a site identifier, and `ads.partner.example/px.js`. The consent-aware sibling at lines 28-32 takes a `consent` dict, returns `[]` when `consent[\"analytics\"]` is falsy, and returns the metrics tag only -- the advertising pixel appears in no accepted category anywhere in the target.",
+      "impact": "Two readings, and they should be reported separately. As a privacy risk: on any page rendering this list, the visitor's IP address, user agent, page path and whatever cookie each vendor sets reach an analytics vendor and an advertising vendor on first render, before any interaction and irrespective of what a consent manager recorded -- the pattern PRV-06 describes as the SDK that loads anyway and only flips a flag. As a product decision: the advertising pixel is absent from the consent-aware variant, so shipping it at all is a choice about which third parties the product feeds, and it belongs to the product owner with the cost of keeping it and the cost of dropping it stated, not to engineering as a defect.",
+      "preconditions": "A page template renders the list returned by `load_trackers()`.",
+      "recommendation": "Make the consent-aware function the only producer of tag markup and delete `load_trackers()`, so no template can reach the ungated list. Decide explicitly whether the advertising pixel belongs to any category rather than letting it inherit the analytics one, and give it its own if it is kept. Keep the list PRV-06 says nobody holds: which tag is emitted under which category, and what each vendor receives -- and confirm it against observed traffic, since the presence of a tag says nothing about what it sends.",
+      "inference": "Reachability. Neither function has a caller and no template exists in the target, so which of the two a page renders is read from their names and docstrings rather than observed.",
+      "traceability": [
+        "CWE-359",
+        "CWE-200",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consent check lives inside the alternative function (jobs/lifecycle.py:30) rather than in a layer on the way out. Nothing stops a template calling `load_trackers()` directly, and the target contains no tag manager, no CSP and no rendering middleware that could enforce the gate for both paths."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Two second principals are named in the code by their own domains: `cdn.metrics.example` and `ads.partner.example` (jobs/lifecycle.py:23-24). This is not first-party telemetry staying on project infrastructure; the data leaves for third parties."
+        }
+      ],
+      "limits": "Establishes what the function returns, not what those vendors collect -- only observed traffic would show that, and no request was made and no page was loaded. The consent manager itself is not in scope, so whether a recorded refusal is honoured anywhere else could not be checked."
+    }
+  ]
+}
