@@ -2,7 +2,7 @@
 
 > **When to load this file:** in `harden` or `verify` mode, when confirmed findings already exist and patches have to be applied (`REM-`) or independently checked (`VER-`).
 > **Do not load it if:** the audit is read-only and there is no confirmed finding yet; in pure `audit` mode it is dead weight.
-> **Cost:** ~396 lines. Part A (`REM-`) for whoever repairs, part B (`VER-`) for whoever verifies. **Never the same person and never the same agent.**
+> **Cost:** ~397 lines. Part A (`REM-`) for whoever repairs, part B (`VER-`) for whoever verifies. **Never the same person and never the same agent.**
 
 ## Selective loading index
 
@@ -321,13 +321,13 @@ Rules: FP-02, FP-08, FP-09.
 
 ## §8 Honest classification of the result
 
-### VER-05 Six outcomes, and none of them is "secure"
+### VER-05 Seven outcomes, and none of them is "secure"
 
 **Where to look**
 - What you actually executed against what you set out to execute
 
 **Vulnerable pattern**
-A binary fixed/not-fixed report that hides what was really checked. The reader assumes the strong case and makes decisions on a verification that never happened. The sharper form of the same mistake: a check that errored, timed out or never reached the code under test, recorded as if it had found nothing.
+A binary fixed/not-fixed report that hides what was really checked. Its mirror image, which this corpus carried until 2026-08-21: an outcome set with no term for *the patch does not fix it*, which forces the most consequential result a verifier can produce into `inconclusive` - a word that says the run decided nothing. The reader assumes the strong case and makes decisions on a verification that never happened. The sharper form of the same mistake: a check that errored, timed out or never reached the code under test, recorded as if it had found nothing.
 
 **What rules it out (false positive)**
 - Nothing. Every closed finding carries exactly one of these outcomes, defined in [../vocabulary.md](../vocabulary.md) and reproduced here for use:
@@ -337,6 +337,7 @@ A binary fixed/not-fixed report that hides what was really checked. The reader a
 |---|---|
 | `verified` | I reproduced the original case, it now fails because of the new control, I tested variants along the applicable axes of VER-03, and the suite passes. |
 | `partially verified` | The control exists and I checked it by inspection or with part of the tests; some axes or environments were left uncovered, and they are listed. |
+| `not fixed` | I reproduced the original case after the patch and it still reproduces. The check reached the code; what it established is that the patch does not work. The finding stays open. |
 | `refuted` | The check ran and established that the finding does not hold: the source was not controllable, the sink not reachable, or a control was already in place. The finding's status becomes `withdrawn` and stays in the report. |
 | `inconclusive` | The check ran and settled nothing: nondeterministic result, harness or build failure, the test never reached the code under test. The patch may be correct; this run says nothing either way. |
 | `not executed` | Nothing external stopped me and I did not run it: time, priority, or it fell outside the agreed plan. |

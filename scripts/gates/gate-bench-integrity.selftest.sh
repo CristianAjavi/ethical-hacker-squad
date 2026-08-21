@@ -74,6 +74,31 @@ import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"
 p.write_text(p.read_text().replace("    # Signs a staged bundle","    # Planted: argument injection here\n    # Signs a staged bundle",1))'
 
+case_run patch-no-longer-applies 1 "no longer applies" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"
+p.write_text(p.read_text().replace("        tf.extractall(dest)","        tf.extractall(dest)  # moved",1))'
+
+case_run patch-claims-an-unplanted-defect 1 "not a planted defect" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/patch-truth.json"
+d=json.loads(p.read_text()); d["patches"][0]["claims_to_fix"]="P-99"
+p.write_text(json.dumps(d,indent=2))'
+
+case_run patch-expects-an-undeclared-verdict 1 "vocabulary.md does not declare" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/patch-truth.json"
+d=json.loads(p.read_text()); d["patches"][0]["expected"]="looks fine"
+p.write_text(json.dumps(d,indent=2))'
+
+case_run every-patch-is-a-correct-fix 1 "measures agreement, not judgement" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/patch-truth.json"
+d=json.loads(p.read_text())
+for x in d["patches"]:
+    x["expected"]="verified"
+p.write_text(json.dumps(d,indent=2))'
+
 case_run key-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").unlink()'
