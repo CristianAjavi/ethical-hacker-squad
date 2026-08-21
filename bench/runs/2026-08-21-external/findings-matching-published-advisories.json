@@ -140,6 +140,103 @@
       ],
       "inference": "That `AuthenticatedResource` authenticates without authorizing, i.e. that a non-admin session reaches these handlers. The class is defined outside the audited directory; the argument rests on the redundancy of `admin_permission` on the write handlers of the same resources.",
       "limits": "Does not establish the role model of the deployment (how many roles exist, whether ordinary users are issued API tokens), and does not cover the read handlers of any other module."
+    },
+    {
+      "id": "mcp-F-002",
+      "title": "Migration tools let the model choose where the management token is sent (host, hostDelivery, proxy, headers)",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+        "line": 99,
+        "component": "exportSpace / importSpace tool parameters"
+      },
+      "evidence": "exportSpace.ts:99-109 declares `host` ('Management API host'), `hostDelivery` ('Delivery API host'), `proxy` ('HTTP/HTTPS proxy config'), `rawProxy` ('Pass raw proxy config directly to Axios') and `headers` (z.record(z.string())) as ordinary model-supplied tool parameters; importSpace.ts:69-86 declares the same `host`, `proxy`, `rawProxy` and `headers`. Both tool bodies then build one option bag out of the model's arguments and the operator's credential: `const exportOptions = { ...args, managementToken, ... } as any` (exportSpace.ts:134-140, mirrored at importSpace.ts:111-115), where `managementToken = createClientConfig(config).accessToken` (exportSpace.ts:126-127) - the CMA token that register.ts:21 read from CONTENTFUL_MANAGEMENT_ACCESS_TOKEN. The bag is handed to the job unchanged (exportSpace.ts:148, importSpace.ts:119). The operator's own pinned host, `CONTENTFUL_HOST` (env.ts:9-13, default 'api.contentful.com', passed to the tools at register.ts:22), is never read by either tool: `config.host` appears nowhere in these two files, so `args.host` is not an override of the configured host, it is the only host these two tools have.",
+      "impact": "One sentence of text in any content the model reads - a CMS entry, an asset description, a tool result - can make the next migration call carry the operator's Contentful Management API token to a host, or through a proxy, that the text chose. A CMA token is not scoped to one space: it is the credential for everything its owner can reach in the organization, so the loss is durable and survives the session. `headers` additionally lets the model attach arbitrary headers to a credentialed request, and `proxy` accepts embedded credentials ('user:pass@host:port', importSpace.ts:73). This is the outbound leg that makes F-003 exploitable rather than merely wrong.",
+      "preconditions": "The workflow tool must be enabled (see F-006), and the model must have ingested attacker-authored text. No credential of the attacker's own is needed.",
+      "recommendation": "Delete `host`, `hostDelivery`, `proxy`, `rawProxy` and `headers` from both input schemas and take the transport from ContentfulConfig instead - `config.host` for the management host, one operator-configured proxy, no model-supplied headers. If a per-call host must remain, validate it against an operator-configured allowlist inside the tool body before it can reach the option bag, and never spread `...args` into a bag that also carries the token: build the bag field by field from a whitelist of parameters the model is allowed to influence.",
+      "inference": "That contentful-export and contentful-import send the Authorization bearer for `managementToken` to the `host`/`proxy` supplied in the same options object was read from the parameters' own descriptions ('Management API host', 'HTTP/HTTPS proxy config') and from the fact that the tool passes them for no other purpose; the libraries' source is outside the audited scope and was not read.",
+      "traceability": [
+        "LLM02:2026",
+        "LLM03:2026",
+        "ASI02",
+        "ASI03",
+        "CWE-918",
+        "CWE-522"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer between the schema and the request constrains the destination. The one control that does exist is narrower than it looks: `managementToken` is written after `...args` (exportSpace.ts:134-136), so the model cannot substitute its own token - it can only redirect ours."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "These are declared MCP tool parameters; their values arrive as arguments a model produced after reading content it does not control, and no allowlist narrows them before the sink."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Two principals: the operator, who configured the CMA token in the server environment, and the author of the CMS content the agent reads, who is not the operator and who ends up choosing the endpoint the operator's token is presented to."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A deploying MCP client could show literal arguments and require per-call approval, which would bound this. No exported client configuration, ticket or written statement was provided with the target, and per FP-08 the absence of that artifact is UNKNOWN, never HOLDS."
+        }
+      ],
+      "limits": "Does not establish that the token appears verbatim in a request to the attacker host - that step lives in contentful-export/contentful-import, which were not read. Does not establish which MCP client deploys this server or whether it gates tool calls."
+    },
+    {
+      "id": "etherpad-F-003",
+      "title": "Hook-supplied tag and data-attribute values concatenated into markup and emitted verbatim",
+      "procedure": "WEB-13",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/node/utils/ExportHtml.ts",
+        "line": 66,
+        "component": "getHTMLFromAtext() - exportHtmlAdditionalTagsWithData"
+      },
+      "evidence": "Line 66 builds a tag string from hook output: tags.push(`span data-${prop[0]}=\"${prop[1]}\"`). The hook is invoked with the pad itself (line 64), and the comment on lines 62-63 says the entries are 'tags stored as [tag, value]' - the second element is document data, not a plugin constant. That string is later written raw as the tag: emitOpenTag does assem.append('<'); assem.append(tags[i]); assem.append('>') (lines 179-182), and emitCloseTag mirrors it (lines 195-198). Core writes the quotes around prop[1] and escapes nothing between them, so a value containing '\"' closes an attribute inside a tag core is assembling. The sibling hook exportHtmlAdditionalTags (lines 56-61) has the same shape: its entries become raw tag names on line 181.",
+      "impact": "Stored XSS in every HTML export of an affected pad on an instance running a plugin that feeds pad-derived values through this hook: the attacker adds an attribute (an event handler) or an entire tag to the exported document, which executes for whoever opens the export.",
+      "preconditions": "A plugin implementing exportHtmlAdditionalTagsWithData (or exportHtmlAdditionalTags) that returns values taken from the pad rather than fixed constants. No plugin source was in scope.",
+      "recommendation": "Stop passing a fragment of markup between core and plugins. Keep the hook's return value as structured data ([name, value]) all the way to the writer, validate the attribute name against '^[a-zA-Z][a-zA-Z0-9-]*$' and escape the value with Security.escapeHTMLAttribute at the point where emitOpenTag writes it - the same treatment line 285 already gives an attribute value in this file.",
+      "inference": "That an installed plugin returns a value derived from pad content rather than a constant. The basis is the hook's own signature (it receives `pad`, line 64) and the comment describing the entries as tag/value pairs; no plugin implementation was readable in scope.",
+      "traceability": [
+        "CWE-79",
+        "CWE-116",
+        "WSTG-INPV-*",
+        "ASVS 5.0 V1",
+        "A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Between line 66 and the write on line 181 the string is only stored in the tags array; no control is applied at either end."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The value's origin is a plugin, and plugin code is outside the audited scope. If every implementation returned constants the finding would die - that could not be established, and 'the plugins probably behave' is exactly the FP-08 move triage.md forbids."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is the tag itself: line 181 writes the string between '<' and '>', so both the attribute value and the tag name are structural."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no server-side equivalent control: this is the only place the exported tag is assembled."
+        }
+      ],
+      "limits": "Establishes a missing control in core, not that any shipped plugin exercises it. Severity assumes a plugin that passes pad data through the hook; with constant-only plugins the impact is nil."
     }
   ]
 }

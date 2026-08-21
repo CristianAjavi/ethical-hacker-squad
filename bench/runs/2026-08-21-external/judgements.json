@@ -1,0 +1,82 @@
+{
+  "judgements": [
+    {
+      "advisory": "GHSA-pxmc-2ffp-8j67",
+      "finding": "caseA:F-001",
+      "verdict": "partial",
+      "reason": "The advisory's defect is revocation authorization: /revoke authorizes against the Lemur DB row and /certificates/upload has no uniqueness or AuthorityPermission check, so a duplicate row can be uploaded and revoked to kill the real certificate at the CA. The finding is about a different field of the same upload/create handlers - `replacements`, which mutates the referenced victim row (notify=False, replaced) - and reaches a different effect (silent expiry, no rotation), never touching revocation or the CA.",
+      "what_would_settle_it": "Whether the advisory's chain depends in any way on `replaces[]`; it does not - it depends on body/authority/external_id and the revoke handler - so the overlap is only the shared upload endpoint."
+    },
+    {
+      "advisory": "GHSA-cfh6-pv5c-38jv",
+      "finding": "caseA:F-001",
+      "verdict": "yes",
+      "reason": "Both describe the same defect: `replaces[]`/`replacements` on the certificate create, upload and edit endpoints is resolved to Certificate rows with no ownership or CertificatePermission check, and the SQLAlchemy append listener then sets victim.notify=False and populates victim.replaced, silencing expiry notifications and removing the victim from auto-reissue. The finding stops short of claiming the certificate_rotate endpoint substitution, which is a narrower impact statement of the same defect, not a different one."
+    },
+    {
+      "advisory": "GHSA-pxmc-2ffp-8j67",
+      "finding": "caseA:F-002",
+      "verdict": "partial",
+      "reason": "Both are broken object-level authorization in lemur/certificates/views.py, but the advisory's defect is that the revoke handler authorizes against the DB row while upload lets anyone mint a duplicate of someone else's certificate; the finding's defect is that the export handler nests its CertificatePermission check under `if plugin.requires_key`, so requires_key=False plugins get the private key with no check at all. Different endpoint, different mechanism, different effect (key disclosure vs CA-side revocation)."
+    },
+    {
+      "advisory": "GHSA-cfh6-pv5c-38jv",
+      "finding": "caseA:F-002",
+      "verdict": "partial",
+      "reason": "The advisory is the unchecked `replaces[]` association on the write endpoints; the finding is the conditional authorization on POST /certificates/<id>/export. Same file and same class - an object-level permission check that does not run on a certificate the caller has no role on - but a different endpoint, a different input and a different consequence.",
+      "what_would_settle_it": "Whether the advisory's `replaces[]` path is reachable through the export handler; it is not, so the only shared element is the class of defect."
+    },
+    {
+      "advisory": "GHSA-pxmc-2ffp-8j67",
+      "finding": "caseA:F-003",
+      "verdict": "partial",
+      "reason": "Both defects live in CertificatesUpload.post within a few lines of each other, but the advisory blames the absence of an AuthorityPermission check and of any uniqueness on body/serial/external_id (enabling a duplicate row that is then revoked at the CA), while the finding blames gate ordering: the early `if data.get('destinations')` return skips CERTIFICATE_CREATE_REQUEST_VALIDATION. Same handler, different missing control, different effect."
+    },
+    {
+      "advisory": "GHSA-cfh6-pv5c-38jv",
+      "finding": "caseA:F-003",
+      "verdict": "partial",
+      "reason": "The advisory is about the unauthorized `replaces[]` reference on the upload/create/update routes; the finding is about the deployment-configured validation hook being skipped on the upload branch that carries a destination. Same handler and same schema file, but a different field, a different control and a different consequence (policy-hook bypass, not victim-certificate hijack)."
+    },
+    {
+      "advisory": "GHSA-pxmc-2ffp-8j67",
+      "finding": "caseA:F-004",
+      "verdict": "partial",
+      "reason": "The advisory's mechanism is uploading a duplicate certificate record (body/authority/external_id, no uniqueness, no AuthorityPermission) and revoking it at the CA; the finding's mechanism is that the same handler omits validators.is_valid_owner, so the owner string is arbitrary. Same endpoint, different unvalidated field, and the effect is inventory pollution and misdirected notifications rather than revocation of a live certificate."
+    },
+    {
+      "advisory": "GHSA-cfh6-pv5c-38jv",
+      "finding": "caseA:F-004",
+      "verdict": "partial",
+      "reason": "The advisory is the missing ownership check on the certificate ids passed in `replaces[]`; the finding is the missing owner-format validator on the upload path. Both are validation omitted on CertificatesUpload.post and both end up affecting expiry notifications, but through different fields and different mechanisms - one silences an existing victim certificate's notification, the other points a newly created certificate's default notification at an unvetted address.",
+      "what_would_settle_it": "Whether the advisory's notification silencing comes from the owner value or from the append listener on `replaces`; it is the listener, so these are two distinct defects."
+    },
+    {
+      "advisory": "GHSA-6c8m-q6g9-vrw3",
+      "finding": "caseB:F-001",
+      "verdict": "yes",
+      "reason": "Same defect: DestinationOutputSchema dumps the raw options JSON column verbatim (and copies it again into plugin.pluginOptions), so the destinations read endpoints hand every authenticated principal - read-only included - the SFTP plugin's cleartext `password` and `privateKeyPass`, credentials for the hosts Lemur deploys certificates to. The finding adds the nested export-plugin unfolding and the root default, which is extra detail on the same defect, not a different one."
+    },
+    {
+      "advisory": "GHSA-6c8m-q6g9-vrw3",
+      "finding": "caseB:F-002",
+      "verdict": "partial",
+      "reason": "The finding reports the authorization half of the advisory's mechanism - the four destinations read handlers carry no permission decorator while post/put/delete require admin_permission - but explicitly scopes its effect to enumeration of the delivery topology and hands the credential exposure to its sibling finding F-001. Same code, same asymmetry, but the consequence the advisory is about (plaintext SFTP password and passphrase readable by a read-only user) is deliberately reported elsewhere.",
+      "what_would_settle_it": "Whether the advisory's defect is the missing authorization itself or the unredacted serialization of secret options: if the missing decorator on the read handlers is taken as the defect, this is a yes with a narrower impact; because the advisory's stated harm is credential disclosure and this finding disclaims that half by design, I judged it adjacent."
+    },
+    {
+      "advisory": "GHSA-6c8m-q6g9-vrw3",
+      "finding": "caseB:F-004",
+      "verdict": "no",
+      "reason": "The advisory is unauthorized reading of stored destination credentials through the destinations API (views.py/schemas.py). The finding is path traversal in the SFTP plugin's delivery routine, where the certificate common name is concatenated into the remote path and filenames, letting files be written outside destinationPath as root. Different code path, different class, different effect; the only common ground is that the SFTP destination plugin is involved in both.",
+      "what_would_settle_it": "Whether the advisory blames anything in the plugin's upload_file path; it blames only the plugin's cleartext option declarations, so the shared file is not shared code."
+    },
+    {
+      "advisory": "GHSA-6c8m-q6g9-vrw3",
+      "finding": "caseB:F-005",
+      "verdict": "no",
+      "reason": "The advisory is a missing authorization plus unredacted serialization of secret plugin options on the destinations read endpoints. The finding is exception hygiene in the SFTP plugin: the upload failure message embeds the destination host and remote error text, two connection errors never format their `{0}` placeholder, and broad handlers swallow failures. Different mechanism, different place, and the finding itself states it grants no access.",
+      "what_would_settle_it": "The destination host is one of the option values the advisory says leaks, but here it escapes through an exception message from the delivery path rather than through the read API, so the mechanism and the place both differ."
+    }
+  ]
+}

@@ -15,7 +15,7 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 | Run | Published advisories in scope | Found blind | Notes |
 |---|---|---|---|
-| [2026-08-21, external](runs/2026-08-21-external/) | 3 | **2** | Third-party code, ground truth from the GitHub Advisory Database and the upstream fix commits. Seven further findings are withheld from this repository pending a disclosure decision |
+| [2026-08-21, external](runs/2026-08-21-external/) | 5, three unrelated projects | **4** | Ground truth from the GitHub Advisory Database and the upstream fix commits; the finding-to-advisory match judged by a context that saw only the advisory text and the finding text. 21 further findings are withheld pending a disclosure decision |
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
