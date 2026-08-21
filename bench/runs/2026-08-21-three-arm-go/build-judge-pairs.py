@@ -52,6 +52,9 @@ def main() -> int:
     ap.add_argument("--key", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--map", required=True, help="where to write the arm mapping the judge never sees")
+    ap.add_argument("--dir-map", help="JSON file mapping advisory id -> target directory, for rounds "
+                                      "where one repository carries several advisories and the "
+                                      "directory name is not the repository slug")
     args = ap.parse_args()
 
     try:
@@ -61,9 +64,22 @@ def main() -> int:
         return 2
 
     root = Path(args.root)
+    dir_map = {}
+    if args.dir_map:
+        try:
+            dir_map = json.loads(Path(args.dir_map).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"UNMEASURED cannot read the directory map: {exc}")
+            return 2
     rows = []
+    seen_dirs = set()
     for case in key["cases"]:
-        slug = case["repository"].split("github.com/")[1].split("/")[1]
+        slug = dir_map.get(case["advisory"]) or case["repository"].split("github.com/")[1].split("/")[1]
+        if slug in seen_dirs:
+            # Two advisories in one target: the arms audited it once, so their
+            # findings are paired against BOTH advisories rather than counted twice.
+            pass
+        seen_dirs.add(slug)
         adv = {
             "advisory_id": case["advisory"],
             "advisory_summary": case["advisory_summary"],
