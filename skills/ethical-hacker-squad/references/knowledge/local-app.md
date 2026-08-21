@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory has a command-line tool, a desktop application (Electron, Tauri, native shell), a published library or SDK, an installer or updater, a local daemon, or any program whose attack surface is the machine it runs on rather than an HTTP route.
 > **Do not load it if:** the scope is only a web backend with no local artifact, only IaC and containers, or only dependency manifests.
-> **Cost:** ~290 lines. Load by section using the index; **§0 first**, because on a local surface the hard part is naming the attacker, not finding the pattern.
+> **Cost:** ~321 lines. Load by section using the index; **§0 first**, because on a local surface the hard part is naming the attacker, not finding the pattern.
 
 ## Selective loading index
 
@@ -52,6 +52,8 @@ Two rules that prevent most of the noise in this pack:
 - The archive is produced by the same program in the same run and never leaves a private directory.
 - The destination is a fresh directory created for this operation and the process cannot write anywhere interesting anyway — argue it, do not assume it.
 
+Rules: FP-01, FP-02, FP-06.
+
 **Minimal test** — in a temporary directory, build an archive whose entry name is `../evidence-<random>.txt`, run the application's extraction function against a subdirectory, and check whether the file landed outside. Local, non-destructive, no privileges.\
 **Traceability**: `CWE-22` · `CWE-23` · `CAPEC-126` · `ASVS 5.0 V5`\
 **Tooling**: `rg -n "extractall|ZipInputStream|adm-zip|archive/zip|filepath.Join"` → it tells you where to read. A match proves nothing until you see whether the joined path is re-checked after canonicalization.
@@ -67,6 +69,8 @@ Two rules that prevent most of the noise in this pack:
 - The operation is confined to a directory the process created in this run, owned by it, mode `0700`, inside a per-user location.
 - File descriptors are opened with `O_NOFOLLOW` or resolved relative to a directory handle (`dir_fd`, `openat`), so the name cannot be swapped underneath.
 - Only one principal exists on the machine by design — a single-user desktop, a container with one account — and you can say so concretely.
+
+Rules: FP-01, FP-06.
 
 **Minimal test** — in a temporary sandbox, place a symlink where the program expects a regular file or directory, point it at a canary file outside, run the operation and inspect the canary. Never run this against a real path.\
 **Traceability**: `CWE-59` · `CWE-61` · `CAPEC-27` · `ASVS 5.0 V5`\
@@ -86,6 +90,8 @@ Two rules that prevent most of the noise in this pack:
 - `TMPDIR` resolves to a per-user directory that the OS creates `0700` — true on macOS by default, not on a bare Linux `/tmp`.
 - The content is public, has no integrity requirement, and nothing later trusts it — state which, rather than assuming all three.
 
+Rules: FP-01, FP-06, FP-07.
+
 **Minimal test** — run the tool twice and compare the names it creates; if they are predictable, pre-create the next one in a sandbox and observe whether the program opens it instead of failing.\
 **Traceability**: `CWE-377` · `CWE-378` · `CWE-379` · `ASVS 5.0 V5`\
 **Tooling**: `rg -n "mktemp|tmpnam|/tmp/|os.tmpdir"` and `ls -ld` on the directory actually used at runtime.
@@ -101,6 +107,8 @@ Two rules that prevent most of the noise in this pack:
 - The operation itself is atomic and carries the check: `O_CREAT|O_EXCL`, `renameat`, opening first and validating the *file descriptor* with `fstat` rather than the path.
 - Every path in the sequence lives inside a private directory the process created and owns.
 - The check is advisory — a nicer error message — and the code is correct when it loses the race. Read the failure branch before deciding this.
+
+Rules: FP-01, FP-06, FP-10.
 
 **Minimal test** — reason it out from the two syscalls and the ownership of the directory; a race is a property of the code, not something a single run demonstrates. If a demonstration is needed, run a bounded loop in a sandbox that swaps the name while the operation runs, with a fixed iteration cap, and report the win rate observed.\
 **Traceability**: `CWE-367` · `CAPEC-29` · `ASVS 5.0 V5`\
@@ -120,6 +128,8 @@ Two rules that prevent most of the noise in this pack:
 - The value is validated against an allowlist, or resolved to a path that must already exist inside a known directory.
 - The value is a literal in the source and nothing external can reach it.
 
+Rules: FP-01, FP-02.
+
 **Minimal test** — call the entry point with a value beginning with `-` (for example `-o/tmp/canary-<random>`) in a sandbox and observe whether the child's behaviour changes or the canary appears.\
 **Traceability**: `CWE-88` · `CWE-78` · `CAPEC-6` · `ASVS 5.0 V1` · `ASVS 5.0 V2`\
 **Tooling**: `rg -n "subprocess|spawn\(|exec\(|os.system|Runtime.getRuntime"` → read each call site for a `--` and for where the value came from.
@@ -135,6 +145,8 @@ Two rules that prevent most of the noise in this pack:
 - Executables are invoked by absolute path, or the resolved path is verified and its ownership checked before use.
 - The privileged component scrubs the environment (`env -i`, explicit allowlist) before spawning anything.
 - Every directory on the search path is owned by root or by the running user and is not group- or world-writable — check with `ls -ld`, do not assume.
+
+Rules: FP-01, FP-06.
 
 **Minimal test** — in a sandbox directory, place an executable with the same bare name earlier in `PATH`, run the tool from there, and see which one runs.\
 **Traceability**: `CWE-426` · `CWE-427` · `CAPEC-38` · `CAPEC-471` · `ATT&CK T1574`\
@@ -152,6 +164,8 @@ Two rules that prevent most of the noise in this pack:
 - Behaviour-changing configuration is only accepted from a per-user location, or requires an explicit opt-in flag on the command line each time.
 - The tool refuses configuration files not owned by the invoking user, and says so when it does.
 
+Rules: FP-01, FP-06.
+
 **Minimal test** — build a directory containing a hostile configuration that flips one security-relevant setting (certificate verification off, a plugin path added), run the tool inside it, and check whether the setting took effect.\
 **Traceability**: `CWE-426` · `CWE-829` · `CAPEC-38` · `ASVS 5.0 V13`\
 **Tooling**: `rg -n "cwd|getcwd|walk_up|find_up|parent.parent"` around config loading; read the precedence order and ask which layer a stranger can write.
@@ -168,6 +182,8 @@ Two rules that prevent most of the noise in this pack:
 - The file sits inside a per-user directory that is itself `0700`, and the platform enforces it (a Windows profile directory with inherited ACLs, a macOS per-user `TMPDIR`).
 - The content is public and nothing downstream trusts it for a security decision.
 
+Rules: FP-06, FP-07.
+
 **Minimal test** — run the tool with a fake credential, then `stat` every path it created. Report the mode, the owner and what the file contains, redacted.\
 **Traceability**: `CWE-276` · `CWE-732` · `CWE-668` · `ASVS 5.0 V14`\
 **Tooling**: `find <data-dir> -type f -perm -o+r` and `-perm -o+w`; `stat -c '%A %U %n'` on Linux, `stat -f '%Sp %Su %N'` on macOS.
@@ -182,6 +198,8 @@ Two rules that prevent most of the noise in this pack:
 - The privileged step takes no external input: a fixed operation, no arguments, no environment inheritance.
 - The helper authenticates the calling user, validates every path against a fixed allowlist, and scrubs the environment.
 - Elevation is requested interactively by the OS for that one action, and the action is described to the user.
+
+Rules: FP-01, FP-02, FP-05.
 
 **Minimal test** — read the unit or plist, then check ownership and mode of every file and directory it references. Do not run privileged operations to demonstrate this; the configuration is the evidence. Anything beyond reading is **REQUIRES AUTHORIZATION**.\
 **Traceability**: `CWE-250` · `CWE-269` · `CWE-732` · `ASVS 5.0 V15`\
@@ -200,6 +218,8 @@ Two rules that prevent most of the noise in this pack:
 - The insecure mode requires an explicit argument whose name says what it does, and the documentation says when it is acceptable.
 - The library is internal, with one known consumer whose call sites you can read.
 - The default is safe and the permissive path is reachable only under a flag that also warns.
+
+Rules: FP-01, FP-02, FP-06.
 
 **Minimal test** — write a scratch script that calls the public API with the minimum arguments from the README, then assert which control is active: is the certificate verified, is the template escaped, is the payload parsed without executing.\
 **Traceability**: `CWE-1188` · `CWE-665` · `ASVS 5.0 V15`\
@@ -220,6 +240,8 @@ Two rules that prevent most of the noise in this pack:
 - Only local, application-authored content is loaded; remote URLs are opened in the OS browser rather than in a window.
 - The `fs` or `shell` capability is scoped to a specific directory or command, not to a wildcard.
 
+Rules: FP-01, FP-02, FP-05.
+
 **Minimal test** — read `webPreferences` and the preload together; then, in a scratch build, load a local page that calls each exposed bridge method with an out-of-contract argument and observe whether it is rejected.\
 **Traceability**: `CWE-829` · `CWE-79` · `CWE-1188` · `ASVS 5.0 V3`\
 **Tooling**: `rg -n "webPreferences|contextIsolation|nodeIntegration|contextBridge|ipcMain|openExternal"`; for Tauri read the capability files. The absence of a match is not proof — check the defaults of the framework version in use.
@@ -234,6 +256,8 @@ Two rules that prevent most of the noise in this pack:
 - The handler parses the URL, validates the scheme and host, and maps it to a fixed set of actions with no path or command interpolation.
 - Any action with side effects requires a user confirmation that names what will happen.
 - The scheme is registered but the handler ignores everything except a known token format.
+
+Rules: FP-01, FP-05.
 
 **Minimal test** — construct a payload URL locally and invoke it through the OS (`open "app://..."` on macOS, `xdg-open` on Linux), with the application instrumented to print the argv it received. Inspect what arrived before deciding what it can do.\
 **Traceability**: `CWE-88` · `CWE-829` · `CAPEC-6`\
@@ -252,6 +276,8 @@ Two rules that prevent most of the noise in this pack:
 - The HTTP listener validates `Origin` against an allowlist, requires a high-entropy token in a header (not in the URL), binds to `127.0.0.1` on a random port, and rejects requests whose `Host` it does not recognise.
 - The listener exists only during an interactive flow and closes immediately after.
 
+Rules: FP-01, FP-04, FP-06.
+
 **Minimal test** — while the app runs, list what it is listening on, then send one request with a foreign `Origin` header and no credentials and record the response code. Loopback only, no third party involved.\
 **Traceability**: `CWE-346` · `CWE-1385` · `CWE-668` · `ASVS 5.0 V4`\
 **Tooling**: `lsof -nP -iTCP -sTCP:LISTEN` or `ss -ltnp`; `curl -sS -H 'Origin: https://evil.example' http://127.0.0.1:<port>/<path> -o /dev/null -w '%{http_code}\n'`. A 200 with no token is the finding; a 403 is not proof the token check is sound.
@@ -269,6 +295,8 @@ Two rules that prevent most of the noise in this pack:
 - The platform enforces it: OS code signing and notarization, a package manager with its own verified channel.
 - The plugin directory is owned by root or by the installing user and is not writable by others, and plugins are enumerated from a fixed list rather than a glob.
 
+Rules: FP-01, FP-06.
+
 **Minimal test** — read the update path end to end and answer three questions: what is fetched, over what scheme, and what happens on a verification failure. Then check the mode and ownership of the plugin and install directories.\
 **Traceability**: `CWE-494` · `CWE-829` · `ATT&CK T1195` · `SLSA Build L2`\
 **Tooling**: `rg -n "autoUpdater|electron-updater|feedURL|http://|install.*&&.*sh"`; for the shipped artifact, verify the signature with the platform tool rather than trusting the build script.
@@ -285,6 +313,8 @@ Two rules that prevent most of the noise in this pack:
 - The OS keystore holds the secret: Keychain, libsecret or the Windows credential manager, with the file on disk holding only a handle.
 - The file is `0600` inside a `0700` per-user directory and the threat model explicitly accepts a local attacker with the user's own privileges — say that out loud rather than implying it.
 - Secrets are accepted from an environment variable, standard input or a file path, never from `argv`, and log writers pass values through a redactor with a test proving it.
+
+Rules: FP-01, FP-06.
 
 **Minimal test** — run a command with a distinctive fake token, then search the data directory, the log files and `ps -eo args` output for that string. Report where it appeared, never the real value.\
 **Traceability**: `CWE-312` · `CWE-522` · `CWE-532` · `CWE-214` · `ASVS 5.0 V14`\

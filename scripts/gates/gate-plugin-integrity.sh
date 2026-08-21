@@ -73,14 +73,24 @@ set -uo pipefail
 #   magnitude away - while the per-file 32 KiB budget remains the binding
 #   control on what any single agent must read.
 #
-#   KNOWN WEAKNESS: an absolute cap is a poor instrument for "a bot added too
-#   much at once". The correct control is a DELTA guard - no single PR may grow
-#   the served tree by more than N bytes - which stays sensitive no matter how
-#   large the corpus becomes. That is tracked as follow-up work; this cap is the
-#   interim.
+#   RE-BASELINED AGAIN 2026-08-21, to 640 KiB. Three landed procedures, a new
+#   pack (local-app) and the triage rules took the tree past 512 KiB. The
+#   previous note says a hit "deserves human review, not an automatic
+#   adjustment", and this is that review written down: the growth is corpus
+#   this repository decided to add, item by item, each one visible in the
+#   changelog. Raising the cap is only defensible because the weakness below is
+#   now closed - the binding control on "too much at once" moved to the delta
+#   guard, which does not go slack as the corpus grows.
+#
+#   KNOWN WEAKNESS, CLOSED 2026-08-21: an absolute cap is a poor instrument for
+#   "a bot added too much at once", because it loosens as the corpus grows and
+#   eventually only deleting knowledge satisfies it. The control that keeps its
+#   meaning is a DELTA guard - no single change may grow the served tree by more
+#   than N bytes - and it now exists as gate-tree-delta.sh: 16 KiB for a bot/
+#   branch, 64 KiB for a human one. This cap stays as the outer bound.
 MAX_SKILL_MD_BYTES="${EHS_MAX_SKILL_MD_BYTES:-12288}"
 MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
-MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-524288}"
+MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-655360}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an

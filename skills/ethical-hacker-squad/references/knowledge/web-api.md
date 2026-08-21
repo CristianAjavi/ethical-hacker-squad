@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory includes an HTTP server, an API (REST, GraphQL, RPC, WebSocket) or a web backend with routes, controllers, an ORM, sessions or tokens.
 > **Do not load it if:** the scope is only an APK/IPA with no reachable backend, only IaC and containers, only dependencies, or a library with no network surface.
-> **Cost:** ~280 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~303 lines. Load by section using the index; you do not need to read it end to end.
 > **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§11 and `WEB-13`..`WEB-22` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and disclosure through errors and logs. Open it as soon as the inventory reaches any of those; it carries its own index.
 
 ## Selective loading index
@@ -51,6 +51,8 @@ When reporting, distinguish "not found" from "not looked for" and state which su
 - The `decode` only feeds logs or metrics and authorization is resolved from the server-side session.
 - Opaque tokens validated against a store (introspection), not self-contained ones.
 
+Rules: FP-01, FP-03, FP-09.
+
 **Minimal test** — local: sign a test token with `alg: none` and another with an arbitrary key, and pass both to the verifier in a unit test; both must be rejected. Against a remote deployment: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-347` · `CWE-345` · `WSTG-ATHN-*` · `ASVS 5.0 V9` · `A07:2025` · `API2:2023`
@@ -70,6 +72,8 @@ When reporting, distinguish "not found" from "not looked for" and state which su
 - `Secure` missing only in the development configuration: check the production file before reporting.
 - A cookieless API with short-lived tokens and centralized revocation.
 
+Rules: FP-01, FP-04, FP-09.
+
 **Minimal test** — local: in a test, authenticate and compare the session identifier before and after login; inspect the `Set-Cookie` headers the app emits on your machine.
 
 **Traceability**: `CWE-384` · `CWE-613` · `CWE-1004` · `WSTG-SESS-*` · `ASVS 5.0 V7` · `A07:2025`
@@ -88,6 +92,8 @@ When reporting, distinguish "not found" from "not looked for" and state which su
 - Uniform response and timing on login and recovery, with identical wording in both cases.
 - A single-use token, ≥128 bits from a CSPRNG, short-lived and stored hashed.
 - Attempt lockout bound to the identity and not only to the IP, with session invalidation after the change.
+
+Rules: FP-01.
 
 **Minimal test** — local: generate 1000 tokens with the real code and check uniqueness and entropy; measure in a test the response difference between an existing and a non-existing user. Brute force against a deployed service: **REQUIRES AUTHORIZATION**.
 
@@ -115,6 +121,8 @@ class InvoiceDetail(RetrieveAPIView):
 - Middleware or an interceptor injects the tenant filter into every query and fails closed when it is missing.
 - The object is public by design and holds no other user's data (verify this in the model).
 
+Rules: FP-01, FP-05, FP-07.
+
 **Minimal test** — local: an integration test with two synthetic users; A requests B's resource and must get 403/404, on read **and** on write and delete. Against a remote environment: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-639` · `CWE-862` · `CWE-284` · `WSTG-ATHZ-*` · `ASVS 5.0 V8` · `A01:2025` · `API1:2023`
@@ -134,6 +142,8 @@ class InvoiceDetail(RetrieveAPIView):
 - The route is exposed only through a local binding or an internal network whose segmentation you can verify in the repository.
 - The check lives in the service layer and every entry into the controller passes through it.
 
+Rules: FP-01, FP-06.
+
 **Minimal test** — local: a test that calls every verb on the route with an unprivileged user; build the route × method × role matrix and compare it against the expected one.
 
 **Traceability**: `CWE-862` · `CWE-863` · `WSTG-ATHZ-*` · `ASVS 5.0 V8` · `A01:2025` · `API5:2023`
@@ -152,6 +162,8 @@ class InvoiceDetail(RetrieveAPIView):
 - An explicit DTO with an allowlist on input and output, generated from a schema (zod, pydantic, a serializer with declared fields).
 - Sensitive fields marked read-only and covered by a test.
 - The model has no attribute with security impact (verify it, do not assume it).
+
+Rules: FP-01, FP-07.
 
 **Minimal test** — local: send a body with an extra privileged field in a test and verify it is ignored; capture the full JSON of every endpoint and compare it against the list of authorized fields.
 
@@ -174,6 +186,8 @@ class InvoiceDetail(RetrieveAPIView):
 - The interpolated value is a code literal or comes from an enum validated against the model's real columns.
 - Explicit casting to a primitive type or schema validation (zod, Joi, pydantic) before the NoSQL filter is built; `sanitizeFilter` enabled.
 
+Rules: FP-01, FP-02.
+
 **Minimal test** — local, against a test database: send a single quote and see whether it produces a SQL syntax error (a sign of concatenation); for NoSQL, send `{"$ne": null}` and check whether the result count changes. Do not run payloads that modify or extract data.
 
 **Traceability**: `CWE-89` · `CWE-943` · `WSTG-INPV-05` · `ASVS 5.0 V1` · `A05:2025` · `CAPEC-66`
@@ -193,6 +207,8 @@ class InvoiceDetail(RetrieveAPIView):
 - The argument comes from a closed allowlist or from a server-generated identifier.
 - An in-process native library is used instead of invoking the binary.
 
+Rules: FP-01, FP-02, FP-09.
+
 **Minimal test** — local: in a test, pass a value containing `;` and check that it reaches the child process literally (for instance, that a file with that exact name is looked up) instead of being executed. Do not run commands with side effects.
 
 **Traceability**: `CWE-78` · `CWE-77` · `WSTG-INPV-*` · `ASVS 5.0 V1` · `A05:2025`
@@ -211,6 +227,8 @@ class InvoiceDetail(RetrieveAPIView):
 - The template is a fixed file and the data travels as context (`render_template("x.html", name=...)`).
 - Interpreter-specific escaping: LDAP filter escaping (RFC 4515), bound variables in XPath, a template sandbox with no attribute access.
 - The evaluated expression is constant and only the values vary.
+
+Rules: FP-01, FP-02, FP-03.
 
 **Minimal test** — local: send an inert arithmetic expression native to the engine (for example `{{7*7}}`) and see whether it comes back evaluated. The arithmetic marker is enough; do not chain towards execution.
 
@@ -233,6 +251,8 @@ class InvoiceDetail(RetrieveAPIView):
 - Egress restricted at the network layer (mandatory outbound proxy, container network policy) verifiable in the repository.
 - The URL is never user-controlled: it is a configuration constant.
 
+Rules: FP-01, FP-02.
+
 **Minimal test** — local: point the parameter at your own canary on `127.0.0.1:<test port>` that you started yourself and check whether it receives the connection. Any target other than your local canary: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-918` · `CWE-611` · `WSTG-INPV-*` · `ASVS 5.0 V4` · `A01:2025` · `API7:2023`
@@ -254,6 +274,8 @@ class InvoiceDetail(RetrieveAPIView):
 - `yaml.safe_load`, a class allowlist, or data coming exclusively from an internal trusted source you can substantiate.
 - Integrity verification with a server key prior to deserialization, with the key kept outside the repository.
 
+Rules: FP-01, FP-02, FP-03.
+
 **Minimal test** — local: a test that passes a serialized object of an unexpected class and verifies it is rejected. Do not build gadget chains.
 
 **Traceability**: `CWE-502` · `WSTG-INPV-*` · `ASVS 5.0 V15` · `A08:2025`
@@ -272,6 +294,8 @@ class InvoiceDetail(RetrieveAPIView):
 - A server-generated name (UUID) and a canonical path verified with `realpath`/`Path.normalize` against the base directory before opening.
 - Storage outside the web root or in a bucket with no execution, served with `Content-Disposition: attachment` and a fixed type.
 - An extension allowlist with real content verification, plus size and file-count limits.
+
+Rules: FP-01, FP-03.
 
 **Minimal test** — local: request `..%2f..%2fetc%2fhostname` and a name containing separators, and assert that the resolved path still lies inside the base directory, without reading real system files.
 

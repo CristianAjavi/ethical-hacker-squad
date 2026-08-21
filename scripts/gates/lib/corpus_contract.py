@@ -48,7 +48,10 @@ NUMBER_WORDS = {
 }
 
 DECL_LINES = re.compile(r"([\d]{1,3}(?:,\d{3})+)\s+lines")
-DECL_PROCS = re.compile(r"([\d,]+)\s+(?:numbered\s+)?procedures")
+# The canonical phrasing for the corpus total is "N numbered procedures". Any
+# other sentence counting procedures - "37 procedures are converted" - is a
+# different fact, and matching it would make the gate fire on correct text.
+DECL_PROCS = re.compile(r"([\d,]+)\s+numbered\s+procedures")
 DECL_FILES = re.compile(r"(?:over|across|in)\s+([a-z]+)\s+files")
 DECL_RANGE = re.compile(r"`([A-Z]{2,4})-0*1`\.\.`([A-Z]{2,4})-(\d{2})`")
 PACK_COST = re.compile(r"\*\*Cost:\*\*\s*~([\d,]+)\s*lines")

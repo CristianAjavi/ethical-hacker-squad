@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target inventory contains infrastructure as code (Terraform, Bicep, CloudFormation), Dockerfiles or images, Kubernetes/Helm manifests, or CI/CD workflows. This is the *configuration* pack, not the application-code one.
 > **Do not load it if:** the target is only application code, an APK with no backend of its own, or an analysis of dependencies and repository secrets (that lives in `supply-chain.md`).
-> **Cost:** ~265 lines. Load by section using the index; you almost never need all three.
+> **Cost:** ~263 lines. Load by section using the index; you almost never need all three.
 > **Second file of this pack:** `infra-cloud-cicd-exposure.md` holds §4-§6 and `INF-13`..`INF-18` — CI/CD and GitHub Actions, environment separation, Terraform state and deployment secrets, and verification of effective network exposure. Open it whenever the inventory has pipelines, several environments or a live host in scope; it carries its own index.
 
 ## Selective loading index

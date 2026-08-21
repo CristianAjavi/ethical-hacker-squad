@@ -69,6 +69,12 @@ Order: accept only `confirmed` and authorized findings; a `probable` one goes ba
 
 Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and give every result one verification outcome from `vocabulary.md`. A check that could not settle the question is `inconclusive`, `not executed` or `blocked` according to why — never a soft version of `verified`. Do not edit unless the leader explicitly reassigns you.
 
+## Dispatching without the plugin subagents
+
+If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. Use `general-purpose` and copy into the prompt, explicitly (a subagent inherits neither this skill nor its context): scope and exact path; mode; target language; the role order from `references/team.md`; the path of the role's knowledge pack so the subagent reads it itself; the relevant rows of `references/coverage.md`; the full safety contract above; the return format from `references/team.md`; and in `audit` mode, the flat instruction not to edit any file. Use `general-purpose` for every role in this mode. If you happen to have your own equivalent specialist agents installed, they work too, but do not assume any particular agent exists.
+
+Never let the same agent both fix and verify.
+
 ## Return format to the leader
 
 For each finding. The three verdict fields are closed lists from [vocabulary.md](vocabulary.md); the rest is free text.
@@ -94,6 +100,7 @@ For each finding. The three verdict fields are closed lists from [vocabulary.md]
 - `recommended fix`
 - `proposed verification`
 - `traceability`: standard identifiers, verbatim and untranslated
+- `triage`: every rule from `references/triage.md` that the procedure invokes, with its answer — `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE` — and a reason naming the artifact whenever the answer is not `DOES_NOT_HOLD`. A finding returned as `confirmed` has every invoked rule answered, none `HOLDS` and none `UNKNOWN`; an unanswered rule is not a silent pass, exactly as exit code `2` is not a green gate.
 - `limits or open questions`
 
 At the end of the run, each specialist also returns a **coverage declaration**: which sections of its pack it exercised, which it skipped, and why. The leader needs it to write an honest coverage section; a specialist that omits it has not finished.

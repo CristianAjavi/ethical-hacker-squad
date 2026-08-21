@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target has third-party dependencies, a package registry, an artifact publishing flow, or when you need to triage the output of a software composition analysis (SCA) scanner and hunt for secrets in the repository and its history.
 > **Do not load it if:** the audit only covers infrastructure or network configuration (use `infra-cloud.md`) or application logic with no relevant external dependencies.
-> **Cost:** ~305 lines. Load by section using the index; §7 changes the report the most.
+> **Cost:** ~303 lines. Load by section using the index; §7 changes the report the most.
 > **Second file of this pack:** `supply-chain-secrets-malware.md` holds §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so that file is opened on almost every engagement; it carries its own index.
 > **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-25` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, and suppressed CVEs. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
 

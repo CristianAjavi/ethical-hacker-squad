@@ -103,6 +103,8 @@ Severity is a judgement about **this** system, not a copy of a scanner label. A 
 <!-- /report:section -->
 
 <!-- report:section id=ruled-out class=mandatory -->
+**Every confirmed finding carries its triage.** The rules from `references/triage.md` that the procedure invokes, each with its answer — `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE` — and, whenever the answer is not `DOES_NOT_HOLD`, the artifact that supports it. This is the part a client can argue with: it shows which exculpations were considered and rejected, rather than asking them to trust that they were. A finding presented as `confirmed` with a rule left `UNKNOWN` is a finding presented above its evidence, and the ceiling for it is `probable`.
+
 ## What was ruled out, and what resisted
 
 Mandatory. A list of problems is a complaint; the same list plus what was checked and did not appear is an audit. Without this section the reader cannot tell a thorough review of ten classes from a shallow look at two, and the natural reading of a short findings list — "then there is nothing else" — is the reading we most need to prevent.

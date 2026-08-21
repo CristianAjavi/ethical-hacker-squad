@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target installs or ships agent packages (a skill, a plugin, an editor extension, a rules file), hands an agent a shell or a filesystem write tool, runs two or more agents that pass work to each other, or takes actions with real effects whose author has to be reconstructable weeks later.
 > **Do not load it if:** there is a single agent with no installable package, no write or shell tool and no side effects — the prompt boundary and the tool chain are already covered by `ai-safety.md` §0-§3.
-> **Cost:** ~130 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
+> **Cost:** ~128 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
 
 ## Selective loading index
 

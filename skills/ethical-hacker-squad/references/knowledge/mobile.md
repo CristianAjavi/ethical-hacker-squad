@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory includes an `.apk`, `.aab`, `.ipa`, an Android project (Gradle, Kotlin/Java, `AndroidManifest.xml`) or an iOS project (Xcode, Swift/Obj-C, `Info.plist`), or a backend whose only client is a mobile app.
 > **Do not load it if:** the scope is only web, API or infrastructure with no mobile client.
-> **Cost:** ~290 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~289 lines. Load by section using the index; you do not need to read it end to end.
 > **Other files of this pack:** `mobile-runtime-trust.md` holds §7 and §9-§11 with `MOB-13`, `MOB-16`..`MOB-18` — client-only controls, local authentication, screen integrity and overlays, and code loaded after the store. Open it whenever the app confirms an effect on screen, unlocks with biometrics or a PIN, updates itself over the air, or has a backend only it talks to. `mobile-ios.md` holds §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the inventory has an iOS project or an `.ipa`; the sections below still apply to iOS.
 
 ## Selective loading index
