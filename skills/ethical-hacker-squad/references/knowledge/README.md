@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over sixteen files, 3,758 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over sixteen files, 3,794 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -19,8 +19,8 @@ Eight packs, one per role, spread over sixteen files, 3,758 lines in total, 154 
 | `mobile.md` | `ehs-mobile` | ~313 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
 | `mobile-runtime-trust.md` | `ehs-mobile` | ~119 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
-| `infra-cloud.md` | `ehs-infra-cloud` | ~263 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
-| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~139 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
+| `infra-cloud.md` | `ehs-infra-cloud` | ~287 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
+| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~151 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
 | `supply-chain.md` | `ehs-supply-chain` | ~303 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
 | `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~107 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
 | `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~131 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |

@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target inventory contains infrastructure as code (Terraform, Bicep, CloudFormation), Dockerfiles or images, Kubernetes/Helm manifests, or CI/CD workflows. This is the *configuration* pack, not the application-code one.
 > **Do not load it if:** the target is only application code, an APK with no backend of its own, or an analysis of dependencies and repository secrets (that lives in `supply-chain.md`).
-> **Cost:** ~263 lines. Load by section using the index; you almost never need all three.
+> **Cost:** ~287 lines. Load by section using the index; you almost never need all three.
 > **Second file of this pack:** `infra-cloud-cicd-exposure.md` holds §4-§6 and `INF-13`..`INF-18` — CI/CD and GitHub Actions, environment separation, Terraform state and deployment secrets, and verification of effective network exposure. Open it whenever the inventory has pipelines, several environments or a live host in scope; it carries its own index.
 
 ## Selective loading index
@@ -36,6 +36,8 @@ statement {
 - There is a `condition` on `aws:ResourceAccount`, `aws:PrincipalTag` or `sts:ExternalId`, or an SCP/Azure Policy in the same repo that trims the effective scope: a wildcard under an organizational guardrail is not the same finding.
 - The wildcard sits in an ephemeral deployment role with a short session, and another statement narrows the real ARN.
 
+Rules: FP-01, FP-05.
+
 **Minimal test**: `rg -n '"\*"' --glob '*.tf'` and, for each hit, check whether the block carries a `condition {}`; with no condition and `actions=["*"]` it is confirmed on documentation alone.\
 **Traceability**: `CWE-284` · `CWE-732` · `CWE-269` · `A01:2025` · `CICD-SEC-2` · `SSDF PO` · `NIST 800-53 AC` · `CCM IAM` · `CIS v8.1 Control 6` · `ATT&CK T1078`\
 **Tooling**: `checkov -d . --framework terraform --skip-download --compact -o json` → the `CKV_AWS_*` IAM family. This is the noisiest scanner in the pack: it resolves neither variables nor remote modules, so `actions = var.actions` gets flagged or waved through with no real criterion, and it flags policies already compensated at another layer. Do not conclude effective permission from its output.
@@ -57,6 +59,8 @@ resource "google_storage_bucket_iam_member" "web" {
 - It is a public-assets bucket by design with no regulated data; verify **what the pipeline writes there** (if it also copies `.map` files, dumps or backups, it becomes a finding again).
 - Public access is served by a CDN with an origin identity and the bucket itself stays blocked.
 
+Rules: FP-01, FP-05.
+
 **Minimal test**: `rg -n 'allUsers|public-read|allow_nested_items_to_be_public|block_public_acls\s*=\s*false'` and cross-reference each bucket with the resources that write to it.\
 **Traceability**: `CWE-668` · `CWE-552` · `CWE-200` · `A01:2025` · `A02:2025` · `NIST 800-53 AC` · `CCM DSP` · `CIS v8.1 Control 3`\
 **Tooling**: `trivy config . --skip-check-update --format sarif -o o.sarif` (prefer it over tfsec, which is superseded and whose community was redirected to Trivy). Do not conclude real exposure: the bucket may not exist yet, or it may be overridden by an organization policy.
@@ -76,6 +80,8 @@ resource "aws_db_instance" "main" {
 **What rules it out (false positive)**
 - The provider encrypts that service by default and the organization does not require a customer-managed key: the real finding becomes "no customer-managed key", which is lower severity.
 - The cleartext listener only redirects to 443 with `HTTP_301`.
+
+Rules: FP-01.
 
 **Minimal test**: `rg -n 'storage_encrypted|kms_key_id|min_tls_version|enable_https_traffic_only' --glob '*.tf'` and list the data resources that do **not** show up.\
 **Traceability**: `CWE-311` · `CWE-319` · `A04:2025` · `A02:2025` · `NIST 800-53 SC` · `CCM CEK` · `CIS v8.1 Control 3` · `PCI DSS v4.0.1 req. 4`\
@@ -99,6 +105,8 @@ ingress {
 - It is the public load balancer's group on 80/443: opening it to the world is the point; the finding moves to the group of the instances behind it, which must only accept the balancer's group.
 - There is a NACL or managed firewall in front **declared in the same repo**; if it is not declared, do not assume it.
 
+Rules: FP-01, FP-05.
+
 **Minimal test**: `rg -n -B4 '0\.0\.0\.0/0' --glob '*.tf'` and classify by port: 80/443 goes to review, management or database ports go straight to a finding.\
 **Traceability**: `CWE-1327` · `CWE-284` · `CWE-923` · `A01:2025` · `A02:2025` · `NIST 800-53 SC` · `CCM IVS` · `CIS v8.1 Control 12`\
 **Tooling**: `trivy config . --skip-check-update --format sarif -o o.sarif`. Do not conclude reachability: the subnet may be private with no route to the internet, and no IaC scanner resolves the route table.
@@ -118,6 +126,8 @@ env:
 - The target is a legacy system with no OIDC support and there is an auditable automatic rotator on a short period: ask to see it, do not accept the intent.
 - The remaining variables are non-sensitive configuration and real authentication already goes through `id-token`.
 
+Rules: FP-07, FP-08.
+
 **Minimal test**: `rg -n 'aws_iam_access_key|google_service_account_key|azuread_application_password'` and then `rg -n 'openid_connect|workload_identity|id-token'`; the absence of the second confirms the pattern.\
 **Traceability**: `CWE-798` · `CWE-522` · `A07:2025` · `CICD-SEC-6` · `SSDF PO` · `NIST 800-53 IA` · `CCM IAM` · `CIS v8.1 Control 5` · `ATT&CK T1552`\
 **Tooling**: manual review; there is no reliable scanner for "this should be OIDC". Prioritization argument (Datadog State of Cloud Security 2025): **59% of AWS IAM users, 55% of GCP service accounts and 40% of Entra ID apps have an access key older than one year**. The missing control is almost always rotation, not detection.
@@ -135,6 +145,8 @@ env:
 **What rules it out (false positive)**
 - Logging is centralized in a security account managed outside this repo or by an organization policy; ask for written evidence, "the landing zone turns it on" is not evidence.
 - Alerts live in the observability platform rather than in the IaC: ask for the rule definition before ruling it out.
+
+Rules: FP-08.
 
 **Minimal test**: inventory the resources holding data or network paths and diff them against `rg -n 'cloudtrail|flow_log|diagnostic_setting|logging_project_sink'`; the gap is the finding.\
 **Traceability**: `CWE-778` · `A09:2025` · `CICD-SEC-10` · `SSDF PO` · `NIST 800-53 AU` · `CCM LOG` · `CIS v8.1 Control 8`\
@@ -157,6 +169,8 @@ CMD ["node", "server.js"]    # no USER, so PID 1 runs as uid 0
 - The base image already defines a non-root user and it is not overridden afterwards (distroless `nonroot` bases, for example): check the base before reporting.
 - The orchestrator enforces `runAsNonRoot: true`; then the root issue drops to defense in depth, but the digest pinning one stands.
 
+Rules: FP-01, FP-10.
+
 **Minimal test**: `rg -n '^FROM|^USER' Dockerfile*`; if the final stage has no `USER` or the `FROM` carries no `@sha256:`, it is confirmed without running anything.\
 **Traceability**: `CWE-250` · `CWE-1357` · `CWE-494` · `A02:2025` · `A08:2025` · `CICD-SEC-9` · `SLSA Build L2` · `CCM IVS` · `CIS v8.1 Control 4`\
 **Tooling**: `hadolint --no-fail -f sarif Dockerfile` — GPL-3.0, **invoke it as an external binary and never vendor it**. Separate `DL3xxx` rules from `SC2xxx` (those come from shellcheck) and drop the style noise with no security impact: `DL3008`, `DL3059` and `DL3006` are the ones that inflate the report most. A CIS benchmark exists for Docker: cite the numeric identifier and write the criterion in your own words.
@@ -175,6 +189,8 @@ RUN echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc \
 **What rules it out (false positive)**
 - BuildKit's `RUN --mount=type=secret,id=...` is used: the value never lands in a layer. Verify it in the `RUN`, not in the declared intent.
 - The `ARG` only carries a non-sensitive value (version, public proxy, platform).
+
+Rules: FP-01, FP-07.
 
 **Minimal test**: `rg -n 'ARG .*(TOKEN|SECRET|KEY|PASSWORD)|ENV .*(TOKEN|SECRET|KEY|PASSWORD)' Dockerfile*` and confirm whether a `.dockerignore` exists.\
 **Traceability**: `CWE-798` · `CWE-540` · `CWE-522` · `A02:2025` · `CICD-SEC-6` · `SSDF PS` · `NIST 800-53 IA` · `CCM CEK`\
@@ -195,6 +211,8 @@ services:
 **What rules it out (false positive)**
 - It is a documented system container (CNI, storage driver, node agent) whose function requires those capabilities: report it as an accepted risk with an owner, not as a defect.
 - The build uses an unprivileged builder (rootless BuildKit, kaniko, buildah) and the socket is no longer mounted.
+
+Rules: FP-01, FP-05.
 
 **Minimal test**: `rg -n 'privileged|docker\.sock|cap_add|network_mode:\s*host|pid:\s*host'`; this is a documentary finding, and **demonstrating it with a working escape is prohibited**.\
 **Traceability**: `CWE-250` · `CWE-269` · `CWE-668` · `A01:2025` · `A02:2025` · `CICD-SEC-4` · `NIST 800-53 AC` · `CCM IVS` · `ATT&CK T1610` · `ATT&CK T1611`\
@@ -219,6 +237,8 @@ spec:
 - The namespace applies Pod Security Admission in `enforce` mode at the `restricted` level, or a Kyverno/Gatekeeper policy mutates and imposes the fields; look for `pod-security.kubernetes.io/enforce` on the `Namespace` in the repo itself.
 - It is an infrastructure DaemonSet (CNI, log agent) where host access is functional: demand a read-only mount and the minimal path — a log agent needs `/var/log`, not `/`.
 
+Rules: FP-01, FP-05.
+
 **Minimal test**: `rg -n 'hostNetwork|hostPID|hostIPC|hostPath|hostPort' -A2` and compare the number of `securityContext` blocks against the total number of `containers:`.\
 **Traceability**: `CWE-250` · `CWE-269` · `CWE-668` · `CWE-1188` · `A02:2025` · `NIST 800-53 CM` · `CCM IVS` · `CIS v8.1 Control 4` · `ATT&CK T1611`\
 **Tooling**: `kubescape scan manifests/ --use-artifacts-from ~/.kubescape --format json` (**never `--submit`**, that would ship results to an external backend) and `trivy config . --skip-check-update --format sarif -o o.sarif`. Trivy's own false positive: it **scans Helm charts without rendering them** and reports literals such as `{{ .Values.securityContext.runAsUser }}` as an insecure value; render with the real `values` before accepting the finding. A CIS benchmark exists for Kubernetes: use the numeric identifier and describe the criterion in your own words.
@@ -239,6 +259,8 @@ rules:
 - It is a namespaced `Role` and that namespace only holds the application itself and its secrets: the permission does not cross a trust boundary. An equivalent `ClusterRole` is never ruled out this way.
 - The binding targets a controller whose whole job is managing that resource.
 
+Rules: FP-05.
+
 **Minimal test**: `rg -n -B6 'name: cluster-admin'` and list the `subjects`; every application ServiceAccount that shows up is a finding.\
 **Traceability**: `CWE-284` · `CWE-862` · `CWE-863` · `CWE-269` · `A01:2025` · `NIST 800-53 AC` · `CCM IAM` · `CIS v8.1 Control 6` · `ATT&CK T1078`\
 **Tooling**: `conftest test --policy ./policy manifests.yaml -o json` with your own Rego, or `opa eval` to debug the rule. Here the false positive is **yours**: a `deny` that does not filter on `input.kind` will flag a `ConfigMap` as if it were a `ClusterRole`. Always test the policy against a manifest that must pass before you trust the result.
@@ -257,6 +279,8 @@ stringData:
 **What rules it out (false positive)**
 - The value is a template placeholder (`{{ .Values.db.password }}`, `${DB_PASSWORD}`, `CHANGEME`) or arrives encrypted through SOPS / Sealed Secrets / External Secrets with the key outside the repo.
 - It is an ephemeral test environment with no real data; confirm it with the owner, do not assume it.
+
+Rules: FP-02, FP-07, FP-08.
 
 **Minimal test**: base64-decode the `data:` entries and assess the structure (user, host, high-entropy password). **Never test it against the service.** Cross-reference with SUP-16/SUP-17 in `supply-chain-secrets-malware.md` to cover the git history.\
 **Traceability**: `CWE-798` · `CWE-312` · `CWE-522` · `A02:2025` · `A04:2025` · `CICD-SEC-6` · `SSDF PS` · `NIST 800-53 IA` · `CCM CEK` · `ATT&CK T1552`\

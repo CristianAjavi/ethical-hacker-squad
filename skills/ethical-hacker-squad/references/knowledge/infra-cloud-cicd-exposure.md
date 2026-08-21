@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory contains CI/CD workflows (`.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`), several deployment environments, a Terraform state backend or a secret manager, or a live host or cluster named in scope.
 > **Do not load it if:** the work is confined to infrastructure as code, container images or Kubernetes manifests — those are `infra-cloud.md` §1-§3.
-> **Cost:** ~139 lines. Load by section using the index. The other half of the pack, `infra-cloud.md`, holds §1-§3 and `INF-01`..`INF-12`.
+> **Cost:** ~151 lines. Load by section using the index. The other half of the pack, `infra-cloud.md`, holds §1-§3 and `INF-01`..`INF-12`.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
@@ -32,6 +32,8 @@ on: pull_request_target                    # runs with secrets and a write token
 - The workflow uses `pull_request_target` but does **not** check out the PR code: it only reads metadata to label or comment. That is the legitimate use of the trigger.
 - The job sits behind an `environment:` with required reviewers, so an external PR cannot run without human approval.
 
+Rules: FP-01, FP-09.
+
 **Minimal test**: for every workflow with `pull_request_target`, find `actions/checkout` and inspect the `ref`: with no explicit `ref` it checks out the base (safe); with `head.*` the finding is confirmed.\
 **Traceability**: `CWE-94` · `CWE-829` · `A03:2025` · `A08:2025` · `CICD-SEC-4` · `SSDF PW` · `SLSA Build L2` · `NIST 800-53 SA`\
 **Tooling**: `zizmor --offline --format sarif .github/workflows/` — **`--offline` is mandatory**: passing `--gh-token` or having `GH_TOKEN` in the environment switches it to online mode and queries the GitHub API, which is already traffic against a third party. Complement it with `actionlint -format '{{json .}}' .github/workflows/*.yml`.
@@ -49,6 +51,8 @@ on: pull_request_target                    # runs with secrets and a write token
 **What rules it out (false positive)**
 - The value goes through `env:` and the script references it quoted as a shell variable (`"$TITLE"`): the content is no longer interpolated into the script text.
 - The field is not externally controlled (`github.sha`, `github.run_id`, `github.repository`).
+
+Rules: FP-01, FP-02.
 
 **Minimal test**: `rg -n 'run:' -A15 .github/workflows/ | rg '\$\{\{\s*github\.event'`; every hit that does not go through `env:` is a finding. Since 2026-06-18 `actions/checkout` fails on the most common unsafe patterns, but that covers the checkout, not your `run:` blocks.\
 **Traceability**: `CWE-94` · `CWE-78` · `CWE-77` · `A05:2025` · `CICD-SEC-4` · `SSDF PW` · `NIST 800-53 SI`\
@@ -69,6 +73,8 @@ jobs:
 **What rules it out (false positive)**
 - The organization pins the default `GITHUB_TOKEN` permission to read-only: then the missing block does not imply write. Check it, because it is configuration outside the repo and you cannot assume it in either direction.
 - The job holding secrets only triggers on `push` to `main` or on `release`, unreachable from a fork.
+
+Rules: FP-06, FP-08.
 
 **Minimal test**: list the workflows without `permissions:` and cross-reference them with those referencing `secrets.`; least privilege applies per job, not per workflow.\
 **Traceability**: `CWE-284` · `CWE-732` · `CWE-522` · `A01:2025` · `CICD-SEC-2` · `CICD-SEC-5` · `SSDF PO` · `NIST 800-53 AC` · `CCM IAM`\
@@ -91,6 +97,8 @@ jobs:
 - The action belongs to the same `owner` and access-control perimeter: pinning it is still good practice, but it is not a third-party risk.
 - The runner is ephemeral (one job per machine, destroyed afterwards) in a private repository, with no cloud credentials mounted.
 
+Rules: FP-06, FP-10.
+
 **Minimal test**: count SHA-pinned actions against the total under `.github/workflows/` and report the percentage; cross-reference `runs-on` with repository visibility and workflow triggers.\
 **Traceability**: `CWE-829` · `CWE-494` · `CWE-345` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `CICD-SEC-9` · `CICD-SEC-7` · `SLSA Build L2` · `SLSA Build L3` · `SSDF PW`\
 **Tooling**: `zizmor --offline --format sarif .github/workflows/` (`unpinned-uses` and `artipacked` rules). Do not take its severity at face value: it flags `unpinned-uses` even where it is hardening rather than an exploitable finding today. Argue with the real case instead: in **tj-actions/changed-files (CVE-2025-30066, 14-15 March 2025)** the bot's PAT was compromised and **every tag from v1 through v45.0.7 was repointed to a malicious commit** that dumped runner secrets into the log; more than 23,000 repositories were affected, fixed in v46.0.1, with a sibling incident in reviewdog/action-setup (CVE-2025-30154). Datadog State of DevSecOps 2026: **only 4% of organizations pin all their public GitHub Actions by commit SHA**. The **Shai-Hulud 2.0** worm (21-23 November 2025) used GitHub Actions and self-hosted runners as its persistence mechanism.
@@ -111,6 +119,8 @@ terraform {
 **What rules it out (false positive)**
 - The directory is a reusable module, not a root: modules do not declare a backend and that is correct. Check whether there is a `provider`/`backend` or only `variables` and `outputs`.
 - Remote state exists and the local `.tfstate` is an artifact of a trial run, already ignored by `.gitignore` and absent from history.
+
+Rules: FP-04, FP-09.
 
 **Minimal test**: `rg -n 'backend "' --glob '*.tf'` and `git log --all --name-only --pretty=format: | rg 'tfstate'`. If state was ever in git, the credential is considered compromised and the deliverable is a rotation plan, not "remove it from the repo".\
 **Traceability**: `CWE-312` · `CWE-200` · `CWE-668` · `A02:2025` · `A04:2025` · `CICD-SEC-1` · `CICD-SEC-7` · `NIST 800-53 CM` · `CCM DSP`\
@@ -133,6 +143,8 @@ spec:
 **What rules it out (false positive)**
 - The load balancer is internal through a provider annotation and never gets a public IP.
 - A service mesh with strict mTLS and an authorization policy fulfills the `NetworkPolicy` role: report the overlap, not the absence.
+
+Rules: FP-01, FP-10.
 
 **Minimal test**: the part you can audit without permission is **documentary**: count namespaces carrying workloads with no `NetworkPolicy`, and list `Service` objects of type `LoadBalancer`/`NodePort` on ports other than 80/443. Any check against live infrastructure — resolving the balancer name, connecting to a port, enumerating buckets with client credentials, running `kube-bench` on a node — **REQUIRES AUTHORIZATION in writing, with scope, window and contact**, following the planning and coordination framing of `NIST SP 800-115`. Without that permission the deliverable is a proposed local patch (the default-deny `NetworkPolicy`, the switch to `ClusterIP`), never applied; and scanning third-party infrastructure, testing discovered credentials against real services, or using evasion techniques remains prohibited.\
 **Traceability**: `CWE-1327` · `CWE-284` · `CWE-306` · `CWE-923` · `A01:2025` · `A02:2025` · `NIST 800-53 SC` · `NIST SP 800-115` · `CCM IVS` · `CIS v8.1 Control 12` · `CIS v8.1 Control 13`\
