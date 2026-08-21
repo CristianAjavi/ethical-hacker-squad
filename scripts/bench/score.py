@@ -65,6 +65,10 @@ def matches(finding: dict, item: dict) -> bool:
     if place is None:
         return False
 
+    # The file itself can be the subject: a committed binary has no line.
+    if place.get("symbol") == Path(place["path"]).name:
+        return True
+
     line = finding.get("location", {}).get("line")
     span = place.get("lines")
     if isinstance(line, int) and span:

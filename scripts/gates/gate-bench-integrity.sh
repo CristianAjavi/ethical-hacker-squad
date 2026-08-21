@@ -89,7 +89,18 @@ for kind in ("planted", "decoys"):
         if not target.is_file():
             findings.append(f"{item['id']} points at {item['path']}, which does not exist in {item['case']}")
             continue
-        body = target.read_text(encoding="utf-8")
+        # When the symbol IS the file name, the file itself is the subject - a
+        # committed binary, a configuration file - and there is nothing to find
+        # inside it. Anything else must literally appear in the file.
+        if item["symbol"] == Path(item["path"]).name:
+            continue
+        try:
+            body = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            findings.append(
+                f"{item['id']} points at a symbol inside {item['path']}, which is not text: "
+                "name the file itself as the symbol when the file is the subject")
+            continue
         needle = item["symbol"].split()[-1] if " " in item["symbol"] else item["symbol"]
         # Word boundaries when the symbol is an identifier: `write_token` must not
         # be satisfied by `write_token_privately`, which is a DIFFERENT function
