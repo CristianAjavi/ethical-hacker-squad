@@ -60,12 +60,15 @@ Detection is half the job. The other half is telling a fix from something that l
 
 ```
 1. Point a fresh squad at bench/cases/<case>, in audit mode, with no other context.
-2. Have it emit findings.json per references/findings-artifact.md.
+2. Have it emit findings.json per references/findings-artifact.md, WRITING THE FILE
+   AS SOON AS IT HAS ONE FINDING and rewriting it after each one.
 3. Validate it:  scripts/gates/gate-findings-artifact.sh --deliverable findings.json
 4. Score it:     python3 scripts/bench/score.py --findings findings.json
 ```
 
 Step 3 before step 4 on purpose: a malformed artifact scored anyway would report a low recall that is really a formatting bug.
+
+**Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
 ## What the numbers are worth
 
