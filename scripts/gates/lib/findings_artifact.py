@@ -144,19 +144,38 @@ def main() -> int:
                 if m:
                     procedures.add(f"{m.group(1)}-{int(m.group(2)):02d}")
 
-    # the doc and the schema must agree on which fields exist
+    # The doc and the schema must agree on which fields exist AND AT WHICH LEVEL.
+    # The level is not a detail: `ruled_out` is a sibling of `findings`, the field
+    # table listed it among the per-finding rows, and a blinded specialist
+    # faithfully put it inside all nine of its findings, where
+    # `additionalProperties: false` rejects it. The artifact was thrown out over
+    # a defect in this document. So the table states the level in the row - a
+    # bare name is top-level, `engagement.x` and `findings[].x` are the others -
+    # and this check reads only table rows, in both directions.
     doc = read(root, DOC)
-    documented = set(re.findall(r"`([a-z_]+(?:\.[a-z_]+)?)`", doc))
-    findings_props = schema["properties"]["findings"]["items"]["properties"]
-    problems: list[str] = []
-    for key in list(schema["properties"]) + list(findings_props):
-        if key in ("engagement", "findings"):
+    documented: set[str] = set()
+    for line in doc.splitlines():
+        if not line.lstrip().startswith("|"):
             continue
-        if key not in documented:
-            problems.append(f"{DOC}: the schema has `{key}` and the field table does not explain it")
-    for key in schema["properties"]["engagement"]["properties"]:
-        if f"engagement.{key}" not in documented:
-            problems.append(f"{DOC}: the schema has `engagement.{key}` and the field table does not explain it")
+        cell = line.split("|")[1] if line.count("|") >= 2 else ""
+        documented.update(re.findall(r"`(engagement\.[a-z_]+|findings\[\]\.[a-z_]+|[a-z_]+)`", cell))
+    findings_props = schema["properties"]["findings"]["items"]["properties"]
+    engagement_props = schema["properties"]["engagement"]["properties"]
+    problems: list[str] = []
+
+    expected = {k for k in schema["properties"] if k not in ("engagement", "findings")}
+    expected |= {f"engagement.{k}" for k in engagement_props}
+    expected |= {f"findings[].{k}" for k in findings_props}
+    for name in sorted(expected - documented):
+        problems.append(
+            f"{DOC}: the schema has `{name}` and the field table does not explain it at that level")
+    # and the other way: a row for a field the schema does not have sends an
+    # auditor to write something the validator will refuse.
+    for name in sorted(documented - expected):
+        if name in ("engagement", "findings") or "." not in name and name not in schema["properties"]:
+            continue
+        problems.append(
+            f"{DOC}: the field table has a row for `{name}`, which the schema does not declare there")
 
     if not targets:
         fixtures = sorted((root / FIXTURES).rglob("*.json")) if (root / FIXTURES).is_dir() else []

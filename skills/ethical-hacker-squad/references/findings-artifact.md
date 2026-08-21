@@ -17,9 +17,11 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 
 ## The fields, and why each is there
 
+**The prefix is part of the contract.** `engagement.x` is a key of the engagement object, `findings[].x` is a key of each finding, and a bare name is a top-level key of the artifact. A finding rejects any field not listed here as `findings[].`, so a top-level key written inside a finding fails validation — which is exactly what happened the first time a specialist read this table without the prefixes.
+
 | Field | Why it exists |
 |---|---|
-| `schema_version` | A consumer must be able to tell which contract a file was written against. |
+| `schema_version` | **Top-level.** Exactly `ehs.findings/v1`. A consumer must be able to tell which contract a file was written against, and a version invented per run tells it nothing. |
 | `engagement.scope` | The exact target. A finding without the scope it was found in cannot be re-checked. |
 | `engagement.commit` | What the audit actually read. Without it, "fixed" and "not reproducible" are unarguable. |
 | `engagement.mode` | `audit`, `harden` or `verify`: what the squad was allowed to do. |
@@ -27,24 +29,24 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `engagement.generated_by` | Which skill version produced this. |
 | `engagement.coverage_declaration` | What was exercised and what was not. A file of findings with no coverage statement invites the reader to assume the rest is clean. |
 | `engagement.authorization` | The reference under which any remote or active test was run. Absent means none was. |
-| `id` | Stable within the engagement, so the report, the annex and the issue can all point at the same thing. |
-| `title` | One line a maintainer can triage from. |
-| `procedure` | The pack procedure that produced it, or `ad-hoc`. This is what makes a finding traceable back to a written method instead of to a model's mood. |
-| `status` | From `vocabulary.md`. `candidate` may never appear here: it is internal working state. |
-| `severity` | Judged in this system, not copied from a tool's label. |
-| `confidence` | How much of the chain was observed rather than inferred. |
-| `location` | Path, and line when there is one. |
-| `evidence` | The minimal trace, already redacted. |
-| `impact` | What an attacker gets. |
-| `preconditions` | What has to be true first. |
-| `recommendation` | The fix at root-cause level. |
-| `verification` | From `vocabulary.md`, when a fix was checked. |
-| `inference` | **Required for `probable`**: the one link that was inferred. A `probable` finding that cannot name it is a `confirmed` finding without the evidence, or a `candidate` in disguise. |
-| `withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
-| `traceability` | The standard identifiers, verbatim. |
-| `triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
-| `limits` | What this finding does not establish. |
-| `ruled_out` | What was tested and did not appear, with the bound of how far the test reached. |
+| `findings[].id` | `F-001`, `F-002`, … — three digits, and the validator enforces it. Stable within the engagement, so the report, the annex and the issue can all point at the same thing. |
+| `findings[].title` | One line a maintainer can triage from. |
+| `findings[].procedure` | The pack procedure that produced it, or `ad-hoc`. This is what makes a finding traceable back to a written method instead of to a model's mood. |
+| `findings[].status` | From `vocabulary.md`. `candidate` may never appear here: it is internal working state. |
+| `findings[].severity` | Judged in this system, not copied from a tool's label. |
+| `findings[].confidence` | How much of the chain was observed rather than inferred. |
+| `findings[].location` | Path, and line when there is one. |
+| `findings[].evidence` | The minimal trace, already redacted. |
+| `findings[].impact` | What an attacker gets. |
+| `findings[].preconditions` | What has to be true first. |
+| `findings[].recommendation` | The fix at root-cause level. |
+| `findings[].verification` | From `vocabulary.md`, when a fix was checked. |
+| `findings[].inference` | **Required for `probable`**: the one link that was inferred. A `probable` finding that cannot name it is a `confirmed` finding without the evidence, or a `candidate` in disguise. |
+| `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
+| `findings[].traceability` | The standard identifiers, verbatim. |
+| `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
+| `findings[].limits` | What this finding does not establish. |
+| `ruled_out` | **Top-level, once per artifact** — a sibling of `findings` and `engagement`, not a field inside a finding. What was tested and did not appear, with the bound of how far the test reached. |
 
 ## The invariants the validator enforces
 
