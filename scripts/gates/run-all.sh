@@ -62,6 +62,11 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # What the list prevents is a `push` to main declaring them UNMEASURABLE.
 # ---------------------------------------------------------------------------
 PR_SCOPED='gate-issue-closure.sh gate-protected-paths.sh'
+# Gates whose input comes from OUTSIDE this checkout: they need a tool run that
+# needs the network and a repository token. They do not run here, and they are
+# named in the deferred list with the workflow that does run them - a gate that
+# is quietly absent is indistinguishable from a gate that passed.
+EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
@@ -167,6 +172,14 @@ while IFS= read -r g <&3; do
     n_deferred=$((n_deferred + 1))
     DEFERRED="$DEFERRED $name(needs-PR)"
     gate_info "$name needs PR context: it does not run here, issue-closure-gate.yml runs it"
+    continue
+  fi
+
+  # Gates whose input is produced by a tool run outside this checkout.
+  if in_list "$name" "$EXTERNAL_SCOPED" && [ -z "${SCORECARD_RESULTS:-}" ]; then
+    n_deferred=$((n_deferred + 1))
+    DEFERRED="$DEFERRED $name(needs-external-results)"
+    gate_info "$name needs results this checkout does not contain: it does not run here, scorecard.yml runs it"
     continue
   fi
 

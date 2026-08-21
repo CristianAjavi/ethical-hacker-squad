@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`, and two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`. Seven have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -20,7 +20,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
 | `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
-| `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
+| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
@@ -276,6 +276,14 @@ Gate on the subset that reflects real risk here:
 | `Security-Policy` | must be `10` | A security tool without a disclosure policy is a contradiction. |
 
 The aggregate is recorded as informational with a **no-regression** rule: it may not drop more than 0.5 below the previous recorded value without failing. Exit `2` if Scorecard could not run.
+
+**Implemented 2026-08-21** as `gate-scorecard-threshold.sh`, run by the `threshold` job of `scorecard.yml` over a second, unpublished run in JSON — the SARIF the measurement job produces carries findings, not per-check scores. Three things it does that a threshold check usually does not:
+
+- **A check Scorecard could not run comes back as `-1`, and that is `2`, not a pass.** The exit-code doctrine of this repository, applied to somebody else's tool: a subset gate that silently skips the check it could not read is worse than no gate, because it reports green.
+- **The aggregate is judged by movement, and the baseline lives in `docs/scorecard-baseline.json`, edited by hand in a pull request.** A workflow that can rewrite its own baseline can ratchet itself down one run at a time. No baseline recorded yet is printed as *nothing to compare*, never treated as fine.
+- **The table above is the gate.** It is parsed and compared, check for check and number for number, against `scripts/gates/data/scorecard-thresholds.json`, with a self-test case for the drift.
+
+It does not run in the offline suite, because its input needs the network and a repository token; `run-all.sh` names it in the deferred list with the workflow that does run it, since a gate that is quietly absent is indistinguishable from a gate that passed. Proved in the negative by `gate-scorecard-threshold.selftest.sh`: 11 cases, including a check below its minimum, a check absent from the results, a check that came back inconclusive, an aggregate falling just within the contract and one falling past it.
 
 ## Label taxonomy
 
