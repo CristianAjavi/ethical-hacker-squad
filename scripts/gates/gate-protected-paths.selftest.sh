@@ -29,7 +29,12 @@ case_run() {
   args=(--changed-files "$list")
   [ "$branch" = "NONE" ] || args+=(--branch "$branch")
   [ "$files" = "NOLIST" ] && args=(--branch "$branch" --changed-files "$work/.missing")
-  out="$(EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
+  # Hermetic on purpose. On a CI runner GITHUB_HEAD_REF and GITHUB_BASE_REF are
+  # set, and the gate reads them as defaults - so a case meant to prove "I cannot
+  # tell whose branch this is" silently got told, passed locally and failed on the
+  # runner. A battery that inherits the environment is not proving what it claims.
+  out="$(env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF -u BASE_REF -u CHANGED_FILES_FILE \
+        EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
