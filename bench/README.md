@@ -11,6 +11,14 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 
 Read the second column before the first. Recall on a bench its own authors wrote is a weak signal; a decoy rate of zero on eleven constructs built to be mistaken for the defect beside them is the one that costs something to fake.
 
+## The one that is not ours
+
+| Run | Published advisories in scope | Found blind | Notes |
+|---|---|---|---|
+| [2026-08-21, external](runs/2026-08-21-external/) | 3 | **2** | Third-party code, ground truth from the GitHub Advisory Database and the upstream fix commits. Seven further findings are withheld from this repository pending a disclosure decision |
+
+Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
+
 ## The patch bench
 
 Detection is half the job. The other half is telling a fix from something that looks like one, and it has its own key, its own scorer and its own run:
