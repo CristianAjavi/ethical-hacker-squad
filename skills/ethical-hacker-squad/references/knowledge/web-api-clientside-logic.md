@@ -2,7 +2,7 @@
 
 > **When to load this file:** second half of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or error and log output a user can reach.
 > **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5.
-> **Cost:** ~271 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
+> **Cost:** ~297 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
 
 ## Selective loading index
 
@@ -181,6 +181,32 @@ Rules: FP-08, FP-09.
 **Minimal test**: list every constant whose name declares a bound, and for each one count its readers — `rg -n 'MaxRequestBodyMB|MaxUploadMB|RateLimitBurst'` and subtract the declaration and the assignment. Zero is the finding; one reader that is itself never called is the same finding one level down. Then cross-reference the routes that reach the unlimited path with the ones that need no credential.\
 **Traceability**: `CWE-400` · `CWE-770` · `CWE-1188` · `A04:2025` · `A05:2025` · `ASVS 5.0 V11` · `NIST 800-53 SC`\
 **Tooling**: no scanner reports this, and the reason is worth knowing: dead-code analysis flags **unused** symbols, and a package variable that is assigned at start-up is used — `staticcheck`'s `U1000` and its equivalents stay quiet on exactly this shape. `rg` and the question *who reads this* are the tool. This procedure exists because a blinded three-arm run — the corpus, an unaided senior engineer and a competing product — **all three missed** a published advisory of exactly this shape, and one of them read the declaration as proof the control was present (`bench/runs/2026-08-21-three-arm-go/`).
+
+### WEB-26 A length from the wire decides the size of an allocation
+**Where to look**
+- Any decoder that reads a **count or a length from untrusted input and uses it to size something** before the payload arrives: `new byte[len]`, `make([]T, n)`, `new T[count]`, `ByteBuffer.allocate(len)`, `malloc(n)`, `Array.new(n)`, a pre-sized list from a declared element count.
+- The guard beside it. A cast-safety test (`len < Integer.MAX_VALUE`, `n >= 0`) is **not** a limit: it stops the arithmetic from wrapping and lets everything below the ceiling through. The question is whether the value is compared against something the peer does **not** control — a configured maximum, the bytes actually remaining in the frame, the size of the buffer already read.
+- Two neighbours of the same family, in the same files: **mutual recursion with no depth counter** (`readValue` → `readTable` → `readArray` → `readValue`), where nesting costs the attacker a few bytes per stack frame; and a length **multiplied or added** without an overflow check (`count * itemSize`, `offset + len`).
+- Highest yield **before authentication**: a protocol greeting, a server-properties table, a TLS-less handshake, a webhook body, anything parsed to decide who the peer is.
+
+**Vulnerable pattern**
+```java
+long contentLength = readUnsignedInt();          // four bytes, peer's choice
+if (contentLength < Integer.MAX_VALUE) {         // a cast guard, not a limit
+    byte[] buffer = new byte[(int) contentLength];   // ~2 GB committed here
+    in.readFully(buffer);                        // ... and only now does it fail
+}
+```
+**What rules it out (false positive)**
+- The length is checked against a bound the peer does not set — a configured maximum, the negotiated frame size, `min(declared, remaining)` — **and that check runs before the allocation**. Quote both lines and their order; a limit applied after the array exists has already lost.
+- The structure grows as bytes arrive rather than being pre-sized: appending to a builder, `ByteArrayOutputStream`, a chunked read loop whose total is capped.
+- There is no second principal: the input comes from the same trust domain as the process, and `local-app.md` §0 can name why.
+
+Rules: FP-01, FP-02, FP-06.
+
+**Minimal test**: list every allocation whose size expression traces back to input — `rg -n 'new byte\[|allocate\(|make\(\[\]|malloc\(' ` — and for each one name, in writing, **the check that bounds it and the line it is on**. An allocation with no such line is the finding; a check that only prevents a cast from wrapping is an allocation with no such line. Then walk the recursive entry points and look for a depth parameter: if the signature does not carry one, there is no cap.\
+**Traceability**: `CWE-789` · `CWE-400` · `CWE-674` · `CWE-190` · `A04:2025` · `ASVS 5.0 V11` · `NIST 800-53 SC`\
+**Tooling**: nothing reports this reliably. It is a data-flow question with a semantic step in the middle — *is this bound attacker-controlled* — that a taint tracker cannot answer, so the sink looks guarded to it. `rg` for the allocations and read the guard yourself. This procedure exists because it was **missed twice, by us, and named by us in between**: a specialist reported the class as `ad-hoc` and wrote that *"resource exhaustion from untrusted input in a binary decoder has no procedure in this corpus"*; the write-up was deferred so it could not contaminate a round then in flight; and in the next run — a whole repository, no pointer — the corpus arm **had the right file open, reported the neighbouring recursion, and missed the allocation**, while an unaided engineer found it (`bench/runs/2026-08-21-whole-repo-3arm/`).
 
 ### WEB-19 Crypto in transit and at rest, and secret management
 

@@ -11,6 +11,7 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 | [2026-08-21, CI platforms](runs/2026-08-21-ci-platforms/) | 5/5 | **0/5** | One specialist on the case built for the new `INF-19`..`INF-23`; **3/5 and one decoy against the key as authored**, both scores published, all three key defects listed |
 | [2026-08-21, `WEB-23`](runs/2026-08-21-web23/) | 2/2 | **0/2** | The procedure written from the three-arm run's shared miss, measured on a case built for it; the two decoys imitate the finding at the place you first see it |
 | [2026-08-21, `WEB-24`/`WEB-25`](runs/2026-08-21-authz/) | 2/2 | **0/2** | The two procedures written from the second round's shared misses; both decoys imitate the finding exactly where a reader meets it, and separating them needs the exculpation clause rather than the pattern |
+| [2026-08-21, `WEB-26`](runs/2026-08-21-web26/) | 2/2 | **0/2** | Written from the whole-repository loss. The decoys are a correctly bounded twin and one that looks unguarded but is capped by its own field width; the distinction the procedure turns on is **a cast guard versus a limit** |
 
 Read the second column before the first. Recall on a bench its own authors wrote is a weak signal; a decoy rate of zero on eleven constructs built to be mistaken for the defect beside them is the one that costs something to fake.
 
