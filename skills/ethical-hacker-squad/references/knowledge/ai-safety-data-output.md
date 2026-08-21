@@ -40,7 +40,7 @@ A nightly job indexing a bucket that users or integrations write to, without rec
 **Minimal test**
 In a development environment, index a synthetic document with an inert marker and check whether retrieval returns it for unrelated queries and whether the marker ends up in the answer. Local, with no external effects.
 
-**Traceability**: `LLM05:2026` · `LLM09:2026` · `ASI06` · `CWE-349` · ASVS 5.0 V2
+**Traceability**: `LLM05:2026` · `LLM09:2026` · `ASI06` · `CWE-349` · `ASVS 5.0 V2`
 **Tooling**: `rg -n "add_documents|add_texts|upsert\(|from_documents"` → write points; you still have to trace backwards who controls the source.
 
 ### AI-13 Writes to persistent memory from untrusted content
@@ -80,7 +80,7 @@ A shared index where isolation relies on the model "not mentioning" other tenant
 **Minimal test**
 Integration test: query with tenant A's context for a term that only exists in tenant B's documents; it must come back empty. This overlaps with the web-api role: coordinate so the finding is not duplicated.
 
-**Traceability**: `LLM02:2026` · `LLM09:2026` · `A01:2025` · `CWE-284` · ASVS 5.0 V8
+**Traceability**: `LLM02:2026` · `LLM09:2026` · `A01:2025` · `CWE-284` · `ASVS 5.0 V8`
 **Tooling**: `rg -n "similarity_search|as_retriever|\.query\(" -A3` → check whether every call carries a filter. A filter being present does not prove it is mandatory.
 
 ### AI-23 Model, adapter and dataset artifacts loaded without provenance or safe deserialization
@@ -130,7 +130,7 @@ The index holds an embedded copy of everything the pipeline ingested — contrac
 **Minimal test**
 Local, against an instance you own: bring the compose file up and query the collection endpoint with no credentials, `curl -s localhost:6333/collections` for Qdrant or the equivalent for the engine in use. If it answers, the exposure is proved without touching production. For the lifecycle leg: index a synthetic record, delete it through the product's own deletion path, re-run the query and see whether it still comes back. Against a deployed instance: `REQUIRES AUTHORIZATION`.
 
-**Traceability**: `LLM09:2026` · `LLM02:2026` · `AML.T0085.000` · `AML.T0082` · `A01:2025` · `CWE-306` · `CWE-359` · `CWE-212` · ASVS 5.0 V14
+**Traceability**: `LLM09:2026` · `LLM02:2026` · `AML.T0085.000` · `AML.T0082` · `A01:2025` · `CWE-306` · `CWE-359` · `CWE-212` · `ASVS 5.0 V14`
 **Tooling**: `rg -n "QdrantClient|chromadb|weaviate|milvus|pgvector|create_collection"` plus a read of the compose or Helm port map. The client carrying an API key proves the parameter exists, not that the server rejects an anonymous request — check the server side. Coordinate with `privacy-abuse` (`PRV-04`, `PRV-08`): the vector index is the store that retention and erasure procedures forget.
 
 ## §5 Model output as dangerous input
@@ -155,7 +155,7 @@ Data analysis agents and homegrown code interpreters are the most common case: i
 **Minimal test**
 Trace the flow from the model's response to the sink. Nothing needs to be executed: this is static reachability.
 
-**Traceability**: `LLM10:2026` · `ASI05` · `A05:2025` · `CWE-94` · `CWE-95` · `CWE-78` · ASVS 5.0 V1, V15
+**Traceability**: `LLM10:2026` · `ASI05` · `A05:2025` · `CWE-94` · `CWE-95` · `CWE-78` · `ASVS 5.0 V1` · `ASVS 5.0 V15`
 **Tooling**: `bandit -ll` or `semgrep` flag the sink but do not know the source is an LLM; confirm the connection by reading the code.
 
 ### AI-16 Exfiltration by rendering: markdown images and automatic link fetching
@@ -176,7 +176,7 @@ A chat interface that renders full markdown with no CSP or with `img-src *`, so 
 **Minimal test**
 `curl -sI https://<host> | rg -i content-security-policy` in an environment you own and are authorized to test. For the model side, an inert canary: have the response contain an image pointing at `http://127.0.0.1:9/marker` and observe whether the client issues the request. Local destination, no real data.
 
-**Traceability**: `LLM02:2026` · `LLM10:2026` · `ASI01` · `A05:2025` · `CWE-79` · `CWE-200` · ASVS 5.0 V3
+**Traceability**: `LLM02:2026` · `LLM10:2026` · `ASI01` · `A05:2025` · `CWE-79` · `CWE-200` · `ASVS 5.0 V3`
 **Tooling**: DevTools or the local proxy log → see whether the request goes out. Its absence in your test does not rule out another renderer (email, PDF export, notifications) with a different policy.
 
 ## §6 Context and secret leakage
@@ -198,7 +198,7 @@ API keys, connection strings, table names, discount limits, anti-fraud threshold
 **Minimal test**
 Read the assembled prompt (not the template) and classify every line: public instruction / business rule / secret. Every line in the last two categories is a finding.
 
-**Traceability**: `LLM02:2026` · `LLM08:2026` · `CWE-200` · `CWE-798` · ASVS 5.0 V14
+**Traceability**: `LLM02:2026` · `LLM08:2026` · `CWE-200` · `CWE-798` · `ASVS 5.0 V14`
 **Tooling**: `rg -n "sk-|api[_-]?key|password|Bearer " prompts/` → obvious signals; leakable business rules are only found by reading with judgement.
 
 ### AI-18 Cross-context between users, sessions or tenants
@@ -222,7 +222,7 @@ And the subtle variant: a semantic cache keyed on the hash of the question text,
 **Minimal test**
 Concurrent test with two identities and distinguishable data: neither may see the other's material. Local, no external authorization needed.
 
-**Traceability**: `LLM02:2026` · `A01:2025` · `CWE-488` · `CWE-524` · ASVS 5.0 V7, V8
+**Traceability**: `LLM02:2026` · `A01:2025` · `CWE-488` · `CWE-524` · `ASVS 5.0 V7` · `ASVS 5.0 V8`
 **Tooling**: `rg -n "^[A-Z_]+ *= *(\[\]|\{\})" --type py` → suspicious module-level state. A global list may be a harmless constant; confirm it is written to at request time.
 
 ## §7 Unbounded consumption and cost
@@ -269,7 +269,7 @@ rg -n --pcre2 '[\x{E0000}-\x{E007F}\x{200B}-\x{200D}\x{202A}-\x{202E}\x{2066}-\x
 ```
 And for the sanitizer, an inert unit test: pass it a string containing a single character from the Tags block and check the output no longer contains it. One test character is not a payload. Cheap complementary detection: AgentDojo (**arXiv:2406.13352**, NeurIPS 2024 Datasets & Benchmarks; 97 user tasks and 629 security cases across banking, travel, workspace and Slack) defines four canonical families - ignore-previous, system-message, important-messages and tool-knowledge - whose literal markers work as a low-cost detection rule over ingested content. Use them to alert and log, never as the primary control: the NCSC warns that deny-lists of phrases are bypassed with trivial rephrasing.
 
-**Traceability**: `LLM01:2026` · `AML.T0068` · `CWE-116` · `CWE-176` · ASVS 5.0 V1
+**Traceability**: `LLM01:2026` · `AML.T0068` · `CWE-116` · `CWE-176` · `ASVS 5.0 V1`
 **Tooling**: the `rg --pcre2` above → a hit requires inspecting the context (complex emoji create noise). Zero hits does not prove absence: homoglyphs and other encodings fall outside that range.
 
 ## §9 Reproducible adversarial evaluation
@@ -294,7 +294,7 @@ The system's only security evidence is a red teaming tool report whose verdicts 
 **Minimal test**
 Your own synthetic corpus in the repository: each case with input, simulated ingestion path, expected behavior and a binary criterion (tool X must not be invoked; the canary must not appear in the output). No network, no cost, reproducible, and it breaks the build when it fails.
 
-**Traceability**: `LLM01:2026` · `LLM07:2026` · `ASI01` · `AML.T0051` · ASVS 5.0 V16
+**Traceability**: `LLM01:2026` · `LLM07:2026` · `ASI01` · `AML.T0051` · `ASVS 5.0 V16`
 **Tooling**: `promptfoo eval -c promptfooconfig.yaml` → `REQUIRES AUTHORIZATION` and a capped budget. Read the traces, not the summary percentage.
 
 ## §10 Self-protection of this squad

@@ -8,6 +8,9 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`gate-corpus-contract.sh`** and its 17-case self-test — the corpus measured against every number and every name the repository states about it: numbering contiguity, declared counts and ranges, pack cost headers and the loading map, the six mandatory fields, identifier families, identifiers written outside backticks, the roster (`team.md` ↔ `agents/` ↔ `packs.json`) and the routing in `coverage.md`. Two exemptions exist and both are printed on every run: a procedure may declare that no external identifier applies, and text quoting a superseded figure is exempt only inside a `<!-- counts:historical -->` region.
+- **Two identifier families the corpus was already citing and nothing declared**: the OWASP Agentic Skills Top 10 (`AST01`..`AST10`, project page verified 2026-08-21) and ATLAS mitigations (`AML.M*`). Added to `docs/sources-allowlist.json`, `NOTICE.md`, the meter's family table and the gate's family list, so those citations now count as traceability instead of being invisible.
+
 - **`AI-23`** — model, adapter and dataset artifacts loaded without provenance or safe deserialization. A checkpoint is executable content: `.pt`, `.pkl`, `.ckpt` and `.h5` deserialize into Python objects and run code while loading, before a single token is generated, and `trust_remote_code=True` executes modelling code from the repository. Pulling by tag instead of by digest means the artifact you audited is not the artifact production loads.
 - **`PRV-12`** — where personal data physically lands and where it is replicated: the `region` argument of every store, its backups, replicas and the third parties that receive it, against the jurisdiction the product declares. States the technical fact and never rules on lawfulness.
 
@@ -24,9 +27,13 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **Identifiers written as prose.** Twenty-six `Traceability` lines across five packs cited ASVS chapters as bare text (`ASVS 5.0 V14, V16`), invisible to every check and to anyone grepping coverage of a chapter. Normalised, and the gate now fails on it.
+
 - **Two holes in the procedure numbering.** `AI-23` and `PRV-12` were drafted in `docs/coverage/` and never landed, so the corpus jumped `AI-22`→`AI-24` and `PRV-11`→`PRV-13` while `team.md` and the packs declared unbroken ranges. Landing them closes both holes; the meter now reports `numbering gaps: none`.
 - **A knowledge file that was in no count.** `ai-safety-agent-runtime.md` (`AI-25`..`AI-28`) existed on disk and was not declared in `scripts/meter/packs.json`, so four procedures were invisible to the corpus measurement and the file was missing from the loading map altogether.
+<!-- counts:historical -->
 - **Every declared count was stale.** `README.md` said 2,830 lines and 122 procedures, the corpus README said fourteen files and 132, `SKILL.md` said twelve files, `team.md` declared `AI-01`..`AI-22`, `PRV-01`..`PRV-11` and `VER-01`..`VER-07`, and the CHANGELOG repeated the old ranges. All refreshed from measurement.
+<!-- /counts:historical -->
 - Two identifiers in the landed drafts were corrected before they shipped: ATLAS sub-technique suffixes that could not be verified today were coarsened to the technique that was (`AML.T0010`), and a Microsoft benchmark control was dropped because that source is not in the allowlist. Both are now stated in the citation policy and the gap list rather than left implicit.
 
 - **`plugin.json` no longer declares a fixed `version`.** Claude Code resolves plugin version as `plugin.json` → marketplace entry → commit SHA, so the hardcoded `"1.0.0"` meant that pushing new commits delivered nothing to existing installs: the resolved version never changed and the cached copy was considered current. Every commit on `main` now resolves to a distinct SHA. The semver will live solely in the marketplace entry on the `stable` branch; that branch and its first tagged release do not exist yet.

@@ -50,7 +50,7 @@ There is no inventory and no classification: nobody knows which fields are perso
 **Minimal test**
 Generate the schema column list and classify it into three buckets: direct identifier / personal attribute / sensitive data. The absence of that list in the repository is already the finding (privacy risk, not vulnerability).
 
-**Traceability**: `CWE-359` · `CWE-200` · ASVS 5.0 V14 · `MASVS-PRIVACY-1` when a mobile app is in scope
+**Traceability**: `CWE-359` · `CWE-200` · `ASVS 5.0 V14` · `MASVS-PRIVACY-1` when a mobile app is in scope
 **Tooling**: `rg -in "email|phone|telefono|cedula|dni|nit|address|birth|latitude|ip_addr|device_id" --glob '*migrations*'` → name-based candidates. Conclude nothing from the name: a free-text `notes` field can hold more personal data than one called `email`.
 
 ### PRV-02 Over-exposure in API responses and serializers
@@ -75,7 +75,7 @@ The whole object travels to the client and the frontend only displays the name. 
 **Minimal test**
 Call the endpoint with a test user and compare the returned JSON against what the interface displays. Every extra field is a finding. Synthetic data, environment you own.
 
-**Traceability**: `CWE-200` · `CWE-213` · `A01:2025` · ASVS 5.0 V4, V14
+**Traceability**: `CWE-200` · `CWE-213` · `A01:2025` · `ASVS 5.0 V4` · `ASVS 5.0 V14`
 **Tooling**: `rg -n '"__all__"|SELECT \*|res\.json\(user' ` → candidates. A hit requires seeing the real response: the ORM may exclude fields by another route.
 
 ## §2 Minimization and retention
@@ -96,7 +96,7 @@ Fields appearing only in the model, the migration and the form, and nowhere in b
 **Minimal test**
 For every personal field in the schema, `rg` its name across the whole repository and count uses outside model, migration and form. Zero uses = minimization candidate.
 
-**Traceability**: `CWE-359` · ASVS 5.0 V14 · `MASVS-PRIVACY-2` when a mobile app is in scope
+**Traceability**: `CWE-359` · `ASVS 5.0 V14` · `MASVS-PRIVACY-2` when a mobile app is in scope
 **Tooling**: `rg -c "<field>" --stats` per field. A zero does not prove it is useless: it may be consumed from another repository or from the analytics warehouse.
 
 ### PRV-04 Retention: soft delete that deletes nothing, and eternal copies
@@ -115,7 +115,7 @@ Deleting the account flips a flag and all personal data stays indefinitely, incl
 **Minimal test**
 Follow the account deletion path and list every store the data reached (database, bucket, index, analytics, email, queues). Mark which ones deletion propagates to. The ones left without propagation are the finding. Use a synthetic account created for the test.
 
-**Traceability**: `CWE-212` · `CWE-359` · ASVS 5.0 V14
+**Traceability**: `CWE-212` · `CWE-359` · `ASVS 5.0 V14`
 **Tooling**: `rg -n "deleted_at|soft_delete|paranoid|is_deleted"` and the bucket retention configuration. The existence of `deleted_at` says nothing about propagation; you have to trace it.
 
 ## §3 Multitenant isolation and direct object references
@@ -138,7 +138,7 @@ Isolation depends on every query remembering to add the filter. A single new end
 **Minimal test**
 Integration test with two synthetic tenants: A requests one of B's identifiers and must receive 404 or 403 without leaking whether the resource exists.
 
-**Traceability**: `CWE-284` · `CWE-639` · `A01:2025` · ASVS 5.0 V8
+**Traceability**: `CWE-284` · `CWE-639` · `A01:2025` · `ASVS 5.0 V8`
 **Tooling**: `rg -n "objects\.get\(|findById\(|findOne\(\{ *id" -A2` → queries with no visible filter. A hit may be covered by a default manager; confirm before reporting.
 
 ## §4 Telemetry and third-party SDKs
@@ -159,7 +159,7 @@ The SDK starts on first render and sends device identifiers, IP address and navi
 **Minimal test**
 Open the product with the network console and list the destination domains and the body of the first events, before and after accepting consent. On mobile, review the dependency declaration and the declared permissions. Environment you own, synthetic account.
 
-**Traceability**: `CWE-359` · `CWE-200` · ASVS 5.0 V14 · `MASVS-PRIVACY-1`, `MASVS-PRIVACY-3` (the PRIVACY group of MASVS v2.1.0, 4 controls)
+**Traceability**: `CWE-359` · `CWE-200` · `ASVS 5.0 V14` · `MASVS-PRIVACY-1`, `MASVS-PRIVACY-3` (the PRIVACY group of MASVS v2.1.0, 4 controls)
 **Tooling**: the browser network tab or `rg -n "gtag|mixpanel|posthog|Sentry.init|AppsFlyer|Adjust"`. The presence of an SDK says nothing about what it sends; only observed traffic does. And what you observed in your session does not cover every path in the product.
 
 ## §5 Data entering AI models
@@ -180,7 +180,7 @@ The full conversation history, with name, email, address and purchase history, i
 **Minimal test**
 Capture a real assembled prompt in a development environment with synthetic data and classify every interpolated field: necessary / unnecessary / sensitive. And check in the provider console whether retention and training use are disabled.
 
-**Traceability**: `LLM02:2026` · `CWE-359` · `CWE-200` · ASVS 5.0 V14
+**Traceability**: `LLM02:2026` · `CWE-359` · `CWE-200` · `ASVS 5.0 V14`
 **Tooling**: review of the prompt builder. A field that is necessary today may stop being so after a product change; record the criterion, not just the list.
 
 ## §6 Data subject rights
@@ -201,7 +201,7 @@ Account deletion is executed by an engineer with direct database access whenever
 **Minimal test**
 Run the export with a synthetic account that generated data in every store from PRV-04 and compare the file contents against the inventory. Every missing store is a finding.
 
-**Traceability**: `CWE-359` · ASVS 5.0 V14 · `MASVS-PRIVACY-4` when a mobile app is in scope
+**Traceability**: `CWE-359` · `ASVS 5.0 V14` · `MASVS-PRIVACY-4` when a mobile app is in scope
 **Tooling**: manual review of the flow. Describe the technical fact (the export omits X) without asserting a breach of any regulation.
 
 ## §7 Leakage through logs, errors and traces
@@ -225,7 +225,7 @@ The application log ends up holding the same data as the database but with none 
 **Minimal test**
 Trigger a validation error with a synthetic account and search for its values in the log output. If they appear, it is proved. Do not run this test against production nor with real people's data.
 
-**Traceability**: `CWE-532` · `CWE-359` · `A09:2025` · ASVS 5.0 V16
+**Traceability**: `CWE-532` · `CWE-359` · `A09:2025` · `ASVS 5.0 V16`
 **Tooling**: `rg -n "log.*(request\.body|req\.body|payload|user\b)" -g '!*test*'` → candidates. A hit requires looking at the formatter: there may be redaction downstream.
 
 ## §8 Product abuse paths
@@ -248,7 +248,7 @@ An attacker confirms whether an email has an account and, with unrate-limited us
 **Minimal test**
 Compare the response and the timing for an existing and a non-existing email, with synthetic accounts you own. Two requests are enough: do not generate volume to prove it.
 
-**Traceability**: `CWE-204` · `CWE-200` · `CWE-799` · `A07:2025` · ASVS 5.0 V6, V7
+**Traceability**: `CWE-204` · `CWE-200` · `CWE-799` · `A07:2025` · `ASVS 5.0 V6` · `ASVS 5.0 V7`
 **Tooling**: `curl` with two cases and timing measurement. A small difference may be network noise; repeat a few times before asserting it.
 
 ### PRV-11 Abuse of invitations, referrals and flows with economic value
@@ -268,7 +268,7 @@ An unverified new account can send unlimited invitations with free text from the
 **Minimal test**
 Model the flow on paper: cost to the attacker, value obtained, controls it crosses. If the value exceeds the cost and there is no intermediate verification, it is proved without executing anything. **Do not abuse the real flow**: sending invitations or creating accounts in volume affects third parties and falls outside the security contract.
 
-**Traceability**: `CWE-841` · `CWE-799` · `CWE-362` · `A06:2025` · ASVS 5.0 V2
+**Traceability**: `CWE-841` · `CWE-799` · `CWE-362` · `A06:2025` · `ASVS 5.0 V2`
 **Tooling**: manual review of the flow plus a local concurrency test on the crediting operation. A theoretically possible abuse does not always deserve mitigation: present it with its cost and let others decide.
 
 ## §9 Traceability of reads
@@ -303,7 +303,7 @@ Two steps, both non-destructive. First, diff the configuration against the inven
 `rg -n 'DATA_READ|advanced_event_selector|data_resource|StorageRead|category *= *"\w*Read"' -g '*.tf' -g '*.bicep' -g '*.y*ml'`
 — and every store from PRV-01 with no hit is a candidate. Second, settle the application side with one synthetic subject in an environment you own: read it once through each operator path (admin panel, support tool, direct query, export) and then look for the entry with `rg -n "<synthetic_subject_id>" ./logs`. A path that produced no entry naming actor and subject is the finding. Never demonstrate this over a real person's record: the paths are enumerated from the code and the configuration, and the single read you perform is against data you created. If the destination is the provider's log service rather than a local file, querying it touches the client's own account and runs only inside the engagement's written scope (REQUIRES AUTHORIZATION).
 
-**Traceability**: `CWE-778` · `CWE-223` · `CWE-359` · `A09:2025` · ASVS 5.0 V14, V16 · `NIST 800-53 AU` · `CCM LOG`
+**Traceability**: `CWE-778` · `CWE-223` · `CWE-359` · `A09:2025` · `ASVS 5.0 V14` · `ASVS 5.0 V16` · `NIST 800-53 AU` · `CCM LOG`
 **Tooling**: no scanner reports this well — an infrastructure rule sees the trail resource and passes, which is how it stays missing for years; cross-reference `INF-06` and the infra-cloud material on audit trails the workload identity can delete. Expect "we turned it off because it costs money" as the honest answer, because these logs are billed by volume. Apply the first hard rule of this role when writing it up: with no demonstrated unauthorized read this is a privacy risk, and once it was switched off knowingly it is also a product decision with a named owner — report it as an accepted risk whose consequence is spelled out (every incident is scoped to the entire population), not as a technical vulnerability and not as an oversight.
 
 ## §10 Where the data lands

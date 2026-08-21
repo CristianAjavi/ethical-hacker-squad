@@ -4,7 +4,31 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** This is a specification. The automation it describes has not landed yet: there is no `stable` branch, no tagged release and no CI on `main`. Read it as the contract the machinery is built to satisfy, not as a description of controls already running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Eleven gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+
+## What runs today
+
+| Requirement | Status | Implementation |
+|---|---|---|
+| `G1` manifest and structure | running | `gate-plugin-integrity.sh`, `gate-plugin-version.sh` |
+| `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
+| `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections) |
+| `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
+| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
+| `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
+| `G5` licence hygiene | specified | — |
+| `G6` secret scanning | specified | — |
+| `G7` protected paths | specified | — |
+| `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
+| `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
+| verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
+| negative evidence | running | `gate-negative-evidence.sh` |
+| benign control | running | `gate-benign-control.sh` + self-test |
+| report contract | running | `gate-report-contract.sh` |
+| workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` |
+| label taxonomy | running | `gate-labels-taxonomy.sh` |
+
+Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
 ## Exit-code semantics — applies to every gate
 
@@ -74,6 +98,33 @@ Count procedures by matching the procedure heading pattern across `references/kn
 Every procedure in `references/knowledge/*.md` carries a **Traceability** line with at least one identifier, and every quantitative claim names its source. An item the loop adds or modifies additionally carries a source URL from the allowlist and a consultation date.
 
 Fails with the list of procedures missing traceability. This is what keeps the corpus falsifiable: an uncited claim cannot be checked, and cannot be corrected when it goes stale.
+
+## G3c / G4b — The corpus contract
+
+`gate-corpus-contract.sh` measures the corpus against every number and every name the repository states about it. It exists because all of the following were true on `main` on 2026-08-21, and nothing was watching any of them:
+
+- two holes in the procedure numbering (`AI-23`, `PRV-12`), while `team.md` declared unbroken ranges;
+- a knowledge file declared in no pack, so four procedures were in no count and the loading map did not list it;
+- `README.md` claiming 2,830 lines and 122 procedures against a real 3,331 and 139;
+- three identifier ranges in `team.md` short of what exists;
+- two identifier families cited by the corpus and declared nowhere (`AST01`..`AST10`, `AML.M*`);
+- twenty-odd identifiers written as bare prose, where no check and no reader grepping for coverage can see them.
+
+What it enforces:
+
+1. **Numbering.** Contiguous from `01`, no duplicates, per family. Renumbering is banned by `CONTRIBUTING.md`, so a hole means an identifier that reports and issues reference points at nothing.
+2. **Declared counts.** Corpus lines, procedure count and file count, wherever prose states them, against measurement.
+3. **Declared ranges.** The upper bound of `` `AI-01`..`AI-28` `` must be the highest identifier that exists.
+4. **Pack headers and the loading map.** The `**Cost:** ~N lines` estimate and the per-file table, within 10 lines.
+5. **Anatomy and identifiers.** Every procedure carries the six mandatory fields from `scripts/meter/packs.json`; its `Traceability` line names at least one identifier or declares explicitly that none applies; every backticked token matches a family in `scripts/gates/data/identifier-families.json`; and no identifier appears outside backticks.
+6. **The roster.** `references/team.md`, `agents/` and `packs.json` name the same roles, agents and files. A pack no role owns is never loaded; an agent absent from the roster is never dispatched.
+7. **Routing.** Every `` `pack.md` §N `` in `coverage.md` names a section that exists.
+
+**Two declared exemptions, both visible in the output.** A `Traceability` line may state that no external identifier applies (`internal process`, `no external identifier`, `the one from the original finding`) — five procedures in `remediation.md` do. And text that quotes a superseded figure on purpose — a changelog entry saying what a file *used to* declare — is exempt only inside a `<!-- counts:historical -->` region, in the same idiom `gate-verdict-vocabulary.sh` uses. Both are counted and printed on every run rather than silently swallowed.
+
+**What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
+
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 17 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## G5 — Licence hygiene (anti-verbatim)
 

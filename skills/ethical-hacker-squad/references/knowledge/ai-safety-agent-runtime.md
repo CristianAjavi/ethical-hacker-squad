@@ -120,7 +120,7 @@ The agent takes actions with real effects — sends, writes, pays, deploys — a
 **Minimal test**
 Take one irreversible action the agent can perform and trace backwards in code, from the effect to the record, asking a single question: six weeks from now, could I reconstruct who caused it and with what input, without relying on the model's own account of what it did? Every missing link is the finding. Then run the agent once locally against a fixture and read what it actually emitted, instead of what the logging configuration claims it emits.
 
-**Traceability**: `LLM03:2026` · `ASI03` · `ASI10` · `AML.M0024` · `A09:2025` · `CWE-778` · `CWE-223` · `NIST 800-53 AU` · ASVS 5.0 V16
+**Traceability**: `LLM03:2026` · `ASI03` · `ASI10` · `AML.M0024` · `A09:2025` · `CWE-778` · `CWE-223` · `NIST 800-53 AU` · `ASVS 5.0 V16`
 **Tooling**: `rg -n "logger\.|structlog|opentelemetry|langfuse|langsmith"` over the agent module → tracing that exists for debugging is not an audit trail; check subject, retention and tamper resistance before calling it one. Overlaps `infra-cloud` `INF-06` (platform logging): agree who writes it, so the finding is reported once, at the agent layer.
 
 ## Identifier note for this file
