@@ -2,7 +2,7 @@
 
 > **When to load this file:** third file of the `mobile` pack. Load it when the app has a screen that authorizes an effect (a payment, a transfer, adding a beneficiary, approving a factor, changing credentials), a biometric or local-PIN unlock, code or bundles loaded at runtime (`DexClassLoader`, CodePush, Expo Updates, Capacitor live updates), or a backend whose only client is the app.
 > **Do not load it if:** the mobile work is confined to the manifest, storage, WebViews, deep links, TLS or embedded secrets — those are `mobile.md` §0-§6.
-> **Cost:** ~111 lines. The entry point of the pack is `mobile.md` (§0-§6, `MOB-01`..`MOB-12`): read its §0 first, because what you may assert from a compiled artifact versus from source governs every procedure here, and its §5 (TLS) is a precondition of `MOB-18`. The iOS specifics are in `mobile-ios.md` (§8, `MOB-14`..`MOB-15`).
+> **Cost:** ~119 lines. The entry point of the pack is `mobile.md` (§0-§6, `MOB-01`..`MOB-12`): read its §0 first, because what you may assert from a compiled artifact versus from source governs every procedure here, and its §5 (TLS) is a precondition of `MOB-18`. The iOS specifics are in `mobile-ios.md` (§8, `MOB-14`..`MOB-15`).
 
 ## Selective loading index
 
@@ -35,6 +35,8 @@ The six fields are a contract. **"What rules it out" is mandatory before you rep
 - Authorization is resolved from the token identity server-side, not from body fields.
 - The client-side check is a user-experience improvement and its server-side equivalent exists.
 
+Rules: FP-01, FP-10.
+
 **Minimal test** — static: for every impactful value the app sends, locate the re-validation in the backend. If the backend is out of scope, report it as a probable risk with the client-side evidence. Replaying requests against a real server: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-602` · `CWE-639` · `CWE-863` · `MASVS-AUTH-*` · `MASVS-RESILIENCE-*` · `API1:2023`
@@ -57,6 +59,8 @@ The six fields are a contract. **"What rules it out" is mandatory before you rep
 - The prompt is a convenience shortcut over a server-side session that is itself authenticated and revocable: no local material of value is gated by the boolean, and the server re-authorizes the action (`MOB-13`), so flipping the branch gains nothing.
 - The action behind the prompt has no security value — reopening a read-only screen, a preference, a re-display of data already on screen.
 - Severity, not a rule-out: an unbound check is a defect under any profile, but it is only exploitable by an adversary who holds the device or the artifact. If the engagement declared MAS-L1, report it and say so; do not silently drop it.
+
+Rules: FP-01, FP-07, FP-10.
 
 **Minimal test** — static and executable: `jadx -d out/ --no-res --no-debug-info app.apk` then `grep -rn "authenticate(\|BiometricPrompt\|CryptoObject\|setUserAuthenticationRequired\|setInvalidatedByBiometricEnrollment\|evaluatePolicy(" out/`. For every `authenticate(` hit read the argument count and follow the success callback to answer one question: does anything cryptographic happen, or does control flow merely change? Then list the keys that declare user authentication and confirm the same material is not reachable another way. Hooking the callback on a device is dynamic instrumentation, excluded from the automated pipeline by `mobile.md` §0 and **REQUIRES AUTHORIZATION**.
 
@@ -82,6 +86,8 @@ The six fields are a contract. **"What rules it out" is mandatory before you rep
 - The screen authorizes nothing irreversible — it navigates, displays, or edits state that the server can undo. Do not report the settings screen.
 - Severity, not a rule-out: for apps targeting API 31+ the platform blocks touches passing through untrusted overlays, which lowers exposure on Android 12 and later devices. It is a property of the device and the target SDK, not of the screen; it does not cover the accessibility variant, and the app's `minSdk` tells you the install base that stays exposed.
 
+Rules: FP-01, FP-07, FP-10.
+
 **Minimal test** — static and executable, no device and no overlay app: `apktool d app.apk -o out/` (with smali, because the guard may live in code and not in the layout) then `grep -rlE "filterTouchesWhenObscured|FLAG_WINDOW_IS_(PARTIALLY_)?OBSCURED|setHideOverlayWindows" out/`, and for a specific screen `aapt2 dump xmltree app.apk --file res/layout/<confirm_layout>.xml`. The list of screens that authorize an effect comes from reading the app; the intersection of that list with "no guard in its layout or its touch path" is the finding. Building an overlay to demonstrate it would mean writing an attacking app: out of scope for this squad, and unnecessary, because the absent control is the evidence.
 
 **Traceability**: `CWE-1021` · `CWE-451` · `MASVS-PLATFORM-*` · MASWE PLATFORM group · `MASTG-TEST-*` from the PLATFORM group
@@ -104,6 +110,8 @@ The six fields are a contract. **"What rules it out" is mandatory before you rep
 - The OTA channel verifies a code-signing signature over the bundle before applying it, fails closed, rolls back, and reaches an endpoint over TLS that `MOB-09`/`MOB-10` confirm cannot be downgraded or intercepted.
 - The mechanism is the platform's own delivery — Play Feature Delivery or dynamic feature modules, iOS on-demand resources — where the store performs the verification and the payload is not served from an app-controlled endpoint.
 - The loader exists in the source but R8 removed it from the release build. Rule it out only from the artifact: `grep` the DEX output, never the source (`mobile.md` §0).
+
+Rules: FP-01, FP-04, FP-05.
 
 **Minimal test** — static and executable: `apktool d app.apk -o out/` and `jadx -d jadx-out/ --no-res --no-debug-info app.apk`, then `grep -rn "DexClassLoader\|InMemoryDexClassLoader\|System.load(\|CodePush\|expo-updates\|codeSigningCertificate\|evaluateJavascript(" out/ jadx-out/`; on a source tree also read `app.json` / `Info.plist` / `strings.xml` for the update endpoint and the signing key. For every loader answer three questions — where does the artifact come from, who can write to that path, and what is verified before it is loaded. Missing any one of the three is the finding. Serving a modified bundle to a device: **REQUIRES AUTHORIZATION**.
 
