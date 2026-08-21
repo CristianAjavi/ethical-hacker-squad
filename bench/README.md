@@ -23,6 +23,17 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
+## The one thing that separates: consistency
+
+| Same target, three independent runs per arm | Pairwise agreement | In every run | Union |
+|---|---|---|---|
+| [with the corpus](runs/2026-08-21-consistency/) | **1.00 / 1.00 / 1.00** | 4 classes | 4 |
+| without it | 0.71 / 0.43 / 0.67 — mean **0.60** | 3 classes | 7 |
+
+Every other measurement here asks about **capability**, and capability on this task is saturated: they all came back at parity or worse. This asks about **reproducibility**, which is what a written procedure should buy, and it is the first gap that is not one item inside the noise.
+
+Two counterweights travel with it rather than sitting in a footnote. Agreement is easier over a smaller set — 4–6 findings against 9–10 — though the corpus arm's core is *larger* (4 classes in all three runs against 3) and its variable part is zero. And the unaided arm's **union** across runs is bigger, 7 against 4: it surfaced more in aggregate, just never the same more twice. **Consistency is not superiority. It is a different property, and this is the only table here that measures it.**
+
 ## What the corpus adds — and where it adds nothing
 
 Two runs, and they do not agree. Read them together or not at all.
