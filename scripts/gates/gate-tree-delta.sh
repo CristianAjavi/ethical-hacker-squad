@@ -15,8 +15,8 @@
 #   the merge base with the target branch. Growth beyond the budget fails.
 #
 #   bot/*  16 KiB   the knowledge loop adds procedures, not chapters
-#   human  64 KiB   a new pack plus its wiring measured ~45 KiB, so a legitimate
-#                   change of the largest kind observed still fits
+#   human  64 KiB   the largest legitimate change observed - the local-app pack
+#                   plus its wiring, PR #5 - measured 44,545 B, so it still fits
 #
 #   Shrinking is never a failure here: deleting corpus is a different decision,
 #   reviewed by a person, and this gate does not have an opinion on it.

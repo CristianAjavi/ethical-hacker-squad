@@ -149,7 +149,7 @@ Proved in the negative by 11 cases, including a control run and two that must ex
 | Branch | Budget | Why |
 |---|---|---|
 | `bot/*` | 16 KiB | the knowledge loop adds procedures, not chapters |
-| everything else | 64 KiB | a new pack plus its wiring measured ~45 KiB, so the largest legitimate change observed still fits |
+| everything else | 64 KiB | the largest legitimate change observed — the `local-app` pack plus its wiring — measured 44,545 B, so it still fits |
 
 Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
 
