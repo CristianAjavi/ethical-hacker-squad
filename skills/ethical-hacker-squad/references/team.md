@@ -19,6 +19,14 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
 | Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
 
+## The order that comes before every pack
+
+**Read your assigned files with your own judgement first, and write down what you would report with no corpus at all. Only then open your pack.**
+
+Those labels go into `engagement.unaided_pass.candidates`, and the validator enforces what happens to them: each one ends as a finding carrying its `unaided_label`, or in `dropped` with the reason your second reading overturned your first. `no procedure covers it` is refused as a reason - that case is `procedure: ad-hoc`, which is a first-class value precisely so nothing has to be bent to fit.
+
+The measurement behind this rule is in `bench/`: against the same model working with no corpus at all, the packs found the same defects and no more, missed a published advisory while the right file was open, and produced *less* agreement between repeated runs than unaided review did. A pack that is opened first stops being a checklist and starts being a boundary. Opened second, it can only add.
+
 ## Leader / security-lead
 
 Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.

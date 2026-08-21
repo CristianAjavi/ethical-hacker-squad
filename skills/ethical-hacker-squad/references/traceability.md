@@ -1,5 +1,7 @@
 # Traceability and citation policy
 
+**Why the corpus is in English.** The source material - standard identifiers, CWE names, scanner output, advisory text - is English, and translating the procedures makes them drift away from the IDs they cite. Findings and the report are written in the user's language; identifiers never are.
+
 Two jobs: tell you which identifier a finding maps to, and let the report declare coverage honestly — "session management was exercised, weak cryptography was not".
 
 All facts below were verified against primary sources on **2026-08-04**. Where a version or date could not be confirmed at the source it is marked `not verified`.

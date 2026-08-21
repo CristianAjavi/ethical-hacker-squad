@@ -218,6 +218,50 @@ def main() -> int:
             for s in sorted((examined | skipped) - inv):
                 fail(f"engagement.coverage: {s!r} is resolved but was never inventoried")
 
+        # The unaided pass must be resolved too, for the same reason and against a
+        # sharper measurement. Eleven runs said the corpus arm found what an
+        # unaided engineer found and no more, missed one advisory while holding
+        # the right file open, and agreed with ITSELF less across repeated runs
+        # (0.68 against 0.81) - its stable core plus a different tail each time.
+        # The reading those numbers support is substitution: what a procedure
+        # named got found, what it did not name got bent into the nearest
+        # procedure or quietly dropped. So a candidate written down before any
+        # pack was opened has exactly two honest endings, reported or dropped
+        # with a reason, and `reported` has to be provable against the findings
+        # rather than merely asserted.
+        up = (data.get("engagement") or {}).get("unaided_pass")
+        if isinstance(up, dict):
+            cand = set(up.get("candidates") or [])
+            kept = set(up.get("reported") or [])
+            dropped_rows = up.get("dropped") or []
+            gone = set()
+            for row in dropped_rows:
+                if isinstance(row, dict) and isinstance(row.get("label"), str):
+                    gone.add(row["label"])
+                    reason = (row.get("reason") or "").strip()
+                    if reason.lower().startswith(("no procedure", "the pack has no procedure",
+                                                  "not in the corpus", "no matching procedure")):
+                        fail(f"engagement.unaided_pass: {row['label']!r} is dropped because no "
+                             "procedure covers it, and that is the one reason this field exists to "
+                             "refuse - a finding with no procedure is `ad-hoc`, not absent")
+            for s in sorted(cand - (kept | gone)):
+                fail(f"engagement.unaided_pass: {s!r} was a candidate before any pack was opened and "
+                     "is resolved as neither reported nor dropped - that is the substitution this "
+                     "field exists to make visible")
+            for s in sorted(kept & gone):
+                fail(f"engagement.unaided_pass: {s!r} is in both `reported` and `dropped`")
+            for s in sorted((kept | gone) - cand):
+                fail(f"engagement.unaided_pass: {s!r} is resolved but was never a candidate")
+
+            labelled = {f.get("unaided_label") for f in (data.get("findings") or [])
+                        if isinstance(f, dict) and isinstance(f.get("unaided_label"), str)}
+            for s in sorted(kept - labelled):
+                fail(f"engagement.unaided_pass: {s!r} is declared reported, but no finding carries it "
+                     "as `unaided_label` - the claim has to be checkable against the findings")
+            for s in sorted(labelled - cand):
+                fail(f"a finding carries unaided_label {s!r}, which is not among the candidates of "
+                     "engagement.unaided_pass")
+
         for i, f in enumerate(data.get("findings", []) if isinstance(data.get("findings"), list) else []):
             if not isinstance(f, dict):
                 continue
