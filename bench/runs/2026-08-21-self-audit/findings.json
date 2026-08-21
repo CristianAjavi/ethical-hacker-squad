@@ -1,0 +1,324 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/selfaudit/target (scripts/ and .github/ of a public repository)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs self-audit (blinded)",
+    "coverage_declaration": "Static reading only, offline, non-destructive. EXERCISED: all 5 workflows under .github/workflows (parsed with PyYAML to enumerate every ${{ }} occurrence inside run:, env: and job env:, and every uses: reference); .github/dependabot.yml, .github/zizmor.yml, .github/CODEOWNERS; every shell script under scripts/gates/, scripts/gh/, scripts/meter/ and scripts/bench/ read for temporary-file creation, PATH resolution, subprocess argument vectors, rm/cp/tar destinations, download-and-verify paths and untrusted-input handling; the Python cores lib/secret_scan.py, lib/findings_artifact.py, lib/measure.py, sync-declared-counts.py, tests/validate-workflow.py; scripts/gh/governance.json cross-read against .github/workflows/release.yml and ci.yml. Two interpreter behaviours were reproduced locally on Python 3.12.10 with throwaway files in a scratch directory (never against the target): (a) `python3 -c` and a script read from stdin set sys.path[0] to the current working directory, and a same-named module there shadows a stdlib or site-packages module; (b) a script executed by path puts its own directory on sys.path[0]. NOT EXERCISED: no script of the target was executed, no network call was made, no GitHub API was queried, so the LIVE state of branch protection, required status checks, secret scanning and repository settings is unobserved and only the declared state in scripts/gh/governance.json was read; the tarball SHA-256 constants in scripts/gates/lib/bootstrap-actions-lint.sh were not compared against the upstream release; git history was not scanned for secrets (only the two provided directories, with rg's default filters disabled); the repository's other directories (skills/, agents/, bench/, .claude-plugin/, README, CHANGELOG) were not provided and were not read, so every statement about them is inference from the scripts that reference them; no dependency tree was resolved and no SCA tool was run."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Tool cache resolves to a fixed, world-writable path, and a cache hit skips the SHA-256 pin it is supposed to enforce",
+      "procedure": "LOC-03",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "scripts/gates/lib/bootstrap-actions-lint.sh",
+        "line": 20,
+        "component": "gate-actions-lint tool bootstrap"
+      },
+      "evidence": "Line 20: `GATE_TOOLS_DIR=\"${GATE_TOOLS_DIR:-${TMPDIR:-/tmp}/ehs-gate-tools}\"`. The name is fixed, not generated: where TMPDIR is unset (a bare Linux host) the cache is exactly `/tmp/ehs-gate-tools`, and the directory is created with `mkdir -p` (lines 72 and 139) without checking ownership or mode, so whichever local account creates it first owns it. Two branches then execute what they find there without any verification: line 51 `if [ -x \"$venv/bin/zizmor\" ]` -> `ZIZMOR_BIN=\"$venv/bin/zizmor\"`, and line 110 `if [ -x \"$dir/actionlint\" ]` -> `ACTIONLINT_BIN=\"$dir/actionlint\"`, both returning 0 before reaching the download-and-verify path. gate-actions-lint.sh then runs those variables directly (line 96 `\"$ZIZMOR_BIN\" $ZARGS \"$ROOT/.github\"`, line 127 `( cd \"$ROOT\" && \"$ACTIONLINT_BIN\" -no-color -oneline )`). The SHA-256 constants at lines 25-28 and the comparison at line 168 only guard the download branch, which the cache hit never reaches. Compare scripts/gates/gate-plugin-integrity.sh:137, which creates its temporary file with an `mktemp` template and documents why: 'a guessable name and this script runs on the same runner as untrusted content'.",
+      "impact": "A local unprivileged user pre-creates /tmp/ehs-gate-tools/actionlint-1.7.12/actionlint (or .../zizmor-1.29.0/venv/bin/zizmor) with their own executable. The next maintainer who runs the gate suite executes it as themselves. On a maintainer's machine that account holds the gh session with admin permission over the repository (scripts/gh/apply-governance.sh:160 requires it), so the crossing is local-user to maintainer, and from there to repository administration. The pin the file advertises as 'for a binary, the equivalent of the SHA pin we demand from actions' is bypassed rather than broken: the cache branch never verifies anything. Secondary paths in the same directory: `curl -fsSL -o \"$tarball\"` (line 153) follows a symlink planted at that path, and `tar -xzf ... -C \"$dir\"` (line 173) writes into a directory the attacker owns.",
+      "preconditions": "The script runs on a host where TMPDIR is unset or points at a directory shared with another principal (a bare Linux developer box or shared build host), GATE_TOOLS_DIR is not overridden, and a second local account exists. Neither of the two invocations in this repository is in that position: ci.yml:121 and supply-chain-audit.yml:49 set GATE_TOOLS_DIR to ${{ runner.temp }} on an ephemeral single-tenant runner, and on macOS TMPDIR is a per-user 0700 directory. The exposed case is a maintainer or contributor running ./scripts/gates/run-all.sh or gate-actions-lint.sh by hand on Linux.",
+      "recommendation": "Do not derive a persistent cache path from a shared temporary directory. Default GATE_TOOLS_DIR to a per-user location (${XDG_CACHE_HOME:-$HOME/.cache}/ehs-gate-tools) created with mode 0700, and before trusting a cache hit, assert that the directory and the binary are owned by the running user and are not group- or world-writable. Better still, make the cache hit re-run the same verification as the download: keep the recorded SHA-256 next to the cached binary and compare it on every use, so there is exactly one path to `ACTIONLINT_BIN` and it always goes through the pin.",
+      "traceability": ["CWE-377", "CWE-379", "CWE-427", "ASVS 5.0 V5"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "UNKNOWN",
+          "reason": "The second principal exists only on a host whose TMPDIR is a shared directory. Both in-repository invocations set GATE_TOOLS_DIR to ${{ runner.temp }} (.github/workflows/ci.yml:121, .github/workflows/supply-chain-audit.yml:49) and the file's own header targets macOS, where TMPDIR is per-user and 0700. No host with an unset TMPDIR and a second local account was observed, so the boundary crossing is argued from the default path expression rather than from an observed deployment."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "inference": "That the gate is run on a machine where ${TMPDIR:-/tmp} resolves to a directory a second local account can write. The code path from a pre-existing cache file to execution was read end to end (lines 51, 110, and gate-actions-lint.sh:96 and 127); the shared-host precondition was not observed.",
+      "limits": "This establishes nothing about the correctness of the pinned SHA-256 values themselves, which were not compared against the upstream rhysd/actionlint release, and nothing about the two CI jobs, which override the path."
+    },
+    {
+      "id": "F-002",
+      "title": "Release verification runs main's gates with the candidate tree as working directory, and the Python they invoke imports from that directory",
+      "procedure": "LOC-06",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "scripts/gates/gate-labels-taxonomy.sh",
+        "line": 31,
+        "component": "release.yml verify job"
+      },
+      "evidence": ".github/workflows/release.yml:408-418 runs the whole gate suite with `working-directory: source`, where source/ is the candidate commit and source/scripts/gates has just been replaced wholesale by main's copy (lines 393-406) so that, in the workflow's own words, 'The gates the candidate itself ships are never run: if a compromised commit could supply its own gates, it would be approving itself.' The replacement covers the gate FILES; it does not cover the interpreter's module search path. scripts/gates/run-all.sh:192 launches each gate with `bash \"$g\"` without changing directory, so every gate inherits cwd = the candidate tree. Three of them hand Python a script that is not a file in the gates directory: gate-labels-taxonomy.sh:31 `python3 -c 'import yaml'` and :44 `ROOT=\"$ROOT\" python3 <<'PY' ... import os, re, sys, pathlib, yaml`; gate-plugin-integrity.sh:410 `python3 -c 'import json,sys; json.load(open(sys.argv[1]))'`; gate-bench-integrity.sh:34 `python3 - <<'PY'`. Reproduced locally on Python 3.12.10 in a scratch directory: for `python3 -c`, for `python3 -` and for a script on stdin, sys.path[0] is '' (the current working directory), and a json.py or yaml.py in that directory is imported in place of the stdlib or site-packages module. A candidate tree carrying a root-level yaml.py or json.py therefore executes its own top-level code inside the job that is judging it. gate-plugin-integrity.sh:410 redirects both streams to /dev/null, so the substitution leaves no trace in the log.",
+      "impact": "The invariant that main's gates judge the candidate is defeated by the tree under judgement: the planted module runs first and can neutralise the verdict of the suite whose exit code decides promotion (release.yml:418-425), after which the promote job publishes the stable branch and the tag that plugin users install. The same construct also exposes a maintainer who fetches a contributor's branch and runs ./scripts/gates/run-all.sh from its root, which is the documented local workflow: the crossing there is contributor-supplied file to maintainer process (local-app.md §0, 'a hostile working directory').",
+      "preconditions": "A file named yaml.py, json.py or another module name imported by these gates sits at the root of the tree that is the working directory. Nothing in the repository stops one: gate-plugin-integrity.sh restricts extensions only inside the served tree (skills/, agents/), and gate-tree-delta.sh measures only those same roots.",
+      "recommendation": "Neutralise the search path rather than relying on the file layout: export PYTHONSAFEPATH=1 (or invoke `python3 -P`) for every Python invocation in the gates, which removes '' and the script directory from sys.path[0] in Python 3.11+. For older interpreters, run each gate with an explicit `cd` into a directory the candidate does not control, and move the inline heredocs into real .py files under scripts/gates/lib/ so the search path is the gates' own directory, which release.yml already replaces with main's copy.",
+      "traceability": ["CWE-426", "CWE-427", "CWE-829", "CAPEC-38", "ATT&CK T1574"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "inference": "That a tree carrying such a module reaches the verify job. The shadowing mechanism was reproduced locally and the working-directory chain was read end to end (release.yml:409, run-all.sh:192, the three gate call sites); no candidate commit containing a root-level yaml.py or json.py was observed, and none exists in the two directories provided.",
+      "limits": "It says nothing about the ci.yml `gates` job, where the finding is moot: on `pull_request` the checked-out run-all.sh is itself the PR's copy, so the fork already controls what executes, with a read-only token and no secrets. It also does not establish that the promote job is reachable this way: promote runs its gates from the workspace root with EHS_REPO_ROOT pointing into source/, not with source/ as the working directory."
+    },
+    {
+      "id": "F-003",
+      "title": "Governance script executes a Python file created in the shared temporary directory, putting that directory on the module search path",
+      "procedure": "LOC-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "scripts/gh/apply-governance.sh",
+        "line": 570,
+        "component": "required_contexts coherence check"
+      },
+      "evidence": "Line 550 `ctx_py=\"$(mktemp)\"`, line 554 `cat >\"$ctx_py\" <<'PYEOF'` with a body whose first statements are `import json, os, sys` and `import yaml`, line 570 `ctx_out=\"$(CI_FILE=\"$CI\" STATE_JSON=\"$STATE\" python3 \"$ctx_py\" 2>&1)\"`. `mktemp` with no template creates the file inside ${TMPDIR:-/tmp}; the file itself is safe (0600, O_EXCL), but running a script BY PATH puts the script's directory at sys.path[0]. Reproduced locally on Python 3.12.10: a script created with mktemp in a directory and executed by path imports yaml.py from that same directory in preference to site-packages. Where TMPDIR is unset, that directory is /tmp, so a yaml.py or json.py planted there by any local account is imported and its top-level code executed.",
+      "impact": "Arbitrary code execution as the user running scripts/gh/apply-governance.sh. That user is, by the script's own precondition, authenticated to GitHub as the expected account (line 143, `gh api user`) and holds ADMIN permission over the repository (line 160, which aborts otherwise). The script's whole purpose is to PUT branch protection, PATCH repository settings and set topics, so an attacker running inside it inherits the ability to rewrite the repository's governance, and gh's stored credential is readable from that process.",
+      "preconditions": "TMPDIR unset or shared (bare Linux), a second local account on the host, and the code path reached: it requires .github/workflows/ci.yml to exist and python3 to be present (lines 543-547), which is the normal case.",
+      "recommendation": "Do not execute a script out of a shared directory. Either invoke Python with the source on stdin from a directory the process controls, or ship the checker as a real file under scripts/gh/ and run it from there; in both cases set PYTHONSAFEPATH=1 (or `python3 -P`) so neither '' nor the script's directory is prepended to sys.path. If the temporary file must stay, create it with a template inside a `mktemp -d` directory created for this run, which at least removes the pre-creation window on the directory itself.",
+      "traceability": ["CWE-426", "CWE-427", "CWE-377", "CAPEC-38", "ATT&CK T1574"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "UNKNOWN",
+          "reason": "The script is written for macOS (its own comment at line 40, 'bash 3.2, the only one macOS ships', and the identity guard at line 147 that speaks of 'this Mac'), where TMPDIR is a per-user 0700 directory and no second principal reaches it. It is not invoked by any workflow in .github/workflows, so no CI context was observed either. Whether it is ever run on a multi-user Linux host was not established."
+        }
+      ],
+      "inference": "That apply-governance.sh is run on a host where ${TMPDIR:-/tmp} is shared with another local account. The import-shadowing mechanism was reproduced locally and the invocation was read directly; the host condition was not observed.",
+      "limits": "Only this call site was traced. The other `mktemp` uses in the same file (lines 201, 388, 417, 433, 509) write JSON payloads that are read back by `gh --input`, never executed, and are not affected."
+    },
+    {
+      "id": "F-004",
+      "title": "The stray-workflow check in gate-actions-lint prints FAIL and increments a variable nothing reads, so the gate still exits 0",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "scripts/gates/gate-actions-lint.sh",
+        "line": 92,
+        "component": "zizmor scope guard"
+      },
+      "evidence": "Lines 80-93 justify pointing zizmor only at $ROOT/.github: 'The scoping is not a hole: the check below fails if a workflow appears anywhere outside the audited directory and outside the bench, which is the only way this exclusion could hide a real one.' The check runs (`stray=\"$(find ... )\"`, line 86) and on a hit calls `gate_fail` and then `FAILURES=$((${FAILURES:-0} + 1))` at line 92. `FAILURES` appears exactly once in the file; the exit status is `RC_FINAL` (lines 41, 147-148), which is only ever changed by `escalate` (line 43), and `escalate` is not called in that branch. With zizmor and actionlint both clean, a run that detected a stray workflow prints the word FAIL and exits 0, so the CI step is green. There is no gate-actions-lint.selftest.sh in scripts/gates/, so the negative-proof battery that ci.yml:73 runs over `*.selftest.sh` does not cover this gate.",
+      "impact": "The compensating control that makes the audit-scope exclusion honest does not fail the build. A reader of the log sees a red-looking line in a green check; a reader of the code sees a documented guarantee that is not implemented. What escapes is bounded: GitHub executes workflows only from .github/workflows at the repository root, and those are audited.",
+      "recommendation": "Call `escalate 1` in the same branch as `gate_fail` (line 90-92) and delete the unused FAILURES variable, then add a gate-actions-lint.selftest.sh case that plants a workflow file outside the audited directory and asserts exit code 1, so ci.yml's negative battery keeps the guarantee measured.",
+      "traceability": ["CWE-693", "CWE-1164"],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "The class of file the broken check fails to escalate is a workflow YAML outside .github/workflows, and GitHub does not execute those: reusable and callable workflows must also live in .github/workflows of the repository root. The defect is a control that does not enforce, not an exploit path, so it is written down at informational severity rather than dropped."
+        }
+      ],
+      "limits": "The stray check globs only '*/.github/workflows/*'. It would not have caught a composite action.yml elsewhere in the tree either, and zizmor is pointed at $ROOT/.github only, so local composite actions outside .github are unaudited by construction; neither directory provided contains one, so that remains an observation rather than a finding."
+    },
+    {
+      "id": "F-005",
+      "title": "The job that runs zizmor and actionlint is required by prose only: it is neither a required status check on main nor verified at promotion time",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "scripts/gh/governance.json",
+        "line": 115,
+        "component": "branch protection / promotion contract"
+      },
+      "evidence": "governance.json declares `promotion.required_contexts: [\"gates\", \"workflow-hardening\"]` (lines 72-75) and explains at line 78 that these are 'names of the check runs that MUST exist and be conclusion=success on the candidate commit'. But `branches.main.protection.required_status_checks.checks` lists a single entry, `{\"context\": \"gates\"}` (lines 113-119), and that array is the only thing apply-governance.sh sends to the API (desired_protection(), lines 281-290). Nothing else enforces the second context: .github/workflows/release.yml never queries check runs (no `check-runs`, no `conclusion` anywhere in the file), and apply-governance.sh's only use of required_contexts is verify_contexts_observed(), which asks whether a context was ever OBSERVED on main (lines 299-328), plus the coherence check that it matches a job name in ci.yml (lines 554-576). The split matters because the two jobs measure different things: ci.yml:63 runs the suite with `--skip 'gate-actions-lint.sh'`, and ci.yml:122 runs only that gate in the `workflow-hardening` job. gate-workflow-hardening.sh:176 declares its own scope explicitly: 'OUT: template injection in `run:`, shellcheck, YAML/cron syntax, impersonated or known-vulnerable actions - gate-actions-lint.sh (zizmor + actionlint) takes care of that.' So the only detector this repository has for INF-14, for impostor commits and for known-vulnerable actions sits in the job that branch protection does not require.",
+      "impact": "A commit whose zizmor/actionlint audit failed, errored, or never completed can be merged into main while satisfying every required check, and main is the `latest` channel that plugin users install directly. The stable channel is not exposed the same way: release.yml's verify job re-runs the whole suite, gate-actions-lint.sh included, over the candidate tree and refuses to promote on exit code 1 or 2 (release.yml:408-425). This is a gap between the declared promotion contract and what is actually enforced, of the same kind the repository already documented and fixed once for the blocking label (release.yml:87-95).",
+      "preconditions": "Someone with write permission merges, or enables auto-merge on, a pull request whose workflow-hardening check is red or absent. Repository settings make that mechanically easy: allow_auto_merge true and required_approving_review_count 0 (governance.json lines 18 and 125).",
+      "recommendation": "Add `{\"context\": \"workflow-hardening\", \"app_id\": <actions app>}` to branches.main.protection.required_status_checks.checks so the declared promotion contract and branch protection are the same list, and derive that list from promotion.required_contexts instead of maintaining two. Independently, have release.yml assert the conclusion of every promotion.required_contexts check run on the candidate SHA before promoting, so the contract does not depend on a setting that lives outside the repository.",
+      "traceability": ["CWE-693", "CICD-SEC-1", "SSDF PO"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Branch protection is configuration outside the repository. governance.json is the DESIRED state and says so in its own header ('This file does not apply itself'); no export of the live protection, and no run of apply-governance.sh, was available. The live required-check list could differ in either direction."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "inference": "That the live branch protection on main matches the declared file, i.e. that it requires only the `gates` context. The declared/enforced mismatch inside the repository was read directly; the state on GitHub was not queried.",
+      "limits": "It does not claim that any specific unsafe workflow would pass: the deterministic gate-workflow-hardening.sh runs inside the required `gates` job and does cover triggers, per-job permissions, SHA pinning and secrets reachable from forks. What is unrequired is the layer above it."
+    },
+    {
+      "id": "F-006",
+      "title": "The release jobs install a Node package from the registry with lifecycle scripts enabled and no lockfile, before the steps that judge and publish the tree",
+      "procedure": "SUP-03",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": ".github/workflows/release.yml",
+        "line": 458,
+        "component": "promote job"
+      },
+      "evidence": "Line 381 (verify) and line 458 (promote): `npm install -g \"@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}\"`. The top-level version is pinned in env (line 85) but there is no lockfile and no `--ignore-scripts`, so npm resolves the entire transitive tree at install time and runs its lifecycle scripts. In the promote job the ordering is: checkout of tools/ at the tip of main (line 446), setup-node (line 452), npm install (line 458), then the credentialed checkout (line 467) and finally the steps that build the stable tree and run the judging gates from tools/ (lines 472, 582, 587) and push (line 646). The comment at lines 460-464 shows the ordering was chosen deliberately to shrink the window in which the contents:write token sits on disk next to `npm install`; what the ordering does not address is that tools/ (the trusted gates) and the workspace are already on disk when the install runs, and that `npm install -g` writes executables into a directory on PATH. Every other external dependency in this repository is pinned by digest: actions by 40-character commit SHA, and the actionlint tarball by SHA-256 (scripts/gates/lib/bootstrap-actions-lint.sh:25-28, 168).",
+      "impact": "A compromise of that package or of any package in its transitive tree executes in a job holding `contents: write` (line 435), with the trusted gate scripts, the tree about to become the stable branch and the PATH used by the later `git` invocations all within reach, before the diff gate, gate-plugin-version, gate-plugin-integrity and the push run. The result would be content published to the stable branch and tag that no gate saw.",
+      "preconditions": "A malicious or compromised version in the resolved dependency tree. The pinned top-level version is immutable on the npm registry, so the exposure is the unpinned transitive closure and the lifecycle-script mechanism, not the named package's own version.",
+      "recommendation": "Install with `--ignore-scripts` (the CLI is used only to run `plugin validate` and `plugin tag --dry-run`, neither of which needs a postinstall), and pin the resolution: commit a lockfile for a tiny tooling manifest and install with `npm ci --ignore-scripts`, or install the tarball by integrity digest. If the install must stay unpinned, move it into a job that has no write permission and pass its verdict to the writer job as an output, so that publishing never shares a runner with registry code.",
+      "traceability": ["CWE-829", "CWE-506", "A08:2025", "CICD-SEC-3", "SSDF PW", "NIST 800-53 SR"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "inference": "That a lifecycle script from this dependency tree executes with the workspace in reach. npm's default execution of install scripts is documented behaviour rather than something observed in a run of this job, and the transitive tree was not resolved (no network), so neither its size nor the presence of install scripts in it was measured.",
+      "limits": "No compromise is claimed or observed: this is the absence of the integrity control that the rest of the repository applies everywhere else, and its severity rests on what the promote job can do, not on any known bad package. The verify job runs the same install with only `contents: read` and no secrets, which bounds it to influencing that job's own verdict."
+    },
+    {
+      "id": "F-007",
+      "title": "The secret-scan gate suppresses a whole line when any benign marker appears on it, and counts unread files as scanned",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "scripts/gates/lib/secret_scan.py",
+        "line": 84,
+        "component": "gate-secret-scan measurement core"
+      },
+      "evidence": "The BENIGN regex at line 51 matches, case-insensitively, `changeme`, `replace-me`, `example`, `xxxxx`, a run of sixteen zeroes and a test-key prefix. Line 84 applies it to the whole LINE, not to the matched token: `if BENIGN.search(line): continue`. A real credential therefore disappears from the report whenever the same line carries any of those substrings, and `example` in particular occurs in ordinary content (an address at example.com, the words 'for example', a path named examples). Two more silent passes in the same file: line 72 returns an empty list for any file over MAX_BYTES = 2 MB, and lines 75-76 return an empty list on OSError or UnicodeDecodeError; in both cases line 107 has already incremented `scanned`, so the summary at line 144 reports those files as measured. The gate's own doctrine is the opposite (scripts/gates/lib/common.sh:6-12: exit code 2 exists precisely so that 'I could not measure' never reads as a pass).",
+      "impact": "A committed credential can pass the gate and be reported as scanned. The exposure is bounded by what else guards the repository, and by the fact that this gate is a second line: governance.json declares GitHub secret scanning and push protection enabled (lines 39-44), though that same block records the availability as unverified.",
+      "recommendation": "Apply BENIGN to the matched token (`m.group(0)`), not to the line, and narrow it to the markers that are inert by construction as part of the credential itself. Separately, make the two skip paths honest: count files skipped for size or decode errors in their own bucket, print them, and return exit code 2 rather than folding them into the scanned total; a github-token hit whose checksum validates should also be reported even if the line looks benign, since the checksum settles it offline.",
+      "traceability": ["CWE-693", "CWE-1164", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "GitHub secret scanning with push protection would be the compensating control, and scripts/gh/governance.json:39-44 declares it desired while flagging '_unverified_availability: true' and noting that a 4xx is treated as COULD NOT MEASURE. No export of the live setting was available (FP-08 territory), so the control cannot be answered as present."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Same artifact: the only evidence for a platform-side control is the desired-state file, not an exported setting, a console screenshot or a ticket. triage.md is explicit that absence of that evidence is UNKNOWN and never HOLDS."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "No secret was found in either directory provided, and git history was not scanned. This is a defect in a detector, not evidence that anything leaked."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Template expression injection inside a run: block",
+      "procedure": "INF-14",
+      "outcome": "refuted",
+      "where": "All five workflows parsed with PyYAML and every ${{ }} occurrence enumerated per step. Zero interpolations inside any `run:`. Every externally influenced value reaches the shell through `env:` and is referenced as a quoted variable: the PR body (issue-closure-gate.yml:67, written with `printf '%s' \"$PR_BODY\"`), the dispatch input (release.yml:218), and the job outputs (release.yml:296-298, 327-329, 437-442). scripts/gates/gate-issue-closure.sh:194-236 then validates every extracted reference against `''|*[!0-9]*` before use, and the workflow re-validates the digits a second time at line 120."
+    },
+    {
+      "class": "Privileged trigger running untrusted code (pull_request_target and friends)",
+      "procedure": "INF-13",
+      "outcome": "refuted",
+      "where": "Trigger inventory over .github/workflows: only pull_request, push, schedule and workflow_dispatch appear. No pull_request_target, issues, issue_comment, workflow_run or merge_group anywhere. The two workflows that hold a token beyond the default (labels-drift.yml, supply-chain-audit.yml) exclude pull_request by construction, and labels-drift.yml:41 additionally guards on the repository name."
+    },
+    {
+      "class": "GITHUB_TOKEN permissions wider than the job needs",
+      "procedure": "INF-15",
+      "outcome": "refuted",
+      "where": "All five workflows declare `permissions: {}` at workflow level and every job declares its own block. The only write grants in the two directories are: contents:write in release.yml's promote job (line 435, the job that pushes the branch and the tag), and security-events:write plus id-token:write in scorecard.yml (lines 40-41, required by SARIF upload and publish_results). Every other job is contents:read, and issue-closure-gate.yml splits the untrusted-body parsing into a job with no write and no secret (lines 50-90) from the job that talks to the API (lines 92-134). Not checked: the organization- or account-level default token permission, which is outside the repository."
+    },
+    {
+      "class": "Actions referenced by a moving tag",
+      "procedure": "INF-16",
+      "outcome": "refuted",
+      "where": "All 20 `uses:` references across the five workflows are 40-hex commit SHAs with a `# vX.Y.Z` comment, and .github/zizmor.yml:9-13 pins the `unpinned-uses` policy to hash-pin so a future default change cannot relax it. Observation, not a finding: release.yml pins actions/checkout at v5.1.0 while the other four workflows are at v7.0.1, so the most privileged workflow runs the oldest pinned copy; dependabot.yml:18-41 is configured to keep these current with a 7-day cooldown."
+    },
+    {
+      "class": "Argument injection into a subprocess",
+      "procedure": "LOC-05",
+      "outcome": "refuted",
+      "where": "Every subprocess call site read: scripts/meter/lib/measure.py:88 builds a fixed vector `[\"git\", \"-C\", root] + args` with args from the caller's literals; scripts/gh/tests/*.py invoke `[sys.executable, str(VALIDATOR), path]` and `[\"bash\", \"-n\", p]`; scripts/gates/gate-bench-integrity.sh:246 runs `git apply --check -p1` on a path derived from the answer key inside a TemporaryDirectory. The one value from outside is release.yml's workflow_dispatch input, used as `git rev-parse --verify \"${INPUT_SHA}^{commit}\"` (line 247) and reachable only by an actor who already has write permission on the repository; a leading dash there aborts the step under `set -euo pipefail` rather than becoming an option to a command that writes."
+    },
+    {
+      "class": "Predictable temporary files in a shared directory (the gates' own scratch space)",
+      "procedure": "LOC-03",
+      "outcome": "refuted",
+      "where": "Every scratch path in scripts/gates, scripts/gh, scripts/meter and scripts/bench other than F-001 is created atomically and exclusively: `mktemp -d` or `mktemp` with an XXXXXX template, with a trap that removes it. scripts/gates/gate-plugin-integrity.sh:135-140 documents the reasoning; scripts/gates/gate-workflow-hardening.sh:70 builds `list.$$` but inside a directory that mktemp -d already created. scripts/gh/tests/validate-workflow.py:218 uses NamedTemporaryFile, which is O_EXCL and 0600, so the predictability rule does not apply; its `delete=False` with no unlink leaks one file per run: block per invocation, which is disk litter over public workflow text and has no security value (FP-07)."
+    },
+    {
+      "class": "Fixed /tmp paths in workflow run blocks",
+      "procedure": "LOC-03",
+      "outcome": "refuted",
+      "where": "issue-closure-gate.yml writes /tmp/pr-body.txt, /tmp/refs.raw and /tmp/synthetic-body.txt (lines 70, 75, 118-121). Fixed names in a shared directory, but on a GitHub-hosted runner that is an ephemeral single-tenant VM: there is no second principal to pre-create them (FP-06), and the runner is destroyed after the job."
+    },
+    {
+      "class": "Path traversal through an archive extractor or a path built from a variable",
+      "procedure": "LOC-01",
+      "outcome": "refuted",
+      "where": "The only extraction of downloaded content is `tar -xzf \"$tarball\" -C \"$dir\" actionlint` (scripts/gates/lib/bootstrap-actions-lint.sh:173), which names a single member and runs only after the SHA-256 comparison at line 168. The selftests' `tar -cf - . | tar -xf -` pipes (for example scripts/gates/gate-secret-scan.selftest.sh:23) copy a tree the script owns into a mktemp -d it just created. No `rm`, `cp` or extractor takes a destination from outside: release.yml:396-398's `rm -rf source/scripts/gates` and `cp -R` use literal paths and are followed by a `cmp -s` proof that the copy is main's (lines 402-405)."
+    },
+    {
+      "class": "Untrusted text from a pull request reaching a shell or a decision",
+      "procedure": "INF-14",
+      "outcome": "refuted",
+      "where": "Two paths were traced. The PR body: env -> file -> awk comment stripper -> `grep -Eio` -> per-reference numeric validation (scripts/gates/gate-issue-closure.sh:164-236), then digits only across the job boundary (issue-closure-gate.yml:80-90) and a synthetic body rebuilt from those digits (lines 118-122). Commit subjects that reach the published CHANGELOG and the tag message: scripts/gh/build-changelog.sh:67-74 flattens to one line, strips control characters, neutralises backticks, angle brackets, square brackets, @ and #, and truncates to 120 characters, with every emission through `printf '%s'`; scripts/gh/next-version.sh:71-88 enumerates commits by SHA first so a commit body cannot masquerade as extra commits, a failure mode both files record as measured."
+    },
+    {
+      "class": "Secrets at rest in the automation",
+      "procedure": "LOC-15",
+      "outcome": "refuted",
+      "where": "No credential material in either directory. Tokens are only ever `${{ github.token }}` or `${{ secrets.GITHUB_TOKEN }}` placed in a step `env:` (issue-closure-gate.yml:110, labels-drift.yml:52, release.yml:275, supply-chain-audit.yml:53); scripts/gh/apply-governance.sh states and honours 'It accepts NO tokens as arguments' (line 22, and its only credential use is the ambient gh session at line 143). Every checkout sets persist-credentials: false except release.yml:467, which is the job that pushes and which uploads no artifact. Bound: this was a content scan of the two directories provided with rg's default filters disabled; git history was not scanned and no other directory of the repository was available."
+    },
+    {
+      "class": "Configuration discovered from the working directory",
+      "procedure": "LOC-07",
+      "outcome": "inconclusive",
+      "where": "scripts/gh/labels.sh:109-113 derives the target repository from `git remote get-url origin` when --repo is absent, so running it inside someone else's clone points its API calls at that clone's origin. It is bounded in practice (the workflow always passes --repo, labels-drift.yml:56; mutation requires --apply and write permission on that repository) and the value comes from the user's own clone rather than from a second principal, so no boundary is named. Recorded rather than reported: the same class in the interpreter search path is F-002, where a boundary can be named."
+    },
+    {
+      "class": "Live repository governance: branch protection, secret scanning, required checks",
+      "procedure": "INF-15",
+      "outcome": "not executed",
+      "where": "No GitHub API call was made, by design (local, offline analysis). Everything said about branch protection, required status checks, secret scanning and repository settings in F-005 and F-007 rests on the declared state in scripts/gh/governance.json, which the file itself describes as desired rather than actual. Running `scripts/gh/apply-governance.sh` with no flags (its dry-run drift mode) with an admin session would settle both."
+    },
+    {
+      "class": "Integrity of the pinned tool digests and of the dependency tree",
+      "procedure": "SUP-09",
+      "outcome": "blocked",
+      "where": "The four SHA-256 constants at scripts/gates/lib/bootstrap-actions-lint.sh:25-28 could not be compared against the published actionlint_1.7.12_checksums.txt, and the transitive tree of the pinned npm package in F-006 could not be resolved: both require network access, which this engagement did not have. What would unblock it: one fetch of the upstream checksums file and one `npm view`/lockfile resolution from an authorized host."
+    }
+  ]
+}

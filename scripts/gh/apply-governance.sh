@@ -567,7 +567,12 @@ else:
     print("ALLPRESENT:" + ",".join(sorted(n for n in names if n)))
 PYEOF
       ctx_rc=0
-      ctx_out="$(CI_FILE="$CI" STATE_JSON="$STATE" python3 "$ctx_py" 2>&1)" || ctx_rc=$?
+      # PYTHONSAFEPATH: the helper is written into a temporary directory and run
+      # BY PATH, which puts that directory first on sys.path. On a host whose
+      # temporary directory is shared, a yaml.py planted beside it would be
+      # imported instead of the standard library. Found by a blinded audit of
+      # this repository.
+      ctx_out="$(PYTHONSAFEPATH=1 CI_FILE="$CI" STATE_JSON="$STATE" python3 "$ctx_py" 2>&1)" || ctx_rc=$?
       rm -f "$ctx_py"
       case "$ctx_out" in
         *NOYAML*)     unmeas "PyYAML is missing: I did not check that required_contexts exist as jobs of ci.yml" ;;
