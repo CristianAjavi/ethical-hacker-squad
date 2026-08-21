@@ -52,7 +52,14 @@ DECL_LINES = re.compile(r"([\d]{1,3}(?:,\d{3})+)\s+lines")
 # other sentence counting procedures - "37 procedures are converted" - is a
 # different fact, and matching it would make the gate fire on correct text.
 DECL_PROCS = re.compile(r"([\d,]+)\s+numbered\s+procedures")
-DECL_FILES = re.compile(r"(?:over|across|in)\s+([a-z]+)\s+files")
+# Only a NUMBER counts as a declaration. The first version matched any word,
+# so ordinary prose - "the defect was in the files every arm was given" -
+# was read as a claim that the corpus has "the" files and failed the build.
+# A gate that fires on ordinary English teaches its readers to ignore it.
+DECL_FILES = re.compile(
+    r"(?:over|across|in)\s+((?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+    r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"
+    r"(?:-(?:one|two|three|four|five|six|seven|eight|nine))?)\s+files\b")
 DECL_RANGE = re.compile(r"`([A-Z]{2,4})-0*1`\.\.`([A-Z]{2,4})-(\d{2})`")
 PACK_COST = re.compile(r"\*\*Cost:\*\*\s*~([\d,]+)\s*lines")
 MAP_ROW = re.compile(r"^\|\s*`([a-z0-9-]+\.md)`\s*\|[^|]*\|\s*~?([\d,]+)\s*\|")

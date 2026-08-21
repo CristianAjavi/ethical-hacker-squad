@@ -96,6 +96,18 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"'"$K"'/README.md"
 lines=[l for l in p.read_text().splitlines() if not l.startswith("| `mobile-ios.md`")]
 p.write_text("\n".join(lines)+"\n")'
 
+case_run prose-that-mentions-files-is-not-a-count 0 "every declared number" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text()+chr(10)+
+  "Both defects were in the files every arm was given, and across the files we read "
+  "the pattern held."+chr(10))'
+
+case_run declared-file-count-drift 1 "declares" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
+p.write_text(re.sub(r"across [a-z]+ files","across nine files",p.read_text(),count=1))'
+
 case_run file-row-range-drift 1 "a reader routes by this table" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
