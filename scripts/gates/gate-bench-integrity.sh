@@ -113,6 +113,25 @@ for kind in ("planted", "decoys"):
                 if rule not in rules:
                     findings.append(f"{item['id']} says `{rule}` rules it out, and triage.md does not declare it")
 
+# A case file that labels its own answers hands the run to the auditor. This was
+# a real defect: the first version of both cases carried `# Planted:` and
+# `# Decoy:` comments, which would have made every score meaningless.
+LEAK = re.compile(r"\bplanted\b|\bdecoy\b|ground.truth|answer key", re.I)
+for name, case in cases.items():
+    for path in sorted((root / case["path"]).rglob("*")):
+        if not path.is_file():
+            continue
+        checks += 1
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        hit = LEAK.search(body)
+        if hit:
+            findings.append(
+                f"case file {path.relative_to(root)} contains {hit.group(0)!r}: a case that labels "
+                "its own answers hands the run to the auditor and every score from it is worthless")
+
 for name in cases:
     planted = [p for p in key.get("planted", []) if p["case"] == name]
     decoys = [d for d in key.get("decoys", []) if d["case"] == name]

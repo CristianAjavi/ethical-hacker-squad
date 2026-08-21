@@ -3,14 +3,13 @@ const router = express.Router();
 const db = require('../lib/db');
 const { fetchLogo } = require('../lib/remote');
 
-// Planted: object-level authorization missing. The id is bound, and nothing
-// checks whose invoice it is.
+// Invoice detail for the billing screen.
 router.get('/invoices/:id', async (req, res) => {
   const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
   res.json(invoice);
 });
 
-// Decoy: looks like the same bug, and the queryset is scoped to the caller.
+// Receipt detail, used by the same screen.
 router.get('/receipts/:id', async (req, res) => {
   const receipt = await db.query(
     'SELECT * FROM receipts WHERE id = $1 AND owner_id = $2',
@@ -19,14 +18,14 @@ router.get('/receipts/:id', async (req, res) => {
   res.json(receipt);
 });
 
-// Planted: the order column is interpolated into SQL.
+// Invoice list, sortable from the table header.
 router.get('/invoices', async (req, res) => {
   const order = req.query.order || 'created_at';
   const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]);
   res.json(rows);
 });
 
-// Decoy: interpolation from a closed allowlist, never from the request.
+// Payment list, sortable from the table header.
 const SORTABLE = { date: 'created_at', amount: 'total_cents' };
 router.get('/payments', async (req, res) => {
   const column = SORTABLE[req.query.sort] || SORTABLE.date;
@@ -34,7 +33,7 @@ router.get('/payments', async (req, res) => {
   res.json(rows);
 });
 
-// Planted: server-side request forgery, the URL comes from the body.
+// Branding preview: renders the customer logo before saving it.
 router.post('/branding/preview', async (req, res) => {
   const image = await fetchLogo(req.body.logoUrl);
   res.type('image/png').send(image);
