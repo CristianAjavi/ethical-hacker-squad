@@ -188,6 +188,33 @@ if tracked is not None:
                     f"{item['id']} points at {rel}, which git does not track: it exists here "
                     "and nowhere else, and any run elsewhere scores against a file that is missing")
 
+# A planted defect and a decoy that share lines in the same file cannot be told
+# apart by any scorer: a finding at that line is simultaneously a detection and a
+# false positive. It happened on `pipelines-migration`: decoy D-33 was declared
+# over lines 6-13 of a Jenkinsfile whose planted defect sits at line 12, so the
+# one correct finding was counted as reporting the decoy. The key is what has to
+# be precise here, not the auditor.
+def _spans(item):
+    out = []
+    if isinstance(item.get("lines"), list) and len(item["lines"]) == 2:
+        out.append((item["path"], item["lines"][0], item["lines"][1]))
+    for extra in item.get("also_at", []):
+        if isinstance(extra.get("lines"), list) and len(extra["lines"]) == 2:
+            out.append((extra["path"], extra["lines"][0], extra["lines"][1]))
+    return out
+
+for name in cases:
+    planted_spans = [(p["id"], s) for p in key.get("planted", []) if p["case"] == name for s in _spans(p)]
+    decoy_spans = [(d["id"], s) for d in key.get("decoys", []) if d["case"] == name for s in _spans(d)]
+    for pid, (ppath, pa, pb) in planted_spans:
+        for did, (dpath, da, db) in decoy_spans:
+            checks += 1
+            if ppath == dpath and pa <= db and da <= pb:
+                findings.append(
+                    f"{pid} (lines {pa}-{pb}) and {did} (lines {da}-{db}) overlap in {ppath}: "
+                    "a finding there is a detection and a false positive at the same time, so "
+                    "neither number means anything")
+
 # A README that says which packs the bench exercises is making a coverage claim,
 # and that claim rots the moment a case is added. It rotted once already: the
 # sentence still said "web-api and local-app only" four cases after the six-pack
