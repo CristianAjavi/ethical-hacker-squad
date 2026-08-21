@@ -1,0 +1,145 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "Netflix/lemur, pre-fix commits, modules only",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "two blinded specialists (external code)",
+    "coverage_declaration": "Only the findings that match an advisory already published upstream are reproduced here. The others are withheld pending a disclosure decision."
+  },
+  "findings": [
+    {
+      "id": "caseA-F-001",
+      "title": "Any certificate id sent in `replacements` silently disables expiry notification and auto-rotation on another owner's certificate",
+      "procedure": "WEB-04",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 558,
+        "component": "CertificatesUpload.post (same defect on CertificatesList.post:396 and Certificates.put:849)"
+      },
+      "evidence": "Source: three write schemas accept a list of certificate ids from the request body - CertificateInputSchema.replaces/replacements (schemas.py:82-85), CertificateEditInputSchema.replaces/replacements (schemas.py:188-191) and CertificateUploadInputSchema.replaces (schemas.py:402); the pre_load hooks at schemas.py:146-151 and 194-199 copy `replacements` into `replaces`. Transformation: the three handlers pass the loaded value straight through - views.py:666 `return service.upload(**data)`, views.py:543 `cert = service.create(**data)`, views.py:997 `cert = service.update(certificate_id, **data)` (service.update is a blind `setattr` loop, service.py:377-378; Certificate.__init__ assigns the collection at models.py:218). Sink: `@event.listens_for(Certificate.replaces, \"append\")` at models.py:506-516 mutates the *appended* row, not the caller's row: `value.notify = False`. Nothing between the request and that event authorizes the appended id - a grep for `replaces|replacement|replaced` over the four audited files returns no permission check of any kind, while every sibling operation on a foreign certificate does check (CertificatePermission at views.py:942, 1097, 1154, 1270, 1592, 1677, 1754, 1829). Second-order effects of the same association, all in the audited scope: `not_(Certificate.replaced.any())` removes the victim from auto-reissue (service.py:277), from expiration metrics (service.py:1431), from the expiring-deployed-certificate checks (service.py:181, 214, 223) and from GET /certificates/valid (service.py:762). Cheapest entry point is the upload handler: it needs only StrictRolePermission (views.py:651), a `body` and an `owner` (schemas.py:389-403) - no authority permission, no private key, no domain authorization.",
+      "impact": "An authenticated caller who can reach any of the three write endpoints can name any certificate id in the system in `replacements` and, in one request, turn off that certificate's expiration notification, exclude it from auto-rotation and hide it from the valid-certificate query and the expiry metrics - without touching the row through any endpoint that would have checked ownership. The victim's certificate then expires with no warning to its owner and no automated renewal, which in a certificate-management service is a production outage delivered on a timer. The ids are sequential integers, so the same request repeated over a range disables the notification path for the whole inventory.",
+      "preconditions": "A valid account that passes StrictRolePermission (views.py:651) - the weakest of the three entry points is POST /certificates/upload, which requires only a parseable certificate body and an owner string. The victim certificate id must be known or guessed; ids are dense integers and GET /certificates lists them to any authenticated user.",
+      "recommendation": "Authorize every element of `replaces` the same way the handlers already authorize the certificate named in the URL: resolve each replaced certificate and require the caller to be its creator or to hold CertificatePermission over it, rejecting the whole request otherwise. Put the check in the view layer next to the existing CertificatePermission blocks (or in a shared helper called by all three handlers) rather than in the schema, so the rule is visible where the other authorization decisions are made. Independently, the `Certificate.replaces` append event at models.py:506 mutates a row the caller may not own as a side effect of an ORM assignment; making that mutation explicit in the rotation code path (service.reissue_certificate, which is the legitimate producer of a replacement link at service.py:1027-1028) would remove the ambient authority entirely.",
+      "inference": "That AssociatedCertificateSchema (lemur/schemas.py, outside the audited directory) resolves an arbitrary certificate id supplied in the request body into a Certificate instance without any owner or permission check of its own. Every sibling association in this module behaves that way and no audited file performs the check, but the resolver itself was not read.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-284",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The replacement link is intended: service.reissue_certificate sets `primitives[\"replaces\"] = [certificate]` (service.py:1027-1028) for the certificate being rotated. What is not bounded is the id source - on the HTTP paths the id comes from the request body with no relation to the caller's certificate, and the mutation lands on the foreign row (models.py:516)."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is explicit in this module: certificates carry `owner`, `user_id` and `roles`, and the same file gates every other cross-certificate operation with CertificatePermission (views.py:942 and seven further sites)."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The affected state is another owner's certificate lifecycle - notify flag, rotation eligibility, expiry metrics - which is the core function of this service, not incidental data."
+        }
+      ],
+      "limits": "Establishes the write path and the state change; it does not establish how a given deployment reacts operationally to `notify = False` (whether some other notification channel outside this module still warns the owner), and it does not establish who exactly passes StrictRolePermission, whose definition is outside the audited directory."
+    },
+    {
+      "id": "caseB-F-001",
+      "title": "Destination plugin option values, including the SFTP password and private key passphrase, are serialized to every authenticated caller",
+      "procedure": "WEB-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/destinations/schemas.py",
+        "line": 28,
+        "component": "DestinationOutputSchema.options / fill_object"
+      },
+      "evidence": "DestinationOutputSchema declares `options = fields.List(fields.Dict())` (schemas.py:28) \u2014 the raw JSON column of the model (models.py:20, `options = Column(JSONType)`), dumped with no allowlist and no per-key filter. Its `@post_dump fill_object` then copies the same list a second time into the nested plugin object: `data[\"plugin\"][\"pluginOptions\"] = data[\"options\"]` (schemas.py:33), and for options whose type contains `export-plugin` it also unfolds the nested plugin's own option list into the response (schemas.py:34-36). The stored values are exactly what an admin submitted at creation time: views.py:188 forwards `data[\"plugin\"][\"plugin_options\"]` into `service.create`. For a destination backed by the SFTP plugin, that option list contains `password` (plugin.py:62-68) and `privateKeyPass` (plugin.py:76-82), both declared `\"type\": \"str\"` with no marker distinguishing them from a non-secret option such as a port or an account number; the plugin's own module docstring states \"Passwords are not encrypted and stored as a plain text\" (plugin.py:13). Both read handlers that emit this schema are guarded only by `AuthenticatedResource`: `GET /destinations` (views.py:36-37) and `GET /destinations/<int:destination_id>` (views.py:198-199) carry no `admin_permission`, while `POST`, `PUT` and `DELETE` on the same resources do (views.py:101-102, 253-254, 348). The resource docstrings document the option `value` travelling in the response body (views.py:59-87, 221-246). Secret values themselves are [REDACTED:secret] \u2014 none appear literally in the code, only the field names that carry them.",
+      "impact": "Any principal holding a valid session or token for the API \u2014 including the lowest-privilege read-only account, which is not allowed to create or modify a destination \u2014 can read back, in cleartext, the transport credentials of every configured destination: the SFTP host, port and user, the account password and the passphrase of the RSA private key, and, for export-plugin options, the nested plugin's own option values (export passphrases). Those credentials authenticate to the hosts where certificates and their private keys are deployed, and the SFTP plugin's default user is `root` (plugin.py:55-61), so the exposure converts an ordinary API account into a foothold on the destination infrastructure. The exposure is silent and repeatable: it happens on a routine listing call, so it leaves no trace distinguishable from normal UI traffic, and it survives any hiding of the fields in the frontend, since the data has already left the server.",
+      "preconditions": "A valid authenticated session or token of any role; at least one destination configured with a plugin whose option list contains a secret (the SFTP plugin in scope, or any export plugin reached through the nested `export-plugin` branch).",
+      "recommendation": "Stop dumping the stored option blob. Give plugin options an explicit secret marker in the option contract (for example a `\"type\": \"password\"` or a `\"secret\": true` flag, which the SFTP `password` and `privateKeyPass` entries would carry), and have DestinationOutputSchema emit an allowlist of non-secret keys, replacing the value of a marked option with a placeholder on the way out \u2014 in the same place that today copies the list into `plugin.pluginOptions`, so both copies are covered by one control. Keep write access to the real value server-side only, and add a regression test that dumps a destination holding a marked option and fails if the value appears anywhere in the serialized response, including under the nested plugin. Rotate any credential that has been readable through this route.",
+      "traceability": [
+        "CWE-200",
+        "CWE-213",
+        "CWE-522",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V4",
+        "A01:2025",
+        "API3:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The only layer that could strip the field after `fill_object` is a parent-class hook in `LemurOutputSchema` or the `validate_schema` decorator, both in lemur/common/schema.py, which is outside the audited directory and was not read. Within scope there is no redaction: the option dicts carry no field that would let a generic filter tell a password from a port (plugin.py:40-98), and the resource docstrings document option values in the response body (views.py:59-87)."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal exists and is named in the same file: the admin who writes the destination and its credentials (guarded by `admin_permission`, views.py:101-102, 253-254, 348) versus any authenticated non-admin who reads it (views.py:36-37, 198-199, 360-361)."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data is authentication material for a remote host: `password` and `privateKeyPass` options of the SFTP destination plugin (plugin.py:62-82), consumed by `ssh.connect` (plugin.py:119-127)."
+        }
+      ],
+      "inference": "That `service.get` and `service.render` return `Destination` instances whose `options` attribute is the column written by `service.create` from `data[\"plugin\"][\"plugin_options\"]`, and that neither `validate_schema` nor `LemurOutputSchema` removes the `options` key after `fill_object` runs. Both live outside the audited directory (lemur/destinations/service.py, lemur/common/schema.py) and were not read. The `@post_dump` body is itself strong in-scope evidence that the key is present at dump time \u2014 `data[\"plugin\"][\"pluginOptions\"] = data[\"options\"]` would raise otherwise \u2014 but the final serialized body was never observed.",
+      "limits": "Establishes the exposure for `GET /destinations` and `GET /destinations/<id>`, which use `destinations_output_schema` (many) and `destination_output_schema` (single). It does not establish it for `GET /certificates/<id>/destinations`: that handler declares the single-object schema (views.py:360) while `service.render` returns a paginated collection, so what its response actually contains was not determined. It also does not establish which roles exist in the deployment, nor how many destinations use a secret-bearing plugin."
+    },
+    {
+      "id": "caseB-F-002",
+      "title": "Read verbs on the destinations resource are not gated by admin_permission while every write verb is",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/destinations/views.py",
+        "line": 36,
+        "component": "DestinationsList.get / Destinations.get / CertificateDestinations.get / DestinationsStats.get"
+      },
+      "evidence": "The module imports `admin_permission` (views.py:14) and applies it to exactly three handlers: `DestinationsList.post` (views.py:102), `Destinations.put` (views.py:254) and `Destinations.delete` (views.py:348). The four read handlers inherit only `AuthenticatedResource` and carry no permission decorator: `DestinationsList.get` (views.py:36-37), `Destinations.get` (views.py:198-199), `CertificateDestinations.get` (views.py:360-361) and `DestinationsStats.get` (views.py:434). All four are registered on the public API blueprint (views.py:441-450). The asymmetry is inside one file: the same resource class treats its own object as admin-managed for writing and as world-readable-to-any-session for reading.",
+      "impact": "Any authenticated principal, whatever its role, enumerates the full destination inventory of the installation \u2014 labels, descriptions, plugin slugs, per-destination configuration and the statistics endpoint \u2014 for an object class the same module considers privileged enough that creating, modifying or deleting it requires an administrator. On its own this is reconnaissance of the certificate delivery topology (which hosts and services receive certificates, under which plugin). Combined with F-001, the same unprivileged call also returns the credentials of those hosts, which is why the two are reported separately: fixing either one reduces the impact of the other, and only fixing both closes the class.",
+      "preconditions": "A valid authenticated session or token of any role.",
+      "recommendation": "Decide the read policy explicitly rather than by omission, and apply it in one place: either require the same `admin_permission` on the read handlers, or introduce a declared read permission for operators and attach it to all four handlers, including `DestinationsStats.get`. Prefer deny-by-default at the resource level \u2014 a base class or a `method_decorators` list on the resource \u2014 so that adding a handler later does not silently ship unguarded, and add a route x method x role test matrix that fails when a destinations handler has no permission attached.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Whether `AuthenticatedResource` itself enforces a role, or whether a global filter re-checks permissions below the resource layer, is decided in lemur/auth/service.py and lemur/auth/permissions.py, outside the audited directory and not read. The in-scope evidence points the other way: if `AuthenticatedResource` already required an administrator, the explicit `admin_permission` on the three write handlers would be redundant."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Destinations are a global, admin-managed resource \u2014 the model has no owner or tenant column (models.py:16-22) \u2014 so every non-admin authenticated caller is a second principal with respect to the administrator who created the record."
+        }
+      ],
+      "inference": "That `AuthenticatedResource` authenticates without authorizing, i.e. that a non-admin session reaches these handlers. The class is defined outside the audited directory; the argument rests on the redundancy of `admin_permission` on the write handlers of the same resources.",
+      "limits": "Does not establish the role model of the deployment (how many roles exist, whether ordinary users are issued API tokens), and does not cover the read handlers of any other module."
+    }
+  ]
+}
