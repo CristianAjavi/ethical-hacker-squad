@@ -26,6 +26,17 @@ a decision, the decision is written to survive the claim being wrong.
 **Not established by anyone, including us:** the actual detection quality of any
 product in this document, ours included. See §3.4.
 
+> **Update, 2026-08-21 — that last paragraph is now partly false, and the correction does not flatter us.**
+> Detection quality has since been measured for two products in this table, ours and Mantis, on
+> published advisories with a blind judge. **On five advisories the score is 3/5 for this corpus,
+> 2/5 for the same model with no corpus, and 2/5 for Mantis** — and on the three of those five that a
+> *published rule* selected rather than us, all three arms scored 2/3, finding the same two and missing
+> the same one. The single case where this corpus pulled ahead is one we chose. The runs, their
+> artifacts and their limits are in `bench/runs/2026-08-21-ab-corpus/` and
+> `bench/runs/2026-08-21-three-arm-go/`. Nothing here supports "the best available"; what it supports
+> is "measured, and at parity on the sample nobody curated". The rest of this document was written on
+> 2026-08-16 and its figures for **this** repository are superseded by the row below.
+
 ## The field, as of today
 
 | Product | Repo | Licence | Stars | Forks | Created | Last push | What it is |
@@ -34,8 +45,9 @@ product in this document, ours included. See §3.4.
 | AIG | `Tencent/AI-Infra-Guard` | Apache-2.0 (NOTICE requires attribution) | 4,506 | 446 | 2024-12-25 | 2026-08-12 | AI red-teaming platform: fingerprint+CVE engine, 3-stage black-box agent scanner, and an offensive jailbreak-mutation Claude Code skill |
 | PT-Agents | `0xSteph/pentest-ai-agents` | MIT | 2,130 | 405 | 2026-03-28 | 2026-08-14 | Claude Code plugin, 52-53 offensive subagents including C2, evasion, exfiltration; funnel to a closed platform |
 | AgSec | `msoedov/agentic_security` | Apache-2.0 (no NOTICE file) | 1,965 | 275 | 2024-04-11 | 2026-07-31 | Black-box jailbreak scanner: fires HuggingFace prompt datasets at an LLM endpoint and reports a refusal rate |
-| Mantis | `google/mantis` | Apache-2.0 | 751 | 86 | 2026-06-15 | 2026-08-15 | 17 markdown skills forming a state machine over code review; ships **zero** vulnerability knowledge, all rigour is in the verification contract |
+| Mantis | `google/mantis` | Apache-2.0 | 751 | 86 | 2026-06-15 | 2026-08-15 | 17 markdown skills forming a state machine over code review; ships **zero** vulnerability knowledge, all rigour is in the verification contract. **Corrected 2026-08-21 by fetching it:** at commit `5f76be0` it ships **33** skills, and it was run here on four targets — see the two runs cited above |
 | **EHS** | `CristianAjavi/ethical-hacker-squad` | MIT | 0 | 0 | — | 2026-08-16 | This repository: 122 six-field procedures, 8 subagents, 6 gates, audit-only |
+| **EHS**, as of 2026-08-21 | same | MIT | — | — | — | 2026-08-21 | **160** six-field procedures across 17 files, 8 subagents, **18 gates** (every one the requirements document declares now runs, eight with their own negative-proof battery), 8 bench cases with 39 planted defects and 38 decoys, and six published measurement runs |
 
 ---
 
