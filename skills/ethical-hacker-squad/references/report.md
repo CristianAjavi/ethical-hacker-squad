@@ -103,6 +103,8 @@ Severity is a judgement about **this** system, not a copy of a scanner label. A 
 <!-- /report:section -->
 
 <!-- report:section id=ruled-out class=mandatory -->
+**The deliverable has a machine-readable half.** `findings.json`, beside the markdown, conforming to `references/findings-artifact.md`. It is not a substitute for the report — a JSON file is not something a client reads — and it is not optional either: it is what lets a second engagement diff against this one, what lets a pipeline check that a `confirmed` finding really carries a complete triage, and what finally makes this squad's own output measurable. Validate it before delivery with `scripts/gates/gate-findings-artifact.sh --deliverable <path>`; an unmeasured artifact is `2`, and `2` is not a pass.
+
 **Every confirmed finding carries its triage.** The rules from `references/triage.md` that the procedure invokes, each with its answer — `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE` — and, whenever the answer is not `DOES_NOT_HOLD`, the artifact that supports it. This is the part a client can argue with: it shows which exculpations were considered and rejected, rather than asking them to trust that they were. A finding presented as `confirmed` with a rule left `UNKNOWN` is a finding presented above its evidence, and the ceiling for it is `probable`.
 
 ## What was ruled out, and what resisted

@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Thirteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Fourteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -22,6 +22,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
+| findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
@@ -154,6 +155,23 @@ Proved in the negative by 11 cases, including a control run and two that must ex
 Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
 
 Proved in the negative by 7 cases built on throwaway repositories, because a delta gate can only be exercised by making a delta.
+
+## The findings artifact
+
+Backlog item 7 of `docs/competitive-analysis.md`, and the one that unlocks the rest. Four of the five neighbouring products emit a machine-readable findings file and we did not — which is also why nobody, us included, has ever measured this squad's detection quality: there was nothing to count.
+
+`references/findings.schema.json` owns the shape. It deliberately does **not** repeat the enumerations: `status`, `severity`, `confidence` and `verification` are validated against the declared regions of `vocabulary.md`, which is their single home, and the triage answers against `triage.md`. `references/findings-artifact.md` explains every field and why it is there.
+
+`gate-findings-artifact.sh` validates the fixtures in CI and any real deliverable on demand (`--deliverable <path>`). Beyond shape, it enforces the invariants that are the reason the file exists:
+
+1. `confirmed` demands a complete triage with nothing `UNKNOWN`, nothing `HOLDS`, and confidence above `low`. A finding cannot be promoted by writing a stronger word.
+2. `probable` names the link it inferred; `withdrawn` names why the claim did not survive.
+3. `candidate` never ships — `vocabulary.md` says it is internal working state.
+4. Every `procedure` resolves to a real identifier in the corpus, or is exactly `ad-hoc`.
+5. Every `traceability` identifier matches a known family, the same list `gate-corpus-contract.sh` uses.
+6. No high-precision secret format travels inside the file, exactly as `gate-report-contract.sh` refuses them in the prose.
+
+**The negative fixtures carry their own reason.** Each file under `fixtures/findings/bad/` has an `.expected` sidecar naming the defect it stands for, and the gate fails if a fixture is rejected for an unrelated cause — a battery whose cases fail for the wrong reason proves that the validator runs, not that it catches anything. Ten negative fixtures, one conforming, and a self-test of 10 cases including four that must exit `2`.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
