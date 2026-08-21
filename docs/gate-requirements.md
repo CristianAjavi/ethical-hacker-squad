@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Fourteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Fifteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -23,6 +23,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
+| bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
@@ -172,6 +173,20 @@ Backlog item 7 of `docs/competitive-analysis.md`, and the one that unlocks the r
 6. No high-precision secret format travels inside the file, exactly as `gate-report-contract.sh` refuses them in the prose.
 
 **The negative fixtures carry their own reason.** Each file under `fixtures/findings/bad/` has an `.expected` sidecar naming the defect it stands for, and the gate fails if a fixture is rejected for an unrelated cause — a battery whose cases fail for the wrong reason proves that the validator runs, not that it catches anything. Ten negative fixtures, one conforming, and a self-test of 10 cases including four that must exit `2`.
+
+## The evaluation bench
+
+The competitive analysis has one row where every product in the field, including this one, is empty: **measured quality**. Five neighbours publish stars; none publishes a number for how much its tool actually finds. `bench/` is the machinery for filling that in, and `gate-bench-integrity.sh` is what stops it rotting into confident nonsense.
+
+The bench holds small targets written to be read, and an answer key that names, for each: what was planted and which procedure should catch it, and which constructs were planted to **look** like findings with the triage rule that rules each one out. Ten planted defects, eleven decoys, across `web-api` and `local-app`.
+
+**The rule that makes a run mean anything: the auditing context must never read `bench/ground-truth.json`.** An agent that has seen the key is transcribing, not detecting. The protocol in `bench/README.md` runs a fresh squad against `bench/cases/<name>` only, has it emit `findings.json`, validates the artifact, and only then scores it — in that order, because a malformed artifact scored anyway reports a low recall that is really a formatting bug.
+
+`gate-bench-integrity.sh` checks that every case path exists, every planted and decoy entry points at a file and at a symbol that literally appears in it (with word boundaries, so `write_token` is not satisfied by the `write_token_privately` decoy beside it), every procedure id exists in the corpus, every `ruled_out_by` rule exists in `triage.md`, ids are unique, and **no case has planted defects without decoys** — a case with only defects measures the model's willingness to agree.
+
+`scripts/bench/score.py` reports detected, missed, decoys reported (each a false positive with an id and the rule that should have caught it), and unlabelled findings, which are **not** counted against a run because the bench does not claim to be exhaustive. Thresholds are opt-in: without them the scorer measures and does not judge.
+
+Both are proved in the negative: 9 cases for the gate, 6 for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
