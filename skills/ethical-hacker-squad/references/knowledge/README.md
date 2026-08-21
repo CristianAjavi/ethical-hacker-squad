@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Seven packs, one per role, spread over fifteen files, 3,331 lines in total, 139 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over sixteen files, 3,622 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -28,6 +28,7 @@ Seven packs, one per role, spread over fifteen files, 3,331 lines in total, 139 
 | `ai-safety-data-output.md` | `ehs-ai-safety` | ~324 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
 | `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~128 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~328 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
+| `local-app.md` | `ehs-local-app` | ~291 | `LOC-01`..`LOC-15` | A command-line tool, a desktop or WebView shell, a published library or SDK, an installer or updater, a local daemon or a loopback listener |
 | `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~366 | `REM-01`..`REM-07`, `VER-01`..`VER-08` | `harden` or `verify` mode |
 
 ## Procedure anatomy
