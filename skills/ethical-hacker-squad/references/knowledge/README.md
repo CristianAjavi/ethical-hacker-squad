@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Seven packs, one per role, 2,749 lines in total, 122 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, 3,040 lines in total, 137 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -19,6 +19,7 @@ Seven packs, one per role, 2,749 lines in total, 122 numbered procedures. **Neve
 | `supply-chain.md` | `ehs-supply-chain` | ~394 | `SUP-01`..`SUP-20` | Any manifest or lockfile, any git repository, any publishing pipeline |
 | `ai-safety.md` | `ehs-ai-safety` | ~543 | `AI-01`..`AI-22` | LLM API calls, agent frameworks, MCP servers or config, vector stores, agent memory |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~268 | `PRV-01`..`PRV-11` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model |
+| `local-app.md` | `ehs-local-app` | ~291 | `LOC-01`..`LOC-15` | A CLI, a desktop app or WebView shell, a published library, an installer or updater, a local daemon or loopback listener |
 | `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~326 | `REM-01`..`REM-07`, `VER-01`..`VER-07` | `harden` or `verify` mode |
 
 ## Procedure anatomy

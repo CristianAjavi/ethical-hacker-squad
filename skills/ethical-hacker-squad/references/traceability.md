@@ -106,6 +106,15 @@ Corrections worth carrying, because getting these wrong is common: the current O
 | `ASI07`, `ASI08`, `ASI10` | ai-safety | §2, §3 | `AI-05`..`AI-11` |
 | `AML.T0068` | ai-safety | §8 | `AI-20` |
 | `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud | §1..§5 | `INF-01`..`INF-17` |
+| `CWE-22`, `CWE-59`, `CWE-61`, `CAPEC-126`, `CAPEC-27` | local-app | §1 | `LOC-01`, `LOC-02` |
+| `CWE-367`, `CWE-377`..`CWE-379`, `CAPEC-29` | local-app | §2 | `LOC-03`, `LOC-04` |
+| `CWE-88`, `CWE-426`, `CWE-427`, `CAPEC-6`, `CAPEC-38`, `CAPEC-471`, `ATT&CK T1574` | local-app | §3 | `LOC-05`..`LOC-07` |
+| `CWE-250`, `CWE-269`, `CWE-276`, `CWE-732` | local-app | §4 | `LOC-08`, `LOC-09` |
+| `CWE-1188`, `CWE-665` | local-app | §5 | `LOC-10` |
+| `CWE-829`, `CWE-79` (desktop renderer) | local-app | §6 | `LOC-11`, `LOC-12` |
+| `CWE-346`, `CWE-1385` | local-app | §7 | `LOC-13` |
+| `CWE-494`, `SLSA Build L2` (runtime code) | local-app / supply-chain | §8 / §6 | `LOC-14`, `SUP-09`..`SUP-12` |
+| `CWE-214`, `CWE-312`, `CWE-522`, `CWE-532` (on the local machine) | local-app | §9 | `LOC-15` |
 
 ## Known coverage gaps
 
@@ -116,6 +125,6 @@ Declare these rather than implying they are covered:
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
 - **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.
-- **CLI, desktop and library surfaces** — injection, deserialization and file handling transfer from `web-api.md`, but symlink handling, temp-file races, argument and environment parsing, and dangerous public-API defaults have no procedure.
+- **CLI, desktop and library surfaces** — now covered by `local-app.md` (`LOC-01`..`LOC-15`). What remains uncovered inside that surface: native memory safety, anything requiring a debugger or a fuzzer, Windows-specific mechanisms beyond DLL search order and registry protocol handlers (services, COM, scheduled tasks, ACL inheritance), and macOS TCC and entitlement analysis. Declare those as not exercised.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.
 - **`ATT&CK` technique mapping** — used sparingly and only where the technique was verified. Absence of an ATT&CK ID on a finding means it was not verified, not that no technique applies.

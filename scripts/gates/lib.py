@@ -47,6 +47,7 @@ AUDITOR_AGENTS = (
     "ehs-supply-chain",
     "ehs-ai-safety",
     "ehs-privacy-abuse",
+    "ehs-local-app",
     "ehs-verifier",
 )
 WRITE_TOOLS = ("Edit", "Write", "NotebookEdit")

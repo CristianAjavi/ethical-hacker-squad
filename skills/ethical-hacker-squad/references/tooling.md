@@ -78,6 +78,20 @@ How each one lies: jadx emits decompiled code that can be corrupt, so grepping i
 
 **frida and objection are excluded from the automated pipeline.** Their function is to disable a running application's security controls and inject code into its process. They modify state, are therefore not non-destructive, require a rooted device you own, and need written authorization. They are not part of this skill's tooling.
 
+## Local application surfaces
+
+There is no scanner for most of this pack, and that is the point: whether a temporary directory is world-writable, whether a plugin path is owned by another user, or whether a loopback listener answers a foreign `Origin` are facts about the running machine, not patterns in the source. The method is to read the code for the call site and then **check ownership and modes at runtime**.
+
+| What you need | Non-destructive invocation | What it does not prove |
+|---|---|---|
+| Modes and owners of what the app creates | `stat -c '%A %U %n' <path>` (Linux), `stat -f '%Sp %Su %N' <path>` (macOS), `find <dir> -perm -o+w` | Nothing about *when* the file was created, or about the umask of a different user's session. |
+| What is listening, and to whom | `lsof -nP -iTCP -sTCP:LISTEN` or `ss -ltnp` | A loopback bind is not safety: the question is whether the listener checks `Origin` and a token. Test that with one `curl` carrying a foreign `Origin`, against your own process only. |
+| What a protocol handler receives | run the app with the argv it gets printed, invoked through `open`/`xdg-open` with your own crafted URL | That the handler is safe for *other* schemes or for the second instance path. |
+| Library defaults | read the exported signatures (`rg -n "^def |^class |export function|pub fn"`) | A signature does not show which default the runtime actually applies after config merging; call it in a scratch script. |
+| Search path and linkage of a shipped binary | `otool -l` (macOS), `readelf -d` (Linux) for `rpath` and `runpath` | Nothing about what the loader will do with an inherited `LD_PRELOAD` while privileged. |
+
+Generic static analysis does reach part of this surface — Semgrep and CodeQL both ship rules for `tempfile.mktemp`, `extractall` and `shell=True` — with the recall caveat that applies to every tool here. Two invocation rules specific to this pack: every test writes **only** inside a temporary directory created for the run, and a symlink or race test is never pointed at a path the tool did not create. A demonstration that destroys the user's file is not evidence, it is damage.
+
 ## Privacy surfaces
 
 There is no scanner for this. Personal-data mapping is done by reading schemas, models, migrations, DTOs, serializers, log statements and analytics event definitions, and the useful tools are the generic ones: `grep` over field names that denote personal data in the project's own vocabulary, the ORM's own schema dump, and the migration history to find fields added and never removed.

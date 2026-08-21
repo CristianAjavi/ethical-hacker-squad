@@ -17,6 +17,8 @@ from pathlib import Path
 
 from lib import (
     AGENTS,
+    KNOWLEDGE,
+    REFERENCES,
     ALLOWLIST_JSON,
     AUDITOR_AGENTS,
     MARKETPLACE_JSON,
@@ -154,6 +156,35 @@ def check(gate) -> None:
         gate.counted()
         if expected not in seen:
             gate.fail(str(AGENTS), f"agent `{expected}` is declared in the contract but absent")
+
+    # --- the roster agrees with the files on disk ------------------------
+    # team.md is what the leader reads to dispatch. A role listed there with no
+    # agent, or a pack with no role, is a capability that exists in exactly one
+    # of the two places - which is how a pack ends up written and never loaded.
+    team = gate.read_text(REFERENCES / "team.md")
+    rows = re.findall(r"^\|[^|]*\|\s*`(ehs-[a-z-]+)`\s*\|\s*`knowledge/([a-z-]+\.md)`", team, re.M)
+    if not rows:
+        raise Unmeasured("no role rows found in references/team.md")
+    roster_agents = {a for a, _ in rows}
+    roster_packs = {pack for _, pack in rows}
+    for agent, pack in rows:
+        gate.counted(2)
+        if agent not in seen:
+            gate.fail(str(REFERENCES / "team.md"), f"role table names `{agent}`, which has no definition under agents/")
+        if not (gate.root / KNOWLEDGE / pack).is_file():
+            gate.fail(str(REFERENCES / "team.md"), f"role table names pack `{pack}`, which does not exist")
+    for name in sorted(seen - roster_agents):
+        gate.counted()
+        gate.fail(str(REFERENCES / "team.md"), f"agent `{name}` exists but is missing from the role table")
+    for path in gate.glob(str(KNOWLEDGE / "*.md")):
+        if path.name == "README.md":
+            continue
+        gate.counted()
+        if path.name not in roster_packs:
+            gate.fail(
+                str(REFERENCES / "team.md"),
+                f"pack `{path.name}` exists but no role owns it; nothing would ever load it",
+            )
 
 
 if __name__ == "__main__":

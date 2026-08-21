@@ -32,7 +32,7 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `1` | Measured, outside threshold | fail with the offending items listed |
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
-Every gate must be **proved in the negative**: a case that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works. `tests/gate_mutants.py` is where that proof lives: it copies the repository, breaks exactly one thing, and asserts the gate notices — 25 mutants across the four running gates, plus a baseline asserting the untouched repository passes.
+Every gate must be **proved in the negative**: a case that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works. `tests/gate_mutants.py` is where that proof lives: it copies the repository, breaks exactly one thing, and asserts the gate notices — 32 mutants across the four running gates, plus a baseline asserting the untouched repository passes. Some assert the reason as well as the exit code, so a gate cannot pass a mutant by failing for an unrelated cause.
 
 **Which of `1` and `2` applies to a parse error depends on the gate.** A gate that *asserts* a file parses reports a syntax error as its finding: `G1` exists to say `plugin.json` is valid JSON, so a broken manifest is exit `1`. Every other gate that opens the same file to reach some other property exits `2`, because it never got to measure the thing it was asked about. The distinction is made at the call site, in `lib.Gate.read_json`.
 
@@ -43,11 +43,14 @@ Every gate must be **proved in the negative**: a case that makes it exit `1`, an
 - **`plugin.json` on `main` must NOT contain a `version` field.** Its presence is the defect that silently blocks updates for existing installs; see `docs/release-channels.md`. On `stable`, the semver lives in the marketplace entry, and it must not appear in both files.
 - `skills/ethical-hacker-squad/SKILL.md` opens with YAML frontmatter delimited by `---`, containing `name` and `description`, with `name` matching the directory name.
 - Every file under `agents/` has YAML frontmatter with `name` and `description`, `name` matches the filename, and every `tools` entry is a real tool name.
-- Auditor agents (`ehs-web-api`, `ehs-mobile`, `ehs-infra-cloud`, `ehs-supply-chain`, `ehs-ai-safety`, `ehs-privacy-abuse`, `ehs-verifier`) must **not** list `Edit`, `Write` or `NotebookEdit`. Only `ehs-remediator` may.
+- Auditor agents (`ehs-web-api`, `ehs-mobile`, `ehs-infra-cloud`, `ehs-supply-chain`, `ehs-ai-safety`, `ehs-privacy-abuse`, `ehs-local-app`, `ehs-verifier`) must **not** list `Edit`, `Write` or `NotebookEdit`. Only `ehs-remediator` may.
+- **The roster agrees with the files on disk.** Every role in the table in `references/team.md` has an agent definition and a pack that exist; every agent under `agents/` appears in that table; every pack under `references/knowledge/` is owned by a role. `team.md` is what the leader reads to dispatch, so a capability present in only one of the two places is a capability that never runs — a pack written and never loaded, or an agent nobody dispatches.
 
 ## G2 — Internal links resolve
 
-Every relative Markdown link, and every path interpolated from the plugin-root variable, referenced in `SKILL.md`, `references/**` and `agents/**` points at a file that exists. Checked mechanically, not by eye. A broken reference in a progressive-disclosure skill is a silent capability loss: the model simply never reads the file.
+Every relative Markdown link, and every path interpolated from the plugin-root variable, referenced in `SKILL.md`, `references/**` and `agents/**` points at a file that exists — anchors included, since a link to a heading that no longer exists lands the reader at the top of the file with no signal. Checked mechanically, not by eye. A broken reference in a progressive-disclosure skill is a silent capability loss: the model simply never reads the file.
+
+**Routing resolves too.** `references/coverage.md` sends a signal to a pack *section* (`local-app.md` §7). The gate checks that the pack exists and that the section heading is really in it. A row pointing at a section that was renamed or never written is the same silent loss, one level down.
 
 ## G3 — Context budget
 
@@ -73,6 +76,7 @@ Four numbers are watched, not one:
 - **Corpus lines and procedure count**, compared exactly against every declaration in `README.md`, `CHANGELOG.md`, `SKILL.md` and `references/knowledge/README.md`.
 - **Declared identifier ranges** (`` `AI-01`..`AI-22` ``): the upper bound must be the highest identifier that actually exists. A range that overstates the corpus promises procedures a reader will look for and not find.
 - **Identifier contiguity**: each family runs from `01` with no gaps and no duplicates. `WEB-07` is referenced from `traceability.md`, from findings and from issues, so a hole means a reference points at nothing.
+- **The declared size of the mutant bank.** `tests/gate_mutants.py` is the evidence that the gates fail when they should, and any prose stating how many mutants it holds is compared against the file. If a declaration exists and the bank does not, that is exit `2`, not a pass.
 - **Per-pack cost estimates**, both the `**Cost:** ~N lines` header in each pack and the `Lines` column of the corpus README table, within **10 lines** of the real count. The estimate is what a specialist budgets context against; `~` allows for rounding, not for drift. This tolerance caught `infra-cloud.md` declaring `~370` when it was `387`.
 
 ## G4 — Every knowledge item is cited and usable

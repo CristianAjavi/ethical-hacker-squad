@@ -70,7 +70,7 @@ The fix consists of no longer showing the option, removing the link, disabling t
 **Minimal test**
 Call the endpoint directly with the identity that should not be able to, bypassing the interface. It must fail with 403 or 404. If it goes through, the patch is cosmetic.
 
-**Traceability**: `A01:2025` · `CWE-862` · `CWE-863` · `CWE-602` · ASVS 5.0 V8
+**Traceability**: `A01:2025` · `CWE-862` · `CWE-863` · `CWE-602` · `ASVS 5.0 V8`
 **Tooling**: `curl` against the local environment. The interface no longer offering it is evidence of nothing.
 
 ### REM-03 Break one leg of the lethal trifecta, do not harden the prompt
@@ -108,7 +108,7 @@ The patch fixes the security issue and changes the contract on the way: an endpo
 **Minimal test**
 Run the existing suite before and after. Any test that changes result requires an explicit decision: either the test encoded the insecure behavior (update it and document it) or the patch broke something (fix it).
 
-**Traceability**: `A08:2025` · ASVS 5.0 V15
+**Traceability**: `A08:2025` · `ASVS 5.0 V15`
 **Tooling**: the project suite and, if it exists, the API contract (OpenAPI). A schema diff is a direct signal of breakage.
 
 ## §3 Mandatory regression test
@@ -130,7 +130,7 @@ The exact procedure, and its evidence goes into the report:
 2. Restore the patch and run it. It must pass.
 3. Record both results. Without step 1 demonstrated, the finding is reported as fixed with no verified regression.
 
-**Traceability**: the one from the original finding · ASVS 5.0 V15, V16
+**Traceability**: the one from the original finding · `ASVS 5.0 V15` · `ASVS 5.0 V16`
 **Tooling**: the project runner plus `git stash` / `git stash pop`. The test passing means nothing on its own; the value lies in it failing without the patch.
 
 ## §4 Authorization limits
@@ -241,7 +241,7 @@ The control works for the exact shape of the original case and is bypassed with 
 **Minimal test**
 At least one variant per applicable axis, with synthetic data and in an environment you own. If an axis cannot be tested, it gets recorded in VER-07 instead of being treated as covered.
 
-**Traceability**: the one from the finding · `CWE-183` · `CWE-436` · ASVS 5.0 V1, V2, V8
+**Traceability**: the one from the finding · `CWE-183` · `CWE-436` · `ASVS 5.0 V1` · `ASVS 5.0 V2` · `ASVS 5.0 V8`
 **Tooling**: `curl` or the project client. One variant failing does not prove the others fail.
 
 ### VER-04 Verifying AI and agent patches without leaning on a judge
@@ -258,7 +258,7 @@ Verifying a prompt injection patch by running a red teaming tool and accepting i
 **Minimal test**
 Check the structural property, not the model's behavior: that the outbound tool rejects a destination outside the allowlist; that tainted state does not expose the sensitive tool; that the sanitizer strips the invisible test character. If you additionally run an adversarial suite against a live endpoint: `REQUIRES AUTHORIZATION`, a capped budget and supervision.
 
-**Traceability**: `LLM01:2026` · `ASI01` · ASVS 5.0 V16
+**Traceability**: `LLM01:2026` · `ASI01` · `ASVS 5.0 V16`
 **Tooling**: the repository's deterministic test. Red teaming reports are cited as a signal, never as evidence of a fix.
 
 ## §8 Honest classification of the result

@@ -40,7 +40,8 @@ FIELDS = [
     ("Tooling", re.compile(r"\*\*Tooling\*\*")),
 ]
 TRACE_LINE = re.compile(r"^\s*\*\*Traceability\*\*:?(.*)$", re.MULTILINE)
-BACKTICKED = re.compile(r"`([^`]*)`")
+BACKTICKED = re.compile(r"`[^`]*`")
+BACKTICKED_INNER = re.compile(r"`([^`]*)`")
 PERCENT = re.compile(r"\b\d{1,3}(?:\.\d+)?%")
 SOURCE_MARKER = re.compile(
     r"et al\.|arXiv:\d{4}\.\d{4,5}|(?:19|20)\d{2}-\d{2}-\d{2}|(?:19|20)\d{2}\b|"
@@ -55,16 +56,19 @@ SOURCE_MARKER = re.compile(
 EXEMPTION = re.compile(r"internal process|no external identifier|from the original finding", re.I)
 
 
-def load_families() -> re.Pattern[str]:
+def load_families() -> tuple[re.Pattern[str], re.Pattern[str]]:
+    """Return (exact, loose). Exact validates one backticked token; loose finds an
+    identifier written as bare prose, where nothing can check it."""
     try:
         families = json.loads(DATA.read_text(encoding="utf-8"))["families"]
     except (OSError, ValueError, KeyError) as exc:
         raise Unmeasured(f"cannot read the identifier families at {DATA}: {exc}") from exc
-    return re.compile("^(?:" + "|".join(families.values()) + ")$")
+    alternation = "|".join(families.values())
+    return re.compile("^(?:" + alternation + ")$"), re.compile("(?:" + alternation + ")")
 
 
 def check(gate) -> None:
-    family_re = load_families()
+    family_re, loose_re = load_families()
     exemptions: list[str] = []
 
     for path in knowledge_packs(gate):
@@ -83,7 +87,15 @@ def check(gate) -> None:
             if not m:
                 continue  # already reported by the field check
             trace = m.group(1)
-            tokens = [t.strip() for t in BACKTICKED.findall(trace) if t.strip()]
+            gate.counted()
+            bare = loose_re.findall(BACKTICKED.sub("", trace))
+            if bare:
+                gate.fail(
+                    f"{rel}:{pid}",
+                    f"identifier(s) {sorted(set(bare))} written outside backticks; the citation "
+                    "policy is verbatim identifiers, and unquoted ones are invisible to every check",
+                )
+            tokens = [t.strip() for t in BACKTICKED_INNER.findall(trace) if t.strip()]
             if not tokens:
                 if EXEMPTION.search(trace):
                     exemptions.append(f"{rel}:{pid}")

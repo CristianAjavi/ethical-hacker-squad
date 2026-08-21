@@ -44,7 +44,13 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 | Third-party SDKs, telemetry, tracking, ad libraries | `privacy-abuse` | `privacy-abuse.md` §4 | Overlaps `MASVS-PRIVACY-*` on mobile. |
 | User data flowing into prompts, fine-tuning or provider logs | `privacy-abuse` + `ai-safety` | `privacy-abuse.md` §5 | |
 | Signup, invitations, referrals, quotas, public enumeration surfaces | `privacy-abuse` | `privacy-abuse.md` §8 | Abuse paths are product decisions; label them as such. |
-| Desktop app, CLI, published library | `web-api` (partial only) | `web-api.md` §3, §5 | **Partial coverage, declare it.** Injection, deserialization and file handling transfer. Path traversal via symlink, temp-file races, argument and environment parsing, and dangerous public-API defaults have **no procedure** - see the gap list in `traceability.md`. |
+| CLI entry point, `bin/`, `console_scripts`, `argparse`/`click`/`cobra`/`clap`, a tool run from a terminal | `local-app` | `local-app.md` §0, §1, §3 | §0 first: it fixes who the attacker is. Argument injection and search-path resolution are the two highest-yield checks. |
+| Archive extraction, recursive copy or delete, `/tmp` use, lock files, path arguments | `local-app` | `local-app.md` §1, §2 | Symlink and race findings depend on directory ownership at runtime; check it, do not assume it. |
+| Electron, Tauri, embedded WebView, `.desktop` entry, `Info.plist` with `CFBundleURLTypes`, protocol handler | `local-app` | `local-app.md` §6 | Renderer isolation turns an XSS into command execution. Android and iOS WebViews go to `mobile` instead. |
+| Unix socket, named pipe, a server bound to `127.0.0.1`, OAuth loopback callback, debug port | `local-app` | `local-app.md` §7 | A loopback listener with no `Origin` check is reachable from any page the user visits. |
+| A package other people import: `setup.py`, `pyproject.toml` with a public name, `package.json` with `main`, an SDK | `local-app` | `local-app.md` §5 | The defect class is the insecure default, which lands in the consumer's CVE. |
+| Installer, self-update code, `autoUpdater`, plugin directory loaded at runtime, setuid binary, service or daemon | `local-app` | `local-app.md` §4, §8 | Cross-reference `supply-chain.md` §6 for signing and provenance. |
+| Injection, deserialization or file-content parsing inside a local tool | `web-api` (transfers) | `web-api.md` §3, §5 | These classes are identical in a local process; `local-app.md` deliberately does not repeat them. |
 
 ## Surfaces with no matching pack
 

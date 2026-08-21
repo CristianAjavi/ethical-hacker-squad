@@ -43,6 +43,7 @@ class Mutant:
     expect: int
     apply: Callable[[Path], None]
     why: str
+    expect_text: str | None = None  # substring the gate's own output must contain
 
 
 # --- mutation helpers ---------------------------------------------------
@@ -57,6 +58,10 @@ def edit(root: Path, rel: str, old: str, new: str) -> None:
 def append(root: Path, rel: str, text: str) -> None:
     with (root / rel).open("a", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def write(root: Path, rel: str, text: str) -> None:
+    (root / rel).write_text(text, encoding="utf-8")
 
 
 def drop(root: Path, rel: str) -> None:
@@ -104,6 +109,21 @@ MUTANTS = [
     Mutant("G1", "skill-frontmatter-name-drifts", 1,
            lambda r: edit(r, SKILL, "name: ethical-hacker-squad", "name: hacker-squad"),
            "frontmatter name must match the directory"),
+    Mutant("G1", "pack-nobody-owns", 1,
+           lambda r: write(r, f"{KNOWLEDGE}/orphan.md", "# Orphan pack\n"),
+           "a pack no role owns is written and never loaded",
+           expect_text="no role owns it"),
+    Mutant("G1", "agent-missing-from-roster", 1,
+           lambda r: write(r, "agents/ehs-ghost.md",
+                           "---\nname: ehs-ghost\ndescription: Ghost.\nmodel: inherit\n"
+                           "tools: Read\n---\n\nGhost.\n"),
+           "an agent the leader's roster never mentions is never dispatched",
+           expect_text="missing from the role table"),
+    Mutant("G1", "roster-names-a-pack-that-moved", 1,
+           lambda r: edit(r, "skills/ethical-hacker-squad/references/team.md",
+                          "`knowledge/local-app.md`", "`knowledge/local-apps.md`"),
+           "the specialist would be told to read a file that is not there",
+           expect_text="does not exist"),
     Mutant("G1", "manifest-directory-missing", 2,
            lambda r: drop(r, ".claude-plugin"),
            "cannot measure a manifest that is not there"),
@@ -121,6 +141,11 @@ MUTANTS = [
            lambda r: edit(r, SKILL, "[references/report.md](references/report.md)",
                           "[references/report.md](references/report.md#nonexistent-section)"),
            "an anchor that no longer exists sends the reader to the top of the file"),
+    Mutant("G2", "coverage-routes-to-missing-section", 1,
+           lambda r: edit(r, "skills/ethical-hacker-squad/references/coverage.md",
+                          "`local-app.md` §7", "`local-app.md` §77"),
+           "routing to a section that does not exist loses the capability silently",
+           expect_text="no such section"),
     Mutant("G2", "references-directory-missing", 2,
            lambda r: drop(r, "skills/ethical-hacker-squad/references"),
            "cannot measure links into a corpus that is not there"),
@@ -130,10 +155,10 @@ MUTANTS = [
            lambda r: append(r, SKILL, "\nfiller\n" * 500),
            "the entry point stays in context for the whole session"),
     Mutant("G3", "declared-corpus-lines-drift", 1,
-           lambda r: edit(r, "README.md", "2,749 lines of corpus", "2,900 lines of corpus"),
+           lambda r: edit(r, "README.md", "3,040 lines of corpus", "2,900 lines of corpus"),
            "a hand-repeated number drifts and the copy is the one people trust"),
     Mutant("G3", "declared-procedure-count-drift", 1,
-           lambda r: edit(r, "CHANGELOG.md", "122 numbered procedures", "137 numbered procedures"),
+           lambda r: edit(r, "CHANGELOG.md", "137 numbered procedures", "151 numbered procedures"),
            "the exact defect this repository shipped once already"),
     Mutant("G3", "procedure-ids-not-contiguous", 1,
            lambda r: edit(r, f"{KNOWLEDGE}/mobile.md", "### MOB-07", "### MOB-77"),
@@ -145,6 +170,14 @@ MUTANTS = [
     Mutant("G3", "declared-id-range-drift", 1,
            lambda r: edit(r, f"{KNOWLEDGE}/README.md", "`AI-01`..`AI-22`", "`AI-01`..`AI-25`"),
            "a range that overstates the corpus promises procedures that do not exist"),
+    Mutant("G3", "declared-mutant-count-drift", 1,
+           lambda r: edit(r, "docs/gate-requirements.md", "32 mutants across", "45 mutants across"),
+           "the bank's own size is a number stated in prose, so it drifts too",
+           expect_text="declares"),
+    Mutant("G3", "mutant-bank-missing", 2,
+           lambda r: drop(r, "tests/gate_mutants.py"),
+           "a declared bank that is not there cannot be counted, and that is not a pass",
+           expect_text="UNMEASURED"),
     Mutant("G3", "knowledge-directory-missing", 2,
            lambda r: drop(r, KNOWLEDGE),
            "cannot measure a corpus that is not there"),
@@ -168,6 +201,10 @@ MUTANTS = [
            lambda r: edit(r, f"{KNOWLEDGE}/mobile.md",
                           "**Traceability**: `", "**Traceability**: `OWASP-MOBILE-TOP-99` \u00b7 `"),
            "an invented ID survives review by looking correct"),
+    Mutant("G4", "identifier-written-as-prose", 1,
+           lambda r: edit(r, f"{KNOWLEDGE}/privacy-abuse.md", "`ASVS 5.0 V14`", "ASVS 5.0 V14"),
+           "an identifier outside backticks is invisible to every check",
+           expect_text="outside backticks"),
     Mutant("G4", "knowledge-directory-missing", 2,
            lambda r: drop(r, KNOWLEDGE),
            "cannot measure citations in a corpus that is not there"),
@@ -221,6 +258,9 @@ def main() -> int:
                 return 2
             code, out = run_gate(m.gate, root)
             ok = code == m.expect
+            if ok and m.expect_text and m.expect_text not in out:
+                ok = False
+                out = f"exit code was right but the reason was not: expected {m.expect_text!r}\n{out}"
             print(f"  {m.gate} {m.name}: {'caught' if ok else 'SURVIVED'} "
                   f"(exit {code}, expected {m.expect}) - {m.why}")
             if not ok:

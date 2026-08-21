@@ -6,7 +6,7 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 2,749 lines of corpus across seven role packs, with 122 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 3,040 lines of corpus across eight role packs, with 137 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -25,7 +25,7 @@ Most "act as a security expert" prompts are adjectives. This one ships **procedu
 
 ## The squad
 
-`security-lead` (you) · `web-api` · `mobile` · `infra-cloud` · `supply-chain` · `ai-safety` · `privacy-abuse` · `remediator` · `verifier`
+`security-lead` (you) · `web-api` · `mobile` · `infra-cloud` · `supply-chain` · `ai-safety` · `privacy-abuse` · `local-app` · `remediator` · `verifier`
 
 Installed as a plugin, each specialist is a real subagent with its own tool access: auditors ship without `Edit` and `Write`, and only the remediator can modify files. That closes the direct write path, not every write path — auditors keep `Bash`, so the working tree is checked after an `audit` run rather than assumed clean.
 
@@ -39,6 +39,7 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 | `supply-chain.md` | `SUP-01`..`SUP-20` | manifests and locks, install scripts, dependency confusion, typosquatting and slopsquatting, pipeline integrity, provenance and SBOM, reachability-aware triage, secrets in tree and history, malicious-package indicators |
 | `ai-safety.md` | `AI-01`..`AI-22` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning, RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, and the squad's own self-protection |
 | `privacy-abuse.md` | `PRV-01`..`PRV-11` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
+| `local-app.md` | `LOC-01`..`LOC-15` | CLI, desktop and library surfaces: path traversal and archive extraction, symlink following, temporary files and TOCTOU, argument injection, untrusted search paths, config discovered from the working directory, file permissions, privileged helpers, insecure library defaults, renderer isolation and protocol handlers, local IPC and loopback listeners, runtime code loading, secrets at rest |
 | `remediation.md` | `REM-01`..`REM-07`, `VER-01`..`VER-07` | minimum root-cause patching, regression tests that must fail without the patch, adversarial verification, honest classification |
 
 Navigation is progressive: `SKILL.md` is a router, `coverage.md` maps detected technology to roles and pack sections, and each specialist loads only its own pack — and only the sections its inventory justifies. Loading everything is a bug, not thoroughness.

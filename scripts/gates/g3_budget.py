@@ -17,6 +17,7 @@ import re
 
 from lib import (
     AGENTS,
+    Unmeasured,
     KNOWLEDGE,
     PROCEDURE_HEADING,
     REFERENCES,
@@ -38,6 +39,10 @@ DECLARING_FILES = [
 DECL_LINES = re.compile(r"([\d]{1,3}(?:,\d{3})+)\s+lines")
 DECL_PROCS = re.compile(r"([\d,]+)\s+(?:numbered\s+)?procedures")
 DECL_RANGE = re.compile(r"`([A-Z]{2,3})-01`\.\.`([A-Z]{2,3})-(\d{2})`")
+DECL_MUTANTS = re.compile(r"(\d+)\s+mutants")
+MUTANT_CTOR = re.compile(r"^\s*Mutant\(", re.M)
+MUTANT_FILES = ["docs/gate-requirements.md", "README.md", "CHANGELOG.md"]
+MUTANT_BANK = "tests/gate_mutants.py"
 PACK_COST = re.compile(r"\*\*Cost:\*\*\s*~([\d,]+)\s*lines")
 PACK_ROW = re.compile(r"^\|\s*`([a-z-]+\.md)`\s*\|[^|]*\|\s*~?([\d,]+)\s*\|")
 
@@ -126,6 +131,26 @@ def check(gate) -> None:
                     f"declares `{prefix}-01`..`{prefix}-{end:02d}`; highest measured is "
                     f"`{prefix}-{highest:02d}`",
                 )
+
+    # --- G3b: the declared size of the mutant bank ------------------------
+    # The bank is the evidence that the gates fail when they should. A number
+    # stated in prose about it drifts exactly like the corpus counts do.
+    declarations = []
+    for rel in MUTANT_FILES:
+        if not (gate.root / rel).is_file():
+            continue
+        for m in DECL_MUTANTS.finditer(gate.read_text(rel)):
+            declarations.append((rel, as_int(m.group(1))))
+    if declarations:
+        if not (gate.root / MUTANT_BANK).is_file():
+            raise Unmeasured(
+                f"{len(declarations)} declaration(s) state a mutant count, but {MUTANT_BANK} is absent"
+            )
+        measured = len(MUTANT_CTOR.findall(gate.read_text(MUTANT_BANK)))
+        for rel, declared in declarations:
+            gate.counted()
+            if declared != measured:
+                gate.fail(rel, f"declares {declared} mutants; {MUTANT_BANK} defines {measured}")
 
     # --- G3b: per-pack cost estimates ------------------------------------
     for path in packs:

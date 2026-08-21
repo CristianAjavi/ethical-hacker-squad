@@ -16,11 +16,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from lib import AGENTS, REFERENCES, SKILL_MD, Unmeasured, run
+from lib import AGENTS, KNOWLEDGE, REFERENCES, SKILL_MD, Unmeasured, run
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 PLUGIN_ROOT = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[A-Za-z0-9_./-]+)")
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
+ROUTE = re.compile(r"`([a-z-]+\.md)`\s*((?:§\d+(?:-§?\d+)?[,;]?\s*)+)")
+SECTION = re.compile(r"§(\d+)")
 EXTERNAL = ("http://", "https://", "mailto:", "#")
 
 
@@ -87,5 +89,37 @@ def check(gate) -> None:
                     gate.fail(f"{rel}", f"link `{label}` points at a heading that does not exist")
 
 
+def check_routing(gate) -> None:
+    """coverage.md routes a signal to a pack section. A section that does not
+    exist is the same silent loss as a dead link: the specialist is told to open
+    something that is not there and quietly opens nothing."""
+    coverage = REFERENCES / "coverage.md"
+    text = gate.read_text(coverage)
+    sections_cache: dict[str, set[str]] = {}
+    for pack, refs in ROUTE.findall(text):
+        pack_path = gate.path(KNOWLEDGE / pack)
+        gate.counted()
+        if not pack_path.is_file():
+            gate.fail(str(coverage), f"routes to pack `{pack}`, which does not exist")
+            continue
+        if pack not in sections_cache:
+            sections_cache[pack] = {
+                m.group(1)
+                for line in pack_path.read_text(encoding="utf-8").splitlines()
+                if line.startswith("## ")
+                for m in [SECTION.search(line)]
+                if m
+            }
+        for number in SECTION.findall(refs):
+            gate.counted()
+            if number not in sections_cache[pack]:
+                gate.fail(str(coverage), f"routes to `{pack}` §{number}, which has no such section")
+
+
+def check_all(gate) -> None:
+    check(gate)
+    check_routing(gate)
+
+
 if __name__ == "__main__":
-    run("G2", "internal links resolve", check)
+    run("G2", "internal links and routing resolve", check_all)
