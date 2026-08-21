@@ -56,12 +56,12 @@ These are not shape checks. They are the reasons the file is worth having:
 
 1. **`confirmed` is expensive.** Every triage rule answered, none `HOLDS`, none `UNKNOWN`, and confidence not `low`. A finding cannot be promoted by writing a stronger word.
 2. **`probable` names its gap** in `inference` **and the way to close it** in `what_would_settle_it`, and **`withdrawn` names its reason**.
-3. **The inventory is resolved.** Every surface in `engagement.coverage.inventoried` appears in `read` or in `not_read`, never in both and never in neither. This is the one invariant a reader can use to tell your silence from your clean bill.
+3. **The inventory is accounted for.** Every surface in `engagement.coverage.inventoried` appears in `read` or in `not_read`, never in both and never in neither. A surface you inventoried and then left in neither list is the silence a reader mistakes for a clean bill, and refusing that inference is the whole point of the field.
 4. **`candidate` never ships.** It is working state, and `vocabulary.md` says so.
-4. **Every `procedure` resolves** to a real identifier in the corpus, or is exactly `ad-hoc`. An invented procedure id would make a finding look methodical when it was not.
-5. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.
-6. **Every `triage.rule` exists** in `triage.md`, and a reason is present whenever the answer is not `DOES_NOT_HOLD`.
-7. **No unredacted secret travels.** The high-precision formats — `ghp_`, `AKIA`, `sk-ant-`, PEM headers — are refused in any string, exactly as `gate-report-contract.sh` refuses them in the prose.
+5. **Every `procedure` resolves** to a real identifier in the corpus, or is exactly `ad-hoc`. An invented procedure id would make a finding look methodical when it was not.
+6. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.
+7. **Every `triage.rule` exists** in `triage.md`, and a reason is present whenever the answer is not `DOES_NOT_HOLD`.
+8. **No unredacted secret travels.** The high-precision formats — `ghp_`, `AKIA`, `sk-ant-`, PEM headers — are refused in any string, exactly as `gate-report-contract.sh` refuses them in the prose.
 
 ## What it does not do
 

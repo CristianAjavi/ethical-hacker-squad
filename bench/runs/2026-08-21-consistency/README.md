@@ -1,47 +1,44 @@
-# Run 2026-08-21 — consistency: **withdrawn**. The instrument does not work.
+# Run 2026-08-21 — consistency, measured properly at the third attempt: the corpus is **less** consistent
 
-> **This run published a number and it is retracted.** It reported that three runs with the corpus produced an identical set of defect classes (pairwise agreement 1.00) against 0.60 without it, and called it the first separation of the day that survived its own caveats. **It does not survive. The number was an artifact of the classifier this directory wrote**, and so is the corrected number that replaced it. Nothing here supports a claim about consistency in either direction.
+> **This run published two numbers before this one and both were retracted.** A regex classifier reported 1.00 agreement with the corpus against 0.60 without it; a rewrite of the same classifier reversed it to 0.63 against 0.69; a hand-check showed both were mis-binning findings that a reader bins correctly at a glance. The classifier is kept below as evidence of that defect. **What follows is the third attempt, using the instrument this bench already knows works** — blind judging — and its answer is the opposite of the first one.
 
-## What was attempted
+## Method, the version that works
 
-Ten measurements of **capability** had come back at parity or worse. One property had never been measured and is what a written procedure should confer by construction: do two independent runs of the same review agree with each other? One target, six runs, three per arm, each in a fresh context.
+Ten measurements of **capability** had come back at parity or worse. Consistency is the property a written procedure should confer by construction: a checklist does not make a surgeon cleverer, it makes the outcome less variable. Six runs, three per arm, one target, each in a fresh context that knew nothing of the others.
 
-To compare runs, findings have to be reduced to **the defect they are about** — two runs word the same defect differently, so matching on prose measures style, and matching on file and line splits one defect reported at two places. That reduction was done by an ordered set of regular expressions over each finding's title, impact and evidence.
+Comparing runs needs findings reduced to **the defect they are about** — and that reduction, done by pattern matching over prose, is what failed twice. So it was replaced with the protocol that already decides advisory matches here: **a blind judge is given two lists of findings with opaque ids, no arm label, no run label, and decides which pairs are the same defect, with a reason recorded for every call.** Six judges, one per pair of runs, 335 candidate pairs.
 
-## Why it is withdrawn
+The instruction that carries the whole measurement: *two findings in the same method are not the same defect if what makes them exploitable differs*. An unbounded allocation and an uncapped recursion in one file are two defects. So are a missing bound and an exception of the wrong type on the same line.
 
-The reduction does not work, and it fails in a way that manufactures whichever answer the pattern order happens to produce.
+## Result
 
-**First version.** `uncapped-recursion` matched the bare method names `readTable|readArray`. Those names appear in the text of the *declared-length* finding too, so a distinct defect was folded into the recursion class, three runs that genuinely differ were scored identical, and the arm came out at a perfect 1.00.
+| Arm | Run sizes | Pairwise agreement | Mean |
+|---|---|---|---|
+| with the corpus | 4, 5, 6 | 0.80 · 0.67 · 0.57 | **0.68** |
+| without it | 9, 10, 9 | 0.73 · 0.80 · 0.90 | **0.81** |
 
-**Second version**, with patterns rewritten to name mechanisms and the specific classes tested first. It reversed the result — corpus 0.63, control 0.69 — and a hand-check of a single run shows it is equally broken:
+**The unaided arm is the more consistent one.** Not by a hair inside the noise — by 13 points, in the direction opposite to the hypothesis and opposite to the number this file first published.
 
-| Finding, by its own title | Where the classifier put it | Why |
-|---|---|---|
-| *A 32-bit length taken from the wire sizes a byte array* | `unchecked-exception` | its evidence mentions the `UnsupportedOperationException` on the sibling branch |
-| *Mutual recursion between readFieldValue, readTable and readArray* | `declared-length-vs-remaining` | its impact mentions `available()` |
+The corpus arm's three runs agreed on the same four defects and then each added a *different* fifth or sixth: one added the wrong-exception-type, one added the declared-length mismatch and the duplicate keys. Its variability is in what it reaches beyond its core. The unaided arm's eight findings paired one-to-one across runs on identical line anchors and identical mechanisms; what varies there is the tail, not the body.
 
-Both are plainly wrong to any reader of the titles. **Two classifiers, two contradictory answers, both demonstrably mis-binning findings a person bins correctly at a glance.** That is not a close call about thresholds; it is an instrument that cannot do the job it was built for, and every number it produced is void.
+## Why the judges are believable where the classifier was not
 
-## What is kept
+Every judge left its reasoning, and the calls are ones a person can check:
 
-The six artifacts, in `runs/`. They are real, they were produced blind, and they are the input any working measurement would use. What they show without any classifier at all, by reading the titles:
+- Both sides repeatedly declined to merge the allocation finding with the wrong-exception finding, **even when one write-up literally quoted the other's mechanism in its evidence** — because the title, location and evidence were all the allocation, and the exception appeared only as context. That is the exact pair the first classifier folded together to manufacture 1.00.
+- One judge merged two write-ups that led with opposite-sounding mechanisms — over-declared length swallowing following bytes, versus `available()` dropping trailing entries — after showing that each write-up names the other's half and both reduce to one construct: a declared length never reconciled against bytes consumed. A regex could not have reached that, in either direction.
+- One judge kept an uncapped *element count* apart from an uncapped *recursion depth* in the same methods, on the grounds that a well-formed, correctly-lengthed table triggers the first and not the second.
 
-- Every one of the six runs, both arms, reports **the allocation sized from a wire length** and **the recursion with no depth counter**. Both arms find the two main defects every time.
-- The corpus arm reported 4, 5 and 6 findings; the unaided arm 9, 10 and 9. That difference is the same one every measurement today has shown.
+## What this means
 
-Whether the *sets* are more stable in one arm than the other is exactly the question, and this run cannot answer it.
+Eleven measurements now: recall on file subsets, recall on whole repositories, precision, reader utility, and consistency. **The corpus leads on none of them**, and on this one it is behind. The property it exists to provide, measured with the right instrument, is provided better by an unaided competent engineer on this target.
 
-## What a working instrument would need
+Two things this does not establish. It is **one target and three runs per arm** — a wider sample could move 13 points. And agreement is not quality: the unaided arm is more consistent *and* broader, but nothing here says its extra findings are worth acting on, only that a separate run showed they are true.
 
-The advisory judging in this bench already solves the same problem properly: a blind context is given two texts and asked whether they describe the same defect, with its reasoning recorded. Consistency needs that, not regex — every pair of findings across two runs of one arm, judged *are these the same defect?* by a context that does not know which arm or which run either came from, then the agreement computed from those verdicts.
+## The pattern, three times in one day
 
-That is a bigger run than the one attempted here, and it is the only version worth publishing.
-
-## The pattern this makes twice today
-
-Earlier a separation was published and withdrawn when a case judged in two batches gave two different verdicts. This is the same failure in a different place: **a favourable number produced by an instrument this project built and did not test before trusting.** The rule that follows is now written where it will be read — an instrument gets a negative test before its output is published, exactly as every gate here does.
+A published separation withdrawn when a case judged in two batches gave two verdicts. A published consistency win withdrawn when its classifier was hand-checked. And now the same question, answered by the instrument that was available the whole time and simply was not used first. **The failure was never the corpus — it was reaching for a cheap instrument and publishing before testing it.** That rule is now written where it will be read, and this file is the evidence for why.
 
 ## Files
 
-`runs/` holds the six artifacts. `classify.py` is kept **as evidence of the defect**, not as a tool; `consistency.txt` is the retracted output of its first version.
+`runs/` holds the six artifacts. `agreement-blind.json` holds the per-pair numbers from the blind judging. `classify.py` and `consistency.txt` are kept **as evidence of the retracted method**, not as tools.

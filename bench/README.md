@@ -23,11 +23,16 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
-## Consistency: attempted, and withdrawn
+## Consistency: settled at the third attempt, against us
 
-A run measured whether two independent reviews of the same target agree with each other — the property a written procedure should confer by construction, and the one dimension left after capability came back at parity everywhere. It reported a clean separation, and **[it is retracted](runs/2026-08-21-consistency/)**: the number came from a classifier this project wrote to reduce findings to the defect they are about, and that classifier mis-bins findings a reader bins correctly at a glance. A rewrite reversed the result and was equally broken. Two instruments, two contradictory answers, both void.
+A run measured whether two independent reviews of the same target agree with each other — the property a written procedure should confer by construction, and the one dimension left after capability came back at parity everywhere. Two numbers were published and retracted before a third instrument settled it: a classifier written here to reduce findings to the defect they are about mis-bins findings a reader bins correctly at a glance, and a rewrite of it reversed the answer and was equally broken. **[Judged blind instead](runs/2026-08-21-consistency/) — every pair of findings across two runs, decided by a context that knows neither the arm nor the run — the corpus arm scores 0.68 and the unaided arm 0.81.** The corpus is the less consistent of the two, on the one dimension it was built to win.
 
-What the six stored artifacts show without any classifier: **all six runs, both arms, report the same two main defects every time**, and the corpus arm reported 4–6 findings against 9–10. Whether the *sets* are more stable in one arm is exactly the open question, and it needs the blind pairwise judging this bench already uses for advisories, not regex over prose.
+| Arm | Pairwise agreement across three runs | Mean |
+|---|---|---|
+| with the corpus | 0.80 · 0.67 · 0.57 | **0.68** |
+| without it | 0.73 · 0.80 · 0.90 | **0.81** |
+
+All six runs, both arms, report the same two main defects every time; what separates them is the tail. The corpus arm's three runs share four defects and each adds a *different* fifth or sixth, while the unaided arm's eight pair one-to-one on identical line anchors. Caveats in the table rather than in a footnote: one target, three runs per arm, agreement is easier over a smaller set (4–6 findings against 9–10), and agreement is not quality.
 
 ## What the corpus adds — and where it adds nothing
 
