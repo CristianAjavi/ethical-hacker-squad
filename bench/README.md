@@ -9,6 +9,7 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 | [2026-08-21, blinded](runs/2026-08-21-blinded/) | 10/10 | **0/11** | Two specialists in fresh contexts; artifacts validated before scoring; two scorer defects found by the run and fixed after it, both disclosed in the run's README |
 | [2026-08-21, six packs](runs/2026-08-21-six-packs/) | 32/32 | **0/31** | Six specialists, six packs; six scorer defects found by the run and fixed after it, all six listed with the effect each had on the number |
 | [2026-08-21, CI platforms](runs/2026-08-21-ci-platforms/) | 5/5 | **0/5** | One specialist on the case built for the new `INF-19`..`INF-23`; **3/5 and one decoy against the key as authored**, both scores published, all three key defects listed |
+| [2026-08-21, `WEB-23`](runs/2026-08-21-web23/) | 2/2 | **0/2** | The procedure written from the three-arm run's shared miss, measured on a case built for it; the two decoys imitate the finding at the place you first see it |
 
 Read the second column before the first. Recall on a bench its own authors wrote is a weak signal; a decoy rate of zero on eleven constructs built to be mistaken for the defect beside them is the one that costs something to fake.
 
@@ -36,7 +37,7 @@ Two runs, and they do not agree. Read them together or not at all.
 
 **The honest reading is the second one.** On cases this project chose, the corpus shows a difference; on cases a published rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer until a larger rule-picked sample says otherwise, and the run that would say so does not exist yet.
 
-The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. The corpus has no procedure for dead configuration, and that gap came from losing, not from planning.
+The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. It is now `WEB-23`, with a case, two decoys and [a measurement](runs/2026-08-21-web23/): 2 of 2 on the fresh construct, 0 decoys, and the advisory found on a second pass over the same target. **That second number does not amend the tie above.** The procedure was written from that case, so finding it again shows the lesson was encoded, not that it generalises — and the three-arm table stands exactly as it was measured.
 
 ## Without a pointer
 
