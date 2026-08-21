@@ -2,7 +2,7 @@
 
 > **When to load this file:** third file of the `mobile` pack. Load it when the app has a screen that authorizes an effect (a payment, a transfer, adding a beneficiary, approving a factor, changing credentials), a biometric or local-PIN unlock, code or bundles loaded at runtime (`DexClassLoader`, CodePush, Expo Updates, Capacitor live updates), or a backend whose only client is the app.
 > **Do not load it if:** the mobile work is confined to the manifest, storage, WebViews, deep links, TLS or embedded secrets — those are `mobile.md` §0-§6.
-> **Cost:** ~110 lines. The entry point of the pack is `mobile.md` (§0-§6, `MOB-01`..`MOB-12`): read its §0 first, because what you may assert from a compiled artifact versus from source governs every procedure here, and its §5 (TLS) is a precondition of `MOB-18`. The iOS specifics are in `mobile-ios.md` (§8, `MOB-14`..`MOB-15`).
+> **Cost:** ~111 lines. The entry point of the pack is `mobile.md` (§0-§6, `MOB-01`..`MOB-12`): read its §0 first, because what you may assert from a compiled artifact versus from source governs every procedure here, and its §5 (TLS) is a precondition of `MOB-18`. The iOS specifics are in `mobile-ios.md` (§8, `MOB-14`..`MOB-15`).
 
 ## Selective loading index
 

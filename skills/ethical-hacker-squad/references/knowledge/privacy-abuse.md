@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the project handles data about identifiable people (accounts, profiles, contacts, location, health, payments, user content) or exposes flows a third party can abuse at scale.
 > **Do not load it if:** the artifact processes no personal data (a computation library, a template engine, a CLI with no telemetry). The risk there is purely technical and the other roles cover it.
-> **Cost:** ~325 lines. Load by section using the index; §1 first, always.
+> **Cost:** ~328 lines. Load by section using the index; §1 first, always.
 
 ## Selective loading index
 

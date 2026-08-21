@@ -39,12 +39,13 @@ Instructions and knowledge in this skill are written in English on purpose: the 
 | [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Five packs span two or three files; the first names the rest in its header. |
+| [references/triage.md](references/triage.md) | Before any specialist writes a finding. The ten rules that rule a finding out, each answerable, and the invariant that a `confirmed` finding has none of them unanswered. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 3,622 lines across sixteen files; loading all of it is a waste of context and degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 3,696 lines across sixteen files; loading all of it is a waste of context and degrades the work.
 
 ## Mapping to Claude Code
 
@@ -73,7 +74,7 @@ Each of these agents already carries its safety contract and loads its own pack,
 
 ### Fallback path: no plugin agents available
 
-If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. Use `general-purpose` and copy into the prompt, explicitly (a subagent inherits neither this skill nor its context): scope and exact path; mode; target language; the role order from `references/team.md`; the path of the role's knowledge pack so the subagent reads it itself; the relevant rows of `references/coverage.md`; the full safety contract above; the return format from `references/team.md`; and in `audit` mode, the flat instruction not to edit any file. Use `general-purpose` for every role in this mode. If you happen to have your own equivalent specialist agents installed, they work too, but do not assume any particular agent exists.
+If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. `references/team.md` holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
 
 Never let the same agent both fix and verify.
 

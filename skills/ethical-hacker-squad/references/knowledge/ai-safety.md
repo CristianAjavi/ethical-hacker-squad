@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the inventory contains calls to a language model, an agent with tools, an MCP client or server, a RAG pipeline, persistent memory, or a chatbot exposed to users.
 > **Do not load it if:** the project only uses a model for offline classification, with no tools, no retrieval and no output reaching an executable sink; the web/API coverage is enough there.
-> **Cost:** ~285 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
+> **Cost:** ~286 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
 > **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§12 and `AI-25`..`AI-28` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, and attribution of what the agent did. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three.
 
 ## Selective loading index

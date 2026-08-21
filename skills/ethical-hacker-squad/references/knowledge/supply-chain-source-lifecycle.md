@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target owns the repository that produces the artifact — branch and tag protection, review, signature verification, binaries committed to the tree — and **always before signing off a dependency verdict as clean**, because §11 decides whether "no known vulnerabilities" is a measurement or an unmeasured state.
 > **Do not load it if:** the work is confined to manifests and locks, install scripts, registry resolution, typosquatting, pipeline triggers, provenance or the raw triage of SCA output (`supply-chain.md` §1-§7), or to secrets and malicious-package indicators (`supply-chain-secrets-malware.md` §8-§9).
-> **Cost:** ~130 lines. Load by section using the index. §11 is the section that changes the verdict of a report that already looked clean.
+> **Cost:** ~131 lines. Load by section using the index. §11 is the section that changes the verdict of a report that already looked clean.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |

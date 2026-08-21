@@ -2,7 +2,7 @@
 
 > **When to load this file:** in `harden` or `verify` mode, when confirmed findings already exist and patches have to be applied (`REM-`) or independently checked (`VER-`).
 > **Do not load it if:** the audit is read-only and there is no confirmed finding yet; in pure `audit` mode it is dead weight.
-> **Cost:** ~365 lines. Part A (`REM-`) for whoever repairs, part B (`VER-`) for whoever verifies. **Never the same person and never the same agent.**
+> **Cost:** ~366 lines. Part A (`REM-`) for whoever repairs, part B (`VER-`) for whoever verifies. **Never the same person and never the same agent.**
 
 ## Selective loading index
 

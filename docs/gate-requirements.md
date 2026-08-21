@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Eleven gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Thirteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -21,6 +21,8 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G7` protected paths | specified | — |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
+| triage rules | running | `gate-triage-rules.sh` + self-test |
+| served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
@@ -125,6 +127,33 @@ What it enforces:
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
 Proved in the negative by `gate-corpus-contract.selftest.sh`: 17 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+
+## The triage rules
+
+Half the value of this corpus is knowing when **not** to report, and until now that half was unenforced: every procedure carried a `What rules it out (false positive)` field written as free prose, with nothing naming the rules, nothing requiring an answer and nothing able to check that a specialist had worked through them. The competitive analysis is blunt about the consequence — the two most rigorous neighbouring products enforce a finite named triage list through a schema, and distributed hygiene beats a single final reviewer only when the distributed part is checked.
+
+`references/triage.md` declares ten rules, `FP-01`..`FP-10`, read out of the 370 exculpation bullets the corpus already contained rather than invented. Each is answered with exactly one of `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE`, and three invariants make the answers load-bearing:
+
+1. A finding reported `confirmed` has every invoked rule answered, none `HOLDS` and none `UNKNOWN` — the same doctrine as exit code `2`, applied to findings.
+2. `HOLDS` and `UNKNOWN` require a reason naming the artifact.
+3. Absence of evidence is never `HOLDS`. `FP-08` exists because "the platform handles it" is the most common way a real finding disappears.
+
+`gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. `web-api` and `local-app` are converted; the rest are at floor `0` and move one editorial pass at a time, because citing the right rules for a procedure is a judgement, not a substitution.
+
+Proved in the negative by 11 cases, including a control run and two that must exit `2`.
+
+## The served-tree delta
+
+`gate-plugin-integrity.sh` caps the absolute size of the tree copied into every user's plugin cache, and its own header named the weakness: an absolute cap loosens as the corpus grows legitimately, until the only way to satisfy it is to delete knowledge. `gate-tree-delta.sh` is the control that keeps its meaning — the growth of `skills/` and `agents/` between the merge base and `HEAD`:
+
+| Branch | Budget | Why |
+|---|---|---|
+| `bot/*` | 16 KiB | the knowledge loop adds procedures, not chapters |
+| everything else | 64 KiB | a new pack plus its wiring measured ~45 KiB, so the largest legitimate change observed still fits |
+
+Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
+
+Proved in the negative by 7 cases built on throwaway repositories, because a delta gate can only be exercised by making a delta.
 
 ## G5 — Licence hygiene (anti-verbatim)
 

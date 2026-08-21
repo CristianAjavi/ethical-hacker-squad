@@ -2,7 +2,7 @@
 
 > **When to load this file:** second half of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or error and log output a user can reach.
 > **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5.
-> **Cost:** ~220 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
+> **Cost:** ~242 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
 
 ## Selective loading index
 
@@ -35,6 +35,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - Sanitization with an allowlist library (`bleach`, `sanitize-html`, DOMPurify server-side) applied **after** the last transformation.
 - A strict CSP with a nonce and no `unsafe-inline`: it reduces impact but does not remove the defect; adjust severity, do not close it.
 
+Rules: FP-01, FP-02, FP-10.
+
 **Minimal test** — local: store an inert payload that only marks execution (`<svg onload=window.__xss=1>`) and check in the rendered HTML whether it comes out escaped or literal. No cookie theft and no outbound requests.
 
 **Traceability**: `CWE-79` · `CWE-116` · `WSTG-INPV-*` · `ASVS 5.0 V1` · `A05:2025`
@@ -53,6 +55,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - The value passes through an allowlist sanitizer right before the sink, or the sink receives text (`textContent`, normal framework interpolation).
 - The `message` handler validates `event.origin` against a closed list and validates the message schema.
 - The string is a bundle constant and does not depend on the URL or on storage.
+
+Rules: FP-01, FP-02, FP-03.
 
 **Minimal test** — local, with the app served on your machine: put the inert marker in the URL fragment and observe whether it executes (setting a global variable, no network).
 
@@ -75,6 +79,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - A session cookie with `SameSite=Lax` or `Strict` **and** an unsafe method (`POST`, `PUT`, `DELETE`); `Lax` does not protect a state-changing `GET`.
 - An anti-CSRF token verified server-side, bound to the session and not reflected to another origin.
 
+Rules: FP-01, FP-09.
+
 **Minimal test** — local: replay a state-changing request with no anti-CSRF token and no custom headers against your instance; it must fail.
 
 **Traceability**: `CWE-352` · `WSTG-SESS-*` · `ASVS 5.0 V3` · `A01:2025`
@@ -93,6 +99,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - An allowlist of exact origins with full comparison, and no credentials when the origin is a wildcard.
 - Authenticated responses with `Cache-Control: no-store` or `private` and a correct `Vary`.
 - The endpoint returns identical data for every user and carries no credentials.
+
+Rules: FP-01, FP-07.
 
 **Minimal test** — local: issue a request with an arbitrary `Origin` against your instance and review the response headers, including those of the authenticated routes.
 
@@ -115,6 +123,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - A conditional atomic update (`UPDATE ... WHERE balance >= x`) or pessimistic/optimistic locking with a version column.
 - A persisted, verified idempotency key, with the original response replayed on retries.
 
+Rules: FP-01.
+
 **Minimal test** — local: a test that fires N concurrent requests at the same resource and checks the invariant (a single redemption). Concurrency against a remote environment: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-367` · `CWE-362` · `CWE-841` · `WSTG-BUSL-*` · `ASVS 5.0 V2` · `A06:2025`
@@ -133,6 +143,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - Limits per identity **and** per resource, enforced server-side, with cost proportional to the operation.
 - Domain validation of the value (range, sign, precision) and invariants verified server-side against the authoritative price.
 - A queue with concurrency control and a per-account budget for the expensive operation.
+
+Rules: FP-01.
 
 **Minimal test** — local: send boundary values (zero, negative, very large, decimal, different unit) and check the invariant. Sustained load against a remote environment: **REQUIRES AUTHORIZATION**.
 
@@ -155,6 +167,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - The value is a test value, plainly inert, and the real environment uses another source (verify it, do not assume it from the filename).
 - The weak hash is a checksum unrelated to security (deduplication, caching) and governs no access decision.
 
+Rules: FP-01, FP-04, FP-09.
+
 **Minimal test** — local: `git log -p -- <configuration file>` to see whether a secret was ever versioned; encrypt the same plaintext twice and compare the output (identical ⇒ ECB or a fixed IV). Do not use the secret you found and do not transcribe it in full.
 
 **Traceability**: `CWE-327` · `CWE-330` · `CWE-798` · `CWE-916` · `CWE-295` · `WSTG-CRYP-*` · `ASVS 5.0 V11` · `ASVS 5.0 V12` · `A04:2025` · `A02:2025`
@@ -176,6 +190,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - Depth, complexity and operations-per-document limits, plus persisted queries in production.
 - Introspection disabled outside development (hardening, not an access control on its own).
 
+Rules: FP-01, FP-10.
+
 **Minimal test** — local: run an introspection query against your instance and review the exposed types and mutations; with two synthetic users, check that a nested resolver does not return another user's data. Against a remote server: **REQUIRES AUTHORIZATION**.
 
 **Traceability**: `CWE-639` · `CWE-770` · `WSTG-APIT-01` · `ASVS 5.0 V4` · `A01:2025` · `API1:2023` · `API4:2023`
@@ -194,6 +210,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - Authentication with an explicit token in the handshake (not just a cookie) and `Origin` validated against a closed list.
 - A server-side membership check every time a subscription is resolved, not only on connect.
 - Per-connection quotas: message size, frequency and number of subscriptions.
+
+Rules: FP-01.
 
 **Minimal test** — local: connect to your instance with an arbitrary `Origin` and see whether the handshake is accepted; with two synthetic users, try to subscribe to the other user's channel.
 
@@ -215,6 +233,8 @@ The six fields are a contract, not decoration. **"What rules it out" is mandator
 - A generic error with a correlation identifier and the detail only in the server log.
 - A sensitive-field filter in the logger (Rails `filter_parameters`, redaction processors) verified by a test.
 - Debug mode gated by environment and disabled in the real production configuration.
+
+Rules: FP-01, FP-04.
 
 **Minimal test** — local: trigger a controlled error (an unexpected data type) and inspect the response body; run a login with synthetic credentials and check whether the password or token appears in the log.
 
