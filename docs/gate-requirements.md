@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Fifteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5`, `G6` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Sixteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -17,7 +17,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
 | `G5` licence hygiene | specified | — |
-| `G6` secret scanning | specified | — |
+| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
 | `G7` protected paths | specified | — |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
@@ -204,6 +204,12 @@ The gate enforces what is mechanically enforceable:
 ## G6 — Secret scanning
 
 No credential in the working tree or in history. Detection uses distinctive-format patterns before entropy, since entropy alone is a poor primary detector and format patterns reach far higher precision. Exit `2` if the scanner is unavailable — an absent scanner is not a clean repository.
+
+**Implemented 2026-08-21** as `gate-secret-scan.sh`: ten published formats, never entropy, with GitHub tokens settled offline by their CRC32 checksum so a hit there is a fact rather than a guess. Inert markers (`sk_test_`, `changeme`, `replace-me`, an all-zero body) are excluded before anything is reported, because a scanner that fires on `.env.example` gets switched off within a week.
+
+**The bench exclusion, and why it is not a hole.** `bench/cases/` ships planted secrets on purpose — that is what an evaluation bench is — so the tree scan skips it. The second scope is what makes the first honest: every secret-shaped string under `bench/cases/` is checked against `bench/ground-truth.json`, and one the key does not declare fails the gate. A planted secret nobody planted is a real secret hiding behind the exclusion.
+
+**Stated on every run rather than implied: git history is not scanned.** Rewriting a history is a different operation with its own authorization conversation. The gate prints that as an out-of-scope line, so nobody reads a green as "clean back to the first commit".
 
 ## G7 — Protected paths
 
