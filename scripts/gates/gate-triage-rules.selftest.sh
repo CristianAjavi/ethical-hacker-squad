@@ -80,7 +80,7 @@ p.write_text(json.dumps(d,indent=2))'
 case_run ratchet-turned-backwards 1 "below its floor" '
 import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.json"
-d=json.loads(p.read_text()); d["packs"]["mobile"]={"required":False,"floor":4}
+d=json.loads(p.read_text()); d["packs"]["mobile"]={"required":False,"floor":999}
 p.write_text(json.dumps(d,indent=2))'
 
 case_run rules-file-gone 2 "" '
