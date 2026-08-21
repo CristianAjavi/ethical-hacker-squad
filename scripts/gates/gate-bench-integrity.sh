@@ -31,6 +31,9 @@ gate_out_of_scope "whether a planted defect is realistic, and whether the bench 
 
 command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not installed"; gate_verdict "$GATE_UNMEASURABLE"; exit "$GATE_UNMEASURABLE"; }
 
+# NOTE: this heredoc sits inside "$( ... )", so a bare apostrophe in a COMMENT
+# opens a shell quote and breaks the whole script. Newer gates keep their core
+# in scripts/gates/lib/ for exactly this reason. Do not write "bench's" here.
 out="$(EHS_ROOT="$ROOT" python3 - <<'PY' 2>&1
 import json, os, re, sys
 from pathlib import Path
@@ -114,6 +117,26 @@ for kind in ("planted", "decoys"):
             findings.append(
                 f"{item['id']} points at `{item['symbol']}` in {item['path']}, and `{needle}` does not "
                 "appear there: the case was edited and the key was not")
+        # The symbol must appear INSIDE the declared line span, not merely
+        # somewhere in the file. This is the third defect of one kind in this
+        # short history of this bench: spans typed by eye, each one off by a line or
+        # running past its construct into the neighbouring one, and each one
+        # scoring a correct finding as a miss. A span that does not contain its
+        # own symbol is not a range, it is a guess.
+        span = item.get("lines")
+        if present and isinstance(span, list) and len(span) == 2:
+            checks += 1
+            lines = body.splitlines()
+            a, b = span
+            window = "\n".join(lines[max(0, a - 1):b])
+            inside = (re.search(rf"\b{re.escape(needle)}\b", window) is not None
+                      if re.fullmatch(r"\w+", needle) else needle in window)
+            if not inside:
+                where = [i + 1 for i, ln in enumerate(lines) if needle in ln]
+                findings.append(
+                    f"{item['id']} declares lines {a}-{b} of {item['path']}, and `{needle}` is not "
+                    f"in that span (it is on {where or 'no line'}): a finding at the right place "
+                    "would be scored as a miss")
         for extra in item.get("also_at", []):
             checks += 2
             extra_path = root / case["path"] / extra["path"]

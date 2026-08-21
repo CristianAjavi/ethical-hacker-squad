@@ -74,6 +74,14 @@ import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"
 p.write_text(p.read_text().replace("    # Signs a staged bundle","    # Planted: argument injection here\n    # Signs a staged bundle",1))'
 
+case_run span-does-not-contain-its-symbol 1 "is not in that span" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json"
+d=json.loads(p.read_text())
+for it in d["planted"]:
+    if it["id"]=="P-38": it["lines"]=[13,13]
+p.write_text(json.dumps(d,indent=2))'
+
 case_run planted-and-decoy-overlap 1 "a detection and a false positive at the same time" '
 import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json"
