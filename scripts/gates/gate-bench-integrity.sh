@@ -166,6 +166,28 @@ for name in cases:
             f"case `{name}` has no decoys: a case with only planted defects measures the model's "
             "willingness to agree, not its judgement")
 
+# A declared file that git does not track exists on one machine and nowhere
+# else. CI found this the hard way: .gitignore excluded a .env.example
+# the key declares, so the gate failed on a file that was right there locally.
+import subprocess
+try:
+    tracked = set(subprocess.run(["git", "-C", str(root), "ls-files", "bench/cases"],
+                                 capture_output=True, text=True, check=True).stdout.split())
+except (OSError, subprocess.CalledProcessError):
+    tracked = None
+if tracked is not None:
+    for kind in ("planted", "decoys"):
+        for item in key.get(kind, []):
+            case = cases.get(item["case"])
+            if not case:
+                continue
+            rel = f"{case['path']}/{item['path']}"
+            checks += 1
+            if rel not in tracked:
+                findings.append(
+                    f"{item['id']} points at {rel}, which git does not track: it exists here "
+                    "and nowhere else, and any run elsewhere scores against a file that is missing")
+
 print(f"measured: {len(cases)} case(s), {len(key.get('planted', []))} planted, "
       f"{len(key.get('decoys', []))} decoys, {checks} checks")
 for f in findings:
