@@ -1,0 +1,51 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/whole/mcp/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs leader (whole repository, external code) (only advisory-matching findings published)",
+    "coverage_declaration": "PARTIAL - in progress, second pass. INVENTORY: 286 files; npm/Nx TypeScript ESM monorepo that publishes a stdio MCP server (packages/mcp-server, a thin shell: env parsing, tool registration, StdioServerTransport) plus its tool library (packages/mcp-tools, ~70 tools wrapping the Contentful Management API through the contentful-management SDK). Components and trust boundaries: (a) MCP client to server over stdio - the caller is a language model, so every tool argument is model-controlled; (b) server to Contentful CMA over HTTPS carrying a personal access token supplied by the operator via environment; (c) tool results back into the model's context - Contentful entry content is third-party writable data crossing into the instruction plane; (d) two tools (export_space, import_space) that additionally touch the local filesystem and can be pointed at an arbitrary host; (e) CI/CD in .github/workflows publishing to npm and GitHub Packages via HashiCorp Vault. PACKS OPENED: ai-safety.md (S0-S3), ai-safety-data-output.md (S5-S6), local-app.md (S0, S1, S5, S9), supply-chain.md (S1, S2, S5), triage.md, vocabulary.md. Routed from refs/coverage.md rows: MCP server implementation and tool definitions; LLM/agent framework; AGENTS.md-style instruction files; package.json; .github/workflows; published library; CLI entry point. NOT READ IN THIS PASS: the ~100 co-located *.test.ts and mockClient.ts fixtures except the migration ones; the CRUD bodies of taxonomies, locales, orgs, spaces, tags, editor-interfaces and content-types (their register.ts annotation blocks were read, not their handlers); types/*.ts Zod schemas; docs/ADRs; package-lock.json beyond registry and lifecycle-script sanity checks. NO .git DIRECTORY IS PRESENT in the target, so secret scanning covered the working tree only and no history, authorship or review evidence could be examined - AI-04 and SUP-source-lifecycle checks are therefore unmeasured, not clean."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "A single agent session holds the full lethal trifecta: space content, local files and a model-steerable outbound channel",
+      "procedure": "AI-01",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "packages/mcp-server/src/tools/register.ts",
+        "line": 45,
+        "component": "@contentful/mcp-server - tool registration"
+      },
+      "evidence": "registerAllTools registers twelve tool collections unconditionally (l.45-73) plus the four migration tools (l.74-107). Capability inventory for the one agent that receives them: (1) PRIVATE DATA - every space, environment, entry, asset, org and taxonomy the CMA token can reach (createToolClient takes `params.spaceId ?? config.spaceId`, utils/tools.ts l.24, so the model names the space, not the operator), plus arbitrary local files through import_space `contentFile`/`config`/`assetsDirectory`. (2) UNTRUSTED INGESTION - get_entry returns the whole entry verbatim (tools/entries/getEntry.ts l.26-28) and search_entries returns entry collections (searchEntries.ts l.124-141); entry text is written by anyone with content-editor access to the space or by upstream integrations, never by the MCP user. (3) OUTBOUND CHANNEL - export_space accepts a model-chosen `host`/`proxy`/`headers` (exportSpace.ts l.99-109), import_space writes content into any space the token reaches (importSpace.ts l.100-119), upload_asset takes an arbitrary `upload` URL (uploadAsset.ts l.13-18), and create_entry/update_entry write attacker-chosen text into a space a third party can read. All three legs sit on the same agent, in the same session, with no separation.",
+      "impact": "An attacker who can write one entry in a space the token reaches - a CMS is a multi-writer system by design - can plant text that the model reads as instruction and have it act with the operator's full CMA privileges: read every space, publish or delete content, and push what it read to a destination of the attacker's choosing. No flaw needs to be exploited; the capability combination is the flaw.",
+      "preconditions": "The MCP server is configured with a CMA personal access token, and the model reads content the operator did not author. Both are the documented, intended mode of operation (README.md l.38-39, l.72-73).",
+      "recommendation": "Break one leg rather than strengthening the prompt. In order of effect: remove the model's control of outbound destinations (F-002); split read tools and write tools into two servers so a session that has ingested space content cannot also mutate or export; drop the ability to name an arbitrary spaceId per call so the blast radius is the configured space rather than the whole token scope; and mark tool results as data (F-003). Document in README.md that the CMA token should be a least-privilege token scoped to the single space in use, since the server cannot enforce that itself.",
+      "traceability": [
+        "LLM01:2026",
+        "LLM02:2026",
+        "LLM03:2026",
+        "ASI01",
+        "ASI02",
+        "AML.T0051.001",
+        "CWE-284"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No allowlist constrains any outbound destination: exportSpace.ts l.99-101 accepts a free-form host and proxy, uploadAsset.ts l.13-18 accepts a free-form URL, and utils/tools.ts l.17-31 builds the client with whatever spaceId the caller passed. There is no mandatory layer between a tool call and the CMA request."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal exists and is named: any Contentful user or integration with write access to an entry in a reachable space authors content that enters the model's context, and is not the MCP operator. The ingesting component is not credential-free either - the same client instance holds the CMA token."
+        }
+      ],
+      "limits": "This is a capability inventory over the registered tool set, which is what AI-01 asks for. It does not demonstrate a specific end-to-end exfiltration run; the individual legs are written up separately as F-002 and F-003."
+    }
+  ]
+}
