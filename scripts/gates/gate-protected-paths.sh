@@ -68,7 +68,15 @@ if [ ! -f "$CORE" ]; then
 fi
 
 if [ -z "$BRANCH" ]; then
-  BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)" || BRANCH=""
+  # `git rev-parse` run inside a directory that is not a repository walks UP and
+  # answers about an ANCESTOR one. On a CI runner that turns "I do not know whose
+  # branch this is" into a confident wrong answer - the self-test caught exactly
+  # that. So the fallback only applies when $ROOT is itself the top level.
+  top="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" || top=""
+  here="$(cd "$ROOT" 2>/dev/null && pwd -P)" || here=""
+  if [ -n "$top" ] && [ -n "$here" ] && [ "$(cd "$top" 2>/dev/null && pwd -P)" = "$here" ]; then
+    BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)" || BRANCH=""
+  fi
 fi
 [ -n "$BRANCH" ] || BRANCH="-"
 
