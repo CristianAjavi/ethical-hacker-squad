@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory includes an HTTP server, an API (REST, GraphQL, RPC, WebSocket) or a web backend with routes, controllers, an ORM, sessions or tokens.
 > **Do not load it if:** the scope is only an APK/IPA with no reachable backend, only IaC and containers, only dependencies, or a library with no network surface.
-> **Cost:** ~303 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~357 lines. Load by section using the index; you do not need to read it end to end.
 > **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§11 and `WEB-13`..`WEB-22` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and disclosure through errors and logs. Open it as soon as the inventory reaches any of those; it carries its own index.
 
 ## Selective loading index
@@ -148,6 +148,60 @@ Rules: FP-01, FP-06.
 
 **Traceability**: `CWE-862` · `CWE-863` · `WSTG-ATHZ-*` · `ASVS 5.0 V8` · `A01:2025` · `API5:2023`
 **Tooling**: `grep -rn "AllowAny\|permitAll\|AllowAnonymous\|skip_before_action" .` → locates exceptions; each one needs an explicit justification.
+
+### WEB-24 A gate one sibling handler enforces and another does not
+**Where to look**
+- Take every authorization symbol the file **imports or constructs** — `AuthorityPermission`, `CertificatePermission`, `@admin_permission.require`, `authorize()`, `can?`, `@PreAuthorize`, a policy object — and list every place it is used. Then list every handler that reaches a comparable effect and is **not** in that list.
+- The pairs that matter are siblings of one resource family: `create` against `upload` or `import`, `get` against `list`, `PUT /x/<id>` against `POST /x/bulk`, the REST route against the GraphQL resolver or the RPC method that ends in the same service call.
+- A resource whose `post`/`put`/`delete` carry a decorator and whose `get` does not, when what `get` returns is not public.
+
+**Vulnerable pattern**
+```python
+class CertificatesList(AuthenticatedResource):
+    def post(self, data=None):                      # create
+        ...
+        authority_permission = AuthorityPermission(data["authority"].id, roles)
+        if not authority_permission.can():          # the gate exists here
+            return dict(message="You are not authorized to use this authority"), 403
+
+class CertificatesUpload(AuthenticatedResource):
+    def post(self, data=None):                      # same effect, no gate
+        return service.upload(**data)               # authority accepted as given
+```
+**What rules it out (false positive)**
+- The two handlers do **not** reach the same effect. Say what the difference is in one sentence a reviewer can check: the ungated one writes to a different table, or produces an object with no authority binding at all.
+- The gate is applied for both by a layer neither handler shows — a `before_request`, a base class, a decorator on the resource rather than the method. Name it and quote it; if it is not in what you were given, the answer is `UNKNOWN`, not "covered".
+- The ungated sibling is unreachable in what ships: not registered, or registered behind a flag production does not set (`FP-04`).
+
+Rules: FP-01, FP-08, FP-09.
+
+**Minimal test**: `rg -n 'Permission|authorize|can\(\)|@admin|require\(' <file>` and put the hit lines beside the handler list from `rg -n 'def (get|post|put|delete|patch)'`. Every handler with no hit inside it is a candidate; for each, name the sibling that does have one and the effect they share. The finding is the **asymmetry**, and it is decidable inside one file — which is why it survives reviewers who are looking for a missing decorator on an admin route and this is neither.\
+**Traceability**: `CWE-862` · `CWE-863` · `CWE-285` · `A01:2025` · `ASVS 5.0 V8` · `WSTG-ATHZ-02` · `NIST 800-53 AC`\
+**Tooling**: no scanner reports this, because both handlers are authenticated and neither is an admin route — the difference is between two lines of ordinary application code. It is a reading task with a mechanical starting point. This procedure exists because a blinded three-arm run — the corpus, an unaided senior engineer and a competing product — **all three missed a published advisory of exactly this shape**, with the gate on line 529 and its ungated sibling on line 558 of the same file, and eight of their findings landed on that route without joining the two (`bench/runs/2026-08-21-round2/`).
+
+### WEB-25 Authorization checked on the object in the path, not on the objects in the body
+**Where to look**
+- Any request field that **names other rows**: `replaces[]`, `parent_id`, `owner_id`, `group_ids`, `destinations[]`, `attachments[]`, `members[]`, `source_id`, `template_id`.
+- The place the framework turns those names into objects: a marshmallow field with a `@pre_load`/`get_object` resolver, DRF `PrimaryKeyRelatedField(queryset=Model.objects.all())` with no `get_queryset` override, `Model.find(params[:ids])`, a GraphQL input resolving ids to nodes, `db.Where("id IN ?", ids)`.
+- What happens **after** resolution: an ORM relationship append, an event listener, a cascade. A defect of this class often does its damage in a listener nobody reads, not in the handler.
+
+**Vulnerable pattern**
+```python
+# the route authorizes the certificate being created; nothing authorizes the ones it names
+cert = Certificate(**data)          # data["replaces"] already resolved to live rows
+# ... and appending to the relationship silences the victim's automation:
+#     victim.notify = False; victim.replaced = True
+```
+**What rules it out (false positive)**
+- The resolver is scoped to the caller — `queryset=Model.objects.filter(owner=request.user)`, `current_user.certificates.find(...)`, a tenant filter the ORM applies to every query. Quote the scope.
+- The referenced object carries nothing an attacker gains by naming it: a public enum row, a lookup table, a value the caller could have supplied literally (`FP-07`).
+- Naming it has no effect on it. This is the one to check hardest: look for the listener, the cascade and the `on_append`, because the effect is usually there and not in the handler.
+
+Rules: FP-02, FP-07.
+
+**Minimal test**: for each such field, answer two questions in writing — *who may name this row*, and *what happens to the row that is named*. The second question is where the class hides: an id that only appears in a response is harmless, an id that flips a flag on somebody else's record is the finding. If the resolver lives in a file you were not given, that is `UNKNOWN` and the field still goes in the report with the bound stated.\
+**Traceability**: `CWE-639` · `CWE-862` · `CWE-732` · `A01:2025` · `ASVS 5.0 V8` · `WSTG-ATHZ-04` · `NIST 800-53 AC`\
+**Tooling**: BOLA scanners walk identifiers in the **path** and are blind to identifiers in the **body**, which is why this class survives them. Nothing automates it. In the run that produced this procedure, **35 findings from three independent methods returned 0 `yes` and 0 `partial`** against an advisory of exactly this shape — not one of them looked at what naming another row did to it.
 
 ### WEB-06 Mass assignment and property-level exposure
 

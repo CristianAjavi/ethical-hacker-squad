@@ -10,6 +10,7 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 | [2026-08-21, six packs](runs/2026-08-21-six-packs/) | 32/32 | **0/31** | Six specialists, six packs; six scorer defects found by the run and fixed after it, all six listed with the effect each had on the number |
 | [2026-08-21, CI platforms](runs/2026-08-21-ci-platforms/) | 5/5 | **0/5** | One specialist on the case built for the new `INF-19`..`INF-23`; **3/5 and one decoy against the key as authored**, both scores published, all three key defects listed |
 | [2026-08-21, `WEB-23`](runs/2026-08-21-web23/) | 2/2 | **0/2** | The procedure written from the three-arm run's shared miss, measured on a case built for it; the two decoys imitate the finding at the place you first see it |
+| [2026-08-21, `WEB-24`/`WEB-25`](runs/2026-08-21-authz/) | 2/2 | **0/2** | The two procedures written from the second round's shared misses; both decoys imitate the finding exactly where a reader meets it, and separating them needs the exculpation clause rather than the pattern |
 
 Read the second column before the first. Recall on a bench its own authors wrote is a weak signal; a decoy rate of zero on eleven constructs built to be mistaken for the defect beside them is the one that costs something to fake.
 
@@ -44,6 +45,8 @@ Two runs, and they do not agree. Read them together or not at all.
 **Identical. Not one advisory separates the three arms in either direction.** On cases this project chose, the corpus shows a difference; on six cases a rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer and with the neighbouring product, because that is what the measurement says.
 
 Round 2 was pre-registered — including the sentence *"if the corpus does not lead here, it does not lead where it is best"* — before any of its numbers existed.
+
+Both rule-picked rounds ended level **and** produced procedures from what every arm missed: `WEB-23` from the first, [`WEB-24` and `WEB-25`](runs/2026-08-21-authz/) from the second. Whether that compounds into a lead is an empirical question with two data points and no answer — the round that would settle it has not been run.
 
 The miss all three arms share is the most useful thing either run produced: a configured limit with no enforcer — `MaxRequestBodyMB` declared, assigned from the environment, and read by nothing — which nobody thought to check. It is now `WEB-23`, with a case, two decoys and [a measurement](runs/2026-08-21-web23/): 2 of 2 on the fresh construct, 0 decoys, and the advisory found on a second pass over the same target. **That second number does not amend the tie above.** The procedure was written from that case, so finding it again shows the lesson was encoded, not that it generalises — and the three-arm table stands exactly as it was measured.
 
