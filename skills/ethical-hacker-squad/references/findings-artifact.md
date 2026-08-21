@@ -42,6 +42,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `findings[].recommendation` | The fix at root-cause level. |
 | `findings[].verification` | From `vocabulary.md`, when a fix was checked. |
 | `findings[].inference` | **Required for `probable`**: the one link that was inferred. A `probable` finding that cannot name it is a `confirmed` finding without the evidence, or a `candidate` in disguise. |
+| `findings[].what_would_settle_it` | **Required for `probable`**: the artifact, file or symbol that turns the inference into an observation. A gap named with no way to close it sends the reader nowhere, and this is the field a second reader uses to decide whether to go and look. |
 | `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
 | `findings[].traceability` | The standard identifiers, verbatim. |
 | `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
@@ -53,7 +54,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 These are not shape checks. They are the reasons the file is worth having:
 
 1. **`confirmed` is expensive.** Every triage rule answered, none `HOLDS`, none `UNKNOWN`, and confidence not `low`. A finding cannot be promoted by writing a stronger word.
-2. **`probable` names its gap** in `inference`, and **`withdrawn` names its reason**.
+2. **`probable` names its gap** in `inference` **and the way to close it** in `what_would_settle_it`, and **`withdrawn` names its reason**.
 3. **`candidate` never ships.** It is working state, and `vocabulary.md` says so.
 4. **Every `procedure` resolves** to a real identifier in the corpus, or is exactly `ad-hoc`. An invented procedure id would make a finding look methodical when it was not.
 5. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.

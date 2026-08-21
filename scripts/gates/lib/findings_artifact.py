@@ -226,6 +226,14 @@ def main() -> int:
                     fail(f"{where}: `confirmed` with confidence `low` - nobody followed the path")
             if status == "probable" and not f.get("inference"):
                 fail(f"{where}: `probable` must name the link that was inferred, in `inference`")
+            # A gap named with no way to close it sends the reader nowhere. Across a
+            # day of blinded runs the arms volunteered this unprompted and the
+            # verifiers said out loud that it was what let them mark a claim
+            # undecidable rather than wave it through; requiring it makes the habit
+            # part of the contract instead of a courtesy.
+            if status == "probable" and not f.get("what_would_settle_it"):
+                fail(f"{where}: `probable` must say what would settle it - the artifact, file or "
+                     "symbol that turns the inference into an observation")
             if status == "withdrawn" and not f.get("withdrawn_reason"):
                 fail(f"{where}: `withdrawn` must say why the claim did not survive")
 
