@@ -61,7 +61,13 @@ The miss all three arms share is the most useful thing either run produced: a co
 | Run | Target | Advisories | With the corpus | Without it |
 |---|---|---|---|---|
 | [2026-08-21, whole repository, one arm](runs/2026-08-21-whole-repo/) | 286 files, no module named | `CVE-2026-53957` | **found** | not run |
-| [2026-08-21, whole repository, three arms](runs/2026-08-21-whole-repo-3arm/) | 461 files, 409 Java, no module named | two at once | **0 / 2** | **1 / 2** |
+| [2026-08-21, whole repository, three arms](runs/2026-08-21-whole-repo-3arm/) | 461 files, 409 Java | two at once | **0 / 2** | **1 / 2** |
+| [2026-08-21, a second whole repository](runs/2026-08-21-whole-repo-2/) | 6,490 files, 3,954 TypeScript | one | **0 / 1** | **0 / 1** |
+| | | **total** | **0 / 3** | **1 / 3** |
+
+**The headline is the zero, not the gap.** Whole-repository recall against a *specific published defect* is near zero for both methods: three advisories, two methods, one hit between them, and a 1–0 difference that sits inside this bench's own resolution of five in fifty-three. On a repository nobody can read in full, landing on the one file a CVE names is close to a lottery — both arms opened 45–50 files out of thousands and both produced substantial, largely accurate findings about other things.
+
+That is the strongest argument here for what a **coverage declaration** is worth: if recall against a named defect is near zero, what a reader can rely on is knowing what was looked at and what was not.
 
 The file-subset rounds are saturated: every arm finds the same advisories, and nothing is refuted. So the second run above changed the task to the one a written method is actually for — routing across a repository nobody can read in full — and **the corpus arm lost**: the unaided engineer found an advisory it did not.
 
