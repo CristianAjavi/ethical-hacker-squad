@@ -1,0 +1,37 @@
+{
+  "matches": [
+    {
+      "left": "L01",
+      "right": "R01",
+      "why": "Same line in readTimestamp: `new Date(in.readLong()*1000)` with no overflow-checked multiply. Both describe the identical mechanism (silent 64-bit wrap on a peer-chosen seconds value) and the identical consequence (attacker-chosen bogus instant used for freshness/expiry/replay decisions)."
+    },
+    {
+      "left": "L02",
+      "right": "R02",
+      "why": "Same defect: the readFieldValue -> readTable/readArray -> readFieldValue cycle carries no depth parameter and no limit, so a small deeply-nested frame raises StackOverflowError on the I/O thread. Both cite the same dispatch lines (181 'F', 184 'A'), the same per-level byte cost, and the same pre-auth connection.start reachability."
+    },
+    {
+      "left": "L03",
+      "right": "R04",
+      "why": "Same defect: readTable's `if(!table.containsKey(name)) table.put(name, value)` resolves duplicate field names first-wins and drops later copies silently. Both frame the impact identically as a parser differential against components that resolve last-wins, i.e. a header-smuggling primitive."
+    },
+    {
+      "left": "L04",
+      "right": "R03",
+      "why": "Same defect: readBytes widens the 32-bit prefix and does `new byte[(int)contentLength]` before reading any payload, with the declared length never reconciled against bytes available, so ~2 GiB is allocated from a few bytes. Both quote the same snippet, the same 0x7FFFFFFE trigger, and the same pre-auth server-properties reachability. The mechanism at issue is the missing length-vs-available bound, i.e. the allocation, not the exception type in the else branch."
+    },
+    {
+      "left": "L07",
+      "right": "R06",
+      "why": "Same defect: readTable/readArray drive their loops on `while(...available() > 0)` (lines 148 and 244) and never assert that the declared tableLength/length was fully consumed, so entries are silently dropped and the container boundary can be crossed. Both cite the same two loop lines, the same missing post-loop reconciliation, and the same socket-backed-stream aggravation via the public constructor."
+    },
+    {
+      "left": "L08",
+      "right": "R05",
+      "why": "Same defect: readShortstr does `new String(b, \"utf-8\")`, whose REPLACE-on-malformed behaviour collapses distinct byte sequences onto one String with no rejection. Both quote the same one-line method and both land on the same consequence: a crafted key/name colliding with a legitimate one in comparisons or allowlists."
+    }
+  ],
+  "unmatched_left": ["L05", "L06"],
+  "unmatched_right": ["R07"],
+  "hardest_call": "R07 (UnsupportedOperationException instead of MalformedFrameException in readBytes) against L04 and L06. Against L04 it is the closest miss: the two live in the same method and L04's evidence even quotes the `throw new UnsupportedOperationException(...)` line. But L04 quotes it only as the guard that fails to stop 0x7FFFFFFE; what makes L04 exploitable is the unbounded allocation, while what makes R07 exploitable is a remote peer choosing an unchecked exception type that escapes the declared `throws IOException` contract — a missing bound and a wrong exception type on the same line are two defects. Against L06 the shared word 'UnsupportedOperationException' is coincidence: L06 is about readTable returning Collections.emptyMap() vs a HashMap, so the throw happens in downstream consumer code and is triggered by an empty headers table, not by a >= Integer.MAX_VALUE length inside readBytes. L05 (32-bit short GPG keyname in the POM) has no counterpart in list_two at all."
+}

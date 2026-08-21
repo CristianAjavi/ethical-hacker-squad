@@ -23,14 +23,24 @@ Read the second column before the first. Recall on a bench its own authors wrote
 
 Read this one before the perfect scores below it. The benches measure that the corpus routes and matches on code shaped like the cases; this measures what happened when two specialists were pointed at code nobody here has touched, with a key nobody here wrote.
 
-## Consistency: settled at the third attempt, against us
+## The number that governs every other number in this file
+
+The unaided arm was measured at **0.81** agreement in one sitting and **0.60** in the next — same arm, same target, same blind instrument, same judging rule, and a run prompt rewritten because the first one was never stored. **Twenty-one points, from the prompt alone.**
+
+That is larger than any corpus-versus-no-corpus difference this bench has ever produced. So: **a comparison whose prompt was not archived cannot be compared to a comparison from another sitting.** [The 2026-08-21 unaided-pass round](runs/2026-08-21-unaided-pass/) archives every prompt it used under `prompts/`. The rounds published before it do not, and each now says so in its own file. Read within-sitting differences; distrust across-sitting ones.
+
+## Consistency: measured twice, and the corpus does not lead either time
 
 A run measured whether two independent reviews of the same target agree with each other — the property a written procedure should confer by construction, and the one dimension left after capability came back at parity everywhere. Two numbers were published and retracted before a third instrument settled it: a classifier written here to reduce findings to the defect they are about mis-bins findings a reader bins correctly at a glance, and a rewrite of it reversed the answer and was equally broken. **[Judged blind instead](runs/2026-08-21-consistency/) — every pair of findings across two runs, decided by a context that knows neither the arm nor the run — the corpus arm scores 0.68 and the unaided arm 0.81.** The corpus is the less consistent of the two, on the one dimension it was built to win.
 
-| Arm | Pairwise agreement across three runs | Mean |
-|---|---|---|
-| with the corpus | 0.80 · 0.67 · 0.57 | **0.68** |
-| without it | 0.73 · 0.80 · 0.90 | **0.81** |
+| Round | with the corpus | without it | prompts archived |
+|---|---|---|---|
+| [first](runs/2026-08-21-consistency/) — blind judging, after two retracted classifier numbers | 0.68 | **0.81** | no |
+| [second](runs/2026-08-21-unaided-pass/) — both arms re-run in one sitting, after the corpus was changed | 0.55 | **0.60** | **yes** |
+
+The second round is the one to read, because it is the only one whose two arms were measured under the same conditions. Its five-point gap is this bench's own stated resolution, so it says the arms are **indistinguishable**, not that one wins. The first round's thirteen-point gap is not comparable to it and the two must not be averaged.
+
+The second round also **refuted a registered prediction of ours.** `engagement.unaided_pass` was added to stop the corpus substituting for the reviewer's own judgement; the pre-registration said the corpus arm's agreement should rise and reach the unaided arm's. It did not. What did change is the output: the corpus arm reported 4-6 findings per run before the change and 7-10 after, against the unaided arm's 7-9, so the half-the-output gap that ran through every earlier measurement is gone.
 
 All six runs, both arms, report the same two main defects every time; what separates them is the tail. The corpus arm's three runs share four defects and each adds a *different* fifth or sixth, while the unaided arm's eight pair one-to-one on identical line anchors. Caveats in the table rather than in a footnote: one target, three runs per arm, agreement is easier over a smaller set (4–6 findings against 9–10), and agreement is not quality.
 

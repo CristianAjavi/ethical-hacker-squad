@@ -105,6 +105,29 @@ import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/README.md"
 p.write_text(p.read_text().replace("silent about `mobile` and `remediation`","silent about `remediation`",1))'
 
+case_run comparison-without-its-prompts 1 "neither a prompts/ directory nor the disclosure" '
+import os,pathlib,shutil
+# The round that DOES archive its prompts, stripped of both escape hatches: no
+# prompts/ directory and no line telling the reader they were not kept. That is
+# the state every earlier round was in, unnoticed, while its numbers were being
+# read as comparable across sittings.
+w=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-21-unaided-pass"
+shutil.rmtree(w/"prompts")
+r=w/"README.md"
+r.write_text(r.read_text().replace("run prompts for this round were not kept","PROMPTS WERE KEPT"))'
+
+case_run comparison-discloses-instead 0 "still describes the cases" '
+import os,pathlib,shutil
+# Same round, prompts gone, but it SAYS so. A number nobody can reproduce is not
+# thereby wrong; the rule is that the reader has to be told, not that every old
+# round has to be re-run. If this case ever fails, the gate has stopped being
+# satisfiable by the nine rounds whose prompts are genuinely gone.
+w=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-21-unaided-pass"
+shutil.rmtree(w/"prompts")
+r=w/"README.md"
+t=r.read_text()
+r.write_text(t.replace("# Run 2026-08-21", "> The run prompts for this round were not kept.\n\n# Run 2026-08-21",1))'
+
 case_run patch-no-longer-applies 1 "no longer applies" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"

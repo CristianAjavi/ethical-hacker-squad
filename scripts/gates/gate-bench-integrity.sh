@@ -340,6 +340,38 @@ if patch_key_path.is_file():
                 "correct fix measures agreement, not judgement")
     print(f"patch bench: {len(pkey.get('patches', []))} patch(es) over {len(by_case)} case(s)")
 
+# ---- a published comparison must be reproducible, or say it is not -----
+# Measured, not hypothesised: the unaided arm scored 0.81 in one sitting and
+# 0.60 in the next, on the same target with the same blind instrument, because
+# the first sitting did not keep its run prompt and the second had to write a
+# new one. Twenty-one points from the prompt alone is larger than any
+# corpus-versus-no-corpus difference this bench has produced. A run that puts
+# two arms in a table is therefore making a claim it cannot support unless the
+# prompts travelled with it - or unless it tells the reader they did not.
+#
+# NOTE FOR ANYONE EDITING THIS FILE: this heredoc is inside a "$( ... )", so an
+# apostrophe anywhere here, comments included, breaks the shell quoting.
+ARM_WORDS = ("with the corpus", "Without it", "without it", "no corpus", "No corpus")
+DISCLOSURE = "run prompts for this round were not kept"
+runs_dir = root / "bench" / "runs"
+if runs_dir.is_dir():
+    for run in sorted(runs_dir.iterdir()):
+        readme = run / "README.md"
+        if not readme.is_file():
+            continue
+        text = readme.read_text(encoding="utf-8")
+        if not any(w in text for w in ARM_WORDS):
+            continue
+        checks += 1
+        if (run / "prompts").is_dir():
+            continue
+        if DISCLOSURE in text:
+            continue
+        findings.append(
+            f"bench/runs/{run.name}/README.md compares arms with neither a prompts/ directory nor the "
+            "disclosure that the prompts were not kept - a reader cannot tell whether the difference is "
+            "the arms or the wording, and this bench has measured the wording at 21 points")
+
 print(f"measured: {len(cases)} case(s), {len(key.get('planted', []))} planted, "
       f"{len(key.get('decoys', []))} decoys, {checks} checks")
 for f in findings:

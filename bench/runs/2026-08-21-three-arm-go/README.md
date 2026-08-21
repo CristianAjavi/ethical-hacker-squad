@@ -1,5 +1,8 @@
 # Run 2026-08-21 — three arms, three cases nobody here chose
 
+
+> **The run prompts for this round were not kept.** A later round measured the same unaided arm on the same target with the same blind instrument and a freshly written prompt, and scored 0.60 where this family of rounds scored 0.81 — twenty-one points from the prompt alone. **The numbers below are internally valid and are not comparable to numbers from another sitting.** See `../2026-08-21-unaided-pass/`, which archives every prompt it used.
+
 The earlier A/B ran two advisories and produced one tie and one difference. Two cases cannot support a claim, and the claim being tested is a large one: that this is the best thing of its kind available. So this run widens it to three advisories picked by a **published rule** — recorded, with its rejects, before any arm was run against them — in classes this corpus does not obviously cover.
 
 Same model, same targets, same output contract, same blind judging protocol, three arms:

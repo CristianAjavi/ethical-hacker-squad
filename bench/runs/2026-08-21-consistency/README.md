@@ -2,6 +2,9 @@
 
 > **This run published two numbers before this one and both were retracted.** A regex classifier reported 1.00 agreement with the corpus against 0.60 without it; a rewrite of the same classifier reversed it to 0.63 against 0.69; a hand-check showed both were mis-binning findings that a reader bins correctly at a glance. The classifier is kept below as evidence of that defect. **What follows is the third attempt, using the instrument this bench already knows works** — blind judging — and its answer is the opposite of the first one.
 
+
+> **The run prompts for this round were not kept.** A later round measured the same unaided arm on the same target with the same blind instrument and a freshly written prompt, and scored 0.60 where this family of rounds scored 0.81 — twenty-one points from the prompt alone. **The numbers below are internally valid and are not comparable to numbers from another sitting.** See `../2026-08-21-unaided-pass/`, which archives every prompt it used.
+
 ## Method, the version that works
 
 Ten measurements of **capability** had come back at parity or worse. Consistency is the property a written procedure should confer by construction: a checklist does not make a surgeon cleverer, it makes the outcome less variable. Six runs, three per arm, one target, each in a fresh context that knew nothing of the others.

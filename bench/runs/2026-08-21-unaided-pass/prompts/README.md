@@ -1,0 +1,11 @@
+# The prompts, archived because a round without them cannot be compared to anything
+
+This round measured its own control arm at **0.60** where the previous round measured the same arm, on the same target, with the same blind instrument, at **0.81**. The only difference was the run prompt, which the previous round did not keep.
+
+Twenty-one points is larger than any corpus-versus-no-corpus difference this bench has produced. So the prompt is not context for a run — it is part of the measurement, and a published number without it is not reproducible and not comparable.
+
+Every file here is what an arm actually received, verbatim. `corpus-arm.txt` and `no-corpus-arm.txt` differ only in what the reviewer is allowed to reference; the deliverable path and the "write early, re-write often" instruction are identical.
+
+`corpus-arm-no-delegation.txt` is the variant `treatment-7` received. It carries one extra sentence forbidding delegation to subagents, added after `treatment-6` was killed with its delegated child silent for seventeen minutes. Runs 4 and 5 never delegated, so the sentence forbids something neither did — but it is a difference between runs of one arm and it is archived as its own file rather than folded into the other one.
+
+`judge.txt` is what all six blind judges received, identical for every batch.

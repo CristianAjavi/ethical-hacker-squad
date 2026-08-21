@@ -1,5 +1,8 @@
 # Run 2026-08-21 — precision, and the claim it kills
 
+
+> **The run prompts for this round were not kept.** A later round measured the same unaided arm on the same target with the same blind instrument and a freshly written prompt, and scored 0.60 where this family of rounds scored 0.81 — twenty-one points from the prompt alone. **The numbers below are internally valid and are not comparable to numbers from another sitting.** See `../2026-08-21-unaided-pass/`, which archives every prompt it used.
+
 Three rule-picked rounds ended 6/9, 6/9 and 6/9. Recall on published advisories is identical across the corpus, the same model without it, and a competing product, so that dimension is settled and it does not favour anyone.
 
 One difference did survive all three rounds: **the corpus arm reports about half as much**. I refused three times to call that precision, because there was no key for the findings that match no advisory. This run builds that key, and the result kills the claim I was building towards.

@@ -1,5 +1,8 @@
 # Run 2026-08-21 — a second whole repository, and the number that matters is zero
 
+
+> **The run prompts for this round were not kept.** A later round measured the same unaided arm on the same target with the same blind instrument and a freshly written prompt, and scored 0.60 where this family of rounds scored 0.81 — twenty-one points from the prompt alone. **The numbers below are internally valid and are not comparable to numbers from another sitting.** See `../2026-08-21-unaided-pass/`, which archives every prompt it used.
+
 The first whole-repository round ended 0/2 for the corpus against 1/2 for an unaided engineer. One run on two advisories concludes nothing, and the corpus had since gained `WEB-26`, the procedure written from that loss. So the round was repeated on a target chosen by the same published rule, in a new ecosystem, taken in rule order.
 
 **Target:** `Unleash/unleash` at `8b09768` — **6,490 files, 3,954 of them TypeScript**, fourteen times the previous repository. One published advisory: an unauthenticated single-request denial of service through the OpenAPI validation error formatter.

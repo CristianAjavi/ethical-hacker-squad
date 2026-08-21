@@ -2,6 +2,9 @@
 
 > **Correction, same day.** An earlier version of this file reported **3/3 against 2/3** and called it the first time the corpus separated on a case nobody here selected. **That result does not hold.** It came from judging two arms in one batch and the third in another, and when the case was re-judged with all three arms in a single context — the protocol this bench is supposed to follow — the verdict on the disputed finding moved and the separation disappeared. The complete result is a **three-way tie**. The defect that produced the first version is written up below rather than quietly fixed, because it affects every number of this kind in this directory.
 
+
+> **The run prompts for this round were not kept.** A later round measured the same unaided arm on the same target with the same blind instrument and a freshly written prompt, and scored 0.60 where this family of rounds scored 0.81 — twenty-one points from the prompt alone. **The numbers below are internally valid and are not comparable to numbers from another sitting.** See `../2026-08-21-unaided-pass/`, which archives every prompt it used.
+
 ## Result
 
 | Advisory | With the corpus | Without it | Competitor |
