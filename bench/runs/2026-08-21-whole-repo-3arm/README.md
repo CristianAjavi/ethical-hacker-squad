@@ -40,6 +40,8 @@ Its coverage declaration is the part worth keeping: 172 test files, `codegen.py`
 
 Not measured. That arm was killed four times — three host sleeps and a stream watchdog — along with the parallel sub-auditors its own method spawns. It reached disk once with a 2.6 KB pre-review index, which is stored in `unfinished/` and **not scored**: it is raw researcher output, and scoring it would misrepresent the method. The same rule was applied earlier in the day when it cut the other way.
 
+**One thing the empty cell hides, and it is fair to say it.** After that arm died, one of its Wave-2 sub-auditors completed and its output is on disk. It is strong work: 32 cited line numbers verified against the files, four TLS findings, and — more telling — **four negative results that killed its own leads**, including one refuted *empirically* by checking what the JDK actually does with a resolved address on Temurin 17.0.19, and one where it worked out that a suspicious-looking default is inert because every branch reaches a call that turns the check on anyway. It also ran code to settle a question, which is the same latitude the no-corpus arm took on `lima` earlier and is recorded the same way here. None of that is scored, because the pipeline that would have deduped, reviewed, criticised and calibrated it never ran — but a cell marked *not measured* should not be read as a cell with nothing in it.
+
 ## What this changes
 
 1. **The deferred procedure gets written now.** A length read off the wire that sizes an allocation before any payload is read, with its neighbours: mutual recursion with no depth cap, and a length multiplied without an overflow check. Round 3 is judged and published, so writing it can no longer contaminate anything.
