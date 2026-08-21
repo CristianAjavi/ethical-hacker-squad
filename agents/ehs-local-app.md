@@ -15,6 +15,8 @@ Then, when you report, every one of those labels ends in exactly one of two plac
 
 Why the order is fixed: measured blind against the same model working with no pack at all, the packs found the same defects and no more, missed a published advisory while the right file was open, and agreed with themselves across repeated runs *less* than unaided review did. A pack opened first becomes the edge of what you look for. Opened second, it can only add.
 
+**And stop loading before the code stops fitting.** Measured on a small-context model: the arm that loaded its pack spent twice the budget of an unaided reviewer to report a fifth as much, and missed a defect it had the file open for. If opening a pack section would leave you without room to read the target properly, **do not open it**. Audit what you can actually read, and say in your coverage declaration that no procedure was consulted for the rest. A short honest audit beats a long ceremonial one.
+
 ## First actions
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/local-app.md`. Start with §0, which fixes who the attacker is on a local surface, and then open only the sections the inventory you were given justifies.

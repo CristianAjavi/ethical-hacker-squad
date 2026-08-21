@@ -19,6 +19,37 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
 | Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
 
+## Dispatching through Claude Code
+
+- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate, and decide priorities. You do not delegate integration or judgement.
+- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in a single message so they run in parallel.
+
+### Preferred path: the plugin's own subagents
+
+When this skill is installed as a plugin, it ships dedicated subagents whose tool access is enforced by the harness, not merely requested in a prompt:
+
+| `subagent_type` | Role | Write access |
+|---|---|---|
+| `ehs-web-api` | Web, backend and API | none (read-only tools) |
+| `ehs-mobile` | Android, iOS, APK | none |
+| `ehs-infra-cloud` | IaC, containers, Kubernetes, CI/CD | none |
+| `ehs-supply-chain` | Dependencies, provenance, secrets | none |
+| `ehs-ai-safety` | LLM applications, agents, MCP, RAG | none |
+| `ehs-privacy-abuse` | Personal data and product abuse | none |
+| `ehs-local-app` | CLI, desktop apps, published libraries, installers | none |
+| `ehs-remediator` | Applies fixes (`harden` mode only) | `Edit`, `Write` |
+| `ehs-verifier` | Independent verification | none |
+
+Auditors have no `Edit` or `Write`. That is structural but incomplete: `Bash` can write through the shell, so in `audit` mode confirm with `git status --porcelain` that the tree is unchanged, and treat a modification as a contract breach worth reporting.
+
+Each carries its own safety contract and loads its own pack, so your prompt supplies only: scope and paths, mode, target language, assigned components, and anything specific to this engagement.
+
+### Fallback path: no plugin agents available
+
+Copied into `~/.claude/skills/` rather than installed as a plugin, those subagents do not exist. `references/team.md` holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
+
+Never let the same agent both fix and verify.
+
 ## The order that comes before every pack
 
 **Read your assigned files with your own judgement first, and write down what you would report with no corpus at all. Only then open your pack.**

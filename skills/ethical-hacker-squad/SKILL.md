@@ -33,6 +33,8 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 
 `SKILL.md` is the router. Everything else is loaded on demand.
 
+**Read the target before you read this corpus, and stop loading before the code stops fitting.** Measured: on a small-context model the corpus arm spent twice the budget of an unaided reviewer to report a fifth as much, and missed a defect it had the file open for. If loading a pack would leave you without room to read the code, **do not load it** — audit what you can read, and say in the coverage declaration that no procedure was consulted. A short honest audit beats a long ceremonial one, and `procedure: ad-hoc` exists for findings no procedure named.
+
 | File | Load it when |
 |---|---|
 | [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
@@ -51,33 +53,9 @@ Do not load a pack for a role you did not staff. The corpus is 4,186 lines acros
 ## Mapping to Claude Code
 
 - **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate, and decide priorities. You do not delegate integration or judgement.
-- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in a single message so they run in parallel.
+- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in one message so they run in parallel.
 
-### Preferred path: the plugin's own subagents
-
-When this skill is installed as a plugin, it ships dedicated subagents whose tool access is enforced by the harness, not merely requested in a prompt:
-
-| `subagent_type` | Role | Write access |
-|---|---|---|
-| `ehs-web-api` | Web, backend and API | none (read-only tools) |
-| `ehs-mobile` | Android, iOS, APK | none |
-| `ehs-infra-cloud` | IaC, containers, Kubernetes, CI/CD | none |
-| `ehs-supply-chain` | Dependencies, provenance, secrets | none |
-| `ehs-ai-safety` | LLM applications, agents, MCP, RAG | none |
-| `ehs-privacy-abuse` | Personal data and product abuse | none |
-| `ehs-local-app` | CLI, desktop apps, published libraries, installers | none |
-| `ehs-remediator` | Applies fixes (`harden` mode only) | `Edit`, `Write` |
-| `ehs-verifier` | Independent verification | none |
-
-Auditors are configured without `Edit` and `Write`. That is a structural control, but not a complete one: they keep `Bash`, which can write through the shell. In `audit` mode, confirm with `git status --porcelain` that the working tree is unchanged after the squad returns, and treat any modification as a contract breach worth reporting.
-
-Each of these agents already carries its safety contract and loads its own pack, so your prompt only has to supply: exact scope and paths, mode, target language, assigned components, and anything specific to this engagement.
-
-### Fallback path: no plugin agents available
-
-If the skill was copied into `~/.claude/skills/` or `.claude/skills/` rather than installed as a plugin, the subagents above do not exist. `references/team.md` holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
-
-Never let the same agent both fix and verify.
+`references/team.md` holds the nine plugin subagents, the write access each is given, what to do when the skill was copied rather than installed as a plugin, and why every constraint has to travel into the prompt. Never let the same agent both fix and verify.
 
 ## Leader workflow
 
@@ -91,7 +69,7 @@ Never let the same agent both fix and verify.
 
 ### 2. Inventory before delegating
 
-Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive data or artifacts without revealing their content. Do not assume every project needs every role.
+Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive artifacts without revealing their content. Not every project needs every role.
 
 Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read only the matching sections of `references/coverage.md` to decide which packs are worth loading.
 
@@ -99,9 +77,9 @@ Build a short matrix: component, technology, attack surface, trust boundary, ass
 
 Staff two to four relevant specialists. Do not spend an agent on an absent domain: no `ehs-mobile` without a mobile artifact, no `ehs-ai-safety` without an LLM call. Run them in parallel when their files and tests do not collide. Reserve capacity for `ehs-remediator` and `ehs-verifier` in `harden` mode.
 
-### 4. Read it yourself before you open a pack
+### 4. Record what you found unaided
 
-Every specialist records what it would report with **no corpus at all**, on its assigned files, before loading a procedure: `engagement.unaided_pass.candidates`. Each ends as a finding carrying its `unaided_label`, or in `dropped` with the reason your second reading overturned your first. **"No procedure covers it" is refused** — that case is `procedure: ad-hoc`.
+Before a pack is opened, each specialist writes down what it would report with no corpus at all: `engagement.unaided_pass.candidates`. Each ends as a finding carrying its `unaided_label`, or in `dropped` with the reason your second reading overturned your first. **"No procedure covers it" is refused** — that is `procedure: ad-hoc`.
 
 ### 5. Investigate with evidence
 
