@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over seventeen files, 4,077 lines in total, 159 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over seventeen files, 4,106 lines in total, 160 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -15,7 +15,7 @@ Eight packs, one per role, spread over seventeen files, 4,077 lines in total, 15
 | Pack file | Role | Lines | Procedures | Load when the inventory has |
 |---|---|---|---|---|
 | `web-api.md` | `ehs-web-api` | ~303 | `WEB-01`..`WEB-12` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
-| `web-api-clientside-logic.md` | `ehs-web-api` | ~242 | `WEB-13`..`WEB-22` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, error and log output |
+| `web-api-clientside-logic.md` | `ehs-web-api` | ~271 | `WEB-13`..`WEB-23` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, error and log output |
 | `mobile.md` | `ehs-mobile` | ~313 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
 | `mobile-runtime-trust.md` | `ehs-mobile` | ~119 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |

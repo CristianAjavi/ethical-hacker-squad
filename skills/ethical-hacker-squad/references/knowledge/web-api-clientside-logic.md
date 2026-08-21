@@ -2,7 +2,7 @@
 
 > **When to load this file:** second half of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or error and log output a user can reach.
 > **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5.
-> **Cost:** ~242 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
+> **Cost:** ~271 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
 
 ## Selective loading index
 
@@ -152,6 +152,35 @@ Rules: FP-01.
 **Tooling**: enumerate routes and cross them against the limiter configuration; the missing rule is the finding, and no tool will propose it.
 
 ## §9 Cryptography and secrets
+
+### WEB-23 A declared limit that nothing enforces
+**Where to look**
+- A constant whose **name states a bound** — `Max*`, `*Limit`, `*MB`, `*Timeout`, `*Quota`, `*TTL`, `*Burst`, `*MaxAge` — declared in a config or constant module and assigned from the environment. Then search for its **readers**. Zero readers inside the scope you were given is the finding.
+- The same shape one level up: a middleware or decorator that is defined and never registered on any route; a validator function defined and never called; a feature flag that gates nothing; a `.Use(...)` list that omits the limiter the config file configures.
+- Highest yield on **unauthenticated** handlers — webhooks, callbacks, uploads, health and metrics — because there the missing limit is reachable with no credential at all.
+
+**Vulnerable pattern**
+```go
+// constant/env.go
+var MaxRequestBodyMB int                                   // declared
+
+// common/init.go
+constant.MaxRequestBodyMB = GetEnvOrDefault("MAX_REQUEST_BODY_MB", 128)   // assigned, documented
+
+// nothing anywhere calls http.MaxBytesReader, c.Request.Body = ..., or reads
+// constant.MaxRequestBodyMB. The knob exists, the operator can set it, the
+// deployment guide mentions it, and every request is still unbounded.
+```
+**What rules it out (false positive)**
+- The reader is real and lives outside the files you were given. That is `UNKNOWN`, not `HOLDS`: report the search you ran and its bound, and say which package would settle it. A partial scope is the normal case for this class and it is the reason to write the limit down rather than drop it.
+- The value is consumed by name rather than by symbol — dependency injection, reflection, a template, generated code, a `viper`/`env`-tagged struct read wholesale — so a symbol search finds no reader and the enforcement is real. Prove it by naming the consumer.
+- A layer in front enforces the same bound and its configuration arrived: an ingress `proxy-body-size`, an API gateway, a WAF. Without that artifact the answer is `UNKNOWN` (`FP-08`), because "the platform takes care of it" is how a real finding disappears.
+
+Rules: FP-08, FP-09.
+
+**Minimal test**: list every constant whose name declares a bound, and for each one count its readers — `rg -n 'MaxRequestBodyMB|MaxUploadMB|RateLimitBurst'` and subtract the declaration and the assignment. Zero is the finding; one reader that is itself never called is the same finding one level down. Then cross-reference the routes that reach the unlimited path with the ones that need no credential.\
+**Traceability**: `CWE-400` · `CWE-770` · `CWE-1188` · `A04:2025` · `A05:2025` · `ASVS 5.0 V11` · `NIST 800-53 SC`\
+**Tooling**: no scanner reports this, and the reason is worth knowing: dead-code analysis flags **unused** symbols, and a package variable that is assigned at start-up is used — `staticcheck`'s `U1000` and its equivalents stay quiet on exactly this shape. `rg` and the question *who reads this* are the tool. This procedure exists because a blinded three-arm run — the corpus, an unaided senior engineer and a competing product — **all three missed** a published advisory of exactly this shape, and one of them read the declaration as proof the control was present (`bench/runs/2026-08-21-three-arm-go/`).
 
 ### WEB-19 Crypto in transit and at rest, and secret management
 
