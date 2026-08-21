@@ -69,6 +69,11 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json"
 d=json.loads(p.read_text()); d["planted"][1]["id"]=d["planted"][0]["id"]
 p.write_text(json.dumps(d,indent=2))'
 
+case_run case-labels-its-own-answers 1 "hands the run to the auditor" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/cases/cli-packer/packer.py"
+p.write_text(p.read_text().replace("    # Signs a staged bundle","    # Planted: argument injection here\n    # Signs a staged bundle",1))'
+
 case_run key-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").unlink()'
