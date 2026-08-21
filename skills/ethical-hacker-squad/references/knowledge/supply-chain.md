@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the target has third-party dependencies, a package registry, an artifact publishing flow, or when you need to triage the output of a software composition analysis (SCA) scanner and hunt for secrets in the repository and its history.
 > **Do not load it if:** the audit only covers infrastructure or network configuration (use `infra-cloud.md`) or application logic with no relevant external dependencies.
-> **Cost:** ~303 lines. Load by section using the index; §7 changes the report the most.
+> **Cost:** ~333 lines. Load by section using the index; §7 changes the report the most.
 > **Second file of this pack:** `supply-chain-secrets-malware.md` holds §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so that file is opened on almost every engagement; it carries its own index.
 > **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-25` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, and suppressed CVEs. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
 
@@ -40,6 +40,8 @@ Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vu
 - It is a publishable library, not an application: there the lock is not committed by design and resolution happens on the consumer side; the finding moves to the test matrix.
 - There is a proxy or internal registry freezing versions and serving the exact artifact; ask for evidence that the pipeline points there.
 
+Rules: FP-08, FP-09.
+
 **Minimal test**: check that every direct dependency in the manifest appears in the lock with an exact version and, where the ecosystem supports it, an integrity hash; then find the real install command in CI.\
 **Traceability**: `CWE-1357` · `CWE-494` · `CWE-345` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `SLSA Build L1` · `SSDF PW` · `NIST 800-53 SR`\
 **Tooling**: `osv-scanner scan source -r --offline-vulnerabilities --format json .` reads the lock directly; with no lock, the scanner analyzes ranges and its output no longer describes what gets deployed. Say so explicitly in the report instead of reporting versions that may never have been installed.
@@ -56,6 +58,8 @@ Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vu
 **What rules it out (false positive)**
 - The floating range is bounded by a committed lock and by `npm ci` in the pipeline: resolution is deterministic and the finding drops to informational about the manifest.
 - The dependency has had no release in years because it is functionally complete and small; assess issue activity and CVE response, not just the date.
+
+Rules: FP-01, FP-10.
 
 **Minimal test**: for every direct dependency, compare the version resolved in the lock against the latest published one and record the distance; flag the ones no longer maintained. **Boundary:** this measures distance to the latest release, not support status — a dependency can be perfectly up to date inside a branch nobody patches any more. That question is `SUP-24`.\
 **Traceability**: `CWE-1104` · `CWE-1395` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR` · `CCM TVM` · `CIS v8.1 Control 7`\
@@ -76,6 +80,8 @@ Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vu
 - The script compiles a native binding or downloads a binary from the project's official domain with hash verification. Legitimate, but record it as surface: it still executes code before any test runs.
 - The project installs with `npm ci --ignore-scripts` in every environment and CI enforces it.
 
+Rules: FP-01, FP-05.
+
 **Minimal test**: enumerate lifecycle scripts across the whole resolved tree and **read** the ones you do not recognize, without running them. If the file is obfuscated or minified, treat it under SUP-19.\
 **Traceability**: `CWE-94` · `CWE-506` · `CWE-829` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `SSDF PW` · `NIST 800-53 SR`\
 **Tooling**: guided manual inspection; no SCA covers this. Prioritization argument: Ohm et al., *Backstabber's Knife Collection* (DIMVA 2020), across 174 real malicious packages, measured that **56% trigger the malicious behavior at install time** and that data exfiltration is the goal in **55%**. **Shai-Hulud 2.0** (21-23 November 2025) executed at `preinstall` (`setup_bun.js` → obfuscated `bun_environment.js`), and **ua-parser-js** (October 2021) delivered a miner from a `postinstall` hook.
@@ -93,6 +99,8 @@ prepare:
 **What rules it out (false positive)**
 - The download points at an artifact pinned by digest and is verified with `sha256sum -c` or a signature before it executes.
 - The step only runs in a documented local development environment and is not part of the reproducible build that produces the published artifact.
+
+Rules: FP-01, FP-04.
 
 **Minimal test**: `rg -n 'curl .*\|\s*(sh|bash)|wget .*\|\s*sh|apply from:.*http'` across the whole build path, and compare the release tarball against the git tree at the same tag (see SUP-20).\
 **Traceability**: `CWE-494` · `CWE-829` · `CWE-427` · `A03:2025` · `A08:2025` · `CICD-SEC-4` · `SLSA Build L2` · `SSDF PW`\
@@ -113,6 +121,8 @@ prepare:
 - The name is already reserved by the organization in the public registry (a read-only check against the registry, publishing nothing).
 - The package is consumed by file path, workspace or submodule, not by name resolution from a registry.
 
+Rules: FP-01, FP-09.
+
 **Minimal test**: list the dependencies that do **not** exist in the public registry and also have no scope of their own; that set is the exact confusion surface.\
 **Traceability**: `CWE-427` · `CWE-829` · `CWE-1357` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `SSDF PW` · `NIST 800-53 SR` · `ATT&CK T1195`\
 **Tooling**: an existence check against the registry (read-only). Founding case: **Alex Birsan, 9 February 2021**, compromised **35 companies** by publishing packages in public registries under the names of internal packages, exploiting the fact that the build prefers the higher version.
@@ -131,6 +141,8 @@ extra-index-url = https://pypi.internal/simple   # the public one can win with 9
 **What rules it out (false positive)**
 - The internal registry is a **proxy** that also serves public packages and is the only configured index: then there is no version competition.
 - There is explicit mapping by scope or by name prefix toward the internal registry.
+
+Rules: FP-01.
 
 **Minimal test**: reconstruct the pipeline's effective index list (environment variables included) and check whether any internal name is resolvable from the public one.\
 **Traceability**: `CWE-427` · `CWE-829` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `CICD-SEC-8` · `SSDF PW` · `CCM STA`\
@@ -151,6 +163,8 @@ extra-index-url = https://pypi.internal/simple   # the public one can win with 9
 - The package is a recognized official fork or port, with a long history, a maintainer matching the original project, and consistent download volume.
 - The similar name predates the popular one; check the dates before accusing anyone.
 
+Rules: FP-09.
+
 **Minimal test**: for every suspicious dependency, query the registry for **four signals**: existence, age of the first publication (under 90 days is a strong signal), download volume, and whether the maintainer matches the declared repository. No single one of the four is enough on its own.\
 **Traceability**: `CWE-1357` · `CWE-829` · `CWE-506` · `A03:2025` · `A08:2025` · `SSDF PW` · `NIST 800-53 SR` · `ATT&CK T1195`\
 **Tooling**: lock-diff review plus a read-only registry query. Scale of the problem (Sonatype 2026 State of the Software Supply Chain): **454,600 new malicious packages in 2025**, 1.233 million cumulative, OSS malware **+75%**, and **more than 99% of OSS malware occurs in npm**. ReversingLabs 2026 measures +73% year over year, with PyPI down 43% and NuGet down 60%: the shift toward npm is real and should weigh in your per-ecosystem prioritization.
@@ -167,6 +181,8 @@ import fastapi_security_utils          # the LLM proposed it; it does not exist.
 **What rules it out (false positive)**
 - The package exists, is old, and is the one the project actually uses: the hallucination was the reviewer's, not the code's.
 - The import resolves to an internal module of the repository by path.
+
+Rules: FP-09.
 
 **Minimal test**: extract every top-level import and subtract those resolving to local modules or declared dependencies; each leftover is verified **against the real registry** before you accept it or write it into any deliverable. The same rule binds you: every dependency or version you suggest gets checked before you write it down.\
 **Traceability**: `CWE-1357` · `CWE-829` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR`\
@@ -187,6 +203,8 @@ import fastapi_security_utils          # the LLM proposed it; it does not exist.
 - The reference points at a resource under the same `owner` and access-control perimeter. It is still pending hardening, not a third-party risk.
 - There is a policy blocking merges without pinning and a bot updating the SHAs; the finding becomes one of coverage.
 
+Rules: FP-01, FP-06, FP-10.
+
 **Minimal test**: count references pinned by 40-character SHA against the total and report the percentage, not a 200-line list.\
 **Traceability**: `CWE-829` · `CWE-494` · `CWE-345` · `A03:2025` · `A08:2025` · `CICD-SEC-3` · `CICD-SEC-9` · `SLSA Build L2` · `SSDF PW`\
 **Tooling**: `zizmor --offline --format sarif .github/workflows/` (`--offline` is mandatory; with `--gh-token` or `GH_TOKEN` it switches to online mode). Proof that a tag is mutable: in **tj-actions/changed-files, CVE-2025-30066** (14-15 March 2025), a compromised PAT allowed **every tag from v1 through v45.0.7 to be repointed at the same malicious commit**, which dumped runner secrets into the log; more than 23,000 repositories affected, fixed in v46.0.1, with a sibling incident in reviewdog/action-setup (CVE-2025-30154). Datadog 2026: **only 4% of organizations pin all their public GitHub Actions by commit SHA**.
@@ -205,6 +223,8 @@ on: workflow_dispatch          # anyone with write can launch it
 **What rules it out (false positive)**
 - The registry does not support OIDC and the token is minimally scoped, short-lived and rotated by an auditable process; ask to see the process, not the intent.
 - Publishing requires two-person approval through an `environment` with reviewers.
+
+Rules: FP-01, FP-08.
 
 **Minimal test**: trace who can trigger the publishing workflow and with which credential it signs; if a single collaborator can publish without review, that is a flow-control finding.\
 **Traceability**: `CWE-798` · `CWE-522` · `CWE-284` · `A03:2025` · `A07:2025` · `CICD-SEC-1` · `CICD-SEC-2` · `CICD-SEC-5` · `CICD-SEC-6` · `SLSA Build L2` · `SLSA Source L4` · `SSDF PO`\
@@ -226,6 +246,8 @@ on: workflow_dispatch          # anyone with write can launch it
 - The SBOM is generated and attached as a signed attestation of the final artifact; check that the referenced digest is the one published.
 - The project distributes no artifacts (it is an internal application deployed as an image already inventoried downstream).
 
+Rules: FP-01, FP-06.
+
 **Minimal test**: run `syft dir:. -o cyclonedx-json=sbom.json` over the source and compare the component count against the official release SBOM; a large gap means the SBOM describes something else.\
 **Traceability**: `CWE-1357` · `A03:2025` · `A08:2025` · `CICD-SEC-9` · `SLSA Build L1` · `SSDF PS` · `NIST 800-53 SR` · `CCM STA`\
 **Tooling**: `syft dir:. -o cyclonedx-json=sbom.json` (offline over the local tree). Do not conclude full coverage: syft sees what the manifests declare, so vendored dependencies or static binaries show up incomplete or not at all.
@@ -242,6 +264,8 @@ on: workflow_dispatch          # anyone with write can launch it
 **What rules it out (false positive)**
 - The registry already stores provenance attestations from the hosted builder and the consumer verifies them; then the finding is documentation, not control.
 - The artifact is consumed only internally, by immutable digest, from an access-controlled registry.
+
+Rules: FP-01, FP-06.
 
 **Minimal test**: for an existing release, check whether a signature and an attestation are published and whether the referenced commit and builder match the tag. Verifying a public signature is reading, not intrusion.\
 **Traceability**: `CWE-347` · `CWE-345` · `CWE-494` · `A08:2025` · `CICD-SEC-9` · `SLSA Build L2` · `SLSA Build L3` · `SSDF PS` · `NIST 800-53 SR`\
@@ -263,6 +287,8 @@ CRITICAL  package-x 1.2.0  CVE-XXXX-NNNN  insecure deserialization
 - There is no import of the affected module on any executable path, or the vulnerable function requires a configuration the project does not use. Document the reasoning with the file and line, not with an assertion.
 - The dependency is development-only and never ships in the deployed artifact.
 
+Rules: FP-03, FP-04.
+
 **Minimal test**: locate the import and the call to the affected symbol; without both, the severity is explicitly downgraded in the report.\
 **Traceability**: `CWE-1395` · `CWE-1104` · `A03:2025` · `A06:2025` · `SSDF RV` · `NIST 800-53 RA` · `CCM TVM` · `CIS v8.1 Control 7`\
 **Tooling**: **`govulncheck -mode source -format sarif ./...` is the only tool in this pack with a real call graph and, by far, the lowest false-positive rate**; if the target is Go, start there and use the rest as a complement. Evidence for the bias you are correcting: Endor Labs measures that **fewer than 9.5% of vulnerabilities have a real call path from the application to the vulnerable function** and that **95% live in transitive dependencies**; Datadog 2026 measures that **only 18% of "critical" vulnerabilities stay critical once runtime context is applied**. Reporting the scanner's raw list is a methodological error, not extra diligence.
@@ -279,6 +305,8 @@ Measured result: covers 82.1% of what gets exploited at 6.5% efficiency.
 ```
 **What rules it out (false positive)**
 - A low EPSS and absence from KEV do **not** rule out a CVE with a confirmed call path in an exposed service: EPSS estimates the probability of exploitation observed over 30 days, not impact in your context. Use it to order, never as the sole closing criterion.
+
+Rules: FP-10.
 
 **Minimal test**: query EPSS with `GET https://api.first.org/data/v1/epss?cve=CVE-2021-44228` (it accepts batches via `?cve=a,b`; verified response for Log4Shell: `{"epss":"0.999990000","percentile":"1.000000000"}`) or download the daily CSV from `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz`; the current model version is **EPSS v5**, identifier `v2026.06.15`, published by FIRST.org. For KEV, use `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`, whose per-entry fields are `cveID, vendorProject, product, vulnerabilityName, dateAdded, shortDescription, requiredAction, dueDate, knownRansomwareCampaignUse, notes, cwes`; **`knownRansomwareCampaignUse == "Known"` escalates automatically**.\
 **Traceability**: `CWE-1395` · `A03:2025` · `A06:2025` · `SSDF RV` · `RV.1.1` · `NIST 800-53 RA` · `CCM TVM` · `CIS v8.1 Control 7`\
@@ -297,6 +325,8 @@ dependency-check: "commons-collections 3.2.1" -> CPE of another product with the
 **What rules it out (false positive)**
 - The identifier has no advisory in the package's own ecosystem and no reference to the real repository: it is a name collision.
 - A reviewed, justified suppression entry already exists; maintaining it is normal operation, not concealment, as long as it carries a date and a reason.
+
+Rules: FP-08, FP-09.
 
 **Minimal test**: cross-check each finding against the ecosystem's own database and discard those that appear only through CPE matching.\
 **Traceability**: `CWE-1395` · `A03:2025` · `A09:2025` · `SSDF RV` · `NIST 800-53 RA` · `CCM TVM`\

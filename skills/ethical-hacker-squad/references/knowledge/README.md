@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over sixteen files, 3,794 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over sixteen files, 3,930 lines in total, 154 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -21,15 +21,15 @@ Eight packs, one per role, spread over sixteen files, 3,794 lines in total, 154 
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
 | `infra-cloud.md` | `ehs-infra-cloud` | ~287 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
 | `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~151 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
-| `supply-chain.md` | `ehs-supply-chain` | ~303 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
-| `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~107 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
-| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~131 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
-| `ai-safety.md` | `ehs-ai-safety` | ~286 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
-| `ai-safety-data-output.md` | `ehs-ai-safety` | ~324 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
-| `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~128 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
+| `supply-chain.md` | `ehs-supply-chain` | ~333 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
+| `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~117 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
+| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~141 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
+| `ai-safety.md` | `ehs-ai-safety` | ~308 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
+| `ai-safety-data-output.md` | `ehs-ai-safety` | ~350 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
+| `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~136 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~354 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
 | `local-app.md` | `ehs-local-app` | ~321 | `LOC-01`..`LOC-15` | A command-line tool, a desktop or WebView shell, a published library or SDK, an installer or updater, a local daemon or a loopback listener |
-| `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~366 | `REM-01`..`REM-07`, `VER-01`..`VER-08` | `harden` or `verify` mode |
+| `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~396 | `REM-01`..`REM-07`, `VER-01`..`VER-08` | `harden` or `verify` mode |
 
 ## Procedure anatomy
 

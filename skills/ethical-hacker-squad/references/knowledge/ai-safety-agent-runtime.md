@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target installs or ships agent packages (a skill, a plugin, an editor extension, a rules file), hands an agent a shell or a filesystem write tool, runs two or more agents that pass work to each other, or takes actions with real effects whose author has to be reconstructable weeks later.
 > **Do not load it if:** there is a single agent with no installable package, no write or shell tool and no side effects — the prompt boundary and the tool chain are already covered by `ai-safety.md` §0-§3.
-> **Cost:** ~128 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
+> **Cost:** ~136 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
 
 ## Selective loading index
 
@@ -43,6 +43,8 @@ Then apply `AI-01` to the package itself: instructions, private data and an egre
 - Execution is confined to a sandbox with no credentials and no network, and the confirmation prompt shows the literal command (`AI-07`).
 - The wide permission is exercised by a step that a gate outside the model authorizes — a CI job, a signed workflow — and not by the model's own decision.
 
+Rules: FP-01, FP-02, FP-05.
+
 **Minimal test**
 One two-column table per package: capability declared in the manifest, against capability observed in the files it ships. Build the right-hand column with `rg -n "curl|wget|requests\.|urllib|subprocess|os\.environ|~/\.aws|~/\.ssh|npx|pip install" <package dir>`, and list what is not documentation with `fd -t f -E '*.md' . <package dir>`. Any row present on the right and absent on the left is the finding, and it needs no execution — do not run the package to find out what it does. Run the `AI-20` sweep over the manifest and the instruction files as well: this is exactly the file class the Rules File Backdoor targets.
 
@@ -68,6 +70,8 @@ Read the tool declaration, not the role description. An agent documented as read
 - The agent runs as its own principal in a container carrying only short-lived credentials scoped to its task, with no host mount of the developer's home directory.
 - Every side-effecting command passes the `AI-07` gate showing the literal argument, with no global bypass flag set in the environment.
 - The agent holds no shell and no write tool, and no MCP server hands it one indirectly (check the servers, not only the framework's tool list).
+
+Rules: FP-01, FP-03, FP-06.
 
 **Minimal test**
 Two lists and one intersection; no exploitation needed. List A: the paths the agent can write, taken from the tool declaration and the sandbox mounts. List B: the steering, memory and audit paths above, plus the credential files present in the runtime — `ls -d ~/.aws ~/.ssh ~/.kube ~/.docker ~/.netrc 2>/dev/null` on the machine being audited, with its owner's permission. A non-empty intersection is the finding. `env | rg -i "token|key|secret|password" | sed 's/=.*/=<redacted>/'` inventories what the process inherits without printing a single value.
@@ -95,6 +99,8 @@ Agent A's output is written into agent B's context as if it were an instruction,
 - Transport is authenticated with per-agent identities and no agent is reachable from outside the orchestrator.
 - There is one agent. A single loop calling its own tools is `AI-01` and `AI-03`, not this procedure; a subagent that only returns a value the orchestrator parses is a typed edge, not a handoff.
 
+Rules: FP-01, FP-06, FP-09.
+
 **Minimal test**
 Draw the graph — nodes are agents, edges are handoffs — and annotate each edge with what crosses (free text or typed), whether the origin is marked, and which tools the receiver holds. An edge carrying free text from an agent with untrusted ingestion into an agent with a write or outbound tool is the finding, proved by construction and without executing anything. For dynamic evidence, place the `AI-01` canary in the first agent's ingestion source and look for it in the last agent's tool arguments.
 
@@ -116,6 +122,8 @@ The agent takes actions with real effects — sends, writes, pays, deploys — a
 - Every invocation with side effects emits a structured record with the authenticated subject, the turn's correlation id, the tool, redacted arguments and the outcome, retained beyond the discovery window, in storage the agent cannot write to.
 - The agent holds no tool with side effects: a read-only assistant has nothing to attribute (verify that against the tool declaration, not the description — see `AI-28`).
 - The effect lands in a system that keeps its own attributable trail and the agent's identity reaches it: the ticket, the commit or the payment record names the caller.
+
+Rules: FP-01, FP-03, FP-08.
 
 **Minimal test**
 Take one irreversible action the agent can perform and trace backwards in code, from the effect to the record, asking a single question: six weeks from now, could I reconstruct who caused it and with what input, without relying on the model's own account of what it did? Every missing link is the finding. Then run the agent once locally against a fixture and read what it actually emitted, instead of what the logging configuration claims it emits.

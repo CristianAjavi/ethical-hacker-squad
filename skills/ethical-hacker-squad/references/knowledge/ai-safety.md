@@ -2,7 +2,7 @@
 
 > **When to load this file:** when the inventory contains calls to a language model, an agent with tools, an MCP client or server, a RAG pipeline, persistent memory, or a chatbot exposed to users.
 > **Do not load it if:** the project only uses a model for offline classification, with no tools, no retrieval and no output reaching an executable sink; the web/API coverage is enough there.
-> **Cost:** ~286 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
+> **Cost:** ~308 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
 > **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§12 and `AI-25`..`AI-28` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, and attribution of what the agent did. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three.
 
 ## Selective loading index
@@ -45,6 +45,8 @@ Count as an outbound channel anything that triggers an outgoing request whose de
 - The outbound tool only accepts destinations from a fixed allowlist the model cannot alter, with a templated body; or the "private data" is public repository content whose disclosure has no impact.
 - The component that ingests external content runs without credentials or tools and returns a typed value to a privileged orchestrator (Dual LLM pattern, AI-06).
 
+Rules: FP-01, FP-06.
+
 **Minimal test**
 This is an inventory over the code and needs no execution. For dynamic evidence, place an inert synthetic marker (`CANARY-EHS-7412`) in an ingestion source and check whether it shows up in the arguments of an outbound tool in the log. Against production: `REQUIRES AUTHORIZATION`.
 
@@ -73,6 +75,8 @@ prompt = f"You are the assistant. Answer using these documents:\n{docs}\n\nQuest
 - The content travels in a different role turn, delimited and marked (spotlighting), and a test verifies it.
 - `docs` comes from an immutable internal corpus with no external write path (confirm with AI-12 before ruling it out).
 
+Rules: FP-01, FP-02.
+
 **Minimal test**
 Put a line in a test document asking to repeat `CANARY-EHS-7412` and run a normal query. If the marker appears in the answer, the retrieved content is governing generation. Inert canary: it requests no action. Mitigation with evidence: spotlighting (**arXiv:2403.14720**, Microsoft, March 2024) proposes delimiting, marking every token of the data block with a signal character, or encoding the block, and reports ASR dropping from over 50% to under 2% with minimal utility impact; the NCSC recommends labelling data sections rather than maintaining deny-lists of phrases.
 
@@ -91,6 +95,8 @@ Any tool whose return value is concatenated into history without an origin label
 **What rules it out (false positive)**
 - The content passes through a deterministic extractor that returns typed fields (date, amount, sender) and never free text.
 - The source has a single trusted writer and is authenticated end to end.
+
+Rules: FP-02, FP-03.
 
 **Minimal test**
 A table of source → who can write to it → does it reach the context yes/no. The absence of that table in the project documentation is already a design finding.
@@ -112,6 +118,8 @@ An instruction file arriving through an external PR, merged with the light revie
 **What rules it out (false positive)**
 - They are in `CODEOWNERS` with mandatory security review and the repository does not accept external PRs.
 - The assistant is configured not to load them automatically.
+
+Rules: FP-01, FP-04.
 
 **Minimal test**
 `git log --follow -- CLAUDE.md AGENTS.md .cursor/rules .mcp.json` to see authorship and review, plus the binary sweep from AI-20 over each one.
@@ -138,6 +146,8 @@ The permission check lives in the system prompt ("only query the current user's 
 - Each tool receives an identity context the model cannot control and authorizes against the concrete object.
 - The destination backend already authorizes per object using the end user's token and the model cannot impersonate the subject.
 
+Rules: FP-01.
+
 **Minimal test**
 Unit test on the dispatcher: a well-formed call to a sensitive tool with the context of a user lacking permission. It must fail in authorization, not in argument validation.
 
@@ -159,6 +169,8 @@ The tool list is constant for the whole session: after reading an arbitrary web 
 - The mark exists and write or outbound tools are filtered out when it is set.
 - A structural pattern makes it unnecessary: the Dual LLM pattern (Willison, 2023-04-25), where a privileged model with tools never sees untrusted tokens and a quarantined model, without tools, processes them and returns symbolic references; or CaMeL (**arXiv:2503.18813**, v2 2025-06-24), which extracts control and data flow from the trusted query and enforces capabilities and policy at the call site, solving 77% of AgentDojo tasks with provable security against 84% with no defense at all. The catalogue in **arXiv:2506.08837** (2025-06-10) adds Action-Selector, Plan-Then-Execute, LLM Map-Reduce, Code-Then-Execute and Context-Minimization; its declared anti-pattern is re-planning while reading every untrusted result.
 
+Rules: FP-01.
+
 **Minimal test**
 Trace the path from the return of an external-read tool to the next tool decision. If there is no branch that depends on the content's origin, there is no degradation.
 
@@ -179,6 +191,8 @@ The text shown to the human is written by the model, so a compromised agent desc
 **What rules it out (false positive)**
 - The confirmation shows the literal arguments, safely rendered, and their hash is validated at execution time.
 - Every tool with an irreversible effect is on the approval list, with no configuration-based exceptions.
+
+Rules: FP-01.
 
 **Minimal test**
 Compare two sets: tools with side effects and tools behind a gate. The difference is the finding.
@@ -205,6 +219,8 @@ A description that, besides explaining what the tool does, includes instructions
 - Descriptions come from a hash-pinned manifest and any change breaks startup.
 - The server is first-party, lives in the repository, and its descriptions are reviewed as code.
 
+Rules: FP-01, FP-02.
+
 **Minimal test**
 Dump the descriptions the client actually receives and review them by hand, applying the AI-20 sweep as well. Storing a hash per tool and comparing it at every startup turns a rug pull into a detectable failure.
 
@@ -225,6 +241,8 @@ Dump the descriptions the client actually receives and review them by hand, appl
 **What rules it out (false positive)**
 - An exact version pinned with lockfile integrity, or a container image referenced by digest.
 - The server runs from a local path inside the repository itself.
+
+Rules: FP-01, FP-02.
 
 **Minimal test**
 Classify each server: pinned / unpinned, first-party / third-party, with network / without network, and which credentials sit in its environment. The combination unpinned + third-party + credentials is the finding.
@@ -250,6 +268,8 @@ Without validating `aud`, a legitimate token issued for another service opens th
 - `aud`, `iss` and expiry are validated, and the server exchanges the token for a narrowly scoped one of its own before calling downstream.
 - Local stdio transport, with no network exposure and no proxy.
 
+Rules: FP-01, FP-06.
+
 **Minimal test**
 A test with a token signed by the same issuer but with another service's `aud`: it must be rejected. This is local, with a test key, not an attack.
 
@@ -270,6 +290,8 @@ API keys inside `env` in a versioned file, or the file left out of `.gitignore`.
 **What rules it out (false positive)**
 - The value is a substitution placeholder (`${VAR}`, `changeme`) or an example key with an invalid format.
 - The file is ignored and was never versioned (confirm with `git log`, not with `git status`).
+
+Rules: FP-02, FP-04.
 
 **Minimal test**
 `git log -p -- .mcp.json | rg -n "sk-|ghp_|xoxb-|AKIA"`. Never print the full value: report prefix, length and location. If it looks active, escalate to the lead and do not verify it against the provider.
