@@ -199,6 +199,25 @@ def main() -> int:
 
         check_shape(data, schema, "", fail)
 
+        # The inventory must be resolved. A blinded reader test found a report that
+        # inventoried a data-access layer, named knex as the routing signal that
+        # selected its procedures, and then listed that layer in neither what it
+        # read nor what it did not - and the reader's verdict was that silence
+        # about SQL injection there was not evidence of its absence. Prose could
+        # not stop that. Set arithmetic can.
+        cov = (data.get("engagement") or {}).get("coverage")
+        if isinstance(cov, dict):
+            inv = set(cov.get("inventoried") or [])
+            examined = set(cov.get("read") or [])
+            skipped = set(cov.get("not_read") or [])
+            for s in sorted(inv - (examined | skipped)):
+                fail(f"engagement.coverage: {s!r} is inventoried and resolved as neither read nor "
+                     "not_read - that silence is what a reader mistakes for a clean bill")
+            for s in sorted(examined & skipped):
+                fail(f"engagement.coverage: {s!r} is in both `read` and `not_read`")
+            for s in sorted((examined | skipped) - inv):
+                fail(f"engagement.coverage: {s!r} is resolved but was never inventoried")
+
         for i, f in enumerate(data.get("findings", []) if isinstance(data.get("findings"), list) else []):
             if not isinstance(f, dict):
                 continue

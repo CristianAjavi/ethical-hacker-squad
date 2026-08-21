@@ -27,6 +27,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `engagement.mode` | `audit`, `harden` or `verify`: what the squad was allowed to do. |
 | `engagement.language` | The language of the prose. Identifiers are never translated. |
 | `engagement.generated_by` | Which skill version produced this. |
+| `engagement.coverage` | **The inventory, resolved.** Three lists — `inventoried`, `read`, `not_read` — and every surface in the first must appear in exactly one of the other two. The validator does the set arithmetic, so a surface cannot be inventoried, routed to, and then quietly left out. A blinded reader test found exactly that in one of our own reports and concluded that *silence about SQL injection in this report is not evidence of its absence*; prose could not stop it, this can. |
 | `engagement.coverage_declaration` | What was exercised and what was not. A file of findings with no coverage statement invites the reader to assume the rest is clean. |
 | `engagement.authorization` | The reference under which any remote or active test was run. Absent means none was. |
 | `findings[].id` | `F-001`, `F-002`, … — three digits, and the validator enforces it. Stable within the engagement, so the report, the annex and the issue can all point at the same thing. |
@@ -55,7 +56,8 @@ These are not shape checks. They are the reasons the file is worth having:
 
 1. **`confirmed` is expensive.** Every triage rule answered, none `HOLDS`, none `UNKNOWN`, and confidence not `low`. A finding cannot be promoted by writing a stronger word.
 2. **`probable` names its gap** in `inference` **and the way to close it** in `what_would_settle_it`, and **`withdrawn` names its reason**.
-3. **`candidate` never ships.** It is working state, and `vocabulary.md` says so.
+3. **The inventory is resolved.** Every surface in `engagement.coverage.inventoried` appears in `read` or in `not_read`, never in both and never in neither. This is the one invariant a reader can use to tell your silence from your clean bill.
+4. **`candidate` never ships.** It is working state, and `vocabulary.md` says so.
 4. **Every `procedure` resolves** to a real identifier in the corpus, or is exactly `ad-hoc`. An invented procedure id would make a finding look methodical when it was not.
 5. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.
 6. **Every `triage.rule` exists** in `triage.md`, and a reason is present whenever the answer is not `DOES_NOT_HOLD`.
