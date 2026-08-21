@@ -1,45 +1,54 @@
-# Run 2026-08-21 — third rule-picked round, and the first separation
+# Run 2026-08-21 — third rule-picked round, a separation that did not survive, and the judge defect that produced it
 
-Two rule-picked rounds had ended level, and each had produced procedures from what every arm missed: `WEB-23` from the first, `WEB-24` and `WEB-25` from the second. Whether that compounds into a lead was an empirical question with two data points and no answer. This round is the answer, and it was pre-registered — ecosystem changed on purpose to fix the single-repository weakness round 2 had declared before its own results existed.
+> **Correction, same day.** An earlier version of this file reported **3/3 against 2/3** and called it the first time the corpus separated on a case nobody here selected. **That result does not hold.** It came from judging two arms in one batch and the third in another, and when the case was re-judged with all three arms in a single context — the protocol this bench is supposed to follow — the verdict on the disputed finding moved and the separation disappeared. The complete result is a **three-way tie**. The defect that produced the first version is written up below rather than quietly fixed, because it affects every number of this kind in this directory.
 
 ## Result
 
 | Advisory | With the corpus | Without it | Competitor |
 |---|---|---|---|
-| `CVE-2026-53966` — edit right escalated to script right through a caller-named XClass | **found** | **missed** | *not measured* |
+| `CVE-2026-53966` — edit right escalated to script right | **found** | **found** | **found** |
 | `CVE-2026-63337` — unvalidated `Class.forName` from a JSON service description | **found** | **found** | **found** |
-| `CVE-2026-69219` — oversized declared length sizes an allocation before any payload is read | **found** | **found** | *not measured* |
-| | **3 / 3** | **2 / 3** | **1 of 1 measured** |
+| `CVE-2026-69219` — oversized declared length sizes an allocation before any payload is read | **found** | **found** | **found** |
+| | **3 / 3** | **3 / 3** | **3 / 3** |
 
-**This is the first time the corpus has separated on a case nobody here selected**, and the separating finding is the one that matters: it came from **`WEB-25`**, a procedure written from the *previous* round's shared miss, firing on a target no one here had seen.
+## The judge defect, measured
 
-The judge, who saw only the advisory text and the finding text, named the mechanism itself: the target XClass is caller-supplied, the object is created or overwritten through it, and *"the only authorization on the chain is `checkAccess(Right.EDIT, documentReference)` on the document — nothing authorizes the class."* That is `WEB-25`'s sentence — authorization checked on the object in the path, not on the objects in the body — reached independently.
+`livedata` was judged twice. Both judges received the same advisory text, the same prompt, opaque ids and an order fixed by a hash unrelated to the arm. The first saw the two arms that had finished (16 pairs); the second saw all three once the competitor's killed run recovered (26 pairs). **They agreed on 14 of the 16 findings the first one covered, and disagreed on two — the two that decide the case.**
 
-The no-corpus arm was not far away and its two near misses are worth reading, because they show what the procedure adds. It scored `partial` twice on the same file: it developed the `enforceRequiredRights` flag, which re-enables or disables an existing author's scripts, and the stale content-author bookkeeping. Both are real; neither is the caller granting themselves script right by choosing the class. The corpus arm reported the `enforceRequiredRights` lever **too** — as `WEB-06`, its own first finding — and then kept going.
+| Finding | first batch | second batch |
+|---|---|---|
+| the corpus arm's `enforceRequiredRights` lever | `partial` | **`yes`** |
+| the no-corpus arm's `enforceRequiredRights` lever | `partial` | **`yes`** |
 
-## The competitor column, and why two cells are empty rather than zero
+The mechanism is the same in both readings: `doc.enforceRequiredRights`, the flag governing whether a page's declared required rights are enforced, is writable through the same untyped property path as the page title, behind nothing but `Right.EDIT`. The first judge called that *"re-enabling or disabling an existing author's scripts, not the caller granting themselves script right"* and scored it `partial`. The second called it the advisory's mechanism and scored it `yes`.
 
-The host slept three times during this round and killed the competitor arms twice, along with the parallel sub-auditors their own method spawns. One of the three recovered and finished its pipeline — 17 raw findings → 14 after dedupe → 12 after review — and **found the advisory**, twice over, from two independent trajectories. The other two never got past their researcher stage.
+**Both readings are defensible, and that is the problem.** On a borderline mechanism a single blind judge is not a stable instrument, and one verdict is exactly the size of the difference this bench keeps trying to measure. Three consequences, now standing rules here:
 
-Their partial indexes are stored in `unfinished/` and are **not scored**. Both hold pre-review researcher output — one of the two arms said so itself in writing — and scoring that would overstate what its method reports. The doctrine this repository applies to its own gates applies here too, and it happens to cut against the rival: a check that could not be performed is never a pass, and it is never a zero either.
+1. **Every arm for one advisory is judged in one context, always.** Splitting a case across batches is what manufactured the separation.
+2. **A separation of one advisory is inside the noise of this instrument.** Any future round that turns on a single verdict has to say so in the same sentence as the number.
+3. **Both judgements stay published.** `judgements-deblinded.json` carries the superseded batch beside the one the result is computed from, marked as such.
 
-`jsonrpc` was therefore judged **twice**: once with the two arms that had finished, and again with all three once the competitor completed, so no arm is judged in a context the others were not. The two-arm verdicts agreed with the three-arm ones on both arms they covered, and only the three-arm batch is kept.
+## What the round does show
+
+The corpus arm reached the `livedata` advisory **twice over, by two different routes**: the `enforceRequiredRights` lever (`WEB-06`) and, separately, the caller-named XClass (`WEB-25`) — the procedure written from round 2's shared miss. On the second, the blind judge wrote the procedure's own sentence back without ever having seen it: *"the only authorization on the chain is `checkAccess(Right.EDIT, documentReference)` on the document — nothing authorizes the class."*
+
+That is real, and it is not a score. `WEB-25` fired on a target nobody here had seen and named a mechanism an independent judge accepted. It did not produce a lead, because the other arms reached the same advisory by the other route.
 
 ## Across all three rule-picked rounds
 
 | | Corpus | No corpus | Competitor |
 |---|---|---|---|
-| round 1 — Go, 3 advisories | 2/3 | 2/3 | 2/3 |
-| round 2 — Python, 3 advisories | 1/3 | 1/3 | 1/3 |
-| round 3 — Java, 3 advisories | **3/3** | 2/3 | 1 of 1 measured |
-| **total** | **6 / 9** | **5 / 9** | **4 of 7 measured** |
+| round 1 — Go | 2/3 | 2/3 | 2/3 |
+| round 2 — Python | 1/3 | 1/3 | 1/3 |
+| round 3 — Java | 3/3 | 3/3 | 3/3 |
+| **total** | **6 / 9** | **6 / 9** | **6 / 9** |
 
-**One advisory separates the corpus from the same model without it, over nine.** That is a lead and it is a thin one. It is not a claim of dominance, it does not survive being restated as a percentage, and the honest sentence is the narrow one:
+**Nine advisories chosen by a published rule, in three ecosystems and five projects, and the three arms are identical.** Not one advisory separates them once every arm is judged the same way.
 
-> On nine advisories selected by a published rule, the corpus found one more than the same model working without it. The one it found alone came from a procedure written after an earlier round's failure, which is the loop this repository claims to run, doing the thing it claims.
-
-What would strengthen it is more rounds — and what would weaken it is the same thing, which is why the next round matters as much as this one.
+The claim this repository was being weighed against — that it is the best of its kind currently available — is **not supported by its own measurements**. What they support is narrower and still worth having: the corpus reaches the same advisories as an unaided senior engineer and as a competing product, with roughly half the reported output, and it is the only one of the three that publishes the number at all.
 
 ## Files
 
-`provenance.json` was written before any result: the selection rule with its six rejects, why the ecosystem changed, and the sentence *"if the round ties again, that is three rounds of parity and the honest reading is that the corpus does not lead"*. `judgements-deblinded.json` holds every verdict joined back to its arm, with the batch it came from. `arms/` holds the seven artifacts that were measured; `unfinished/` holds the two that were not, unscored.
+`provenance.json` was written before any result: the selection rule with its six rejects, why the ecosystem changed, and the sentence *"if the round ties again, that is three rounds of parity and the honest reading is that the corpus does not lead"*. That sentence is now the finding.
+
+`judgements-deblinded.json` holds every verdict with the batch it came from, superseded included. `arms/` holds all nine artifacts. `unfinished/` holds the two competitor indexes as they stood when the host killed those runs — both arms later recovered and finished, and the partial files are kept only as a record of what a killed run looks like: pre-review researcher output that would have overstated the arm had anyone scored it.
