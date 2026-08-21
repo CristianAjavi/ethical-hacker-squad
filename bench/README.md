@@ -40,11 +40,14 @@ Two runs, and they do not agree. Read them together or not at all.
 |---|---|---|---|
 | [round 1](runs/2026-08-21-three-arm-go/) — Go | 2/3 | 2/3 | 2/3 |
 | [round 2](runs/2026-08-21-round2/) — Python, in the classes this corpus is strongest at | 1/3 | 1/3 | 1/3 |
-| **total** | **3 / 6** | **3 / 6** | **3 / 6** |
+| [round 3](runs/2026-08-21-round3/) — Java | **3/3** | 2/3 | 1 of 1 measured |
+| **total** | **6 / 9** | **5 / 9** | **4 of 7 measured** |
 
-**Identical. Not one advisory separates the three arms in either direction.** On cases this project chose, the corpus shows a difference; on six cases a rule chose, it does not. Anyone weighing this product should assume parity with a competent engineer and with the neighbouring product, because that is what the measurement says.
+**One advisory, over nine, separates the corpus from the same model without it.** The first two rounds were flat ties. The third separated, and the finding that separated it came from `WEB-25` — a procedure written *after* round 2, from a defect every arm had missed, firing on a target nobody here had seen and judged blind.
 
-Round 2 was pre-registered — including the sentence *"if the corpus does not lead here, it does not lead where it is best"* — before any of its numbers existed.
+That is a lead and it is a thin one. It is not dominance, it does not survive being restated as a percentage, and two of the competitor's nine cells are **not measured** rather than zero, because the host killed those runs before their own pipelines finished.
+
+Every round was pre-registered before its numbers existed, including round 2's *"if the corpus does not lead here, it does not lead where it is best"* and round 3's *"if the round ties again, that is three rounds of parity and the honest reading is that the corpus does not lead"*.
 
 Both rule-picked rounds ended level **and** produced procedures from what every arm missed: `WEB-23` from the first, [`WEB-24` and `WEB-25`](runs/2026-08-21-authz/) from the second. Whether that compounds into a lead is an empirical question with two data points and no answer — the round that would settle it has not been run.
 

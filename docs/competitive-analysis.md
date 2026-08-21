@@ -28,10 +28,12 @@ product in this document, ours included. See §3.4.
 
 > **Update, 2026-08-21 — that last paragraph is now partly false, and the correction does not flatter us.**
 > Detection quality has since been measured for two products in this table, ours and Mantis, on
-> published advisories with a blind judge. **On the six advisories a published rule selected, the score
-> is 3/6 for this corpus, 3/6 for the same model with no corpus, and 3/6 for Mantis — identical, with
-> not one advisory separating them in either direction.** Adding the two cases this project chose
-> makes it 5/8, 4/8 and 4/8, and the single case that separates them is one we picked. The single case where this corpus pulled ahead is one we chose. The runs, their
+> published advisories with a blind judge. **On the nine advisories a published rule selected, the
+> score is 6/9 for this corpus, 5/9 for the same model with no corpus, and 4 of 7 measured cells for
+> Mantis.** The first two rounds were flat ties; the third separated by one advisory, and the finding
+> that separated it came from a procedure written *after* the second round, from a defect every arm
+> had missed. **One advisory over nine is a lead, not dominance**, and two of Mantis's cells are
+> recorded as not measured rather than zero because the host killed those runs mid-pipeline. The single case where this corpus pulled ahead is one we chose. The runs, their
 > artifacts and their limits are in `bench/runs/2026-08-21-ab-corpus/` and
 > `bench/runs/2026-08-21-three-arm-go/`. Nothing here supports "the best available"; what it supports
 > is "measured, and at parity on the sample nobody curated". The rest of this document was written on

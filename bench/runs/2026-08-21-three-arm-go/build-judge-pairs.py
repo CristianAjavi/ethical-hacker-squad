@@ -55,7 +55,13 @@ def main() -> int:
     ap.add_argument("--dir-map", help="JSON file mapping advisory id -> target directory, for rounds "
                                       "where one repository carries several advisories and the "
                                       "directory name is not the repository slug")
+    ap.add_argument("--arms", help="comma-separated arms to include (default: all three). Use it to "
+                                   "leave out an arm whose run could not be completed - the point is "
+                                   "that its cell is then NOT MEASURED, which is not the same as a "
+                                   "zero, and scoring its unfinished output would be worse than "
+                                   "either")
     args = ap.parse_args()
+    arms = tuple(a.strip() for a in args.arms.split(",")) if args.arms else ARMS
 
     try:
         key = json.loads(Path(args.key).read_text(encoding="utf-8"))
@@ -85,7 +91,7 @@ def main() -> int:
             "advisory_summary": case["advisory_summary"],
             "advisory_description": case["advisory_description"],
         }
-        for arm in ARMS:
+        for arm in arms:
             out = root / slug / arm / "out"
             files = sorted(out.glob("*.json")) if out.is_dir() else []
             if not files:
