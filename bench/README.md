@@ -38,7 +38,9 @@ The pre-registration predicted the opposite and named what would refute it. The 
 
 **The first fix, though, worked.** A loading rule — *read the target before you read this corpus, and stop loading before the code stops fitting* — took the corpus arm from **2/6 to 4/6**, with D2 going from zero of three runs to three of three. Nothing else changed and the unaided arm was not re-run. It is still one defect behind 5/6, which is inside this bench's resolution: the rule moved the weak-model result from **measurably harmful to indistinguishable**, not to good. And D1 fell from 2/3 to 1/3, with two runs *actively ruling it out* — a reviewer on a short budget produces confident refutations, which is worse than silence and is the next thing to measure.
 
-The counterweight stands: the unaided lists on a weak model carry filler, and neither round measured their precision. 5/6 says the defects are in the list, not that the list is good.
+**And the counterweight turned out to be the story.** [The weak unaided arm's 28 claims were verified adversarially, twice](runs/2026-08-21-weak-precision/): **19 refuted by both passes, 4 supported — and those 4 are D1 and D2 themselves.** Beyond the two defects the ground truth already names, that arm produced nothing that survived being attacked: the code read backwards, a premise inverted by a strict `<`, three claims needing a scale outside the range a `readUnsignedByte()` can return, and a missing log line. **The recall comparison was substantially measuring output volume.**
+
+This does **not** say the corpus arm is more precise — its six claims were deliberately not verified, because six against twenty-eight is a ratio nobody should trust. What is now measured is that **both arms make confident wrong statements on a weak model**: the unaided arm as findings, the corpus arm as refutations of a real defect. Which failure a reader would rather receive is unanswered.
 
 ## The number that governs every other number in this file
 
