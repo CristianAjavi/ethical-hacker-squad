@@ -74,7 +74,7 @@ The prediction was refutable and held. And the most useful thing in it is a **co
 
 **Read this next to everything above it.** It is a claim about what a buyer can *check*, not about what anyone finds. On capability this corpus leads on none of eighteen measurements, and `google/mantis` is measurably ahead of it on precision.
 
-## Whole repositories: nobody solves this, on six advisories
+## Whole repositories: the round that claimed this is RETRACTED
 
 [2026-08-22, routing at N](runs/2026-08-22-routing-at-N/) — the thinnest evidence in this bench was also the one holding up its strongest conclusion. The dimension the corpus is *built* for, deciding what to read in a repository nobody reads whole, had three advisories of evidence. It now has six.
 
@@ -84,7 +84,9 @@ The prediction was refutable and held. And the most useful thing in it is a **co
 | 2026-08-22, rule-picked Go targets | 0/3 | 0/3 |
 | **total** | **0 / 6** | **1 / 6** |
 
-The pre-registration predicted exactly this — both arms at or below 1/3, gap of one or less — because the honest expectation was that **the task is hard for everyone**, and that is now the published statement rather than *the corpus does not lead*.
+> **Retracted.** The 2026-08-22 targets were cloned at the default branch, which is **after** each fix commit, so both arms audited code the defects had already been removed from. 0/3 against absent defects measures nothing, and the conclusion drawn from it is withdrawn. Whole-repository evidence is back to the earlier rounds alone: **0/3 with the corpus, 1/3 without**, three advisories, which is too thin to conclude anything and is exactly what the retracted round set out to fix. It is re-run properly in `runs/2026-08-22-routing-at-N-2/`.
+>
+> It was caught by an arm applying this corpus's own rule that a refutation must cite the line of the control: it named the bound that makes the defect impossible. A silent non-finding would have shipped as a result.
 
 **Both arms missed by nine lines.** The advisory lives in `sliceMapToSlice` at `req_resp_decoder.go:936`; both arms independently reported an unchecked type assertion in `deepSet` at line 945. They routed to the right file, read it, found a real bug in it, and neither enumerated the other way that code can be driven. Neither list mentions `sliceMapToSlice`.
 

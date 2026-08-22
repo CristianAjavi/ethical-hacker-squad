@@ -1,5 +1,18 @@
 # Run 2026-08-22 — whole repositories: 0/3 for both arms, and both missed by nine lines
 
+> # RETRACTED — the targets were already patched
+>
+> **This round measured both arms against code from which the defects had already been removed.** The targets were cloned with `git clone --depth 1` of the default branch, which is *after* each fix commit. `cases-picked.json` records a `parent` field for exactly this reason — the pre-fix commit — and it was ignored.
+>
+> Verified in the cloned tree: `openapi3filter/req_resp_decoder.go` carries `maxSliceMapToSliceGap = 10000` (line 980) and the bound at line 1006, which **is** the fix for `GHSA-xhj3-7xw9-vr34`; and `validation_error_encoder.go:127` handles `e.Parameter == nil` explicitly, which is the fix for `GHSA-mmfr-pmjx-hw9w`.
+>
+> **Every number below is void.** 0/3 against absent defects measures nothing. The conclusions drawn from it — including the change to this repository's published headline — are withdrawn with it.
+>
+> **How it was caught, and it matters:** a later run, following this corpus's own rule that a refutation must name the line of the control, wrote in its `ruled_out` section that `sliceMapToSlice` *"rejects the input when `max + 1 - len(m) > maxSliceMapToSliceGap` (10000, declared at line 980)"*. Had that arm merely stayed silent about the function, this error would have shipped as a result. The rule that a dismissal must cite its control is what turned a silent non-finding into a caught mistake.
+>
+> The round is re-run against the parent commits in `../2026-08-22-routing-at-N-2/`. Nothing below is edited; it is left standing as the record of the error.
+
+
 `PREREGISTRATION.md` was committed before any arm ran, with targets picked by a published rule before the prediction was written. It predicted **both arms at or below 1 of 3, with a gap of one advisory or less** — that the dimension is hard for everyone — and named what would refute that.
 
 **Measured: 0/3 and 0/3. Gap zero. The prediction holds.**
