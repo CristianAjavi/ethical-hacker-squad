@@ -46,3 +46,15 @@ Same target, same weak model (Haiku 4.5), same target as every weak round.
 - The corpus arm's 26 claims pool three corpus versions; disclosed in `../2026-08-21-corpus-precision/`.
 - A precision comparison says nothing about recall, where all three arms have tied wherever they were measured together.
 - Competitor output is produced by a pipeline with several stages; whatever it emits as its final report is what gets verified, exactly as our final artifact is what gets verified.
+
+---
+
+## Amendment, written before any competitor claim was verified
+
+The first competitor run returned **7 findings**. A refuted *proportion* over 7 claims is not comparable to one over 26 or 28, and reporting it as if it were would be exactly the kind of number this bench has already retracted three times.
+
+Our own arm was measured by **pooling nine runs into 26 claims**. The competitor gets the same treatment: **three runs, pooled**, before anything is verified. This is decided now, with only the first run's *count* known and none of its claims yet read by a verifier, and it is recorded here rather than folded silently into the method.
+
+Nothing else changes: same target, same weak model, same verifier prompt byte for byte, two independent adversarial passes, the same blinding.
+
+If the pooled competitor claim count still lands far below the other two arms, the comparison is reported **with that asymmetry in the table itself**, not in a footnote.
