@@ -200,7 +200,7 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 **Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
-## The seven rules that came out of being wrong
+## The eight rules that came out of being wrong
 
 None of these was designed. Each one is what a retraction or a near-miss cost, and several are enforced by `gate-bench-integrity.sh` rather than by good intentions.
 
@@ -210,6 +210,8 @@ None of these was designed. Each one is what a retraction or a near-miss cost, a
 4. **A dead run is not a zero.** A run whose agent died is *not measured*, and its partial output is preserved unscored. This rule was first applied when it cost us and has since been applied when it favoured us.
 5. **Never report precision without recall.** An arm that reports nothing is never refuted. A drop in refuted claims that arrives with a drop in ground-truth recall is suppression, and gets that word.
 6. **Two passes, or it is not an instrument.** A single blind judge disagreed with a second one on the two verdicts that decided a case, and a published result had to be withdrawn. Inter-pass agreement is reported as the resolution of the instrument, and no difference smaller than it is reportable.
+8. **Verify the defect is in the checkout before any arm runs.** A whole-repository round was published and retracted the same night: the targets were cloned at the default branch, which is *after* each fix, so both arms audited code the defects had been removed from and 0/3 was reported as detection. The case file recorded the pre-fix `parent` commit and it was ignored. `scripts/bench/verify-target-checkout.py` now refuses a case whose checkout is not at its parent, or whose files carry a marker the fix introduces — five negative cases, including the exact mistake. **It was caught only because one arm named the control that made the defect impossible; a silent non-finding looks identical to a miss, and a bench cannot depend on luck.**
+
 7. **Check the artifact before you believe the number.** A pre-registered prediction landed exactly on target while *all three runs failed validation* — the intervention had never been applied. Only the machine-checked contract caught it.
 
 ## What the numbers are worth

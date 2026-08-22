@@ -1,3 +1,11 @@
+# VOID — the target was already patched
+
+> **This round's prediction is unmeasurable and no result will be published against it.** The target was the same clone as `../2026-08-22-routing-at-N/`, taken at the default branch, which is *after* the fix. The defect the prediction asks the arm to report **is not in the code the arm read**. `../2026-08-22-routing-at-N/` carries the full retraction.
+>
+> **What the three runs did show, kept separate from the failed test:** one of them enumerated `sliceMapToSlice` and resolved it in `ruled_out`, citing the bound at line 980 that makes it safe. Every arm in the previous round never mentioned that function at all. That is the behaviour the procedure asks for — enumerate the route, then account for it — observed on a tree where the honest answer happened to be *safe*. It is **not** evidence for the pre-registered prediction, which needs the unpatched tree.
+>
+> Re-run in `../2026-08-22-exhaust-the-file-2/` against the parent commit. Nothing below is edited.
+
 # Pre-registration — a procedure for exhausting a file you have already opened
 
 **Written before the procedure was drafted and before any run.**
