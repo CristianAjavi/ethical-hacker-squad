@@ -14,6 +14,9 @@ It predicted **every arm within one run of each other, most likely all at zero**
 
 The refutation bar was **two or more runs of separation**. There is one. **By the criterion written before the runs, this is not evidence of a lead**, and it is not being reported as one.
 
+> **The parked result did NOT reproduce, and is now parked permanently.**
+> A second external advisory was run under the condition set below — `../2026-08-22-external-second/`, `Netflix/lemur`, `GHSA-pxmc-2ffp-8j67`, same three arms, four runs each. **Nobody found it: 0-0-0.** The 1-0-0 here is therefore never released into `README.md` or any comparison table. Two external advisories, twenty-four measured runs, **one detection that does not replicate.**
+
 ## The outcome the pre-registration told me to distrust is the one that happened
 
 > *This corpus alone finding it. Named separately because it is the outcome I would want, and it is the one to distrust: it must be reproduced on a second external advisory before it is written anywhere but in this round's own README.*

@@ -64,6 +64,22 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## External code: one detection in twenty-four runs, and it does not replicate
+
+Two published advisories, two real repositories, three products, four runs each — [`vouch-proxy`](runs/2026-08-22-external-competitive/) and [`Netflix/lemur`](runs/2026-08-22-external-second/), both at checkouts verified to sit before the fix.
+
+| | `vouch-proxy` (Go, 144 files) | `Netflix/lemur` (Python, 575 files) |
+|---|---|---|
+| this corpus | 1 / 4 | **0 / 4** |
+| `Tencent/AI-Infra-Guard` | 0 / 4 | 0 / 4 |
+| `google/mantis` | 0 / 4 | 0 / 4 |
+
+**One detection in twenty-four measured runs, and the round designed to reproduce it did not.** The `vouch-proxy` result was parked under exactly that condition and is now parked permanently. **Nothing in this bench supports a claim that any of these products finds published advisories in unfamiliar code without a pointer** — this project included, and that is the honest state of external validity here.
+
+**Both misses are one link short, not lost.** On `vouch-proxy` `mantis` reached the advisory's exact function and named an out-of-bounds access instead of the unbounded allocation. On `lemur` this corpus reached the advisory's exact endpoint and named the missing authorization gate — a precondition of the chain — without ever reaching the revoke step that makes it exploitable. Across 56 claims from three products on `lemur`, **one mentions revocation at all**.
+
+**`AI-Infra-Guard` produced zero claims in four runs on `lemur`**, concluding "SAFE FOR DEPLOYMENT". Reported with its reason, because the bare number misrepresents it: its taxonomy asks *is this code malicious*, and it answers correctly — `lemur` has no backdoor. The defect is authorization wired wrongly, which is not the question that pipeline was built to ask. **A tool answering its own question is not a tool failing**, and one of these three arms was not built for this test.
+
 ## Reading the two dimensions jointly — an observation, not a result
 
 The bands treat precision and recall separately. Reading them **together** asks a different question: does any arm beat another on **both** at once? That is arithmetic over numbers already published, not a new metric — but **it was not pre-registered**, so it is offered as an observation and labelled as one.
