@@ -1,0 +1,205 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/vouch-proxy",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/v1.0",
+    "coverage_declaration": "Audited OAuth/OIDC authentication flow, JWT token generation and validation, session and cookie security, request validation, configuration, and dependency manifest. Did not execute remote tests against OAuth providers or real IdP flows (REQUIRES AUTHORIZATION). Did not run SAST scanners due to scope constraints. §7 dependency triage not fully executed - go.mod processed manually but no automated SCA run against known advisories.",
+    "coverage": {
+      "inventoried": [
+        "OAuth/OIDC authentication flow (login, callback, state validation)",
+        "JWT token generation and verification",
+        "Session management (Gorilla sessions)",
+        "Cookie security (secure, httponly, samesite)",
+        "Request validation and authorization (domains, hosts)",
+        "Configuration validation and defaults",
+        "Dependency manifests (go.mod, go.sum)",
+        "Input validation (redirect URLs, OAuth parameters)",
+        "Error handling and logging"
+      ],
+      "read": [
+        "handlers/auth.go - OAuth callback and state handling",
+        "handlers/login.go - login flow and URL validation",
+        "handlers/validate.go - JWT validation and host verification",
+        "handlers/logout.go - logout and redirect validation",
+        "pkg/jwtmanager/jwtmanager.go - JWT sign/verify",
+        "pkg/cookie/cookie.go - cookie configuration",
+        "pkg/cfg/cfg.go - configuration validation",
+        "pkg/cfg/oauth.go - OAuth provider configuration",
+        "go.mod - dependency declarations",
+        ".defaults.yml - default configuration values"
+      ],
+      "not_read": [
+        "Provider-specific implementations (GitHub, Google, Azure, etc.) - partial review only",
+        "CI/CD workflows (.github/workflows) - not in scope",
+        "Automated SCA scan against known CVE databases - REQUIRES AUTHORIZATION for network access",
+        "Live OAuth provider testing - REQUIRES AUTHORIZATION"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "SameSite cookie attribute missing from default configuration",
+        "State nonce generation using secure random",
+        "PKCE implementation correctness",
+        "Session key auto-generation",
+        "JWT algorithm validation"
+      ],
+      "reported": [
+        "SameSite cookie attribute missing from default configuration"
+      ],
+      "dropped": [
+        {
+          "label": "State nonce generation using secure random",
+          "resolution": "merged",
+          "merged_into": "F-001",
+          "reason": "State validation is part of overall OAuth state management which is secure; nonce generation verified to use securerandom.URLBase64InBytes(32 bytes) with proper entropy"
+        },
+        {
+          "label": "PKCE implementation correctness",
+          "resolution": "refuted",
+          "control_at": "pkg/providers/common/common.go:34",
+          "reason": "PKCE parameters are correctly passed to oauth2.Config.Exchange() via opts parameter, which handles both code_challenge in auth request and code_verifier in token request"
+        },
+        {
+          "label": "Session key auto-generation",
+          "resolution": "refuted",
+          "control_at": "pkg/cfg/cfg.go:361-367",
+          "reason": "Session.Key is securely auto-generated from securerandom.Base64OfBytes(32 bytes) if not configured, and length is validated against minBase64Length (44 chars)"
+        },
+        {
+          "label": "JWT algorithm validation",
+          "resolution": "refuted",
+          "control_at": "pkg/jwtmanager/jwtmanager.go:152",
+          "reason": "Token algorithm is validated with token.Method != jwt.GetSigningMethod(cfg.Cfg.JWT.SigningMethod), preventing algorithm substitution attacks"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Missing SameSite cookie attribute in default configuration",
+      "procedure": "WEB-02",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".defaults.yml",
+        "line": 40
+      },
+      "evidence": "Default configuration at line 40 of .defaults.yml has `sameSite:` commented out (not set). When cfg.Cfg.Cookie.SameSite is empty string, the SameSite() function in cookie.go returns http.SameSite(0), which means no SameSite attribute is set on session cookies.",
+      "impact": "Session cookies without SameSite attribute are vulnerable to cross-site request forgery (CSRF) attacks where an attacker can trick a user into making requests from another site that will include the session cookie. The impact is that an authenticated user visiting a malicious site could have their session used to perform actions without their knowledge.",
+      "preconditions": "User must be authenticated to Vouch Proxy and visiting a site controlled by an attacker while the legitimate Vouch Proxy site is open in another tab or window.",
+      "recommendation": "Set a default SameSite mode in .defaults.yml. SameSiteLaxMode is recommended as it allows same-site requests while blocking cross-site requests. Add to .defaults.yml: 'sameSite: Lax' (line 40). Users can override this in their configuration as needed. Modern browsers (Chrome 51+, Firefox 60+, Safari 13+) support this attribute.",
+      "inference": "While HttpOnly=true and Secure=true are set by default (preventing JavaScript access and requiring HTTPS), the lack of SameSite means the cookie is still sent in cross-site requests. The vulnerability exists unless users explicitly configure SameSite in their config.yml.",
+      "what_would_settle_it": "Verification that all default configuration files and documentation recommend SameSite configuration, and that new deployments follow this guidance in their config examples.",
+      "traceability": [
+        "CWE-613",
+        "CWE-1004",
+        "WSTG-SESS-05",
+        "ASVS 5.0 V7.1",
+        "A07:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control is evident. HttpOnly and Secure help but don't prevent CSRF from cross-site requests that don't require JavaScript access."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The SameSite attribute is not attacker-controlled; it's a server-side setting."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is the browser's cookie handling, which does implement CSRF attacks when SameSite is not set."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is default configuration that ships in production. .defaults.yml is loaded by Configure() in main.go for all deployments."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The cookie behavior is not intended to be vulnerable; SameSite should be set but isn't by default."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is a code-based configuration issue, not external to the repository."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The SameSite attribute is exactly what it looks like - missing - not a different construct."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is a load-bearing defense; there is no secondary mitigation that makes the cookie CSRF-safe once HttpOnly is set."
+        }
+      ],
+      "limits": "This finding is classified as `probable` rather than `confirmed` because: (1) the actual CSRF impact depends on the specific deployment context and how users have configured their systems; (2) users may mitigate this by configuring SameSite in their own config.yml; (3) the Nginx auth_request module context may provide additional protections depending on how it's deployed."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "OAuth state parameter predictability",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "generateStateNonce() in handlers/login.go uses securerandom.URLBase64InBytes(base64Bytes) where base64Bytes=32, providing 256 bits of entropy which is cryptographically secure"
+    },
+    {
+      "class": "OAuth redirect URI validation bypass",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "getValidRequestedURL() in handlers/login.go validates: (1) scheme is http/https, (2) hostname matches configured domains or cookie domain, (3) query parameters don't contain dangerous strings, (4) cookie secure flag matches scheme"
+    },
+    {
+      "class": "Open redirect via logout",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "LogoutHandler in handlers/logout.go validates redirectURL against cfg.Cfg.LogoutRedirectURLs allowlist (line 61-67) before any redirect"
+    },
+    {
+      "class": "JWT token algorithm substitution (alg:none, algorithm confusion)",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "ParseTokenString in pkg/jwtmanager/jwtmanager.go validates token.Method == jwt.GetSigningMethod(cfg.Cfg.JWT.SigningMethod) at line 152, preventing algorithm attacks"
+    },
+    {
+      "class": "JWT signature bypass with empty key",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "Configuration validation in pkg/cfg/cfg.go ensures JWT.Secret is at least minBase64Length (44 chars) for HMAC signing methods (line 432-436)"
+    },
+    {
+      "class": "Session fixation via cookie reuse",
+      "procedure": "WEB-02",
+      "outcome": "not executed",
+      "where": "Cookie.ClearCookie() is called in LoginHandler (line 41) before session creation, and session path is restricted to /auth/{state}/ (line 58), but verified regeneration on login was not traced through full test execution"
+    },
+    {
+      "class": "Session storage encryption weakness",
+      "procedure": "WEB-02",
+      "outcome": "refuted",
+      "where": "Gorilla CookieStore is initialized with cfg.Cfg.Session.Key (handlers/handlers.go:59) which is either user-configured or auto-generated with 32 random bytes (pkg/cfg/cfg.go:361-367)"
+    },
+    {
+      "class": "Credential enumeration in login responses",
+      "procedure": "WEB-03",
+      "outcome": "inconclusive",
+      "where": "Error messages in handlers do not distinguish 'user not found' from 'wrong password' at the authentication layer, but user verification happens post-OAuth so IdP determines enumeration surface (not audited against remote IdP behavior)"
+    },
+    {
+      "class": "Unintended host header injection via audience claim",
+      "procedure": "WEB-02",
+      "outcome": "refuted",
+      "where": "ValidateRequestHandler validates r.Host against jwt claims.Audience AND against domains.Matches(r.Host), requiring match on both (handlers/validate.go:55)"
+    }
+  ]
+}
