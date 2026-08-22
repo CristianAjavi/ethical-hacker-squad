@@ -17,6 +17,8 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 **And stop loading before the code stops fitting.** Measured on a small-context model: the arm that loaded its pack spent twice the budget of an unaided reviewer to report a fifth as much, and missed a defect it had the file open for. If opening a pack section would leave you without room to read the target properly, **do not open it**. Audit what you can actually read, and say in your coverage declaration that no procedure was consulted for the rest. A short honest audit beats a long ceremonial one.
 
+**A dismissal costs what an assertion costs.** Dropping a candidate as `refuted` requires `control_at`, the `path:line` where the control that makes it harmless is enforced on the path to the sink; as `merged`, the id of the finding that absorbed it. Measured: a reviewer short of budget does not fall silent, it refutes confidently. If you cannot point at the control you have not refuted anything - say `probable` and name what would settle it.
+
 ## First actions
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/privacy-abuse.md`, opening only the sections the inventory justifies.

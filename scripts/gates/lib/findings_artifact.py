@@ -235,6 +235,7 @@ def main() -> int:
             kept = set(up.get("reported") or [])
             dropped_rows = up.get("dropped") or []
             gone = set()
+            ids = {f.get("id") for f in (data.get("findings") or []) if isinstance(f, dict)}
             for row in dropped_rows:
                 if isinstance(row, dict) and isinstance(row.get("label"), str):
                     gone.add(row["label"])
@@ -244,6 +245,24 @@ def main() -> int:
                         fail(f"engagement.unaided_pass: {row['label']!r} is dropped because no "
                              "procedure covers it, and that is the one reason this field exists to "
                              "refuse - a finding with no procedure is `ad-hoc`, not absent")
+                    # A dismissal has to cost what an assertion costs. Measured: a
+                    # weaker model on a short budget does not go quiet, it refutes
+                    # confidently - twice dismissing a real unbounded allocation,
+                    # once by asserting the bounds were fine and once by citing the
+                    # length cap of a different method.
+                    res = row.get("resolution")
+                    if res == "refuted" and not (row.get("control_at") or "").strip():
+                        fail(f"engagement.unaided_pass: {row['label']!r} is refuted with no `control_at` - "
+                             "a refutation names the line where the bound is enforced on the path to the "
+                             "sink, exactly as a confirmation names where it is missing")
+                    if res == "merged":
+                        into = (row.get("merged_into") or "").strip()
+                        if not into:
+                            fail(f"engagement.unaided_pass: {row['label']!r} is merged into nothing - "
+                                 "name the finding that absorbed it")
+                        elif into not in ids:
+                            fail(f"engagement.unaided_pass: {row['label']!r} is merged into {into!r}, "
+                                 "which is not a finding in this artifact")
             for s in sorted(cand - (kept | gone)):
                 fail(f"engagement.unaided_pass: {s!r} was a candidate before any pack was opened and "
                      "is resolved as neither reported nor dropped - that is the substitution this "
