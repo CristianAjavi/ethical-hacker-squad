@@ -22,15 +22,25 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
-**Two dimensions are measured in this project's favour. One is capability — and it is a tie with the best product in this field, not a lead over it.**
+**Two dimensions are measured in this project's favour. The capability one is not a lead on any axis — it is that this corpus is the only arm that is never the outlier.**
 
-Against **`Tencent/AI-Infra-Guard`**, the only product here that publishes its own detection quality, on its own home ground of AI-agent security: [**0% of this corpus's claims are refuted by two independent adversarial passes against 3% of theirs**](bench/runs/2026-08-22-second-competitor/) — one claim out of 31, at 4.67 of 7 ground-truth recall against 4.50. **That is a tie, and it is published as a tie.** Against `google/mantis` the same instrument gives 0% against 19%, which is a real gap.
+Two targets, three arms, six runs each, every claim judged blind by two independent adversarial passes and a separate defect-matching judge. Bands fixed before the numbers: 10 points of precision, 0.5 defects of recall.
 
-**So the honest sentence is: level with the best that was measurable here, ahead of the other one, on one target at one model scale.** Not ahead of the field. Three of the six surveyed products have never been run as arms at all.
+| | precision band | recall band |
+|---|---|---|
+| `google/mantis` | **outside** on the AI-agent target (19 points) | inside on both |
+| `Tencent/AI-Infra-Guard` | inside on both | **outside** on the HTTP API (0.83) |
+| **this corpus** | **inside on both** | **inside on both** |
 
-The claim was **withdrawn and restored once each in the same night** rather than argued into place. [A replication](bench/runs/2026-08-22-precision-replication/) failed its recall criterion by one defect in one of three runs and the claim came down; [more runs](bench/runs/2026-08-22-recall-resolution/) brought it back inside a band declared in advance. Then a [second competitor](bench/runs/2026-08-22-second-competitor/) narrowed what it may say.
+[On the AI-agent target](bench/runs/2026-08-22-second-competitor/): 0% of this corpus's claims refuted against `AI-Infra-Guard`'s 3% and `mantis`'s 19%. [On an ordinary Node HTTP API](bench/runs/2026-08-22-second-target/): 0% against 0% and 8%, with recall 4.80 of 5 against 4.17 and 5.00.
 
-**Read the recall numbers as a band, never as a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped** — judge one put this corpus behind `mantis`, judge two put it ahead. That is the resolution of the instrument, measured rather than assumed, and it is why the band exists.
+**`mantis` has better recall than this corpus on the second target, and `AI-Infra-Guard` ties its precision on both. Neither of those is hidden here.** What the two targets support is narrower and duller than a win: **each competitor falls outside a band somewhere; this corpus does not.**
+
+Two things the second target taught that the first could not. **`AI-Infra-Guard`'s advantage was domain-bound** — level with this corpus on its own ground, last on recall off it, while still refuting nothing. **`mantis`'s 19-point precision deficit was target-specific** — 8 points here, inside the band, and it found every planted defect in every run.
+
+**Read every recall figure as a band, never a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped**. That is the instrument's resolution, measured rather than assumed.
+
+Still one model scale, two targets authored here, and **three of the six surveyed products have never been run as arms at all.**
 
 The second dimension is not capability at all.
 

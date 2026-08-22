@@ -1,0 +1,254 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/t2/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad v1",
+    "coverage": {
+      "inventoried": [
+        "HTTP routes and authorization (Express routes in routes/invoices.js)",
+        "JWT authentication (lib/auth.js)",
+        "Database access and queries (lib/db.js stub)",
+        "Remote HTTP fetching (lib/remote.js)",
+        "HTML rendering and templating (lib/render.js)",
+        "Dependencies and version management (package.json)"
+      ],
+      "read": [
+        "HTTP routes and authorization (Express routes in routes/invoices.js)",
+        "JWT authentication (lib/auth.js)",
+        "Remote HTTP fetching (lib/remote.js)",
+        "HTML rendering and templating (lib/render.js)",
+        "Dependencies and version management (package.json)"
+      ],
+      "not_read": [
+        "Database access and queries (lib/db.js stub - minimal placeholder, no real implementation)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "JWT tokens decoded without verification - token forgery risk",
+        "SSRF in fetchLogo - arbitrary URL fetching without validation",
+        "SQL injection in invoice list sorting - ORDER BY parameter concatenation",
+        "XSS in invoiceNote - unescaped user input in HTML",
+        "Missing authorization on GET /invoices/:id endpoint - object-level auth bypass"
+      ],
+      "reported": [
+        "JWT tokens decoded without verification - token forgery risk",
+        "SSRF in fetchLogo - arbitrary URL fetching without validation",
+        "SQL injection in invoice list sorting - ORDER BY parameter concatenation",
+        "XSS in invoiceNote - unescaped user input in HTML",
+        "Missing authorization on GET /invoices/:id endpoint - object-level auth bypass"
+      ],
+      "dropped": []
+    },
+    "coverage_declaration": "Audit covered authentication (JWT), authorization (BOLA/object-level access), injection vulnerabilities (SQL injection, SSRF), and XSS in a Node.js/Express web application. All source files examined. No remote endpoints tested. Dependencies analyzed from package.json manifest. Database implementation is a stub placeholder with no real code to audit."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT tokens decoded without signature verification (token forgery)",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "lib/auth.js",
+        "line": 6,
+        "component": "currentUser function"
+      },
+      "evidence": "Line 6 uses jwt.decode(bearer) without calling jwt.verify(). The function does not pass a secret key for verification, allowing any attacker to forge tokens with arbitrary claims.",
+      "impact": "An attacker can forge JWT tokens with any claims (including admin roles) without knowing the signing secret, leading to authentication bypass and privilege escalation.",
+      "preconditions": "The application trusts decoded JWT claims without verifying the signature. This is critical because the decoded claims are used directly for authorization (role-based access control in currentUser and tagRequest functions).",
+      "recommendation": "Replace jwt.decode() with jwt.verify(token, SECRET_KEY, {algorithms: ['HS256']}) where SECRET_KEY is a secret known only to the server. Validate exp, iss, and aud claims. Alternatively, use a middleware that validates tokens before they reach route handlers.",
+      "limits": "This finding assumes tokens are self-contained and the application relies on the decoded payload. If the application falls back to a server-side session store for authorization decisions (separate from the JWT payload), the risk may be mitigated - this should be verified.",
+      "traceability": [
+        "CWE-347",
+        "CWE-345",
+        "WSTG-ATHN-05",
+        "ASVS 5.0 V9",
+        "A07:2025",
+        "API2:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces signature verification. The server trusts unverified claims."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is dangerous - decode() without verify() is explicitly documented as insecure in the jsonwebtoken library."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it appears - unverified JWT decoding."
+        }
+      ],
+      "unaided_label": "JWT tokens decoded without verification - token forgery risk"
+    },
+    {
+      "id": "F-002",
+      "title": "Server-Side Request Forgery (SSRF) in fetchLogo endpoint",
+      "procedure": "WEB-10",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "lib/remote.js",
+        "line": 6,
+        "component": "fetchLogo function"
+      },
+      "evidence": "The fetchLogo() function at line 5-8 accepts a user-supplied URL from req.body.logoUrl (invoked from routes/invoices.js line 38) and fetches it without validation: fetch(url, {redirect: 'follow'}). No allowlist, no scheme validation, no hostname validation.",
+      "impact": "An attacker can use the SSRF to: access internal network services (databases, admin panels), query cloud metadata services (AWS IMDSv1 at 169.254.169.254), access file:// URLs, or amplify attacks against third-party services. The redirect: 'follow' option amplifies the risk by allowing redirect-based bypasses.",
+      "preconditions": "An authenticated user (or unauthenticated if no auth middleware is present) can POST to /branding/preview with a logoUrl parameter pointing to internal resources.",
+      "recommendation": "Implement an allowlist of permitted domains (as done in fetchAsset at lines 11-13). Validate the URL scheme (only allow http/https). Parse the URL, resolve the hostname to an IP, and verify it is not in the private IP ranges (127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16). Disable redirects (redirect: 'error') or validate redirects against the same allowlist.",
+      "limits": "This finding assumes the /branding/preview endpoint is reachable by an attacker. If this endpoint is only available to trusted administrators behind a separate access control layer not shown in the code, the risk would be lower - verify this with the full application deployment.",
+      "traceability": [
+        "CWE-918",
+        "CWE-611",
+        "WSTG-INPV-12",
+        "ASVS 5.0 V4",
+        "A01:2025",
+        "API7:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control restricts egress. The network is assumed open."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The URL is fully attacker-controlled via req.body.logoUrl with no constraint."
+        }
+      ],
+      "unaided_label": "SSRF in fetchLogo - arbitrary URL fetching without validation"
+    },
+    {
+      "id": "F-003",
+      "title": "SQL injection via ORDER BY clause in /invoices endpoint",
+      "procedure": "WEB-07",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "routes/invoices.js",
+        "line": 24,
+        "component": "GET /invoices route handler"
+      },
+      "evidence": "Line 23-24: const order = req.query.order || 'created_at'; followed by: db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]). The order parameter from the query string is interpolated directly into the SQL query using template literals, without parameterization or allowlist validation.",
+      "impact": "SQL injection allowing an attacker to: manipulate query results, extract sensitive data from other columns/tables, modify database state if UNION-based or stacked queries are possible, or cause denial of service through resource-exhaustive queries.",
+      "preconditions": "An authenticated user (one with req.user.id set) can send a GET request to /invoices?order=<injection>. The attacker controls the sort order parameter.",
+      "recommendation": "Use a strict allowlist of permitted column names. The SORTABLE map at lines 29-31 shows the intended approach (use it for /invoices too). Replace line 24 with: const column = SORTABLE[req.query.order] || 'created_at'; and then: db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${column}`, [req.user.id]). Alternatively, use parameterized queries if the database driver supports dynamic column names (e.g., knex.orderBy()).",
+      "limits": "None. The injection is directly observable in the code.",
+      "traceability": [
+        "CWE-89",
+        "CWE-943",
+        "WSTG-INPV-05",
+        "ASVS 5.0 V1",
+        "A05:2025",
+        "CAPEC-66"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control prevents SQL injection here. The SORTABLE allowlist exists for /payments but not for /invoices."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The order parameter is fully attacker-controlled via req.query and is not constrained."
+        }
+      ],
+      "unaided_label": "SQL injection in invoice list sorting - ORDER BY parameter concatenation"
+    },
+    {
+      "id": "F-004",
+      "title": "Cross-Site Scripting (XSS) in invoiceNote function",
+      "procedure": "WEB-13",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lib/render.js",
+        "line": 4,
+        "component": "invoiceNote function"
+      },
+      "evidence": "The invoiceNote() function at lines 4-6 takes a note parameter and directly embeds it in HTML without escaping: return `<div class=\"note\">${note}</div>;`. This function is exported (line 18) and could be called with user-supplied input.",
+      "impact": "If invoiceNote() is called with user-controlled input, an attacker can inject arbitrary HTML and JavaScript. This could lead to: session hijacking via cookie theft, credential theft, malware distribution, or defacement of the invoice page.",
+      "preconditions": "The invoiceNote() function must be called with user-controlled input (e.g., from a form field allowing customers to add notes). While the current invoices.js routes don't appear to call this function, it is exported and may be used elsewhere or in future code.",
+      "recommendation": "Use the escapeHtml() helper function that is already imported and used correctly in customerName() and footer() functions. Change line 5 to: return `<div class=\"note\">${escapeHtml(note)}</div>`;",
+      "limits": "This finding is rated confidence:medium because the function exists and is exported, but the current visible code routes do not appear to call it with user input. The vulnerability would be confirmed (not probable) if a code path that calls invoiceNote with user input were shown.",
+      "traceability": [
+        "CWE-79",
+        "WSTG-INPV-01",
+        "ASVS 5.0 V5",
+        "A03:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The note parameter is not constrained - it comes from user input and is not validated or allowlisted."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is dangerous - embedding user input directly in HTML without escaping is a classic XSS vulnerability."
+        }
+      ],
+      "unaided_label": "XSS in invoiceNote - unescaped user input in HTML"
+    },
+    {
+      "id": "F-005",
+      "title": "Missing authorization check on GET /invoices/:id (BOLA/IDOR)",
+      "procedure": "WEB-04",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "routes/invoices.js",
+        "line": 7,
+        "component": "GET /invoices/:id route handler"
+      },
+      "evidence": "Line 7-9 retrieves an invoice by ID without checking ownership: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }). This contrasts sharply with the /receipts/:id endpoint (line 13-18) which correctly includes AND owner_id = $2 check.",
+      "impact": "Broken Object-Level Authorization (BOLA/IDOR): Any authenticated user can read any invoice by guessing or enumerating invoice IDs. This exposes potentially sensitive financial data of other customers.",
+      "preconditions": "An authenticated user can send GET /invoices/123 to retrieve invoice 123, regardless of ownership.",
+      "recommendation": "Add the owner_id check matching the /receipts/:id pattern: db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]). This ensures only the invoice owner can access their own invoices. Add a test that verifies user A cannot read user B's invoice.",
+      "limits": "The finding assumes req.user.id is properly set by authentication middleware. If that middleware is missing or broken, this finding cascades from a separate authentication bypass - verify middleware is correctly mounted.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-284",
+        "WSTG-ATHZ-01",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces ownership. The query is the only gate and it does not check ownership."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The endpoint is not intended to be public - it should be scoped to the owner."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoices contain private customer financial data and are not public."
+        }
+      ],
+      "unaided_label": "Missing authorization on GET /invoices/:id endpoint - object-level auth bypass"
+    }
+  ],
+  "ruled_out": []
+}

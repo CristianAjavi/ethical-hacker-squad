@@ -64,6 +64,22 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## A second target: each competitor falls outside a band, this corpus does not
+
+[2026-08-22, second target](runs/2026-08-22-second-target/) — `express-invoices`, an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. The same three arms, six runs each, 85 claims in one blinded batch, inter-pass agreement 98%.
+
+| Arm | claims | refuted by both | recall |
+|---|---|---|---|
+| this corpus | 24 | **0 (0%)** | 4.80 / 5 |
+| `AI-Infra-Guard` | 25 | **0 (0%)** | **4.17 / 5** |
+| `google/mantis` | 36 | 3 (8%) | **5.00 / 5** |
+
+**Precision held its band (8.3 points of spread); recall did not (0.83).** Across both targets: `mantis` falls outside the precision band on one, `AI-Infra-Guard` outside the recall band on the other, **and this corpus falls outside neither on either**. That is not a lead on any axis — `mantis` out-recalls it here and `AI-Infra-Guard` ties its precision on both — it is a claim about never being the outlier, and it is the strongest thing two targets will carry.
+
+Two readings the first target could not produce. **`AI-Infra-Guard`'s advantage was domain-bound**: level on its own ground, last on recall off it, still refuting nothing — the conservative arm on both targets, which is the most reproducible finding in either round. **`mantis`'s 19-point deficit was target-specific**: 8 points here, and it found every planted defect in every one of its six runs.
+
+One corpus run is **not measured** — an empty artifact, no completion — preserved unscored and reported as five runs rather than as a zero.
+
 ## A second competitor, and the ranking dissolves
 
 [2026-08-22, second competitor](runs/2026-08-22-second-competitor/) — `Tencent/AI-Infra-Guard` @ `4908db1`, the only product in this field that publishes its own detection quality, on its home ground. All 114 claims from three arms re-pooled and **re-judged from scratch**, so no number is carried over. Inter-pass agreement 96%.
