@@ -308,6 +308,16 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 **Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
+## A comparison this bench must never publish, and why
+
+There is an obvious-looking dimension where this project would win outright: **does a product's output let a reader tell *not looked at* from *looked at and clean*?** This corpus's artifact carries a coverage declaration that must resolve every surface it inventories. The competitor artifacts in these rounds are flat lists.
+
+**That comparison is rigged, and it is rigged by this bench.** Every competitor prompt in `runs/*/prompts/` specifies the deliverable shape — `{"findings": [{"id", "title", "file", "line", "severity", "impact", "evidence", "recommendation"}]}` — because a common shape is what makes the claims poolable and blindable at all. So a competitor's artifact has no coverage declaration **because this bench told it not to have one**, not because the product cannot produce one.
+
+Measuring it anyway would produce a real number, a favourable one, and a false conclusion. It is written down here so that nobody — including whoever reads this next — reaches for it as the dimension that finally settles the question.
+
+**What a fair version would need**: every arm emitting its own native report format, and a reader test over those, with the pooling and blinding rebuilt to survive four different shapes. That is a different bench, not a further round of this one.
+
 ## The nine rules that came out of being wrong
 
 None of these was designed. Each one is what a retraction or a near-miss cost, and several are enforced by `gate-bench-integrity.sh` rather than by good intentions.
