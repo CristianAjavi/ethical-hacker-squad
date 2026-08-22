@@ -54,6 +54,18 @@ That is not a lead on any dimension — on this target `mantis` has better recal
 
 **`mantis`'s precision deficit was target-specific.** It was 19 points behind on `rag-agent` and is 8 here — inside the band. Its earlier deficit cannot be described as a property of the product, and the round that measured it should be read with this beside it. **Here it found every planted defect in every one of its six runs**, which no other arm did.
 
+## An open question about the instrument, deliberately left open
+
+The one corpus claim refuted here is not a careless false positive, and looking at it closely raises a question about the **verifiers** rather than the arm.
+
+`C6`'s `F-005` alleges broken object-level authorization on `/receipts/:id`. Its own triage answer states the mechanism plainly: *"The authorization check in SQL is nullified by the unverified JWT. No compensating control prevents bypassing the check via forged tokens."* The arm **saw** the `AND owner_id = $2` guard and argued that its input is attacker-chosen because the JWT is forgeable — which is itself a planted defect in this case (`P-04`).
+
+Both passes refuted it on two legs: the guard is present, and `routes/invoices.js` never imports `lib/auth.js`, so the link to the forgeable token is not visible inside the target.
+
+**The second leg is the substantive one, and it is the same ground on which the same passes marked `R55` and `R82` `undecidable` rather than refuted** — both hinge on middleware wiring that lives outside these files. A chained claim whose middle link is outside the target looks, on this bench's own conventions, like an `undecidable`.
+
+**The number is not being changed.** Re-scoring this project's only refuted claim by argument after the fact, with no pre-registered instrument, is precisely the move the rest of this directory exists to prevent, and it would move the number in this project's favour. It is recorded as an open question to be settled by a pre-registered check — *when is a claim whose chain leaves the target `undecidable` rather than `refuted`?* — or not settled at all.
+
 ## What this does not establish
 
 - **One model scale**, still. Two targets, two competitors, six of the field's products surveyed and **three never run as arms at all**.
