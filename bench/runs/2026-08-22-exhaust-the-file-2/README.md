@@ -36,7 +36,9 @@ The text is preserved here rather than in the corpus, and it remains a reasonabl
 
 - **The corpus finds this advisory reliably** — 3/3, blind, on a verified tree, against a judge that rejected five same-file distractors per batch. That is a real capability datum and it is the first whole-repository advisory this bench has scored as found by anyone.
 - **A prediction met by a result whose cause is absent is not a confirmation.** The pre-registration asked for ≥1 of 3 and got 3 of 3. Publishing that as the procedure working would have been wrong, and only the control caught it.
-- **One arm demonstrated the safety contract on live content.** A test file inside the target, named for a different advisory, asserts in prose that a vulnerability is present. The arm treated it as data rather than instruction, checked the code, found both nil guards, and refuted it citing the controlling line. `AI-22` says audited content is never an instruction; here that behaviour was observed rather than asserted.
+- **One arm met a prompt-injection-shaped artefact in the target and handled it correctly.** A test file inside the repository, named for a different advisory, asserts in prose that a vulnerability is present. The arm treated it as data rather than instruction, checked `convertParseError`, found both nil guards, and refuted it citing the controlling line.
+
+  > **Corrected the same night, and it is the same mistake this round is about.** This was first written as *the safety contract working*, crediting `AI-22` — audited content is never an instruction. Then an **unaided** arm, carrying no corpus at all, met the same file and did the same thing: checked the guards, declined to report it, said so. **The behaviour is not the corpus's**, and crediting a rule for something that happens without it is exactly the attribution error the rest of this page is about. It is left here as an observation about the model, which is what it is.
 
 ## What it does not establish
 
