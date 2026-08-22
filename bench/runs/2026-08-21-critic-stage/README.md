@@ -75,6 +75,33 @@ v1 handed the critic the whole finding, narrative included. A reviewer short of 
 
 `VER-09` is in the corpus, wired as step 8 of the leader workflow, **after** it passed — not before. v1 shipped first and had to be reverted; that order is not repeated. The idea of where a critic should be blind came from reading `google/mantis` at its pinned commit; no text of theirs is in this repository.
 
+## Head to head at comparable N — and the 6/6 was a small-N artefact
+
+`HEADTOHEAD-PREREGISTRATION.md` refused to compare 6 claims against 17 and said the fix was more runs, not an argument. Six more v2 runs bring the pool to **19 claims from nine runs**, against the competitor's 17 from three.
+
+| | runs | claims | refuted by both passes | ground-truth recall | inter-pass agreement |
+|---|---|---|---|---|---|
+| **v2, critic blind to prose** | 9 | 19 | **4 (21%)** | **14 / 18 (78%)** | 19/19 |
+| competitor `google/mantis` | 3 | 17 | 9 (53%) | — | 16/17 |
+
+All three pre-registered criteria hold: pooled N ≥ 15, refuted below 53%, recall at or above 4 of every 6 slots.
+
+**And the first thing to say is that this round corrects the previous one.** v2's headline was **6/6 recall over three runs**. Over nine it is **14/18**. The 6/6 was not false, it was small — one run refuted the allocation outright, claiming the code "bounds byte array allocation to `Integer.MAX_VALUE`", which is the cast guard mistaken for a limit again. The pooled figure supersedes the headline, and the only reason the correction happened is that raising N was pre-registered **before** the 6/6 existed.
+
+### Three asymmetries, declared before the number was known
+
+1. **Nineteen claims from nine runs against seventeen from three.** The claim counts were matched, as pre-registered; the run counts were not. Pooling nine short runs is not the same act as pooling three long ones.
+2. **Our nineteen claims are three distinct assertions.** Seven restatements of the allocation, seven of the recursion, four of the timestamp. The competitor's seventeen cover about nine. **Our deduplication is markedly worse than theirs** — and the previous round criticised theirs. This inflates our denominator, so the comparison as computed flatters us.
+3. **The critic and the grader are the same kind of instrument** — adversarial refutation against code — for both arms. The number measures how well a product filters its own bad claims, not truth.
+
+**On the second point, the direction is worth checking rather than assuming.** Deduplicated, ours is 3 assertions with 1 refuted (33%); theirs is about 9 with roughly 7 refuted (~78%). The gap widens rather than closes. That view is **not pre-registered** and is offered as an observation, not a result.
+
+### What this licenses, and it is bounded by the pre-registration
+
+**On precision, at weak scale, at comparable claim count, against the strongest published competitor in this field, this corpus is ahead.** One dimension, one scale, one target, one competitor.
+
+It does not touch the eighteen capability measurements where this corpus leads on nothing. It does not make it better at finding defects — recall here is 78%, and the competitor was never measured for recall at this N. And the whole result rests on a critic stage that was measured harmful two rounds ago and only works because of where it is made blind.
+
 ## Caveats on v1
 
 - **Six claims cannot carry a proportion.** 33% against 17, 26 and 28 claims is not a like-for-like comparison, and the count is the result rather than the denominator. Recall, at 3/6 against 4/6 on identical slots, **is** comparable.

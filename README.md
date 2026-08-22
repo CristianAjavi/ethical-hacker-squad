@@ -20,7 +20,11 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
-One dimension **is** measured in this project's favour, and it is not capability. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+Two dimensions **are** measured in this project's favour, and one of them is narrow.
+
+On **precision at weak scale**, pooled over nine runs at a claim count matched to the competitor's, [21% of this corpus's claims are refuted by two independent adversarial passes against 53% of `google/mantis`'s](bench/runs/2026-08-21-critic-stage/) — with ground-truth recall at 14/18. That is one dimension, one scale, one target, one competitor, and it rests on a stage that was measured **harmful** two rounds earlier and only works because of where it is made blind. Three asymmetries are published with it, including that this corpus's claims deduplicate far worse than the competitor's.
+
+The other is not capability at all. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 

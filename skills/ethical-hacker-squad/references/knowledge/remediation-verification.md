@@ -2,7 +2,7 @@
 
 > **When to load this file:** whenever you are checking somebody else's work - a patch in `harden` or `verify` mode (`VER-01`..`VER-08`), or **a finished finding list in `audit` mode** (`VER-09`), or **a finished finding list in `audit` mode, before the report leaves** (`VER-09`).
 > **Do not load it if:** you are the one repairing. That is the sibling file, [remediation.md](remediation.md), which holds `REM-01`..`REM-07`. Never the same agent for both.
-> **Cost:** ~254 lines.
+> **Cost:** ~253 lines.
 
 ## Selective loading index
 
@@ -226,7 +226,7 @@ Every `confirmed` and `probable` finding, after the specialist has stopped writi
 **What you are given, and what you are deliberately not given**
 You get the **assertion and its location**: what the finding says is wrong, and where. You do **not** get the finder's evidence narrative or its impact narrative, and you must not go looking for them.
 
-That withholding is the whole procedure. Measured: a version of this stage that handed the critic the entire finding took the best precision this bench has recorded and paid for it by killing a true defect in every single run. A reviewer short of budget, handed a confident rationale, either believes it or finds a flaw in the *prose* and calls the finding dead. Neither is an assessment of the code. **A true claim survives contact with the code whatever its prose was like; a false one is not rescued by good prose.** Remove the prose and you remove the only thing a rushed critic can win an argument against.
+That withholding is the whole procedure. **A true claim survives contact with the code whatever its prose was like; a false one is not rescued by good prose.** Remove the prose and you remove the only thing a rushed critic can win an argument against — measured both ways in `bench/runs/2026-08-21-critic-stage/`, where the version that read the prose deleted a true defect from every run.
 
 **Vulnerable pattern**
 Shipping a list that no one attacked. Triage written *while* a finding is written is the author checking their own work at the moment of greatest commitment.
