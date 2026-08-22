@@ -20,6 +20,8 @@ All three were cloned at pinned commits and classified by what they actually do:
 
 `0xSteph/pentest-ai-agents` @ `e5d7aa0`, followed as written, nothing copied. Its `code-auditor` and `web-hunter` subagent definitions are the counterpart to this corpus's specialists, and the target — an ordinary Node HTTP API — is squarely what `web-hunter` is for.
 
+**Its `code-auditor` definition asks for `model: sonnet`, and it is being run on `claude-haiku-4-5` anyway** — the scale every other arm was measured at. Matching the scale and following the spec are in direct conflict here and comparability wins, but this is a handicap against the product's own written intent and is declared as one rather than buried: like read-only and offline, it is this arm's floor and not its ceiling. `mantis` and `AI-Infra-Guard` name no model, so neither carries this.
+
 Six runs, `claude-haiku-4-5`, target `bench/cases/express-invoices` unchanged, **all four arms re-pooled into one blinded batch and re-judged from scratch**, two independent adversarial passes plus the blind defect-matching judge. No number is carried over.
 
 ## Prediction
