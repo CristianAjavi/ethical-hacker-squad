@@ -1,4 +1,7 @@
-# Run 2026-08-21 — the corpus makes a weaker model **worse**
+# Run 2026-08-21 — the corpus made a weaker model worse, and one loading rule fixed most of it
+
+
+> **Outside information was not settled in this round.** No prompt in this bench said whether consulting sources beyond the target — an advisory database, an upstream branch, a diff against another version — was allowed, and later rounds found that some runs did consult them. **Any recall number here measures review and library familiarity together and cannot separate them.** Consistency comparisons are unaffected: they compare runs of one arm, which had the same latitude. `../../prompts/external-sources.txt` is the clause that closes this for later rounds; it did not exist when this one ran.
 
 `PREREGISTRATION.md` was committed before anything ran. It predicted that on a weaker model the corpus arm would find strictly more of the two ground-truth defects than the unaided arm, and named what would refute it.
 
@@ -45,6 +48,32 @@ Three things follow, and none of them is "write another procedure":
 1. **Loading is the defect, not the content.** The corpus is loaded far too eagerly for the capacity available. Progressive disclosure exists in `SKILL.md` and is evidently not aggressive enough to survive a smaller context.
 2. **The artifact contract has a price and nobody had measured it.** It buys auditability that the blinded reader test showed is real, and it costs budget that a weaker model does not have. Both halves are now measured; only one of them was ever claimed.
 3. **The honest product claim has to narrow.** Not "finds more". What is measured is an artifact with somewhere to say *I could not decide this*, and a coverage declaration that resolves every surface it inventories — on a model strong enough to afford them.
+
+## The retest, after the fix: 2/6 → 4/6, and the prediction held
+
+`RETEST-PREREGISTRATION.md` was committed before the retest ran. It predicted that a corpus carrying a **loading rule** — *read the target before you read this corpus, and stop loading before the code stops fitting; if a pack would leave you without room to read the code, do not load it, audit what you can read, and declare that no procedure was consulted* — would score strictly better than 2/6 and find D2 in at least one run. Nothing else changed: same target, same model, same run prompts, same blind judge prompt, same mechanism descriptions.
+
+| | D1 | D2 | total |
+|---|---|---|---|
+| with the corpus, **before** | 2 of 3 runs | **0 of 3** | **2 / 6** |
+| with the corpus, **after** | 1 of 3 runs | **3 of 3** | **4 / 6** |
+| without it | 2 of 3 runs | 3 of 3 | **5 / 6** |
+
+**D2 went from zero of three to three of three.** The defect the corpus arm could never reach is now the one it never misses. That is the loading rule doing exactly what it was written to do, and it is the first change in this whole sequence that produced its predicted effect.
+
+The unaided arm was **not** re-run. Its 5/6 stands as measured; re-running it to chase a better comparison would be selection.
+
+### What got worse, and it is not a rounding error
+
+**D1 fell from 2 of 3 runs to 1 of 3.** Worse than absent: two retest runs *actively ruled it out*. One wrote that the array allocation bounds "are actually correct"; the other argued the length was bounded because short strings cap at 255 bytes — an argument about a different method than the one the defect lives in.
+
+A reviewer that reads less reaches conclusions faster, and some of them are wrong in a way that silence is not. **Triage that runs on a budget it does not have produces confident refutations**, and the corpus gives a `ruled_out` section for exactly that to be recorded in. This round measured recall; it did not measure how often the weak arm refutes something true, and that is now the sharper question.
+
+### Where it actually leaves the corpus
+
+Fourteen measurements. **The corpus still does not lead.** 4/6 against 5/6 is one defect, inside this bench's own resolution of five in fifty-three, so the honest statement is that the loading rule moved the weak-model result **from measurably harmful to indistinguishable** — not that it made it good.
+
+What it does establish, and this is the first thing in this directory that is both positive and load-bearing: **the tax was the loading, and the loading is fixable.** The content was never the problem, and the fix cost one paragraph plus moving a table out of the router.
 
 ## Files
 

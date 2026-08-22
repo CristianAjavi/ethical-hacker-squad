@@ -1,5 +1,8 @@
 # Run 2026-08-21 — the unaided pass: prediction registered, prediction **refuted**
 
+
+> **Outside information was not settled in this round.** No prompt in this bench said whether consulting sources beyond the target — an advisory database, an upstream branch, a diff against another version — was allowed, and later rounds found that some runs did consult them. **Any recall number here measures review and library familiarity together and cannot separate them.** Consistency comparisons are unaffected: they compare runs of one arm, which had the same latitude. `../../prompts/external-sources.txt` is the clause that closes this for later rounds; it did not exist when this one ran.
+
 `PREREGISTRATION.md` was written before any run returned. It said: the corpus arm's mean pairwise agreement should rise above 0.68 and reach or pass the unaided arm's. It also said what would refute that.
 
 **It is refuted.**

@@ -351,6 +351,14 @@ if patch_key_path.is_file():
 #
 # NOTE FOR ANYONE EDITING THIS FILE: this heredoc is inside a "$( ... )", so an
 # apostrophe anywhere here, comments included, breaks the shell quoting.
+# Outside information has to be settled the same way for every arm, or a recall
+# number measures library familiarity as much as review. Measured: one unaided
+# run diffed the target against its upstream branch, one corpus run cited CVE
+# identifiers, and no prompt in this bench had ever said whether either was
+# allowed. A round either carries the policy in its prompts or says out loud
+# that it did not.
+SOURCES_WORDS = ("external-sources", "Outside information", "OUTSIDE INFORMATION")
+
 ARM_WORDS = ("with the corpus", "Without it", "without it", "no corpus", "No corpus")
 DISCLOSURE = "run prompts for this round were not kept"
 runs_dir = root / "bench" / "runs"
@@ -363,7 +371,23 @@ if runs_dir.is_dir():
         if not any(w in text for w in ARM_WORDS):
             continue
         checks += 1
-        if (run / "prompts").is_dir():
+        prompt_text = ""
+        pdir = run / "prompts"
+        if pdir.is_dir():
+            for f in sorted(pdir.iterdir()):
+                if f.is_file():
+                    prompt_text += f.read_text(encoding="utf-8", errors="replace")
+        # Second question, asked for EVERY comparison round and not only for the
+        # ones that archived prompts. An earlier version of this check sat after
+        # the reproducibility `continue` and was unreachable for precisely the
+        # rounds it existed to catch - it passed the suite while enforcing
+        # nothing, which is the failure mode this whole gate is about.
+        if not any(w in (prompt_text + text) for w in SOURCES_WORDS):
+            findings.append(
+                f"bench/runs/{run.name}/ compares arms and nothing in its prompts or its README settles "
+                "whether sources outside the target may be consulted - a recall number from such a pair "
+                "measures library familiarity as much as review")
+        if pdir.is_dir():
             continue
         if DISCLOSURE in text:
             continue

@@ -34,7 +34,9 @@ Read this one before the perfect scores below it. The benches measure that the c
 
 The pre-registration predicted the opposite and named what would refute it. The corpus arm spent roughly twice the budget (95k-111k tokens against 48k-66k) to produce a fifth of the output, and two of its three artifacts failed the coverage invariant on the very files the run had just read. **A context tax, not a transfer of expertise** — and the last untested hypothesis for the corpus's value, tested and dead.
 
-The counterweight is in the run: the unaided lists on a weak model carry filler, and this round did not measure their precision. 5/6 says the defects are in the list, not that the list is good.
+**Then it was fixed and re-measured, and the fix worked.** A loading rule — *read the target before you read this corpus, and stop loading before the code stops fitting* — took the corpus arm from **2/6 to 4/6**, with D2 going from zero of three runs to three of three. Nothing else changed and the unaided arm was not re-run. It is still one defect behind 5/6, which is inside this bench's resolution: the rule moved the weak-model result from **measurably harmful to indistinguishable**, not to good. And D1 fell from 2/3 to 1/3, with two runs *actively ruling it out* — a reviewer on a short budget produces confident refutations, which is worse than silence and is the next thing to measure.
+
+The counterweight stands: the unaided lists on a weak model carry filler, and neither round measured their precision. 5/6 says the defects are in the list, not that the list is good.
 
 ## The number that governs every other number in this file
 
