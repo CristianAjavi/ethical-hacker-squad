@@ -47,6 +47,23 @@ So the honest denominator is now **three of the four comparable products measure
 
 The new arm's `code-auditor` asks for `model: sonnet`. It was run on `claude-haiku-4-5` to match the scale every other arm was measured at. **Matching the scale and following the spec were in direct conflict and comparability won**, so its 16% is measured against its own written intent as much as against the other arms. `mantis` and `AI-Infra-Guard` name no model and carry nothing comparable. This is its floor, like read-only and offline, and it was written down in `PREREGISTRATION.md` before the first run rather than explained afterwards.
 
+## Where each arm's recall actually goes — the misses are not alike
+
+Reading which defect each run missed turns two similar-looking numbers into two different things.
+
+| arm | runs that missed something | what they missed |
+|---|---|---|
+| **this corpus** | 1 of 6 | `C1` missed `P-05`, the XSS. The other five found it |
+| **`AI-Infra-Guard`** | 4 of 6 | **`P-01`, object-level authorization, in every one of them** (and `A2` also missed the XSS) |
+| `google/mantis` | 0 of 6 | — |
+| `pentest-ai-agents` | 0 of 6 | — |
+
+**`AI-Infra-Guard` has a systematic blind spot, and this corpus does not have one here.** Its entire recall deficit is one defect class, missed in two thirds of its runs. Ours is a single stochastic miss in a single run.
+
+That is consistent with the domain-bound reading its second-target result already suggested, and it names the mechanism: **object-level authorization is a classic web-API defect, not an agent-runtime one.** A specialist's cost is localisable rather than diffuse.
+
+**What this does not license.** Missing a defect in one run of six *is* lower recall, 4.83 against 5.00, and calling it noise does not make it not count — it is reported in the table above as the number it is. Six runs cannot tell a rare miss from a rare-ish one, and the two arms at 5.00 simply did not miss anything.
+
 ## What this does not establish
 
 - **One model scale, one target for three of the four arms.** Only this corpus and the two earlier competitors have two targets.
