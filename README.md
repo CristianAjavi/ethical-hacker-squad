@@ -24,23 +24,22 @@ Every number, every prompt, every retraction and every refuted prediction of our
 
 **Two dimensions are measured in this project's favour. The capability one is not a lead on any axis — it is that this corpus is the only arm that is never the outlier.**
 
-Two targets, three arms, six runs each, every claim judged blind by two independent adversarial passes and a separate defect-matching judge. Bands fixed before the numbers: 10 points of precision, 0.5 defects of recall.
+Two targets, **four arms**, six runs each, every claim judged blind by two independent adversarial passes and a separate defect-matching judge. Bands fixed before the numbers: 10 points of precision, 0.5 defects of recall.
 
 | | precision band | recall band |
 |---|---|---|
-| `google/mantis` | **outside** on the AI-agent target (19 points) | inside on both |
+| `google/mantis` | **outside** on the AI-agent target (19 pts) | inside on both |
 | `Tencent/AI-Infra-Guard` | inside on both | **outside** on the HTTP API (0.83) |
+| `0xSteph/pentest-ai-agents` | **outside** on the HTTP API (16.3 pts) | inside |
 | **this corpus** | **inside on both** | **inside on both** |
 
-[On the AI-agent target](bench/runs/2026-08-22-second-competitor/): 0% of this corpus's claims refuted against `AI-Infra-Guard`'s 3% and `mantis`'s 19%. [On an ordinary Node HTTP API](bench/runs/2026-08-22-second-target/): **3% against `AI-Infra-Guard`'s 0%** and `mantis`'s 8%, with recall 4.83 of 5 against 4.17 and 5.00. **`AI-Infra-Guard` is the cleaner arm there**, and that number is 3% rather than 0% only because a run I had wrongly excluded was put back.
+**This corpus leads nothing.** On the [HTTP API](bench/runs/2026-08-22-third-competitor/) two arms out-recall it (5.00 against its 4.83) and `AI-Infra-Guard` out-precisions it, refuting **nothing** against its one claim. On the [AI-agent target](bench/runs/2026-08-22-second-competitor/) it is level with `AI-Infra-Guard` and ahead of `mantis`. **Each of the field's three comparable products falls outside a band somewhere; this corpus falls outside none.** That is an absence of outliers, not a win, and it is deliberately weaker than the sentence it replaces.
 
-**`mantis` has better recall than this corpus on the second target, and `AI-Infra-Guard` has better precision than it there and ties it on the first. Neither of those is hidden here.** What the two targets support is narrower and duller than a win: **each competitor falls outside a band somewhere; this corpus does not.**
-
-Two things the second target taught that the first could not. **`AI-Infra-Guard`'s advantage was domain-bound** — level with this corpus on its own ground, last on recall off it, while still refuting nothing. **`mantis`'s 19-point precision deficit was target-specific** — 8 points here, inside the band, and it found every planted defect in every run.
+**Of the six products surveyed, three are comparable and all three have now been run.** `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
 
 **Read every recall figure as a band, never a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped**. That is the instrument's resolution, measured rather than assumed.
 
-Still one model scale, two targets authored here, and **three of the six surveyed products have never been run as arms at all.**
+Still **one model scale**, both targets authored here, and every competitor run at its floor: read-only, offline, and in one case below the model its own definition asks for.
 
 The second dimension is not capability at all.
 

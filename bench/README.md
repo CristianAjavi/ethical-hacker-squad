@@ -64,6 +64,23 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## Four arms: the field's three comparable products each fall outside a band
+
+[2026-08-22, third competitor](runs/2026-08-22-third-competitor/) — `0xSteph/pentest-ai-agents` @ `e5d7aa0`, six runs, **all 134 claims from four arms re-pooled and re-judged from scratch**, inter-pass agreement 99%.
+
+| Arm | claims | refuted by both | recall |
+|---|---|---|---|
+| `AI-Infra-Guard` | 25 | **0 (0%)** | **4.17 / 5** |
+| this corpus | 30 | 1 (3%) | 4.83 / 5 |
+| `google/mantis` | 36 | 3 (8%) | **5.00 / 5** |
+| `pentest-ai-agents` | 43 | **7 (16%)** | **5.00 / 5** |
+
+**The prediction is refuted** — precision spread 16.3 points, well outside the 10-point band, with the new arm as the outlier — **and the half of it that bet against this project holds**: `AI-Infra-Guard` refutes nothing at all and is the more precise arm. **This corpus leads nothing here.** Two arms out-recall it, one out-precisions it, and it remains the only arm inside every band on both targets.
+
+**Half the "three never run" caveat was a category error.** `msoedov/agentic_security` has **zero** source-audit language: it is a jailbreak fuzzer against a live endpoint, so a number for it would measure what it never claimed to do and would flatter this project by construction. Scored **not applicable**. `vxcontrol/pentagi` needs live infrastructure. **Three of the four comparable products are now measured.**
+
+Declared before the run: the new arm's own `code-auditor` asks for `model: sonnet` and was run at `haiku-4-5` to match the scale — a handicap against its written intent, and its floor rather than its ceiling.
+
 ## A second target: each competitor falls outside a band, this corpus does not
 
 [2026-08-22, second target](runs/2026-08-22-second-target/) — `express-invoices`, an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. The same three arms, six runs each, 85 claims in one blinded batch, inter-pass agreement 98%.
