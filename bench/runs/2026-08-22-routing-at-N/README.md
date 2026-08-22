@@ -10,7 +10,7 @@
 >
 > **How it was caught, and it matters:** a later run, following this corpus's own rule that a refutation must name the line of the control, wrote in its `ruled_out` section that `sliceMapToSlice` *"rejects the input when `max + 1 - len(m) > maxSliceMapToSliceGap` (10000, declared at line 980)"*. Had that arm merely stayed silent about the function, this error would have shipped as a result. The rule that a dismissal must cite its control is what turned a silent non-finding into a caught mistake.
 >
-> The round is re-run against the parent commits in `../2026-08-22-routing-at-N-2/`. Nothing below is edited; it is left standing as the record of the error.
+> The round is re-run against the parent commits in `../2026-08-22-exhaust-the-file-2/`. Nothing below is edited; it is left standing as the record of the error.
 
 
 `PREREGISTRATION.md` was committed before any arm ran, with targets picked by a published rule before the prediction was written. It predicted **both arms at or below 1 of 3, with a gap of one advisory or less** — that the dimension is hard for everyone — and named what would refute that.

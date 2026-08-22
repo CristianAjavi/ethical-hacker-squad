@@ -84,11 +84,23 @@ The prediction was refutable and held. And the most useful thing in it is a **co
 | 2026-08-22, rule-picked Go targets | 0/3 | 0/3 |
 | **total** | **0 / 6** | **1 / 6** |
 
-> **Retracted.** The 2026-08-22 targets were cloned at the default branch, which is **after** each fix commit, so both arms audited code the defects had already been removed from. 0/3 against absent defects measures nothing, and the conclusion drawn from it is withdrawn. Whole-repository evidence is back to the earlier rounds alone: **0/3 with the corpus, 1/3 without**, three advisories, which is too thin to conclude anything and is exactly what the retracted round set out to fix. It is re-run properly in `runs/2026-08-22-routing-at-N-2/`.
+> **Retracted.** The 2026-08-22 targets were cloned at the default branch, which is **after** each fix commit, so both arms audited code the defects had already been removed from. 0/3 against absent defects measures nothing, and the conclusion drawn from it is withdrawn. Whole-repository evidence is back to the earlier rounds alone: **0/3 with the corpus, 1/3 without**, three advisories, which is too thin to conclude anything and is exactly what the retracted round set out to fix. It is re-run properly in `runs/2026-08-22-exhaust-the-file-2/`.
 >
 > It was caught by an arm applying this corpus's own rule that a refutation must cite the line of the control: it named the bound that makes the defect impossible. A silent non-finding would have shipped as a result.
 
-**Both arms missed by nine lines.** The advisory lives in `sliceMapToSlice` at `req_resp_decoder.go:936`; both arms independently reported an unchecked type assertion in `deepSet` at line 945. They routed to the right file, read it, found a real bug in it, and neither enumerated the other way that code can be driven. Neither list mentions `sliceMapToSlice`.
+**The "missed by nine lines" reading is withdrawn with the round.** It said both arms reached `req_resp_decoder.go`, reported a real defect at line 945, and never mentioned `sliceMapToSlice` nine lines away. On a patched tree `sliceMapToSlice` carried its bound, so **not reporting it was correct**. There was no blind spot. A procedure was written to fix it anyway, and measured to have no effect: [2026-08-22, exhaust the file](runs/2026-08-22-exhaust-the-file-2/).
+
+**Re-run on the verified pre-fix commit, all three arms find it 3/3** — [2026-08-22, unaided on the verified tree](runs/2026-08-22-unaided-verified/):
+
+| arm | corpus | found | findings per run |
+|---|---|---|---|
+| treatment | full, plus the "exhaust the file" rule | 3/3 | 14, 14, 14 |
+| control | full, that rule removed | 3/3 | 10, 9, 13 |
+| **unaided** | **none at all** | **3/3** | 17, 15, 10 |
+
+Nine runs, blind, against a judge that rejected the same-file decoys in every batch and separated the nearest one on mechanism in its own words. **Whole-repository detection of this advisory is the model's, and the corpus adds nothing to it.** That dimension — deciding what to read in a repository nobody reads whole — is what this corpus is built for, and it was the last one where a lead had not been ruled out. The unaided arm also reported the most findings of any arm.
+
+One advisory, one repository, three arms not run simultaneously. It does not restore the retracted round.
 
 **No product in this field should claim whole-repository detection without publishing a number**, and four of five publish none.
 
@@ -200,7 +212,7 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 **Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
-## The eight rules that came out of being wrong
+## The nine rules that came out of being wrong
 
 None of these was designed. Each one is what a retraction or a near-miss cost, and several are enforced by `gate-bench-integrity.sh` rather than by good intentions.
 
@@ -213,6 +225,7 @@ None of these was designed. Each one is what a retraction or a near-miss cost, a
 8. **Verify the defect is in the checkout before any arm runs.** A whole-repository round was published and retracted the same night: the targets were cloned at the default branch, which is *after* each fix, so both arms audited code the defects had been removed from and 0/3 was reported as detection. The case file recorded the pre-fix `parent` commit and it was ignored. `scripts/bench/verify-target-checkout.py` now refuses a case whose checkout is not at its parent, or whose files carry a marker the fix introduces — five negative cases, including the exact mistake. **It was caught only because one arm named the control that made the defect impossible; a silent non-finding looks identical to a miss, and a bench cannot depend on luck.**
 
 7. **Check the artifact before you believe the number.** A pre-registered prediction landed exactly on target while *all three runs failed validation* — the intervention had never been applied. Only the machine-checked contract caught it.
+9. **A prediction met by a result whose cause is absent is not a confirmation — run the control.** A procedure was written from a diagnosed blind spot, pre-registered at ≥1 of 3, and scored 3 of 3. Removing the procedure and changing nothing else also scored 3 of 3. The prediction was met and the explanation was false. Worse, the blind spot itself was an artefact of rule 8: the round that diagnosed it had audited patched code, so the "miss" was correct behaviour. **A change ships as an improvement only against an arm that lacks it**, and one that cannot be shown to do anything is discarded *before* it ships rather than kept for being reasonable. This one never reached a commit; `VER-09` v1 did, and had to be pulled back out after it cost a true defect per run.
 
 ## What the numbers are worth
 
