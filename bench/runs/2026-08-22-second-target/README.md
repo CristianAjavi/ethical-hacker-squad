@@ -1,20 +1,39 @@
 # Run 2026-08-22 — a second target: each competitor falls outside a band, this corpus does not
 
+> # CORRECTED — one run was wrongly excluded, and the correction costs this project its 0%
+>
+> **`C6` was published as NOT MEASURED and it had not died — it was slow.** It finished after 32 minutes with 6 findings. I declared it dead because its artifact had not been touched for seven minutes, which was not a measurement, it was impatience with a threshold on it. The bench's own rule — *a dead run is not a zero* — was written and followed; what did not exist was any criterion separating **dead** from **slow**, and the only reliable signal, the completion notification, had simply not arrived yet.
+>
+> Excluding a completed run because it was slow is a selection effect, so all **eighteen** runs were re-pooled into 91 claims and re-judged from scratch with the same instruments. **The corrected figures are in the table below and they supersede the five-run ones.** What changed:
+>
+> | | published (5 corpus runs) | **corrected (6)** |
+> |---|---|---|
+> | this corpus, refuted by both | 0 % | **3 % (1 of 30)** |
+> | this corpus, recall | 4.80 / 5 | 4.83 / 5 |
+> | inter-pass agreement | 98 % | **100 %** |
+>
+> **The excluded run contained the only corpus claim either target has ever had refuted**, so my error had been flattering this project. `C6`'s `R35` alleges broken object-level authorization on `/receipts/:id` — the one endpoint that *does* scope by `AND owner_id = $2`. It is a false positive fired at the safe twin, which is exactly what that decoy is in the case for. **`AI-Infra-Guard`, not this corpus, is the cleanest arm on this target.**
+>
+> The round's conclusion survives unchanged — each competitor still falls outside one band and this corpus outside none — and that is not a reason the correction was optional.
+>
+> `runs/C6.findings.json` is the artifact. `verify-corrected/` and `recall-corrected/` hold the re-judging; `verify/` and `recall/` hold the superseded five-run judging, kept rather than deleted.
+
+
 | Arm | claims | refuted by **both** passes | ground-truth recall | union |
 |---|---|---|---|---|
-| **this corpus** | 24 | **0 (0%)** | 4, 5, 5, 5, 5 → **4.80 / 5** | 5 / 5 |
+| **this corpus** | 30 | **1 (3%)** | 4, 5, 5, 5, 5, 5 → **4.83 / 5** | 5 / 5 |
 | `Tencent/AI-Infra-Guard` | 25 | **0 (0%)** | 5, 3, 5, 4, 4, 4 → **4.17 / 5** | 5 / 5 |
 | `google/mantis` | 36 | 3 (8%) | 5, 5, 5, 5, 5, 5 → **5.00 / 5** | 5 / 5 |
 
-Target `bench/cases/express-invoices` — an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. Six runs per arm, `claude-haiku-4-5`, all 85 claims pooled into one blinded batch, two independent adversarial passes, blind defect matching. **Inter-pass agreement 83/85 (98%).**
+Target `bench/cases/express-invoices` — an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. Six runs per arm, `claude-haiku-4-5`, all 85 claims pooled into one blinded batch, two independent adversarial passes, blind defect matching. **Inter-pass agreement 91/91 (100%).**
 
-**One corpus run is not measured**: `C6` produced an empty artifact and never completed. Per rule 4 it is preserved unscored as `runs/C6.NOT-MEASURED.findings.json` and the corpus arm reports **five** runs, above the pre-registered floor of five. It is not a zero.
+**All six corpus runs are measured.** `C6` was briefly published as unmeasured and that was wrong; see the banner.
 
 ## The prediction split, and both halves matter
 
 It predicted all three arms inside **10 points of precision** and **0.5 of recall**.
 
-- **Precision: holds.** Spread 8.3 points — 0%, 0%, 8%.
+- **Precision: holds.** Spread 8.3 points — 3%, 0%, 8%. `AI-Infra-Guard` is the cleanest arm here.
 - **Recall: refuted.** Spread 0.83 — `mantis` 5.00 against `AI-Infra-Guard` 4.17.
 
 ## What the two targets say together, and it is the only claim they support
@@ -27,7 +46,7 @@ It predicted all three arms inside **10 points of precision** and **0.5 of recal
 
 **Each competitor falls outside one band on one target. This corpus falls outside neither, on either.**
 
-That is not a lead on any dimension — on this target `mantis` has better recall than this corpus and `AI-Infra-Guard` ties its precision. **It is a claim about never being the outlier**, which is the strongest thing two targets and three arms will carry, and it is deliberately weaker than the sentence it replaces.
+That is not a lead on any dimension — on this target `mantis` has better recall than this corpus and `AI-Infra-Guard` has better precision than it. **It is a claim about never being the outlier**, which is the strongest thing two targets and three arms will carry, and it is deliberately weaker than the sentence it replaces.
 
 ## Two readings that the first target could not have produced
 

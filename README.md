@@ -32,9 +32,9 @@ Two targets, three arms, six runs each, every claim judged blind by two independ
 | `Tencent/AI-Infra-Guard` | inside on both | **outside** on the HTTP API (0.83) |
 | **this corpus** | **inside on both** | **inside on both** |
 
-[On the AI-agent target](bench/runs/2026-08-22-second-competitor/): 0% of this corpus's claims refuted against `AI-Infra-Guard`'s 3% and `mantis`'s 19%. [On an ordinary Node HTTP API](bench/runs/2026-08-22-second-target/): 0% against 0% and 8%, with recall 4.80 of 5 against 4.17 and 5.00.
+[On the AI-agent target](bench/runs/2026-08-22-second-competitor/): 0% of this corpus's claims refuted against `AI-Infra-Guard`'s 3% and `mantis`'s 19%. [On an ordinary Node HTTP API](bench/runs/2026-08-22-second-target/): **3% against `AI-Infra-Guard`'s 0%** and `mantis`'s 8%, with recall 4.83 of 5 against 4.17 and 5.00. **`AI-Infra-Guard` is the cleaner arm there**, and that number is 3% rather than 0% only because a run I had wrongly excluded was put back.
 
-**`mantis` has better recall than this corpus on the second target, and `AI-Infra-Guard` ties its precision on both. Neither of those is hidden here.** What the two targets support is narrower and duller than a win: **each competitor falls outside a band somewhere; this corpus does not.**
+**`mantis` has better recall than this corpus on the second target, and `AI-Infra-Guard` has better precision than it there and ties it on the first. Neither of those is hidden here.** What the two targets support is narrower and duller than a win: **each competitor falls outside a band somewhere; this corpus does not.**
 
 Two things the second target taught that the first could not. **`AI-Infra-Guard`'s advantage was domain-bound** — level with this corpus on its own ground, last on recall off it, while still refuting nothing. **`mantis`'s 19-point precision deficit was target-specific** — 8 points here, inside the band, and it found every planted defect in every run.
 

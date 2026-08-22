@@ -70,15 +70,15 @@ The competitor's own filtering is not clean either: its 17 claims cover about 9 
 
 | Arm | claims | refuted by both | recall |
 |---|---|---|---|
-| this corpus | 24 | **0 (0%)** | 4.80 / 5 |
+| this corpus | 30 | **1 (3%)** | 4.83 / 5 |
 | `AI-Infra-Guard` | 25 | **0 (0%)** | **4.17 / 5** |
 | `google/mantis` | 36 | 3 (8%) | **5.00 / 5** |
 
-**Precision held its band (8.3 points of spread); recall did not (0.83).** Across both targets: `mantis` falls outside the precision band on one, `AI-Infra-Guard` outside the recall band on the other, **and this corpus falls outside neither on either**. That is not a lead on any axis — `mantis` out-recalls it here and `AI-Infra-Guard` ties its precision on both — it is a claim about never being the outlier, and it is the strongest thing two targets will carry.
+**Precision held its band (8.3 points of spread); recall did not (0.83).** `AI-Infra-Guard` is the cleanest arm here at 0%. Across both targets: `mantis` falls outside the precision band on one, `AI-Infra-Guard` outside the recall band on the other, **and this corpus falls outside neither on either**. That is not a lead on any axis — `mantis` out-recalls it here and `AI-Infra-Guard` ties its precision on both — it is a claim about never being the outlier, and it is the strongest thing two targets will carry.
 
 Two readings the first target could not produce. **`AI-Infra-Guard`'s advantage was domain-bound**: level on its own ground, last on recall off it, still refuting nothing — the conservative arm on both targets, which is the most reproducible finding in either round. **`mantis`'s 19-point deficit was target-specific**: 8 points here, and it found every planted defect in every one of its six runs.
 
-One corpus run is **not measured** — an empty artifact, no completion — preserved unscored and reported as five runs rather than as a zero.
+**One correction, and it cost this project its 0%.** A corpus run was published as *not measured* on the strength of a seven-minute stale artifact; it had not died, it was slow, and it finished with six findings. All eighteen runs were re-pooled and re-judged: the corpus arm goes from 0% to **3%**, because **the excluded run held the only corpus claim either target has ever had refuted** — a false positive fired at the one endpoint that *does* scope by owner. The error had been flattering this project. The bench had a rule for *a dead run is not a zero* and no criterion at all for telling **dead** from **slow**.
 
 ## A second competitor, and the ranking dissolves
 
