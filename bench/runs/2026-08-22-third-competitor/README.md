@@ -64,6 +64,16 @@ That is consistent with the domain-bound reading its second-target result alread
 
 **What this does not license.** Missing a defect in one run of six *is* lower recall, 4.83 against 5.00, and calling it noise does not make it not count — it is reported in the table above as the number it is. Six runs cannot tell a rare miss from a rare-ish one, and the two arms at 5.00 simply did not miss anything.
 
+## Why the one miss happened, and what it bounds about this project's own best claim
+
+`C1`'s coverage declaration lists `lib/render.js` under **`read`**, not `not_read`. It inventoried the file, read it, and did not report the unescaped interpolation inside it.
+
+So the miss is **not** a routing failure and **not** a coverage failure. There is no gate that would have caught it, because nothing was misdeclared: the declaration told the truth and the defect was missed anyway.
+
+**That bounds the coverage declaration — the strongest thing this project has ever measured that is not detection.** What it buys is real and narrow: a reader can tell *silence* from *a clean bill*, and a blinded reader test caught one of this project's own reports failing exactly that. What it cannot buy is a finding. **`read` means the file was opened, never that what is in it was seen.**
+
+The corpus's own README says detection is the model's rather than any product's. This is that sentence arriving from the other direction: the one recall point this corpus lost on this target was lost inside a file its method had correctly routed it to, correctly opened, and correctly declared.
+
 ## What this does not establish
 
 - **One model scale, one target for three of the four arms.** Only this corpus and the two earlier competitors have two targets.
