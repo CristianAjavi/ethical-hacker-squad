@@ -1,0 +1,205 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/vouch-proxy",
+    "commit": "working tree as of 2026-08-22",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/manual-lead",
+    "coverage_declaration": "HTTP API surface: authentication, authorization, sessions, OAuth flows, input validation, domain matching, and cookie handling were exercised. Supply-chain surface (go.mod dependencies) was inventoried but not deeply analyzed due to agent unavailability - treated as not_read. Git history secret scanning not performed (audit mode, no authorization for active scanning).",
+    "coverage": {
+      "inventoried": [
+        "HTTP routes (/validate, /login, /auth, /auth/{state}/, /logout, /healthcheck) in handlers/",
+        "JWT token creation, parsing, validation in pkg/jwtmanager/",
+        "Session management with state nonce in handlers/auth.go, handlers/login.go",
+        "Cookie handling with domain matching and multi-part splitting in pkg/cookie/",
+        "OAuth2 callback flow and user verification in handlers/auth.go",
+        "URL validation and domain authorization in handlers/login.go",
+        "Domain suffix matching in pkg/domains/domains.go",
+        "Go dependencies in go.mod and go.sum"
+      ],
+      "read": [
+        "HTTP routes (/validate, /login, /auth, /auth/{state}/, /logout, /healthcheck) in handlers/",
+        "JWT token creation, parsing, validation in pkg/jwtmanager/",
+        "Session management with state nonce in handlers/auth.go, handlers/login.go",
+        "Cookie handling with domain matching and multi-part splitting in pkg/cookie/",
+        "OAuth2 callback flow and user verification in handlers/auth.go",
+        "URL validation and domain authorization in handlers/login.go",
+        "Domain suffix matching in pkg/domains/domains.go"
+      ],
+      "not_read": [
+        "Go dependencies in go.mod and go.sum (supply-chain analysis not performed)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "JWT exposed in query string via FindJWT()",
+        "Domain suffix matching potential bypass with configured cookie.domain",
+        "Host header used in authorization without reverse proxy validation verification",
+        "Cookie domain override permissiveness when configured",
+        "Session state split across multiple cookies with reassembly logic",
+        "No apparent CSRF protection on auth endpoints"
+      ],
+      "reported": [
+        "JWT exposed in query string via FindJWT()",
+        "Host header used in authorization without reverse proxy validation verification",
+        "No apparent CSRF protection on auth endpoints"
+      ],
+      "dropped": [
+        {
+          "label": "Domain suffix matching potential bypass with configured cookie.domain",
+          "resolution": "refuted",
+          "reason": "The domain suffix matching is performed by domains.Matches() which uses strings.HasSuffix with a leading dot, properly sorted by descending length to avoid collisions. URL validation in getValidRequestedURL() also validates domain membership. The cookie domain configuration (line 233 in login.go) uses the same pattern.",
+          "control_at": "pkg/domains/domains.go:40 and handlers/login.go:233"
+        },
+        {
+          "label": "Session state split across multiple cookies with reassembly logic",
+          "resolution": "refuted",
+          "reason": "Session state (state nonce) is stored in Gorilla sessions, not split across multiple cookies. The multi-part cookie splitting (pkg/cookie/cookie.go lines 73-99) applies only to the JWT token value itself for size limits, not to session state. The reassembly logic properly validates part indices and count.",
+          "control_at": "pkg/cookie/cookie.go:73-150"
+        },
+        {
+          "label": "Cookie domain override permissiveness when configured",
+          "resolution": "merged",
+          "merged_into": "F-002"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT token exposed in query string leaks authentication credentials to logs and referrer headers",
+      "procedure": "WEB-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "pkg/jwtmanager/jwtmanager.go",
+        "line": 247
+      },
+      "evidence": "The FindJWT() function extracts JWT from query string: `jwt = r.URL.Query().Get(cfg.Cfg.Headers.QueryString)` (line 247-250). When JWT is passed as query parameter, it appears in HTTP logs, browser history, referrer headers, and reverse proxy logs.",
+      "impact": "A valid JWT token can be captured from logs, browser history, or transmitted via Referer header to unrelated sites, allowing token replay and unauthorized access to protected resources.",
+      "preconditions": "Reverse proxy or client must be configured to pass JWT via query string parameter rather than cookie or Authorization header. This is non-standard and typically not recommended.",
+      "recommendation": "Deprecate support for JWT in query strings. Document this as a legacy/compatibility feature only. Prefer JWT in Authorization header or secure HttpOnly cookies. If query string support must remain, warn users in documentation that it logs credentials.",
+      "verification": "not executed",
+      "inference": "While FindJWT() does support query string extraction, the configuration of whether this is actually used in production requires verification from the deployment configuration.",
+      "what_would_settle_it": "Production deployment configuration showing whether query string JWT passing is actually enabled in cfg.Cfg.Headers.QueryString",
+      "unaided_label": "JWT exposed in query string via FindJWT()",
+      "traceability": ["CWE-598", "CWE-532", "WSTG-SESS-02", "ASVS 5.0 V7.1.5"],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "JWT value itself is attacker-controlled (issued by IdP and signed by vouch-proxy, but the use case involves passing through URL which is always visible)"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "Cannot determine from source whether query string JWT passing is enabled in production configuration"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No evidence that a reverse proxy or log aggregator mitigates this at an external layer"
+        }
+      ],
+      "limits": "This finding does not establish that query string JWT passing is actually used in the default or recommended configuration. The impact depends on deployment choices."
+    },
+    {
+      "id": "F-002",
+      "title": "Host header not validated before using in authorization and cookie domain decisions",
+      "procedure": "WEB-04",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "handlers/validate.go",
+        "line": 55
+      },
+      "evidence": "ValidateRequestHandler uses r.Host directly without validation: `if !claims.SiteInAudience(r.Host) || domains.Matches(r.Host) == \"\"` (line 55). The Host header is attacker-controlled and can be spoofed in requests that reach vouch-proxy.",
+      "impact": "An attacker can spoof the Host header to bypass domain authorization checks. If a reverse proxy is misconfigured or if vouch-proxy is exposed directly to the internet, an attacker could present a request with Host: attacker.com and access protected resources if that domain is in the JWT audience.",
+      "preconditions": "Vouch-proxy must be deployed where HTTP Host headers are not validated by the reverse proxy before forwarding to vouch-proxy, OR the reverse proxy does not strip/override the Host header.",
+      "recommendation": "Document that vouch-proxy requires a properly configured reverse proxy that validates and controls the Host header. Add a configuration option to enforce a list of allowed hosts and reject requests with mismatched Host headers. Alternatively, trust the X-Forwarded-Host header from the reverse proxy if it is pinned to a specific set of IPs.",
+      "verification": "not executed",
+      "inference": "The code uses r.Host in authorization decisions, which is only safe if the reverse proxy validates the Host header. This requires verification of typical deployment architecture.",
+      "what_would_settle_it": "Documentation of the reverse proxy configuration requirements, or evidence that vouch-proxy validates the Host header against a configured allowlist",
+      "unaided_label": "Host header used in authorization without reverse proxy validation verification",
+      "traceability": ["CWE-644", "CWE-350", "WSTG-INPV-17", "ASVS 5.0 V8.3.2"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Compensating control would be a reverse proxy that validates/controls Host header, but this is not verified in the code"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The security control lives outside the repository in the reverse proxy configuration"
+        }
+      ],
+      "limits": "This finding does not confirm an actual compromise if vouch-proxy is deployed behind a properly configured reverse proxy. The risk depends on deployment context."
+    },
+    {
+      "id": "F-003",
+      "title": "Missing CSRF token validation on OAuth callback endpoint",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "handlers/auth.go",
+        "line": 66
+      },
+      "evidence": "The /auth/{state}/ endpoint validates the state nonce (`if session.Values[\"state\"] != queryState` at line 67-68) but does not validate a CSRF token in the request. The state parameter itself serves as a CSRF protection, but it is extracted from the query string without additional CSRF token validation.",
+      "impact": "A CSRF attack could trick a logged-in user into completing an OAuth flow with a different state value, potentially causing the user to authenticate as a different account or with different permissions if an attacker can predict or control the state.",
+      "preconditions": "An attacker must trick a user to visit a malicious site that issues a request to the OAuth callback with a different state value. The session must already exist.",
+      "recommendation": "Verify that the state parameter is sufficient CSRF protection for the OAuth callback flow. The state nonce should be cryptographically random and single-use. Document this as the CSRF protection mechanism. Optionally add a secondary SameSite cookie check or CSRF token in POST if callback transitions to POST.",
+      "verification": "not executed",
+      "inference": "The code uses the state nonce for CSRF protection, but without explicit verification that this is the primary/only CSRF protection mechanism in the OAuth spec",
+      "what_would_settle_it": "Confirmation from the code or documentation that state nonce is intentionally used as the sole CSRF protection mechanism for this endpoint, matching OAuth 2.0 spec recommendations",
+      "unaided_label": "No apparent CSRF protection on auth endpoints",
+      "traceability": ["CWE-352", "WSTG-SESS-05", "ASVS 5.0 V7.10"],
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The endpoint does perform state validation which is CSRF protection per OAuth spec"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "HOLDS",
+          "reason": "The state parameter IS the CSRF protection mechanism in OAuth flows per RFC 6749, not a missing control",
+          "control_at": "handlers/auth.go:67-68"
+        }
+      ],
+      "limits": "This may be a false positive - the state nonce is the standard CSRF protection in OAuth 2.0 flows and may be sufficient. Reported as probable because this should be explicitly documented."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Insecure JWT signing method selection",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "JWT signing method is enforced at signature verification time (pkg/jwtmanager/jwtmanager.go:152-154) where the code verifies `if token.Method != jwt.GetSigningMethod(cfg.Cfg.JWT.SigningMethod)` and rejects mismatches. The signing method is configured at token creation time (line 102). Algorithmic confusion attacks are mitigated by explicit method validation."
+    },
+    {
+      "class": "Session fixation via missing session regeneration",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "Session regeneration on login was not verified in the Gorilla sessions library calls. The code uses `session.Save()` but does not explicitly show session ID regeneration (e.g., via SessionOptions or Gorilla's built-in mechanisms). This would require examining Gorilla sessions' internal behavior or deployment testing."
+    },
+    {
+      "class": "Insecure state nonce generation",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "The generateStateNonce() function (handlers/login.go:289-296) uses securerandom.URLBase64InBytes() from go-securerandom package, which is cryptographically secure. The nonce is then cleaned of non-alphanumeric characters (regex replace) but retains sufficient entropy. The state is single-use and validated at handlers/auth.go:67."
+    },
+    {
+      "class": "Broken object-level authorization on /validate endpoint",
+      "procedure": "WEB-04",
+      "outcome": "refuted",
+      "where": "The /validate endpoint checks claims.Username is present (handlers/validate.go:49-51), verifies the JWT signature (via ClaimsFromJWT), and validates domain membership (line 55). Authorization is based on JWT claims which are cryptographically signed by vouch-proxy, not on user input. The finding depends on JWT validation which uses the configured signing key."
+    }
+  ]
+}

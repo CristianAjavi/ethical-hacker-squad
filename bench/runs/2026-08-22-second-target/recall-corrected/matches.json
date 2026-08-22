@@ -1,0 +1,124 @@
+{
+ "matches": [
+  {
+   "defect_id": "P-01",
+   "finding_ids": [
+    "R09",
+    "R14",
+    "R21",
+    "R24",
+    "R25",
+    "R39",
+    "R49",
+    "R57",
+    "R67",
+    "R71",
+    "R72",
+    "R73",
+    "R78",
+    "R86"
+   ],
+   "why": "All fourteen state the same mechanism as P-01: GET /invoices/:id binds req.params.id into 'SELECT * FROM invoices WHERE id = $1' with no owner scoping, so any caller reads any invoice; most contrast it explicitly with the /receipts/:id query that does add 'AND owner_id = $2'. R39 mislabels its line range (13-19) but its evidence is squarely 'The /invoices/:id endpoint (line 7-10) has no authentication check and no authorization check', and a misplaced line number does not change the mechanism. Near-misses rejected: R35 ('Broken Object-Level Authorization in /receipts/:id') points at the SAFE counterpart -- that endpoint already filters by owner_id -- and the mechanism it actually argues is a forged JWT feeding req.user.id, which its own report already files separately as F-003, so it is neither P-01 nor a second copy of P-04. R55 ('Missing Authentication Middleware Enforcement') is a different defect: it claims no middleware sets req.user so req.user.id may be undefined on /receipts, /invoices and /payments; the un-scoped invoice row is only an aside in its impact text and appears nowhere in its evidence. R82 is about /branding/preview having no authentication, an unrelated endpoint and mechanism.",
+   "quote": "Line 8: `SELECT * FROM invoices WHERE id = $1` queries only by invoice id without filtering by owner."
+  },
+  {
+   "defect_id": "P-02",
+   "finding_ids": [
+    "R05",
+    "R12",
+    "R17",
+    "R22",
+    "R28",
+    "R31",
+    "R34",
+    "R43",
+    "R45",
+    "R56",
+    "R62",
+    "R77",
+    "R81",
+    "R84",
+    "R85",
+    "R87",
+    "R89",
+    "R90"
+   ],
+   "why": "All eighteen describe P-02 exactly: req.query.order is interpolated into the ORDER BY of the /invoices list query via a template literal, which the $1 binding cannot cover because a parameter cannot bind a column. Line numbers vary (16, 17, 19, 20, 20-23, 24) and severity ranges from high to critical, but the mechanism is identical, so the misplacements do not disqualify them. Near-miss rejected: R11 ('Incomplete SQL Injection Mitigation in /payments Endpoint') targets the safe counterpart at lines 29-33, which maps req.query.sort through the SORTABLE allowlist before interpolating; R11 concedes the whitelist works and only speculates that a future careless edit could reintroduce injection, which is a different (and hypothetical) mechanism, not the live interpolation in /invoices.",
+   "quote": "The order parameter from the query string is interpolated directly into the SQL query using template literals, without parameterization or allowlist validation."
+  },
+  {
+   "defect_id": "P-03",
+   "finding_ids": [
+    "R03",
+    "R04",
+    "R07",
+    "R08",
+    "R16",
+    "R18",
+    "R23",
+    "R27",
+    "R32",
+    "R36",
+    "R40",
+    "R44",
+    "R46",
+    "R58",
+    "R61",
+    "R66",
+    "R69",
+    "R75",
+    "R88"
+   ],
+   "why": "P-03 spans two files by its own statement, so findings filed at routes/invoices.js:37-39 (R03, R32, R66) and at lib/remote.js:5-8 (the rest) are the same finding: req.body.logoUrl reaches fetchLogo, which calls fetch(url, { redirect: 'follow' }) with no allowlist, while the sibling fetchAsset parses the URL, checks ALLOWED and sets redirect: 'error'. R36, R61, R69 and R88 foreground the redirect-following half rather than the missing allowlist, but that is the same construct the defect names ('fetchLogo follows redirects with no allowlist'), not a separate weakness, so they are counted here. Near-miss rejected: R82 ('Missing Authentication on /branding/preview Endpoint') is about the route lacking an auth check -- an access-control gap that would exist even with a hardened fetchLogo -- so it is a different defect, not the unvalidated fetch.",
+   "quote": "The 'url' parameter comes directly from req.body.logoUrl (line 38 in routes/invoices.js) with no validation. There is no whitelist, no domain check, and no redirect protection."
+  },
+  {
+   "defect_id": "P-04",
+   "finding_ids": [
+    "R01",
+    "R06",
+    "R19",
+    "R29",
+    "R33",
+    "R37",
+    "R41",
+    "R50",
+    "R51",
+    "R53",
+    "R63",
+    "R64",
+    "R65",
+    "R68",
+    "R76",
+    "R79",
+    "R80",
+    "R83"
+   ],
+   "why": "All eighteen name the P-04 mechanism: jwt.decode() parses the bearer token without checking the signature, and currentUser returns claims.sub and claims.role as the caller's identity and role, so a forged token is accepted. Several also note the identical decode at line 12 in tagRequest; R80 files the finding at lib/auth.js:12 but its evidence reads 'Lines 6 and 12 use jwt.decode(bearer) without calling jwt.verify()', so it is the same defect with a shifted line. Near-misses rejected: R13 ('Undefined Return Value in tagRequest Function') is a correctness bug about tagRequest returning req.session.user, which never gets set -- nothing to do with signature verification. R91 ('Weak JWT Parsing Allows Null User Context') argues the opposite direction: that when decode fails, claims is null and currentUser yields { id: undefined, role: undefined }, a falsy-user handling concern about the absence of a token rather than acceptance of a forged one.",
+   "quote": "const claims = jwt.decode(bearer); — the decode() call does not validate the signature."
+  },
+  {
+   "defect_id": "P-05",
+   "finding_ids": [
+    "R02",
+    "R10",
+    "R15",
+    "R20",
+    "R26",
+    "R30",
+    "R38",
+    "R42",
+    "R47",
+    "R48",
+    "R52",
+    "R54",
+    "R59",
+    "R60",
+    "R70",
+    "R74"
+   ],
+   "why": "All sixteen describe P-05: invoiceNote interpolates the free-text note straight into `<div class=\"note\">${note}</div>` with no escaping at the sink, while the same module imports escape-html and applies it in customerName. Labels differ (reflected XSS, stored XSS, HTML injection) and severity ranges from medium to high, but the sink and the mechanism are the same, and understated severity does not disqualify a match. No finding in the batch attacks the safe counterparts -- customerName's escapeHtml(name) or footer's Number(year) -- so there was no near-miss to reject in this file; the only other lib/render.js-adjacent risk of confusion would have been a finding about those, and none exists.",
+   "quote": "The note parameter is inserted directly into HTML without escaping. Contrast with customerName (line 10) which calls escapeHtml()."
+  }
+ ]
+}

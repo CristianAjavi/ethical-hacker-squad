@@ -1,0 +1,72 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "Hardcoded API Key in Configuration",
+    "file": "config/mcp.json",
+    "line": 6,
+    "severity": "High",
+    "impact": "Credential exposure allowing unauthorized access to billing service; potential financial fraud and account compromise",
+    "evidence": "BILLING_API_KEY hardcoded as 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a' in plaintext; compared to DOCS_TOKEN using environment variables, indicating inconsistent security practice",
+    "recommendation": "Move all API keys to environment variables via process.env or .env file; never commit credentials to version control; rotate exposed key immediately; implement secret scanning in CI/CD"
+  },
+  {
+    "id": "F-002",
+    "title": "Shell Command Injection via Model Output",
+    "file": "agent/answer.py",
+    "line": 48,
+    "severity": "Critical",
+    "impact": "Arbitrary code execution: attacker can manipulate model to generate malicious shell commands (RCE, data exfiltration, system compromise)",
+    "evidence": "Function summarize_and_run() executes model_output directly via subprocess.run(model_output, shell=True); shell=True enables shell metacharacter interpretation; no validation or sanitization of model output",
+    "recommendation": "Never execute user-controlled or model-generated input via shell=True; use subprocess.run([args], shell=False) with argument list instead; if shell features needed, parse and validate output before execution"
+  },
+  {
+    "id": "F-003",
+    "title": "Unrestricted Tool Execution Without Permission Control",
+    "file": "agent/answer.py",
+    "line": 29,
+    "severity": "High",
+    "impact": "Horizontal privilege escalation: model can request refunds/lookups on arbitrary accounts without authorization",
+    "evidence": "run_tool() directly executes decision['tool'] and decision['account_id'] without checking session authentication; issue_refund() has no permission validation; vulnerable function is exposed despite safer run_tool_scoped() alternative existing in codebase",
+    "recommendation": "Use run_tool_scoped() instead of run_tool(); enforce account_id == session['authenticated_account_id'] for all operations; implement role-based access control (RBAC) for financial operations"
+  },
+  {
+    "id": "F-004",
+    "title": "Prompt Injection via Unescaped User Input",
+    "file": "agent/answer.py",
+    "line": 13,
+    "severity": "High",
+    "impact": "Model instruction hijacking: attacker can inject override directives to bypass security constraints and manipulate model behavior",
+    "evidence": "build_prompt() concatenates docs and question directly without escaping; retrieved documents from ingest_ticket() are user-controlled; attacker can submit malicious ticket content or craft injection payload in question parameter",
+    "recommendation": "Use XML tagging (build_prompt_marked) or block-level content isolation; trust levels should filter untrusted content; implement prompt sandboxing to prevent instruction override; add model-level safeguards for injection detection"
+  },
+  {
+    "id": "F-005",
+    "title": "Unsafe Dependency Execution via NPX",
+    "file": "config/mcp.json",
+    "line": 5,
+    "severity": "High",
+    "impact": "Supply chain attack: malicious package can be injected via npm registry compromise, typosquatting, or version compromise (RCE, backdoor, data theft)",
+    "evidence": "billing MCP uses 'npx -y @acme/billing-mcp@latest'; -y flag auto-executes without confirmation; @latest allows version drift; no integrity verification (SRI/hash); package executed with full application process privileges",
+    "recommendation": "Pin exact version (not @latest); use npm ci instead of npm install for reproducible builds; implement package.json lock files; verify package integrity with npm audit; consider package signing and allowlisting trusted publishers"
+  },
+  {
+    "id": "F-006",
+    "title": "Unvalidated Model Output Stored Persistently",
+    "file": "agent/memory.py",
+    "line": 13,
+    "severity": "Medium",
+    "impact": "Denial of Service and data pollution: model output can fill storage, pollute persistence layer, or grow unbounded",
+    "evidence": "remember_from_reply() appends model reply to notes[] with no validation, size limits, or content checks; attacker can induce model to generate multi-GB responses causing disk exhaustion",
+    "recommendation": "Implement output size limits (e.g., max 10KB per reply); validate content before storage; implement quota management; add rate limiting for storage operations; monitor file size growth"
+  },
+  {
+    "id": "F-007",
+    "title": "Missing File Permission Controls on Sensitive Data",
+    "file": "agent/memory.py",
+    "line": 6,
+    "severity": "Medium",
+    "impact": "Local information disclosure: JSON file permissions default to umask, allowing other users/processes to read customer data, preferences, and ticket contents",
+    "evidence": "STORE = Path('/var/lib/acme/agent-memory.json'); write_text() uses default permissions (typically 0o644); no explicit chmod() call; file contains customer tickets, preferences, and persistent notes",
+    "recommendation": "Explicitly set file permissions to 0o600 after writes: STORE.chmod(0o600); use os.open() with mode parameter; implement file locking for concurrent access safety; verify permissions in tests"
+  }
+]}

@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Unbounded recursion in table and array parsing",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158-221",
+   "impact": "Attacker can cause denial of service by sending an AMQP message with a deeply nested table or array structure. This triggers unbounded recursion leading to StackOverflowError (crash) or memory exhaustion if the nesting is combined with large data at each level.",
+   "evidence": "Method readFieldValue() recursively calls itself indirectly through readTable() and readArray(). Case 'F' (lines 180-181) calls readTable() which calls readFieldValue() for each table entry. Case 'A' (lines 183-184) calls readArray() which calls readFieldValue() for each array element. No nesting depth limit or recursion check is implemented. A table containing a table containing a table... (arbitrarily deep) will recurse without bounds."
+  },
+  {
+   "item_id": "F02",
+   "title": "Unbounded memory allocation in protocol message parsing",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:83-95",
+   "impact": "Attacker sending a crafted AMQP message with a large byte-string field can cause out-of-memory condition, crashing the JVM and denying service to the application using this library.",
+   "evidence": "Method readBytes() allocates a byte array with size read directly from untrusted protocol input. Line 88: `byte [] buffer = new byte[(int)contentLength];` where contentLength is read from DataInputStream at line 86 and can be up to Integer.MAX_VALUE-1 (2,147,483,646 bytes = ~2 GB)."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

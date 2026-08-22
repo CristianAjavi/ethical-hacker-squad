@@ -1,0 +1,109 @@
+{
+ "findings": [
+  {
+   "item_id": "N01",
+   "title": "Loading external $refs has one all-or-nothing switch: no scheme, host or root-directory allowlist, no timeout, and a process-global cache that never evicts",
+   "location": "openapi3/loader_uri_reader.go:46",
+   "impact": "A service that validates or renders documents supplied by its users, with external refs enabled (cmd/validate --ext is the shipped example), reads arbitrary local files and issues arbitrary outbound GETs on their behalf, hangs indefinitely on a slow host, and accumulates every fetched byte for the process lifetime.",
+   "evidence": "Once IsExternalRefsAllowed is true, openapi3/loader.go:107-112 is the only gate and it is boolean. ReadFromFile (openapi3/loader_uri_reader.go:79-84) then does `os.ReadFile(path.Clean(filepath.FromSlash(location.Path)))` with no containment to the document's directory, so `$ref: \"/etc/passwd\"` resolves; resolvePath (openapi3/loader.go:307-319) explicitly returns an absolute componentPath unchanged. ReadFromHTTP (lines 51-70) is built on http.DefaultClient, which has no timeout, applies no allowlist to the host, and finishes with an unbounded io.ReadAll (line 68) - `$ref: \"http://169.254.169.254/...\"` is fetched as written. URIMapCache (lines 90-117) keeps every fetched document in a map captured by the package-level DefaultReadFromURI var, never evicted; its own comment says it suits short-lived processes, yet it is the default for every Loader, including a long-lived server."
+  },
+  {
+   "item_id": "N02",
+   "title": "CI job exports GITHUB_TOKEN to every step, including steps that run unpinned third-party code, and declares no permissions block",
+   "location": ".github/workflows/go.yml:9",
+   "impact": "Any of those `@latest` modules, if compromised upstream, executes inside the job with the job's GITHUB_TOKEN in its environment. If the repository default is read-write, that is write access to repository contents from a build step; even read-only it is a credential handed to third-party code that has no need of it.",
+   "evidence": ".github/workflows/go.yml:7-12 sets `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` at job level, so it is in the environment of every step. Neither .github/workflows/go.yml nor .github/workflows/shellcheck.yml declares a `permissions:` key, so the token carries the repository/organisation default scope. Steps that inherit it include `go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...` (line 68), `go run golang.org/x/tools/go/analysis/passes/nilness/cmd/nilness@latest ./...` (line 108), `go run -a github.com/getkin/kin-openapi/cmd/validate@latest` (line 137) and, in the check-goimports job, `go install github.com/incu6us/goimports-reviser/v3@latest` - each of which downloads and executes code resolved at run time. Both workflows trigger on `push` and `pull_request`."
+  },
+  {
+   "item_id": "N03",
+   "title": "The compiled-pattern cache is process-global and keyed by the pattern string alone, so a configured RegexCompiler can be silently bypassed",
+   "location": "openapi3/schema_pattern.go:33",
+   "impact": "A caller that installs a stricter or differently-dialected regex engine for one document may still be matched by the default RE2 result cached from another - the override is not honoured and nothing reports that. In a process that loads many documents (a linting or gateway service), the map grows with every distinct pattern string and is never released.",
+   "evidence": "compilePattern stores its result with `compiledPatterns.Store(pattern, cp)` (openapi3/schema_pattern.go:33) into the package-level `compiledPatterns sync.Map` declared at openapi3/schema.go:46, keyed only by the pattern text - not by which RegexCompilerFunc produced it. visitJSONString reads that cache first (openapi3/schema.go:2655-2657) and only calls compilePattern, with settings.regexCompiler, when the lookup misses. So the first compiler to see a given pattern anywhere in the process wins for every later validation of the same pattern text, whichever compiler that validation configured through Options.RegexCompiler or SetSchemaRegexCompiler. The map is also never evicted."
+  },
+  {
+   "item_id": "N04",
+   "title": "Every GitHub Action and every CI tool is referenced by a mutable pointer - a tag or @latest - and none by commit SHA",
+   "location": ".github/workflows/go.yml:27",
+   "impact": "A tag is a movable pointer under the upstream owner's control: whoever holds that account, or an attacker who steals its credentials, changes what runs in this pipeline with no change in this repository. Combined with F-008 the code that arrives that way runs with the job's token in its environment.",
+   "evidence": "None of the seven action references under .github/workflows/ is pinned by a 40-character SHA. go.yml uses actions/setup-go@v6 (line 27), actions/cache@v3 (line 32) and actions/checkout@v6 (line 44), and repeats setup-go/checkout in the check-goimports job; shellcheck.yml uses actions/checkout@v2 (line 12) and the third-party ludeeus/action-shellcheck@1.1.0 (line 14). The same holds for executable dependencies: `go run ...modernize@latest`, `go run ...nilness@latest` and `go install github.com/incu6us/goimports-reviser/v3@latest` resolve at run time, a weaker pointer than a tag. actions/checkout@v2 is additionally several majors behind."
+  },
+  {
+   "item_id": "N05",
+   "title": "A schema pattern that fails to compile leaves a nil matcher, and under MultiError the next line calls MatchString on it",
+   "location": "openapi3/schema.go:2665",
+   "impact": "Every request whose validation reaches that string field panics: connection reset plus a stack trace under net/http, process death in a caller without recovery. Which schema branch is visited is chosen by the request body or parameter, so a client can steer validation into the branch carrying the uncompilable pattern.",
+   "evidence": "openapi3/schema.go:2654-2666: `cpiface, _ := compiledPatterns.Load(schema.Pattern)`, `cp, _ := cpiface.(RegexMatcher)`, and if cp is nil, `if cp, err = schema.compilePattern(settings.regexCompiler); err != nil { if !settings.multiError { return err }; me = append(me, err) }`. openapi3/schema_pattern.go:16-31 shows compilePattern returning the zero matcher together with the error - on the default path `cp, err = regexp.Compile(intoGoRegexp(pattern))`, so cp holds a nil *regexp.Regexp. Execution then falls straight into `if !cp.MatchString(value)` at line 2666, calling MatchString on a nil receiver (or on a nil interface, if a custom RegexCompilerFunc returned one) - a nil-pointer dereference. The guard exists only on the `!settings.multiError` branch. openapi3filter/validate_request.go:236-238 and 340-342 set exactly that flag whenever the caller passes Options{MultiError: true}, for both"
+  },
+  {
+   "item_id": "N06",
+   "title": "The legacy router collapses two spec paths that differ only by a trailing slash, so the operation used for validation is chosen at random",
+   "location": "routers/legacy/pathpattern/node.go:165",
+   "impact": "The request is validated against the wrong operation: its parameters, its request-body schema and - through openapi3filter/validate_request.go:46-51 - its security requirements. If the two path items differ in security, a client reaching the protected spelling can be validated under the unprotected operation, and the outcome flips between process restarts, which makes it hard to reproduce or attribute.",
+   "evidence": "CreateNode strips every trailing slash from the pattern before building the tree (routers/legacy/pathpattern/node.go:164-166) and Match strips them again from the request path (lines 253-255). routers/legacy/router.go:66-77 iterates `doc.Paths.Map()` - a Go map, so in randomised order - calling root.Add(method+\" \"+path, route) for each entry. \"/pets\" and \"/pets/\" therefore resolve to the same node, and Add sets `node.Value = value` (node.go:158), so the second registration silently replaces the first. Nothing in openapi3 rejects a document declaring both: Paths.Validate (openapi3/paths.go:41-75) only refuses two paths whose templated normalisation collides, and \"/pets\" and \"/pets/\" do not. Requests to either spelling then validate against whichever of the two operations happened to be registered last in that process."
+  },
+  {
+   "item_id": "N07",
+   "title": "Unchecked type assertion in deepSet: two colliding deepObject query keys panic the request",
+   "location": "openapi3filter/req_resp_decoder.go:905",
+   "impact": "A remote client aborts request processing at will and, in the common net/http deployment, forces a stack trace into the log and a connection reset on every attempt; outside a recovered handler the process dies. Unlike F-001 this needs no static path in the spec, only a deepObject object parameter.",
+   "evidence": "deepSet (openapi3filter/req_resp_decoder.go:899) walks intermediate keys with `m = m[key].(map[string]any)` at line 905, with no comma-ok. makeObject (line 914) feeds it every entry of the props map in Go's randomised map order. The query string `?p[a]=1&p[a][b]=2` produces, through the deepObject branch at lines 661-687, props = {\"a\": \"1\", \"a\\x1Fb\": \"2\"}. If the shorter key is applied first, mobj[\"a\"] holds the string \"1\"; the longer key then asserts that string to map[string]any and panics with `interface conversion: interface {} is string, not map[string]interface {}`. Which key comes first is not stable, so the panic fires on roughly half of identical requests."
+  },
+  {
+   "item_id": "N08",
+   "title": "An OpenAPI 3.1 array parameter without `items` passes document validation and then nil-dereferences on the first request that supplies it",
+   "location": "openapi3filter/req_resp_decoder.go:555",
+   "impact": "Every request that supplies the parameter panics: connection reset plus a stack trace under net/http, process death in a caller without recovery. The document is not malformed - it passed the library's own Validate - so the defect only appears in production, on the first client that sends the field.",
+   "evidence": "openapi3/schema.go:1689-1692 requires `items` for an array only when `!validationOpts.jsonSchema2020ValidationEnabled` and there is no `prefixItems`; openapi3/openapi3.go:268-274 makes T.Validate append IsOpenAPI31OrLater() for any 3.1/3.2 document, and openapi3/validation_options.go:38-44 shows that option setting jsonSchema2020ValidationEnabled = true. So `type: array` with no `items` is accepted for every 3.1 document - correctly, since it is legal JSON Schema 2020-12. The decoders then dereference that nil unconditionally. Query: decodeValue (openapi3filter/req_resp_decoder.go:323-330) routes an array schema to DecodeArray, which calls d.parseArray at line 544, which at line 555 does `d.parseValue(v, schemaRef.Value.Items)` with a nil *SchemaRef; parseValue starts at line 580 with `len(schema.Value.AllOf)` - a nil dereference. Header, cookie and path parameters reach the package-leve"
+  },
+  {
+   "item_id": "N09",
+   "title": "Request bodies are buffered whole, twice, before the checks that would reject them, with no size limit anywhere in the library",
+   "location": "openapi3filter/validate_request.go:271",
+   "impact": "An unauthenticated client makes the server commit memory proportional to what it chooses to send, on requests that are guaranteed to be rejected - a wrong Content-Type, a bad credential. The cost is paid twice per request (the security pass and the body pass) plus once more inside the decoder, and it is paid before any validation decision.",
+   "evidence": "openapi3filter/validate_request.go:271 `data, err = io.ReadAll(req.Body)` reads the entire body with no bound, and only afterwards does the function check whether the operation declares any content at all (line 303 `if len(content) == 0 { return nil }`) or whether the request's Content-Type is one the spec accepts (lines 308-316). validateSecurityRequirement does the same at line 448, before the AuthenticationFunc is ever called (line 492), so a request that authentication will reject has already been buffered. `grep -rn 'MaxBytesReader' --include='*.go'` over the whole repository returns nothing, and the only ContentLength uses are assignments made after the body has been read (lines 287, 384, 484, 513). The body decoders reinforce this: PlainBodyDecoder, FileBodyDecoder and UrlencodedBodyDecoder each call io.ReadAll again (openapi3filter/req_resp_decoder.go:1348, 1651, 1400)."
+  },
+  {
+   "item_id": "N10",
+   "title": "ZipFileBodyDecoder decompresses without a bound and appends the whole scratch buffer regardless of how many bytes were read",
+   "location": "openapi3filter/req_resp_decoder.go:1637",
+   "impact": "A consumer that registers this decoder accepts a decompression bomb on that content type. The append defect additionally corrupts the value that is then validated and handed to the application: the decoded text does not match the archive contents, so validation is performed against data the client did not send.",
+   "evidence": "openapi3filter/req_resp_decoder.go:1614-1650: the whole body is copied into memory (io.Copy into a bytes.Buffer), `content := make([]byte, 0, bufferSize*len(zr.File))` pre-sizes from the attacker-supplied entry count, and the read loop grows `content` with no cap on total decompressed size - the function's own doc comment says it 'may be susceptible to a zip bomb attack'. Separately, line 1637 is `content = append(content, buffer...)` inside `if 0 < n`, appending all 256 bytes of the scratch buffer instead of `buffer[:n]`, so every short read injects stale bytes from the previous iteration into the decoded value."
+  },
+  {
+   "item_id": "N11",
+   "title": "An array index taken from the query string sizes a slice: one request allocates gigabytes in openapi3filter deepObject decoding",
+   "location": "openapi3filter/req_resp_decoder.go:953",
+   "impact": "Unauthenticated memory exhaustion. One short GET request drives the process into the OOM killer, or into a multi-second allocation and GC storm, taking the whole service down; it is trivially repeatable and needs no session.",
+   "evidence": "urlValuesDecoder.DecodeObject (openapi3filter/req_resp_decoder.go:638) turns `?p[arr][N]=x` into props[\"arr\\x1FN\"]: lines 669-679 make every `[...]` group of the query key a path segment. makeObject (line 911) splits on that delimiter and deepSet builds mobj = {\"arr\": {\"N\": \"x\"}}. buildResObj (line 965) reaches the `array` branch at line 972 and calls sliceMapToSlice(t) at line 982. sliceMapToSlice (line 936) parses the key with `strconv.Atoi` at line 941 with no upper bound, takes `max` over the keys at lines 947-952, then runs `for i := 0; i <= max; i++ { result = append(result, ...) }` at line 953. N is the attacker's decimal literal, so `?p[arr][2000000000]=x` grows `result` to 2e9 interface headers (~32 GB) before any schema rule - maxItems, maxLength, type - is consulted. Line 986 then allocates a second slice of the same length. Nothing between the query string and line 953 compar"
+  },
+  {
+   "item_id": "N12",
+   "title": "legacy FindRoute can return a nil route together with a nil error, and dereferences a nil node on the same fall-through",
+   "location": "routers/legacy/router.go:158",
+   "impact": "A nil-pointer panic in the request path - the same availability effect as F-001 and F-003 - plus a contract violation, a nil route with a nil error, that moves the panic into the caller's code where it is harder to diagnose.",
+   "evidence": "routers/legacy/router.go:145-162: when `route == nil` the function checks `doc.Paths.Value(remainingPath)` and `pathItem.GetOperation(method)`, and if both are non-nil it does not return - it falls through to `paramKeys := node.VariableNames` (line 158) and then `return route, pathParams, nil` (line 162) with route still nil. Two defects share that fall-through. (a) `node` is nil whenever Match failed, so line 158 is a nil-pointer dereference. (b) When Match succeeded but node.Value is not a *routers.Route, the caller receives (nil, params, nil), and every caller reads a nil error as success - openapi3filter/validate_request.go:40-41 immediately does `route.Operation`. Case (b) is concretely reachable through Router.AddRoute (lines 82-93), which stores `router` (a *Router) as the node value while FindRoute at line 139 asserts `node.Value.(*routers.Route)`; that assertion can never succee"
+  },
+  {
+   "item_id": "N13",
+   "title": "Unauthenticated remote panic: PathItem.GetOperation panics on any non-standard HTTP method, and the legacy router hands it req.Method verbatim",
+   "location": "openapi3/path_item.go:174",
+   "impact": "Any remote client aborts request processing at will with one request - `curl -X BREW https://host/pets`, or a lowercase `-X get` - against any path that appears literally in the spec. Under net/http the panic hits the per-connection recover, so the effect is a dropped connection plus a full stack trace in the server log for every such request: a cheap unauthenticated connection-reset and log-flooding primitive. In any caller that validates outside a recovered net/http handler (a worker goroutine, a queue or gRPC adapter, a framework with no recovery middleware) the same request kills the process.",
+   "evidence": "openapi3/path_item.go:153-175 GetOperation switches on the nine net/http method constants and its default branch is `panic(fmt.Errorf(\"unsupported HTTP method %q\", method))`. routers/legacy/router.go:105 takes `method, url := req.Method, req.URL` and never normalises or allow-lists it. At line 137 `root.Match(method + \" \" + remainingPath)` fails for any method the spec did not register (the pattern tree holds only the uppercase methods returned by PathItem.Operations()), so `route == nil`. Line 148 then looks the path up verbatim: `pathItem := doc.Paths.Value(remainingPath)`, a plain map lookup (openapi3/maplike.go:275-282) that returns non-nil for any static path key such as \"/pets\". Line 150 calls `pathItem.GetOperation(method)` with the attacker's method -> default branch -> panic. openapi3filter/validation_handler.go:39 builds exactly this router (`legacyrouter.NewRouter(doc)`) and o"
+  },
+  {
+   "item_id": "N14",
+   "title": "An element count read from the document sizes a slice in origin decoding, under Loader.IncludeOrigin",
+   "location": "openapi3/origin.go:99",
+   "impact": "If the declared count can be attacker-influenced, a small document sizes a very large slice - the classic length-from-the-wire allocation. The path is off by default (openapi3/loader.go:21 IncludeOrigin = false) and only a service that loads documents it does not control while asking for origin tracking would be exposed.",
+   "evidence": "openapi3/origin.go:99 `locs := make([]Location, count)` where `count := toInt(s[idx])` (line 97) is an element of the `__origin__` sequence being decoded, and the subsequent fill loop is separately bounded by `idx+2 < len(s)` (line 100) - so the allocation is sized by the declared count while the data that justifies it is not required to be present. Location is two strings plus four ints, so the multiplier is large. The `nf` branch above it (lines 65-66) does bound itself with `idx+nf*3 <= len(s)` before allocating, which is the shape the sequence branch is missing."
+  }
+ ],
+ "advisories_to_match": [
+  {
+   "advisory_id": "GHSA-xhj3-7xw9-vr34",
+   "summary": "kin-openapi has uncontrolled resource consumption in openapi3filter deepObject query parameter decoding",
+   "description": "### Summary\n\nAn uncontrolled resource consumption vulnerability in `openapi3filter` lets any unauthenticated client force multi-gigabyte heap allocation with a single, tiny HTTP request. When a spec declares a `deepObject`-style query parameter whose schema contains an array (a normal, documented pattern), the decoder reconstructs the array by reading the **largest attacker-supplied index** and allocating one slot for every position from `0` up to that index \u2014 *before* schema validation (including `maxItems`) ever runs. A request as small as 24 bytes (`?param[items][50000000]=x`) drives heap allocation to **~6.1 GiB**, reliably triggering an OOM kill / restart loop on memory-constrained services.\n\n### Details\n\nThe OpenAPI `style: deepObject` serialization lets clients express arrays in the query string using bracket notation, e.g. `param[items][0]=a&param[items][1]=b`. The decoder first collects these into an intermediate `map[string]any` keyed by the string of the index, then converts that sparse map into a real `[]any` in [`sliceMapToSlice`](https://github.com/getkin/kin-openapi/blob/master/openapi3filter/req_resp_decoder.go#L936):\n\n```go\n// req_resp_decoder.go (vulnerable versio"
+  }
+ ]
+}

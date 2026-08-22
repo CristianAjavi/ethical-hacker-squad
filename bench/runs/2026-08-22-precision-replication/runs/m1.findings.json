@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Arbitrary Code Execution via Unescaped subprocess.run with shell=True",
+      "file": "agent/answer.py",
+      "line": 38,
+      "severity": "CRITICAL",
+      "impact": "An attacker who can influence model output (via prompt injection or direct jailbreak) can execute arbitrary shell commands with the process's full privileges. This enables data exfiltration, system compromise, denial of service, or lateral movement.",
+      "evidence": "Function `summarize_and_run()` at lines 37-39 calls `subprocess.run(model_output, shell=True, ...)` where `model_output` is directly from the Claude API without validation or escaping. Model output like `'; rm -rf /; #'` would destroy the filesystem.",
+      "recommendation": "1. IMMEDIATE: Remove shell=True and pass command arguments as a list. 2. Implement allowlist of permitted commands or disable feature entirely. 3. If command execution is required, use shlex.quote() for escaping or subprocess with argv array. 4. Run subprocess in a restricted sandbox/container with minimal privileges."
+    },
+    {
+      "id": "F-002",
+      "title": "Hardcoded Billing API Key Exposed in Source Code",
+      "file": "config/mcp.json",
+      "line": 5,
+      "severity": "CRITICAL",
+      "impact": "The billing API key `sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a` is hardcoded in the configuration file. Any attacker with access to the source code repository (developers, CI/CD logs, backups, version control history) can impersonate the system to the billing API. This enables unauthorized billing operations, refunds to arbitrary accounts, data theft, and financial fraud.",
+      "evidence": "Line 5 of config/mcp.json contains: 'BILLING_API_KEY': 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a'",
+      "recommendation": "1. IMMEDIATE: Rotate the exposed API key on the billing service. 2. Move API key to environment variable: use `${BILLING_API_KEY}` like the DOCS_TOKEN. 3. Ensure environment variables are set via secure configuration management (Kubernetes secrets, HashiCorp Vault, AWS Secrets Manager). 4. Scan git history for all instances of this key and revoke them. 5. Implement pre-commit hooks to prevent secrets in future commits."
+    },
+    {
+      "id": "F-003",
+      "title": "Missing Account Authorization Check in run_tool() - Refund Any Account",
+      "file": "agent/answer.py",
+      "line": 24,
+      "severity": "HIGH",
+      "impact": "The run_tool() function accepts a model-provided `account_id` parameter and issues refunds without verifying that the authenticated customer owns that account. An attacker can manipulate the model (via prompt injection or jailbreak) to refund any customer account, causing unauthorized financial transactions and fraud.",
+      "evidence": "Function `run_tool()` at lines 23-27 accepts `decision['account_id']` and directly passes it to `issue_refund()` without any authorization check. The safer `run_tool_scoped()` version at lines 29-34 does check session authentication, but the caller chooses which to invoke.",
+      "recommendation": "1. IMMEDIATE: Require run_tool_scoped() or add authorization check: verify that `decision['account_id'] == session['authenticated_account_id']`. 2. Default to the most restrictive version (run_tool_scoped) and require explicit privilege escalation. 3. Log all refund requests with account IDs for audit trail. 4. Implement a review/approval workflow for refund requests above a threshold."
+    },
+    {
+      "id": "F-004",
+      "title": "Shared Global Memory File - Privilege Escalation and Data Isolation",
+      "file": "agent/memory.py",
+      "line": 6,
+      "severity": "HIGH",
+      "impact": "All customer data (preferences, notes, tickets) is stored in a single world-accessible file `/var/lib/acme/agent-memory.json`. Any process on the system can read/write this file, enabling privilege escalation, unauthorized access to other customers' data, race conditions, and denial of service.",
+      "evidence": "Line 6 defines STORE = Path('/var/lib/acme/agent-memory.json'). All calls to remember_from_reply(), remember_preference(), and ingest_ticket() use this single shared file with no per-customer isolation, no locking, and no file permissions restrictions mentioned.",
+      "recommendation": "1. IMMEDIATE: Move to per-customer/per-session storage using database (PostgreSQL, Redis) or per-customer files with proper ownership. 2. Set restrictive file permissions (0600) if using single file. 3. Implement per-customer access isolation at application layer. 4. Add atomic locking (fcntl, contextlib) if retaining single file approach. 5. Add authentication/authorization checks before all read/write operations."
+    },
+    {
+      "id": "F-005",
+      "title": "Unbounded Memory Growth in remember_from_reply() - Denial of Service",
+      "file": "agent/memory.py",
+      "line": 12,
+      "severity": "MEDIUM",
+      "impact": "The remember_from_reply() function appends every model reply to a 'notes' array without any size limits, pagination, or rotation. An attacker can exhaust disk space by triggering repeated save operations with large model outputs, causing a denial of service.",
+      "evidence": "Lines 11-13 show data.setdefault('notes', []).append(reply) with no limit check. The notes array grows unboundedly, and the entire JSON file is rewritten on each call, causing O(n) performance degradation.",
+      "recommendation": "1. Implement a max_notes limit (e.g., keep last 100 entries). 2. Use a circular buffer or append-only log instead of rewriting entire JSON file. 3. Implement FIFO or timestamp-based rotation. 4. Add per-call size limits to prevent excessively large replies from being stored. 5. Consider moving to a database with native size management."
+    },
+    {
+      "id": "F-006",
+      "title": "Prompt Injection via Unescaped Customer Question in build_prompt()",
+      "file": "agent/answer.py",
+      "line": 11,
+      "severity": "MEDIUM",
+      "impact": "The build_prompt() function directly concatenates the customer question into the prompt without escaping or sanitization. An attacker can inject arbitrary instructions or formatting to manipulate the model's behavior, bypass tool restrictions, or extract sensitive information from the knowledge base.",
+      "evidence": "Line 11 shows f'{SYSTEM}\\n\\nKnowledge:\\n{joined}\\n\\nCustomer question: {question}' directly interpolates the untrusted question parameter with no escaping.",
+      "recommendation": "1. Use structured prompts with delimiters that the model cannot escape (e.g., XML tags). 2. Implement prompt injection detection/filters. 3. Prefer build_prompt_marked() with proper XML escaping of attributes. 4. Add examples of safe vs. unsafe injection patterns to system prompt. 5. Consider using Claude's system parameter and content blocks instead of string concatenation."
+    },
+    {
+      "id": "F-007",
+      "title": "XML Injection in build_prompt_marked() - Unescaped Document Metadata",
+      "file": "agent/answer.py",
+      "line": 19,
+      "severity": "MEDIUM",
+      "impact": "The build_prompt_marked() function embeds untrusted document metadata (origin, trust) directly into XML attributes without escaping. An attacker can inject malicious XML to close tags and inject new instructions, similar to HTML injection.",
+      "evidence": "Lines 17-19 embed d['origin'] and d['trust'] in XML attributes via f-string: f'<document source={d[\"origin\"]!r} trust={d[\"trust\"]!r}>'. The !r provides repr() but not XML-safe escaping.",
+      "recommendation": "1. Use proper XML escaping library (xml.etree.ElementTree.escape or xml.sax.saxutils.quoteattr). 2. Validate that origin and trust values conform to expected formats (e.g., alphanumeric only). 3. Use a structured format (JSON, MessagePack) instead of XML if possible. 4. Add input validation to reject unexpected metadata values."
+    }
+  ]
+}

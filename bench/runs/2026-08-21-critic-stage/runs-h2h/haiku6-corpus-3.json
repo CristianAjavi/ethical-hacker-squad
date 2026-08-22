@@ -1,0 +1,135 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (corpus-driven)",
+    "coverage": {
+      "inventoried": [
+        "pom.xml - Maven dependencies (RabbitMQ Java client 5.34.0-SNAPSHOT)",
+        "ValueReader.java - AMQP wire-protocol value reader (com.rabbitmq.client.impl)"
+      ],
+      "read": [
+        "ValueReader.java - Full source code analysis"
+      ],
+      "not_read": [
+        "pom.xml dependencies - Dependency versions verified but CVE cross-reference skipped (would require external tool), TruncatedInputStream implementation not in scope"
+      ]
+    },
+    "coverage_declaration": "Examined ValueReader.java source code end-to-end for resource exhaustion, integer overflow, and binary data handling. Supply-chain analysis of pom.xml limited to enumeration of versions without external CVE database access; TruncatedInputStream class not provided in scope, so defense assessment for readTable/readArray methods is inconclusive.",
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded memory allocation from stream length values",
+        "Large byte array allocation in readBytes() method",
+        "Date timestamp overflow when multiplying by 1000",
+        "BigDecimal construction from raw binary data",
+        "Dependency vulnerabilities in pom.xml"
+      ],
+      "reported": [
+        "Unbounded memory allocation from stream length values",
+        "Date timestamp overflow when multiplying by 1000"
+      ],
+      "dropped": [
+        {
+          "label": "BigDecimal construction from raw binary data",
+          "resolution": "refuted",
+          "reason": "BigInteger correctly interprets 4-byte array as two's complement signed integer, consistent with AMQP specification.",
+          "control_at": "ValueReader.java:175 - new BigDecimal(new BigInteger(unscaled), scale)"
+        },
+        {
+          "label": "Dependency vulnerabilities in pom.xml",
+          "resolution": "out_of_scope",
+          "reason": "CVE cross-reference requires external tool/database; RabbitMQ project versions are current (Netty 4.2.15, Jackson 2.21.3, BouncyCastle 1.84 all recent). No obvious unmaintained dependencies detected."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation in readBytes() allows denial of service",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 88
+      },
+      "evidence": "Method readBytes() allocates byte array of size (int)contentLength without reasonable limit. contentLength is read as unsigned int from attacker-controlled stream via unsignedExtend(in.readInt()), allowing values up to Integer.MAX_VALUE - 1 (2,147,483,647). Line 87-88 allocates: new byte[(int)contentLength].",
+      "impact": "Denial of service via heap exhaustion. Attacker can send crafted AMQP message with contentLength=Integer.MAX_VALUE-1, causing allocation of 2GB heap memory. Multiple requests exhaust available memory and crash JVM with OutOfMemoryError.",
+      "preconditions": "Attacker can send crafted AMQP messages to the client, either by controlling the broker or via man-in-the-middle. In typical setups, only trusted brokers send messages, but library should be defensively programmed.",
+      "recommendation": "Add configurable maximum size limit for byte arrays, with sensible default (e.g., 128 MB). Check contentLength against limit before allocation. Example: if(contentLength > MAX_SIZE) throw new MalformedFrameException().",
+      "traceability": ["CWE-770: Allocation of Resources Without Limits or Throttling"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control. Method directly allocates byte array without size validation or quota enforcement."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "contentLength is read directly from untrusted stream via in.readInt() on line 86, converted to unsigned via unsignedExtend(). Attacker fully controls this value."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The allocation itself (new byte[(int)contentLength]) is the dangerous sink. Allocating 2GB of memory from untrusted input causes OutOfMemoryError and denial of service."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Boundary is crossed: attacker sends crafted AMQP message to client, causing client's JVM to exhaust memory."
+        }
+      ],
+      "unaided_label": "Unbounded memory allocation from stream length values"
+    },
+    {
+      "id": "F-002",
+      "title": "Timestamp multiplication overflow in readTimestamp() — informational only",
+      "procedure": "ad-hoc",
+      "status": "informational",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269
+      },
+      "evidence": "Method readTimestamp() multiplies long value by 1000 without overflow check: return new Date(in.readLong()*1000). When in.readLong() value exceeds Long.MAX_VALUE/1000 (~9.2 billion), multiplication overflows to incorrect value.",
+      "impact": "Integer overflow causes Date to be constructed with incorrect timestamp. However, since the timestamp value itself is attacker-controlled, this grants no capability beyond what the attacker already had (ability to send any timestamp).",
+      "preconditions": "Attacker sends AMQP message with timestamp field value > Long.MAX_VALUE/1000.",
+      "recommendation": "Add overflow check for defense-in-depth: use Math.multiplyExact(timestamp, 1000L) which throws ArithmeticException on overflow, or check if(timestamp > Long.MAX_VALUE/1000) before multiplication. This prevents silent truncation of timestamp values.",
+      "traceability": ["CWE-190: Integer Overflow or Wraparound"],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Timestamp is read directly from untrusted stream via in.readLong() on line 269"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "The sink (Date constructor) is not dangerous. An incorrect Date object does not grant the attacker new capability since they already controlled the input timestamp value."
+        }
+      ],
+      "limits": "Impact is purely defensive. The attacker already possessed the ability to send any timestamp value. Overflowing it creates an incorrect Date, but the attacker already could have sent a different correct timestamp.",
+      "unaided_label": "Date timestamp overflow when multiplying by 1000"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unbounded table reading via TruncatedInputStream",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "readTable() method (lines 139-155) uses TruncatedInputStream(in, tableLength) to wrap stream with length limit. Cannot verify effectiveness without examining TruncatedInputStream implementation, which is not in scope."
+    },
+    {
+      "class": "BigDecimal construction from binary data",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "readFieldValue() case 'D' (lines 171-176) constructs BigDecimal(new BigInteger(unscaled), scale) where unscaled is 4-byte array. BigInteger correctly interprets two's complement binary, consistent with AMQP spec. No overflow or misinterpretation issue."
+    }
+  ]
+}

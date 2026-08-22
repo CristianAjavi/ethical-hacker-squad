@@ -1,0 +1,40 @@
+{
+  "verdicts": [
+    {
+      "claim_id": "V01",
+      "verdict": "supported",
+      "why": "readTable (line 139) -> readFieldValue case 'F'/'A' (lines 181, 184) -> readArray (line 237) -> readFieldValue (line 245) is genuine mutual recursion with no depth counter anywhere in the file; a nesting level costs only 5 wire bytes ('A' + 4-byte length), so a few tens of KB - well inside one 128KB AMQP frame - yields thousands of stack frames, and nothing in the file catches the resulting StackOverflowError.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:184"
+    },
+    {
+      "claim_id": "V02",
+      "verdict": "supported",
+      "why": "Lines 86-89 are quoted correctly and the only guard, `contentLength < Integer.MAX_VALUE`, still admits 2147483646, so `new byte[(int)contentLength]` at line 88 allocates and zeroes the full declared size BEFORE `in.readFully(buffer)` at line 89 verifies any of those bytes exist on the wire; I found no other bound in the file and no caller-side clamp inside the target.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88"
+    },
+    {
+      "claim_id": "V03",
+      "verdict": "supported",
+      "why": "The anchor is right: line 86 reads a wire-supplied unsigned 32-bit length and line 88 allocates it with only a 2GB ceiling, before readFully validates it, reachable from readFieldValue cases 'S' (line 163) and 'x' (line 211); the cited lines 142/240 are the table/array length reads rather than the readBytes call sites and 'large table length' does not itself allocate, but those are citation imprecisions, not errors about the allocation defect.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86"
+    },
+    {
+      "claim_id": "V04",
+      "verdict": "refuted",
+      "why": "No allocation is proportional to tableLength: lines 145-147 create an empty HashMap and two fixed-size stream wrappers, and TruncatedInputStream holds tableLength only as a remaining-bytes counter (the claim itself concedes it 'will eventually stop'), while the loop at line 148 is bounded by bytes actually available, so a huge declared length costs nothing - the HashMap only grows with bytes the attacker really sends.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:146"
+    },
+    {
+      "claim_id": "V05",
+      "verdict": "undecidable",
+      "why": "The 'read past the intended boundary' half is refuted outright - the TruncatedInputStream wrappers at lines 146-147 and 241-242 enforce the limit regardless of available() - but whether available() can under-report and exit the loops at lines 148/244 early depends entirely on TruncatedInputStream's available() override and on which stream the (public) constructor at line 57 is handed, and neither source is under the target path.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148"
+    },
+    {
+      "claim_id": "V06",
+      "verdict": "refuted",
+      "why": "Lines 240-243 allocate nothing proportional to `length` - it is passed to TruncatedInputStream as a byte counter, and the ArrayList starts empty and grows only per element actually parsed at lines 244-246, so 'reading 4GB' requires the attacker to actually transmit 4GB (bandwidth-bound), unlike readBytes line 88 which allocates the declared size before any data arrives.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:241"
+    }
+  ]
+}

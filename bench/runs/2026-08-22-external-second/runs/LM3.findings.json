@@ -1,0 +1,124 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Arbitrary Code Execution via Configuration File",
+      "file": "lemur/factory.py",
+      "line": 105,
+      "severity": "CRITICAL",
+      "impact": "Configuration files are executed via exec() with compile(). An attacker who can control the config file path or contents can execute arbitrary Python code with the privileges of the Lemur application.",
+      "evidence": "exec(compile(config_file.read(), file_path, 'exec'), d.__dict__)",
+      "recommendation": "Replace dynamic code execution with a safe configuration parser (YAML, TOML, JSON). If Python config files are necessary, validate the file path and use ast.literal_eval() for restricted Python literals only."
+    },
+    {
+      "id": "F-002",
+      "title": "Permissive CORS Configuration",
+      "file": "lemur/factory.py",
+      "line": 182,
+      "severity": "HIGH",
+      "impact": "CORS is configured with wildcard origin ('*'), allowing any website to make API requests. This enables cross-site request forgery (CSRF), data exfiltration, and unauthorized API access from malicious sites.",
+      "evidence": "app.config['CORS_ORIGINS'] = '*'",
+      "recommendation": "Restrict CORS to specific trusted domains. Configure CORS_ORIGINS as a list of allowed origins: app.config['CORS_ORIGINS'] = ['https://trusted-domain.com']"
+    },
+    {
+      "id": "F-003",
+      "title": "PII Exposure via Sentry Integration",
+      "file": "lemur/factory.py",
+      "line": 174,
+      "severity": "HIGH",
+      "impact": "Sentry is configured with send_default_pii=True, which automatically sends personally identifiable information (user IDs, IP addresses, usernames) to Sentry servers. This violates privacy policies and GDPR.",
+      "evidence": "send_default_pii=True,",
+      "recommendation": "Set send_default_pii=False. Use Sentry's PII stripping features to exclude sensitive fields from error reports."
+    },
+    {
+      "id": "F-004",
+      "title": "Weak JWT Signature Algorithm Default",
+      "file": "lemur/auth/service.py",
+      "line": 89,
+      "severity": "HIGH",
+      "impact": "JWT tokens use HS256 (HMAC with shared secret) as default. If LEMUR_TOKEN_SECRET is compromised, attackers can forge valid tokens and impersonate any user.",
+      "evidence": "signing_alg = current_app.config.get('LEMUR_TOKEN_ALGORITHMS', ['HS256'])[0]",
+      "recommendation": "Use RS256 (asymmetric) instead of HS256. Sign with a private key, verify with a public key. This prevents token forgery even if the verification key is compromised."
+    },
+    {
+      "id": "F-005",
+      "title": "Conditional HTTPS Certificate Verification Bypass",
+      "file": "lemur/auth/views.py",
+      "line": 79,
+      "severity": "HIGH",
+      "impact": "HTTPS certificate verification can be disabled via the verify_cert parameter. This enables man-in-the-middle (MITM) attacks when verify_cert=False, allowing interception of OAuth tokens and sensitive data.",
+      "evidence": "r = requests.post(access_token_url, headers=headers, params=params, verify=verify_cert)",
+      "recommendation": "Always verify HTTPS certificates in production (verify=True). Only disable verification in controlled testing environments with clear documentation."
+    },
+    {
+      "id": "F-006",
+      "title": "File Handle Resource Leak in Logging",
+      "file": "lemur/factory.py",
+      "line": 222,
+      "severity": "MEDIUM",
+      "impact": "A file is opened without a context manager or explicit close(). The handle is never released, causing a resource leak. Over time, file descriptor exhaustion can cause service failure.",
+      "evidence": "handler = StreamHandler(open(logfile, 'a'))",
+      "recommendation": "Use context managers: with open(logfile, 'a') as f: handler = StreamHandler(f). Or pass file path to RotatingFileHandler directly."
+    },
+    {
+      "id": "F-007",
+      "title": "Timezone-Unsafe Timestamp Conversion",
+      "file": "lemur/auth/service.py",
+      "line": 157,
+      "severity": "MEDIUM",
+      "impact": "datetime.fromtimestamp() without timezone information assumes local timezone. In distributed systems or when configuration changes, this causes inconsistent token expiry validation.",
+      "evidence": "expired_time = datetime.fromtimestamp(access_key.issued_at) + timedelta(days=access_key.ttl)",
+      "recommendation": "Use explicit UTC timezone: datetime.fromtimestamp(access_key.issued_at, tz=timezone.utc)"
+    },
+    {
+      "id": "F-008",
+      "title": "Debug Mode Exception Exposure",
+      "file": "lemur/auth/service.py",
+      "line": 146,
+      "severity": "MEDIUM",
+      "impact": "When DEBUG=True, detailed exception information is exposed to clients. This reveals internal system details, file paths, and implementation specifics useful for attackers.",
+      "evidence": "if current_app.config.get('DEBUG', False): raise",
+      "recommendation": "Never enable DEBUG mode in production. Use proper logging instead of exposing exceptions to API clients."
+    },
+    {
+      "id": "F-009",
+      "title": "Insufficient Input Validation for Sorting Parameters",
+      "file": "lemur/database.py",
+      "line": 217,
+      "severity": "MEDIUM",
+      "impact": "Although get_model_column() validates field names, request parameters are not pre-validated. Attackers could exploit edge cases or timing issues.",
+      "evidence": "def sort(query, model, field, direction): column = get_model_column(model, underscore(field))",
+      "recommendation": "Implement strict whitelist validation of sort_by and sort_dir before calling sort(). Only allow predefined field names and 'asc'/'desc' values."
+    },
+    {
+      "id": "F-010",
+      "title": "Unverified LDAP Security Configuration",
+      "file": "lemur/auth/ldap.py",
+      "line": 1,
+      "severity": "MEDIUM",
+      "impact": "LDAP configuration requires verification that it uses proper encryption (StartTLS or SSL on port 636). Without encryption, credentials are transmitted in cleartext.",
+      "evidence": "LDAP authentication module may not enforce secure connection settings",
+      "recommendation": "Verify LDAP uses StartTLS or SSL. Require port 636 (LDAPS) or ensure StartTLS is used on port 389. Add validation to reject insecure LDAP configurations."
+    },
+    {
+      "id": "F-011",
+      "title": "JWT Subject Claim Validation Disabled",
+      "file": "lemur/auth/service.py",
+      "line": 100,
+      "severity": "LOW",
+      "impact": "JWT validation disables verify_sub for backwards compatibility with old tokens. This weakens RFC 7519 compliance. Invalid sub claims are not rejected.",
+      "evidence": "payload = jwt.decode(encoded_jwt, secret, algorithms=algorithms, options={'verify_sub': False})",
+      "recommendation": "Migrate to proper RFC 7519 sub claim validation. Set verify_sub=True after all old tokens expire or are rotated."
+    },
+    {
+      "id": "F-012",
+      "title": "Potential Insecure Random Token Generation",
+      "file": "lemur/common/utils.py",
+      "line": 1,
+      "severity": "LOW",
+      "impact": "If random number generation for tokens uses Python's random module instead of secrets module, tokens could be predictable.",
+      "evidence": "Need to verify token generation uses secrets.token_urlsafe() or similar cryptographically secure functions",
+      "recommendation": "Ensure all security tokens use secrets module (Python 3.6+) or os.urandom(). Never use random module for security tokens."
+    }
+  ]
+}

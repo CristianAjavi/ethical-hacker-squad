@@ -1,0 +1,46 @@
+{
+  "matches": [
+    {
+      "defect_id": "P-22",
+      "finding_ids": ["R38", "R04"],
+      "why": "P-22 is build_prompt (answer.py:11-13) collapsing SYSTEM + retrieved docs + question into one undelimited f-string with no provenance. R38 states that mechanism exactly (docs concatenated into a single text plane, no delimiters, no trust labels). R04 quotes the same f-string and the same lack of delimitation/escaping, naming the question as the injected span rather than the documents; it is the same single flaw in the same expression (the planted description itself says documents are joined with the system instructions AND the question), only with severity understated to MEDIUM. Rejected near-misses: R34 (XML injection in build_prompt_marked) targets the SAFE delimited variant and alleges a different failure - unescaped repr() in XML attributes - not missing delimitation, so it is a different defect. R24 (lethal trifecta) mentions build_prompt in passing but its stated mechanism is an architectural capability inventory (private data + untrusted ingestion + outbound channel on one agent), not undelimited interpolation, so it is assigned to no defect.",
+      "quote": "Documents from `docs` and the customer question are rendered as plain text on the same level, with no delimiters, no per-document trust labels, and no way for the model to distinguish instruction from data."
+    },
+    {
+      "defect_id": "P-23",
+      "finding_ids": ["R07", "R12", "R16", "R18", "R25", "R33"],
+      "why": "P-23 is run_tool (answer.py:27-33) taking the account the tool acts on from decision['account_id'] - the model's output - instead of session['authenticated_account_id']. All six findings state that mechanism: the model-supplied account id flows straight into issue_refund with no session/ownership check. Line numbers vary (19, 24, 27, 29) but all point at run_tool. Rejected near-misses in the same function: R03 blames the coexistence of run_tool and run_tool_scoped and a developer picking the wrong one - an API-ambiguity/migration-hygiene defect that never mentions model-controlled account ids, so it is a different way the code goes wrong. R10 (no rate limiting on refunds) and R35 (no audit logging of issue_refund) are separate missing controls, not model-decided authorization.",
+      "quote": "The `account_id` in the refund case comes directly from the model's decision, not from the authenticated user context."
+    },
+    {
+      "defect_id": "P-24",
+      "finding_ids": ["R01", "R19", "R23", "R28"],
+      "why": "P-24 is remember_from_reply (memory.py:10-14) appending free-text model output into the persistent notes store that later runs read back. R01, R19, R23 and R28 all name that function and that append as the flaw (no schema, no provenance, model text becomes future context). R01 mixes in a per-user-isolation complaint but leads with the unvalidated append of model output, so it stays here. Rejected near-misses in the same function/file: R27 and R39 describe unbounded growth of the notes array causing disk exhaustion/DoS - a capacity defect, not free-text model output entering memory; R36 is about STORE being one world-accessible shared file at memory.py:6 - a file-location/permissions defect. Both would survive a fix to P-24 and vice versa.",
+      "quote": "The function `remember_from_reply` accepts a `reply` string directly from the model and appends it to a `notes` list in persistent storage."
+    },
+    {
+      "defect_id": "P-25",
+      "finding_ids": ["R05", "R06", "R08", "R14", "R17", "R37"],
+      "why": "P-25 is summarize_and_run (answer.py:46-48) passing model output to subprocess.run with shell=True. All six quote that call and state the same mechanism: model text executed as shell code with no parsing, allowlist or sandbox. R17 (line 26) and R37 (line 38) misplace the line number but name summarize_and_run and the shell=True call, so they still match. Rejected near-misses: R11 and R20 target summarize_and_render (answer.py:51-56), the safe closed-set counterpart, and allege unvalidated 'value'/missing-key handling - a type/bounds-validation defect with no shell involved, not model output reaching a shell.",
+      "quote": "The model output is treated as arbitrary shell code with no parsing, validation, or allowlist."
+    },
+    {
+      "defect_id": "P-26",
+      "finding_ids": ["R09", "R13", "R15", "R29", "R30", "R31"],
+      "why": "P-26 is the literal billing API key in config/mcp.json line 6 instead of a secret-manager reference. All six identify the same cleartext credential sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a in the billing server's env block. R13 (line 5) and R31 (line 4) misplace the line but describe the same hardcoded key; R31 redacts the value while still naming BILLING_API_KEY and the sk-acme- format. Kept distinct from P-27, which lives one line above in the same file: R02 and R32 talk about the package tag, not the secret, and none of these six mention pinning as their mechanism (R02 mentions the key only as downstream impact of a malicious package).",
+      "quote": "The file contains an MCP server configuration with a literal API key `sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a` in the `env` block for the billing server."
+    },
+    {
+      "defect_id": "P-27",
+      "finding_ids": ["R02", "R32"],
+      "why": "P-27 is the moving-tag install at config/mcp.json line 5: npx -y @acme/billing-mcp@latest resolves to whatever was published most recently at every start. R02 and R32 both state that mechanism (no version pinning, -y skips confirmation, new code fetched each run). This is the sibling of P-26 one line away in the same file: both R02 and R32 also mention BILLING_API_KEY, but only as what a malicious package would steal, so their stated defect is the unpinned dependency and they are assigned here rather than to P-26.",
+      "quote": "The `-y` flag accepts installation without prompting, `@latest` pulls the newest version at runtime without pinning, and there is no integrity check."
+    },
+    {
+      "defect_id": "P-28",
+      "finding_ids": ["R22"],
+      "why": "P-28 is ingest_ticket (memory.py:26-28) indexing raw customer ticket bodies with nothing recording their origin or trust. R22 is the only finding that targets ingest_ticket itself (line 28, 'Lines 26-28') and states the harm of untrusted customer text entering the retrieval store and being served to other customers; it frames the missing control as validation rather than provenance, and wrongly lumps the marked variant in with it, but it is the same act on the same function so it matches. Rejected near-misses: R21 and R26 both target ingest_ticket_marked (lines 31-36), the safe variant, and allege that the origin/trust metadata IS written but is never enforced at retrieval time - a downstream-filtering defect. That is the opposite mechanism from 'no metadata is recorded at all', and fixing P-28 (adding metadata) would not touch it, so neither is assigned here.",
+      "quote": "Customer-provided ticket content is indexed into the retrieval store without validation."
+    }
+  ]
+}

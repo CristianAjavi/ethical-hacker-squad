@@ -1,0 +1,95 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Integer Overflow in Timestamp Multiplication",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 269,
+      "severity": "medium",
+      "category": "arithmetic",
+      "impact": "Malformed timestamp values could be created due to integer overflow when multiplying by 1000, leading to incorrect Date objects",
+      "evidence": "Line 269: 'return new Date(in.readLong()*1000);' - No overflow check before multiplication",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Use Math.multiplyExact() or check for overflow before multiplication. Consider using Long.MAX_VALUE / 1000 as the upper bound for the input timestamp.",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded Recursion Depth in Table/Array Parsing",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 181,
+      "severity": "high",
+      "category": "denial-of-service",
+      "impact": "Malicious AMQP messages with deeply nested table or array structures can cause StackOverflowError, leading to denial of service",
+      "evidence": "Lines 139-155 (readTable) and 237-249 (readArray) recursively call readFieldValue without any depth limit. readFieldValue can call readTable or readArray, creating unlimited recursion depth.",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Implement a maximum recursion depth check. Add a thread-local or parameter-based depth counter that increments on entry to readFieldValue and decrements on exit. Throw an exception if depth exceeds a reasonable limit (e.g., 100).",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-003",
+      "title": "Unreliable Stream.available() Check for Loop Termination",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 148,
+      "severity": "medium",
+      "category": "logic-error",
+      "impact": "The while loop using available() > 0 to read table entries may not properly handle all buffered data, leading to incomplete table parsing or data truncation",
+      "evidence": "Lines 148 and 244: 'while(tableIn.available() > 0)' and 'while(arrayIn.available() > 0)'. The Java documentation states available() returns the number of bytes immediately available without blocking, not the total remaining bytes. This check is unreliable for stream position tracking.",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Replace the available() check with proper exception handling for EOFException. Wrap the readFieldValue call in a try-catch that catches EOFException to signal the end of the stream. Alternatively, track the expected length explicitly and read only that many bytes.",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-004",
+      "title": "Insufficient Validation of Signed-to-Unsigned Integer Extension",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 86,
+      "severity": "medium",
+      "category": "input-validation",
+      "impact": "Malicious input with a negative length value (when interpreted as signed int) could bypass bounds checks, though the subsequent check limits the impact",
+      "evidence": "Line 86: 'long contentLength = unsignedExtend(in.readInt());' - The unsignedExtend function treats the signed int as unsigned by masking with 0xffffffffL. While the check at line 87 prevents values >= Integer.MAX_VALUE from allocating arrays, the unsigned interpretation could still lead to unexpected behavior if not carefully handled.",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Add explicit validation that the read int value is non-negative before calling unsignedExtend. Use in.readUnsignedInt() or similar method if available, or add a check: 'int len = in.readInt(); if (len < 0) throw new MalformedFrameException(...);'",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-005",
+      "title": "Potential Memory Exhaustion via Large Byte Array Allocation",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 88,
+      "severity": "medium",
+      "category": "resource-exhaustion",
+      "impact": "An attacker can allocate very large byte arrays (up to Integer.MAX_VALUE - 1 bytes) by sending crafted AMQP messages with large length values, potentially exhausting heap memory and causing OutOfMemoryError",
+      "evidence": "Line 88: 'final byte [] buffer = new byte[(int)contentLength];' - The code allocates arrays up to Integer.MAX_VALUE bytes. While the check at line 87 prevents values >= Integer.MAX_VALUE, values like 1GB are still allowed and could exhaust available heap.",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Implement a configurable maximum byte array size limit (e.g., 128 MB). Check 'if (contentLength > MAX_BUFFER_SIZE) throw new MalformedFrameException(...);' before allocating the buffer.",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-006",
+      "title": "Silent Ignoring of Duplicate Table Keys",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 151,
+      "severity": "low",
+      "category": "data-loss",
+      "impact": "Duplicate keys in AMQP table messages are silently ignored, keeping only the first value. This could lead to data loss if the protocol or application expects all values to be preserved",
+      "evidence": "Lines 151-152: 'if(!table.containsKey(name)) table.put(name, value);' - The code explicitly checks for duplicate keys and ignores subsequent values with the same key name.",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Document this behavior explicitly. Consider throwing an exception for duplicate keys to catch protocol violations, or implement a policy that either keeps the first or last value consistently.",
+      "status": "reviewed"
+    },
+    {
+      "id": "F-007",
+      "title": "Hardcoded Charset String Instead of StandardCharsets",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 70,
+      "severity": "low",
+      "category": "code-quality",
+      "impact": "Using hardcoded charset string 'utf-8' instead of StandardCharsets.UTF_8 is less efficient (requires charset lookup) and harder to maintain. No security impact but poor practice.",
+      "evidence": "Line 70: 'return new String(b, \"utf-8\");' - Should use StandardCharsets.UTF_8 or Charset.forName()",
+      "discovery_commit": "live:2026-08-21T00:00:00Z",
+      "recommendation": "Replace with 'return new String(b, StandardCharsets.UTF_8);' for better performance and maintainability. Add import: 'import java.nio.charset.StandardCharsets;'",
+      "status": "reviewed"
+    }
+  ]
+}

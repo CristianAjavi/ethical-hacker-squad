@@ -1,0 +1,104 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Document required-rights enforcement flag is writable through live data update with only EDIT right",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 328,
+      "severity": "high",
+      "impact": "Any user who can edit a page can turn that page's required-rights enforcement off (or on) by submitting a single live data cell edit named 'doc.enforceRequiredRights'. Turning enforcement off restores legacy semantics, in which the document's scripts and macros run with the full rights of the document/content author instead of only the rights the document declares. On a page authored by an admin whose scripts are currently neutralised by enforcement, an EDIT-only user re-enables them, which is a privilege escalation to the author's SCRIPT/PROGRAM rights. Turning it on is a denial of service against working privileged pages.",
+      "evidence": "updateDocument() treats the enforcement flag as an ordinary editable document field: case \"enforceRequiredRights\" -> { changedValue = document.isEnforceRequiredRights(); document.setEnforceRequiredRights(Boolean.parseBoolean(String.valueOf(value))); } (lines 328-331). The only authorization on the whole path is this.authorization.checkAccess(Right.EDIT, documentReference) at line 124 (update) and line 181 (updateAll). Nothing checks that the caller holds the rights that disabling enforcement re-grants, and the flag change marks the document metadata-dirty only, so saveDocument() (lines 262-274) never resets the content author.",
+      "recommendation": "Do not expose the enforcement flag as a generic editable 'doc.' field. Either remove it from the accepted set in updateDocument(), or require the caller to hold every right that disabling enforcement would restore to the existing author (at minimum Right.SCRIPT, and Right.PROGRAM when the author has it) and go through the platform's required-rights API so the same check applies as in the standard editor. When enforcement is turned off, also reset the content author to the current user."
+    },
+    {
+      "id": "F-002",
+      "title": "saveDocument() updates only the metadata author, never the content author, for edits to content-evaluated fields",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 271,
+      "severity": "medium",
+      "impact": "Fields written by this bridge that are evaluated as wiki content but that mark the document metadata-dirty rather than content-dirty (notably 'doc.title', and the enforcement flag of F-001) keep the previous content author. A user with only EDIT right can therefore place script markup in the title of a page whose content author holds SCRIPT or PROGRAM right and have it evaluated with that author's rights when the page is displayed, without ever touching the content the author signed.",
+      "evidence": "saveDocument() performs exactly one author assignment before persisting: document.setAuthorReference(xcontext.getUserReference()); xcontext.getWiki().saveDocument(document, \"LiveData update.\", true, xcontext); (lines 271-272). setContentAuthorReference / getAuthors().setContentAuthor is never called anywhere in the class. The platform only syncs the content author from the metadata author when the content itself is dirty, which is not the case for the title path updateDocument() case \"title\" (lines 332-335) nor for case \"enforceRequiredRights\".",
+      "recommendation": "Set the content author to the current user whenever this bridge writes a field whose value is evaluated as wiki content or that changes the rights under which the document is evaluated (title, content, enforceRequiredRights), rather than relying on the platform's content-dirty heuristic."
+    },
+    {
+      "id": "F-003",
+      "title": "Null property value throws NullPointerException instead of clearing the field (Map.of rejects null)",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 315,
+      "severity": "medium",
+      "impact": "Submitting a null value for an xobject property - the natural representation of 'clear this cell' from a JSON live data client - raises an unhandled NullPointerException instead of updating the object, so the whole update request fails with a server error and no property can be emptied through this path. A null property id produces the same crash. Any client can trigger it, making it a cheap way to generate 500s.",
+      "evidence": "updateXObject() builds the map with the immutable factory: xClass.fromMap(Map.of(property, newValue), baseObject); (line 315). Map.of throws NullPointerException for a null key or a null value, and neither 'property' nor 'newValue' is null-checked before this line - newValue is assigned straight from the caller-supplied 'value' at line 313 when it is not a List.",
+      "recommendation": "Use a null-tolerant map (for example Collections.singletonMap or a HashMap) so a null value reaches BaseClass.fromMap, and decide explicitly what a null means - clear the property, or reject it with a LiveDataException carrying a proper message - instead of letting a NullPointerException escape."
+    },
+    {
+      "id": "F-004",
+      "title": "Unchecked casts on request-controlled values produce unhandled ClassCastException / NullPointerException",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 215,
+      "severity": "medium",
+      "impact": "A client that sends a value of an unexpected JSON type crashes the update with a runtime exception that no caller in this class declares or handles, producing a server error and a stack trace rather than a validation failure. Three separate spots are reachable purely from request data.",
+      "evidence": "(a) line 208 casts the RequiresHTMLConversion entry: String requiresHTMLConversion = (String) properties.remove(REQUIRES_HTML_CONVERSION); a JSON array or number here is a ClassCastException, and a JSON null is a NullPointerException at requiresHTMLConversion.split(\",\") on line 238. (b) line 215 casts both the value and the syntax: this.htmlConverter.fromHTML((String) v, (String) properties.get(syntaxKey)); when the '<name>_syntax' sibling was not submitted, properties.get returns null and a null syntax id is passed straight to the converter. (c) line 338 casts the content value directly, document.setContent((String) value);, while every sibling case in the same switch defensively uses String.valueOf(value) (lines 326, 330, 334).",
+      "recommendation": "Validate the types of the incoming values before use: reject non-string RequiresHTMLConversion and content values with a LiveDataException, require a non-null syntax before calling the HTML converter, and make case \"content\" use the same String.valueOf handling as the other document fields."
+    },
+    {
+      "id": "F-005",
+      "title": "RequiresHTMLConversion list is trusted verbatim: unmatched prefixes are silently accepted as property names",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 252,
+      "severity": "low",
+      "impact": "The caller-supplied conversion list can name any key at all, not just fields of the target class and object number. Entries that do not carry the expected '<class>_<objectNumber>_' prefix are passed through unchanged and become property names, so a client can force HTML-to-wiki conversion (with a syntax id it also chooses) onto properties the editor never marked - including 'doc.title' and 'doc.content' - and can silently delete any '<name>_syntax' and '<name>_cache' entries from the update batch so those fields are not written at all.",
+      "evidence": "getPropertiesRequiringHTMLConversion() adds the result of Strings.CS.removeStart(requiresHTMLConversionProperty, defaultPrefix) unconditionally (line 252); removeStart returns the input unchanged when the prefix does not match, and there is no check that the resulting name belongs to the target class. convertPropertiesFromHtml() then does properties.remove(syntaxKey) and properties.remove(cacheKey) for every such name (lines 216-217).",
+      "recommendation": "Only accept entries that actually start with a known prefix (the default class prefix or one of the propertyClassReferences prefixes) and drop the rest, and confirm the resulting name is a declared field of the corresponding XClass before converting it or removing its siblings."
+    },
+    {
+      "id": "F-006",
+      "title": "Read-modify-write with no version or conflict check silently loses concurrent updates",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 183,
+      "severity": "low",
+      "impact": "Two live data edits to the same document that overlap in time both load the document, apply their own change to their own clone and save; the second save overwrites the first with no warning. Edits made concurrently through the normal editor are lost the same way. Unlike the standard save path, nothing here compares the loaded version against the version the client saw.",
+      "evidence": "Both entry points do getDocument (lines 126 and 183), clone (lines 133 and 190), mutate, then saveDocument (lines 137 and 201) with no version, no lock and no merge; saveDocument() only checks whether the in-memory document is dirty (line 266), not whether the stored document changed since it was read.",
+      "recommendation": "Carry the document version the client based its edit on and reject or merge the save when the stored version has moved, matching the conflict handling of the standard save action."
+    },
+    {
+      "id": "F-007",
+      "title": "propertyClassReferences is documented as optional but dereferenced without a null check",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 195,
+      "severity": "low",
+      "impact": "A caller that follows the javadoc and passes null for the optional mapping gets a NullPointerException instead of the documented default behaviour, so the API contract and the implementation disagree.",
+      "evidence": "The javadoc for both updateAll overloads describes the parameter as '@param propertyClassReferences optional mapping that specifies the XClass for each property' (lines 149 and 171), but the map is dereferenced unconditionally at line 195 (propertyClassReferences.get(property.getKey())) and at line 241 (propertyClassReferences.entrySet()).",
+      "recommendation": "Either normalise a null argument to an empty map at the top of updateAll, or drop 'optional' from the javadoc and document the parameter as required and non-null."
+    },
+    {
+      "id": "F-008",
+      "title": "Optional return value conflates 'nothing modified' with 'previous value was null'",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 138,
+      "severity": "low",
+      "impact": "Callers that use the empty Optional as the documented 'nothing changed' signal get it wrong in both directions: setting a property that had no value yet reports 'nothing changed' even though the document was modified and saved, and setting a field to the value it already had reports a change. Anything built on this - change logging, undo, notifications, conditional refresh - is unreliable.",
+      "evidence": "The javadoc promises '@return the changed field, or {@link Optional#empty()} if nothing has been modified' (line 95), but update() returns Optional.ofNullable(changedValue) (line 138) where changedValue is the value read before the write: updateXObject() sets it to null whenever the property did not exist yet (line 307, propertyInterface != null ? propertyInterface.toFormString() : null), and updateDocument() computes it before assigning without ever comparing old and new (lines 324-339).",
+      "recommendation": "Compare the previous and new values and return empty only when they are equal, or change the javadoc and the signature so the return value is explicitly 'the previous value' rather than a change indicator."
+    },
+    {
+      "id": "F-009",
+      "title": "Every live data update is persisted as a minor edit, including security-relevant flag changes",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 272,
+      "severity": "informational",
+      "impact": "Changes made through this bridge - including the required-rights enforcement toggle of F-001, the hidden flag and the title - are recorded with the minor-edit flag, which keeps them out of default history views and out of the notifications watchers rely on. Modifications with a security effect are the least visible ones in the audit trail.",
+      "evidence": "xcontext.getWiki().saveDocument(document, \"LiveData update.\", true, xcontext); at line 272 hardcodes isMinorEdit = true for every path, and the edit comment is the same constant string regardless of which property was written.",
+      "recommendation": "Mark the save as a major edit at least when a document field is written (hidden, title, content, enforceRequiredRights), and put the property that changed into the version comment so the history shows what happened."
+    },
+    {
+      "id": "F-010",
+      "title": "Unsanitised user-controlled property name and value written to the log",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 343,
+      "severity": "informational",
+      "impact": "The property name after 'doc.' and its value come straight from the request and are logged verbatim on every unrecognised field. Newlines in either one let a caller forge log entries, and the value of a rejected field is copied into the log where it may not belong.",
+      "evidence": "The default branch of updateDocument() logs both: this.logger.warn(\"Unknown property [{}]. Document [{}] will not be updated with value [{}].\", property, document, value); (lines 343-347), reached for any 'doc.<name>' the switch does not handle, where 'name' is property.substring(4) from line 281.",
+      "recommendation": "Log only the property name with control characters stripped, and drop the value from the message."
+    }
+  ]
+}
