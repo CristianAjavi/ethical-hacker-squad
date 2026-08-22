@@ -64,8 +64,17 @@ Segundo veredicto incómodo: **`remediation`+`VER` con 50 % sobre muestra de 8 t
 
 Tres gates, en orden de coste creciente. El primero tiene dientes hoy mismo.
 
-**Gate A — unicidad de ID y vocabulario de trazabilidad (coste: minutos, valor: alto).**
-Es el gate que habría atrapado `WEB-23`×2 e `INF-19`×2 antes de escribir una línea.
+**Gate A — CONSTRUIDO el 2026-08-22 como `scripts/gates/gate-corpus-identifiers.sh`**, con batería de 14 mutantes (`.selftest.sh`), y descubierto solo por `run-all.sh`. Estado hoy: 164 procedimientos, 0 duplicados, 0 saltos, 497 citas comprobadas en 13 familias, 0 violaciones.
+
+Tres cosas salieron distintas del diseño de abajo, y las tres importan:
+
+1. **El `grep` diseñado enumera los prefijos a mano y `LOC` no está en la lista.** El pack `local-app` tiene 15 procedimientos: el gate tal como se diseñó habría sido ciego a un pack entero. El construido reconoce cualquier prefijo `[A-Z]{2,5}`, así que un pack nuevo entra bajo vigilancia sin que nadie se acuerde de añadirlo.
+2. **A3 no compara contra una lista de identificadores; comprueba el ESQUEMA que declara `traceability.md`** — rango, año y vocabulario de cada estándar acotado. `A11:2025`, `V23`, `CICD-SEC-14` y `MASVS-STORAGE-1-L2` fallan; y como el propio documento es la autoridad, cada límite se vuelve a leer de su fila en cada corrida. Si el corpus adopta una versión nueva del estándar, el gate devuelve 2 —no pude medir— en vez de seguir aplicando el esquema del año pasado en silencio.
+3. **Un mutante encontró un defecto del gate antes de que llegara a `main`.** La expresión terminaba en `\b` detrás de `\*`, y como ni `*` ni el espacio son caracteres de palabra, **las citas con comodín — 23 de las 29 de WSTG — eran invisibles**. Un check que no alcanza nada también da verde.
+
+Lo que Gate A sigue sin medir, dicho aquí y no en una nota al pie: si el identificador válido es el CORRECTO para el procedimiento que lo cita (`CWE-79` donde iba `CWE-89` es un defecto real y no lo ve), y las familias sin límite enumerable — CWE, CAPEC, ATT&CK, ATLAS y los números de MASTG — donde un check de formato aprobaría cualquier cosa con la forma correcta.
+
+Es el gate que habría atrapado `WEB-23`×2 e `INF-19`×2 antes de escribir una línea. El diseño original queda abajo, sin editar, porque la diferencia entre lo diseñado y lo construido es el registro:
 
 ```bash
 # scripts/gates/gate-ids.sh — falla el build, no avisa
