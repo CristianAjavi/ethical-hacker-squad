@@ -602,7 +602,26 @@ def measure_pcc(baseline_path, corpus_packs):
     }
     for extra in sorted(baseline_names - corpus_names):
         problems.append("baseline.json scores pack '%s', which is not declared in packs.json" % extra)
-    for missing in sorted(corpus_names - baseline_names):
+    # A pack with no score is not automatically drift. The baseline is a
+    # transcription whose own provenance forbids inventing rows, so a pack the
+    # source document never saw is DECLARED in `unassessed` with the reason and
+    # what would settle it. Listed there it is a known gap; in neither list it
+    # is silence, and silence is what this check exists to catch. Same
+    # distinction `engagement.coverage` draws between not_read and nothing.
+    declared_unassessed = set()
+    ub = data.get("unassessed") or {}
+    for row in (ub.get("packs") or []):
+        if isinstance(row, dict) and isinstance(row.get("pack"), str):
+            if (row.get("reason") or "").strip() and (row.get("what_would_settle_it") or "").strip():
+                declared_unassessed.add(row["pack"])
+            else:
+                problems.append(
+                    "baseline.json declares pack '%s' unassessed with no reason or no way to settle it, "
+                    "which is a placeholder rather than a declaration" % row.get("pack"))
+    section["pack_alignment"]["declared_unassessed"] = m(sorted(declared_unassessed))
+    for extra in sorted(declared_unassessed - corpus_names):
+        problems.append("baseline.json declares pack '%s' unassessed, but it is not in the corpus" % extra)
+    for missing in sorted(corpus_names - baseline_names - declared_unassessed):
         problems.append("pack '%s' exists in the corpus and has no PCC baseline row" % missing)
     return section, problems
 

@@ -42,6 +42,22 @@ The pre-registration predicted the opposite and named what would refute it. The 
 
 **[Then the corpus arm was verified too, and it is not more precise either.](runs/2026-08-21-corpus-precision/)** Pooling nine weak runs gave 26 claims against the 28 already done; same verifier prompt byte for byte, two adversarial passes each. **62% refuted against 68% — six points, where the pre-registration required more than ten.** And the finding underneath is bigger than the comparison: **every claim that survived, in either arm, is one of the two ground-truth defects.** Across twelve weak runs and 54 claims, neither arm produced a single true finding beyond the two already named. One asymmetry did appear and is recorded as an observation rather than a result: inter-pass agreement was 26/26 on the corpus arm's claims against 25/28 on the unaided arm's, which 26-versus-28 claims cannot settle. What is now measured is that **both arms make confident wrong statements on a weak model**: the unaided arm as findings, the corpus arm as refutations of a real defect. Which failure a reader would rather receive is unanswered.
 
+## Three arms, seventy-one claims, and only two true findings anywhere
+
+[2026-08-21, three-way precision](runs/2026-08-21-three-way-precision/) — us, the same model unaided, and `google/mantis` @ `5f76be0`, on the same target at the same weak model, judged by the same verifier prompt byte for byte in two independent adversarial passes each.
+
+| Arm | claims | refuted by both passes | supported by both |
+|---|---|---|---|
+| **competitor** | 17 | **9 (53%)** | 4 |
+| with the corpus | 26 | 16 (62%) | 9 |
+| without any corpus | 28 | 19 (68%) | 4 |
+
+**The competitor is the most precise, and the pre-registration predicted exactly that** — it ships explicit `critic`, `dedupe` and `review` stages this corpus does not have as separate stages. Seventeen measurements now, and this is the first that puts a named competing product **ahead** rather than level.
+
+**And every claim that survived, in every arm, is one of the two ground-truth defects.** Seventy-one claims between the three; forty-four refuted twice over; the only true findings anywhere are the two already named. That is this bench's strongest evidence that **detection is the model's, not the product's.**
+
+The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
+
 ## The number that governs every other number in this file
 
 The unaided arm was measured at **0.81** agreement in one sitting and **0.60** in the next — same arm, same target, same blind instrument, same judging rule, and a run prompt rewritten because the first one was never stored. **Twenty-one points, from the prompt alone.**

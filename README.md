@@ -8,9 +8,9 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
 
-**Sixteen blinded measurements against the same model working with no corpus at all — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
+**Seventeen blinded measurements — sixteen against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
 
-One measurement is larger than the comparison: across twelve weak-model runs and 54 claims, **neither arm produced a single true finding beyond the two the ground truth already named.** Everything else was refuted by two independent adversarial verifiers.
+Two results are larger than the comparison. Against a competing product (`google/mantis`) on precision at weak scale, **it is more precise than this corpus** — 53% of its claims refuted against our 62%, exactly as our own pre-registration predicted, because it ships an explicit critic stage we do not. And across three arms, fifteen runs and 71 claims, **not one arm produced a single true finding beyond the two the ground truth already named.** Everything else was refuted by two independent adversarial verifiers. Detection, on this evidence, is the model's rather than any product's.
 
 What *is* measured, and is narrower than "finds more":
 
