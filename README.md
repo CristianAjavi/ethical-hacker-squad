@@ -22,7 +22,7 @@ Every number, every prompt, every retraction and every refuted prediction of our
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,186 lines of corpus across eight role packs, with 163 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,237 lines of corpus across eight role packs, with 164 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -67,7 +67,8 @@ Eight packs, one per role. Five of them are stored as **more than one file** (`m
 | | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
 | local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |
 | privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
-| remediation | `remediation.md` | `REM-01`..`REM-07`, `VER-01`..`VER-08` | minimum root-cause patching, regression tests that must fail without the patch, adversarial verification, honest classification |
+| remediation | `remediation.md` | `REM-01`..`REM-07` | minimum root-cause patching, regression tests that must fail without the patch, authorization limits, ordering |
+| verification | `remediation-verification.md` | `VER-01`..`VER-09` | adversarial posture, negative checks, honest classification, and `VER-09`: a separate pass whose only job is to attack the finished finding list before it ships |
 
 Navigation is progressive: `SKILL.md` is a router, `coverage.md` maps detected technology to roles and to the exact file and sections that hold them, and each specialist loads only its own pack — and only the sections its inventory justifies. Loading everything is a bug, not thoroughness.
 

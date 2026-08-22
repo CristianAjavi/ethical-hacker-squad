@@ -9,7 +9,7 @@
 #     agents/ehs-verifier.md body   verified / partially verified / not verified / blocked / withdrawn
 #     agents/ehs-verifier.md front  verified / partial / unverified
 #     references/team.md            verified / partial / unverified
-#     knowledge/remediation.md      "four states", one of them spelled differently again
+#     knowledge/remediation-verification.md  "four states", one spelled differently again
 #   A reader cannot tell whether `not verified`, `unverified` and `not executed`
 #   are three states or one state written three ways. Neither can the model that
 #   has to pick one. The vocabulary is now declared once, in
@@ -121,7 +121,7 @@ VOCAB="$ROOT/$VOCAB_REL"
 # ---------------------------------------------------------------------------
 CANONICAL="$REFS/team.md
 $REFS/report.md
-$REFS/knowledge/remediation.md
+$REFS/knowledge/remediation-verification.md
 agents/ehs-verifier.md"
 
 # Files in a DIFFERENT namespace: they say `not verified` about the provenance

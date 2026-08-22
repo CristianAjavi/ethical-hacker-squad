@@ -30,7 +30,10 @@ else
   SRC="$(cd "$HERE/../.." && pwd)"
 fi
 
-REM=skills/ethical-hacker-squad/references/knowledge/remediation.md
+# The verifier's pack was split out of remediation.md when that file hit its
+# 32 KiB ceiling; the benign-control rule went with the VER procedures that
+# own it. This path follows the rule, not the old filename.
+REM=skills/ethical-hacker-squad/references/knowledge/remediation-verification.md
 VOC=skills/ethical-hacker-squad/references/vocabulary.md
 OTHER=skills/ethical-hacker-squad/references/knowledge/web-api.md
 
@@ -124,10 +127,10 @@ d=$(prep N10); awk '/^### [A-Z]+-[0-9]+/{h=$0; sub(/^### /,"",h); split(h,a," ")
                check N10 1 "no other procedure points at it any more"
 
 # --- rc=2: the gate cannot measure (never a pass) --------------------------
-d=$(prep N2);  mv "$d/$REM" "$d/remediation.md.away"
-               check N2 2 "remediation.md ABSENT"
+d=$(prep N2);  mv "$d/$REM" "$d/remediation-verification.md.away"
+               check N2 2 "remediation-verification.md ABSENT"
 d=$(prep N14); : >"$d/$REM"
-               check N14 2 "remediation.md EMPTY"
+               check N14 2 "remediation-verification.md EMPTY"
 d=$(prep N3);  mv "$d/$VOC" "$d/vocabulary.md.away"
                check N3 2 "vocabulary.md ABSENT"
 d=$(prep N4);  edit "$d/$VOC" 's/vocabulary:declare verification/vocabulary:declare verifications/'

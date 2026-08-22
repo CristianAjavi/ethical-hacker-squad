@@ -40,7 +40,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
 | [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
-| `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Five packs span two or three files; the first names the rest in its header. |
+| `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
 | [references/triage.md](references/triage.md) | Before any specialist writes a finding. The ten rules that rule a finding out, each answerable, and the invariant that a `confirmed` finding has none of them unanswered. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,186 lines across seventeen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,237 lines across eighteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
@@ -104,7 +104,13 @@ In `harden` mode, order changes by risk and start with small high-value fixes. P
 
 The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both. It runs relevant tests, available static analysis and negative checks, then records what was checked, what was not, and why.
 
-### 8. Deliver the report
+### 8. Attack the list before it ships
+
+**In `audit` mode too, and this is the step that was missing.** Every `confirmed` and `probable` finding goes to `ehs-verifier` in a fresh context, under `VER-09`, whose only job is to kill it: find the enforced bound, the guard, the unreachable caller, the factual error about the code. Survivors ship. Casualties move to `ruled_out` with the line that killed them — never silently dropped. What cannot be decided inside the scope is `probable` with `what_would_settle_it`.
+
+Measured, three arms on one target: a competing product with this stage refuted 53% of its own claims, this corpus without it 62%, unaided review 68%. The adversarial role already existed and was wired only to `harden`, where a patch exists; in `audit` nothing invoked it and the list shipped unattacked.
+
+### 9. Deliver the report
 
 Consolidate duplicates and separate confirmed findings, probable risks pending validation, hardening improvements, and tests not run for authorization or environment reasons. Declare coverage honestly using `references/traceability.md`: name the standard families you actually exercised and the ones you did not.
 

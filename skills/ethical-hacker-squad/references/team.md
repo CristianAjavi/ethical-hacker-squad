@@ -4,7 +4,7 @@ The leader staffs only the relevant roles. Every specialist returns evidence, im
 
 Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
 
-Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Six packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|
@@ -16,8 +16,8 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-28` |
 | Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
 | Local applications | `ehs-local-app` | `knowledge/local-app.md` | `LOC-01`..`LOC-15` |
-| Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
-| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
+| Remediator | `ehs-remediator` | `knowledge/remediation.md` | `REM-01`..`REM-07` |
+| Verifier | `ehs-verifier` | `knowledge/remediation-verification.md` | `VER-01`..`VER-09` |
 
 ## Dispatching through Claude Code
 
@@ -108,6 +108,10 @@ Order: accept only `confirmed` and authorized findings; a `probable` one goes ba
 
 ## Verifier / verifier
 
+
+**In `audit` mode you run too, under `VER-09`.** There is no patch and no fix to check: you are handed the finished list of `confirmed` and `probable` findings and your only job is to kill them. Attack first, concede last. A finding you kill goes to `ruled_out` with the line you relied on, never quietly out of the report. A finding you cannot decide inside the scope is `probable` with `what_would_settle_it`, never a polite pass.
+
+This exists because it was measured missing: three arms on one target, every claim attacked twice by independent verifiers, and a competing product carrying this stage refuted 53% of its own claims where this corpus refuted 62% and unaided review 68%. The adversarial posture was already written; nothing invoked it when there was no patch.
 Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and give every result one verification outcome from `vocabulary.md`. A check that could not settle the question is `inconclusive`, `not executed` or `blocked` according to why — never a soft version of `verified`. Do not edit unless the leader explicitly reassigns you.
 
 ## Dispatching without the plugin subagents

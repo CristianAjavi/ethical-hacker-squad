@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over seventeen files, 4,186 lines in total, 163 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over eighteen files, 4,237 lines in total, 164 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -30,7 +30,8 @@ Eight packs, one per role, spread over seventeen files, 4,186 lines in total, 16
 | `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~136 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~354 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
 | `local-app.md` | `ehs-local-app` | ~321 | `LOC-01`..`LOC-15` | A command-line tool, a desktop or WebView shell, a published library or SDK, an installer or updater, a local daemon or a loopback listener |
-| `remediation.md` | `ehs-remediator`, `ehs-verifier` | ~397 | `REM-01`..`REM-07`, `VER-01`..`VER-08` | `harden` or `verify` mode |
+| `remediation.md` | `ehs-remediator` | ~198 | `REM-01`..`REM-07` | `harden` mode, applying a patch |
+| `remediation-verification.md` | `ehs-verifier` | ~250 | `VER-01`..`VER-09` | checking someone else's work: a patch in `harden`/`verify`, or a finished finding list in `audit` (`VER-09`) |
 
 ## Procedure anatomy
 
