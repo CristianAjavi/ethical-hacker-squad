@@ -64,6 +64,21 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## The capability claim, withdrawn and then restored on evidence
+
+[2026-08-22, recall resolution](runs/2026-08-22-recall-resolution/) — six NEW runs per arm, the pilot's three excluded because their numbers were known when the band was written.
+
+| | claims | refuted by both passes | recall mean | union over its runs |
+|---|---|---|---|---|
+| this corpus | 36 | **0 (0%)** | 4.50 / 7 | **7 / 7** |
+| `google/mantis` | 47 | 8 (17%) | 4.83 / 7 | 6 / 7 |
+
+**Both pre-registered criteria hold**: precision 17 points where 10 was required, recall 0.33 below inside a band of 0.5 declared in advance. Inter-pass agreement 88%.
+
+**The clearest thing this round produced is not the verdict, it is why three runs could not reach one.** On three runs the defect coverage was corpus 6/7 against competitor 7/7. On six it is 7/7 against 6/7. Same arms, same target, same instrument — the comparison flipped with nothing changed but the run count, which is what a one-defect margin is worth.
+
+It also carries two facts against the tidy version. One competitor run skipped that product's own filtering stages and is reported both in and out, and excluding it moves both numbers **in this project's favour**, which is why it is stated. And the bench case's own hardened twin turned out **not to be safe** — found by an arm under audit, recorded in the answer key rather than in the case's own README, which is copied into the target, and it changes how a whole family of claims must be scored.
+
 ## The precision claim was replicated, and it did not clear its own criteria
 
 [2026-08-22, precision replication](runs/2026-08-22-precision-replication/) — a second target, `rag-agent`, **7 planted defects and 6 decoys** rather than `wire-decoder`'s 2, picked by a rule written before it was applied.

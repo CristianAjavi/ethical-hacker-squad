@@ -22,13 +22,19 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
-**One dimension is measured in this project's favour, and it is not capability.**
+**Two dimensions are measured in this project's favour. One is capability, and it survived a pre-registered replication that was designed to kill it.**
 
-The precision claim that used to sit here has been **withdrawn as a claim**. It was replicated on a second target and the outcome split: the precision half came in **stronger** than the original — [6% of this corpus's claims refuted by two independent adversarial passes against 30% of `google/mantis`'s, a 24-point gap where the pre-registration required 10](bench/runs/2026-08-22-precision-replication/) — but the same pre-registration demanded ground-truth recall at or above the competitor's, and **it came in below**, 4.33 of 7 against 4.67. The pre-registration said that either failure drops this project to one dimension, so it does.
+On **precision at weak scale**, against `google/mantis` — the strongest published competitor in this field — [**0% of this corpus's claims are refuted by two independent adversarial passes against 17% of the competitor's**](bench/runs/2026-08-22-recall-resolution/), over six runs per arm on a target with 7 planted defects and 6 decoys. The pre-registration required a 10-point gap and got 17.
 
-The margin is one defect in one of three runs, which is inside this bench's own resolution, and the criterion was mis-specified — an absolute threshold on a 7-item scale with no noise band. **Both of those are recorded in the round, and neither is being used to keep the claim.** A pre-registration that can be reinterpreted after the result is not a pre-registration. What would settle it is named there: more than three runs per arm.
+**It is reported with its other half, because precision alone is how a suppression bug looks like a win.** Ground-truth recall came in at **4.50 of 7 against the competitor's 4.83** — 0.33 below, inside the noise band of 0.5 that was written down before the runs. Across its six runs this corpus found **all seven** planted defects at least once; the competitor found six.
 
-The dimension that does stand is not capability at all. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+That claim had been **withdrawn earlier the same night** and is not being quietly restored. [A first replication](bench/runs/2026-08-22-precision-replication/) passed on precision and failed the recall criterion by one defect in one of three runs, and the claim came down rather than being argued out of. What settled it was more runs, named in advance: **on three runs the two arms' defect coverage was 6/7 against 7/7, and on six it is 7/7 against 6/7 — the same comparison, flipped, with nothing changed but the run count.**
+
+What it is not: one target, one competitor, one model scale, 83 claims about roughly seven defects, and an inter-pass agreement of 88% that a 0.33 recall gap sits well inside. All of that travels with the number.
+
+The second dimension is not capability at all.
+
+ Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 

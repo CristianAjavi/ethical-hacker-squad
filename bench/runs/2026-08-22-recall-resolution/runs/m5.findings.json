@@ -1,0 +1,102 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "Hardcoded API Credentials in Configuration File",
+    "file": "config/mcp.json",
+    "line": 3,
+    "severity": "critical",
+    "impact": "Exposure of Anthropic Billing MCP API key (sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a) in version-controlled configuration allows unauthorized access to billing systems and MCP endpoint",
+    "evidence": "MCP configuration hardcodes BILLING_API_KEY as 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a' in plaintext. Key is exposed to: anyone with source access, git history, build artifacts, logs, and environment variable dumps.",
+    "recommendation": "Move all API keys to environment variables or a secrets manager (HashiCorp Vault, AWS Secrets Manager). Never commit credentials to version control. Rotate the exposed key immediately. Use CI/CD secrets for config file generation at deployment time."
+  },
+  {
+    "id": "F-002",
+    "title": "Command Injection via shell=True in subprocess.run()",
+    "file": "agent/answer.py",
+    "line": 58,
+    "severity": "critical",
+    "impact": "LLM-controlled shell command execution with full process privileges. Model output directly passed to shell without sanitization, allowing arbitrary command execution.",
+    "evidence": "Function `summarize_and_run()` at line 58 executes `subprocess.run(model_output, shell=True, ...)` where `model_output` is untrusted string from LLM. No validation, quoting, or sandboxing applied. If model is prompted to run shell commands, attacker can execute: `rm -rf /`, exfiltrate data, establish reverse shell, or read files outside intended scope.",
+    "recommendation": "Never use shell=True. Replace with subprocess.run([...], shell=False) with explicitly tokenized command list. If shell features are needed, use shlex.quote() to escape individual arguments. Better: use subprocess.Popen with preexec_fn for chroot/seccomp isolation, or restrict to a whitelist of safe operations."
+  },
+  {
+    "id": "F-003",
+    "title": "Missing Authorization Checks in Tool Access Control",
+    "file": "agent/answer.py",
+    "line": 37,
+    "severity": "high",
+    "impact": "LLM can execute arbitrary tools (refund, lookup) on any account without authorization. No session/user context validation.",
+    "evidence": "Function `run_tool()` at line 37 accepts decision dict with account_id and amount directly from LLM output. No check against authenticated user, no authorization boundary. Contrasts with `run_tool_scoped()` at line 44, which restricts to session['authenticated_account_id'], showing awareness of the vulnerability but inconsistent application.",
+    "recommendation": "Always validate tool requests against authenticated user context. Use the scoped variant as default. Never call `run_tool()` in production; rename to `run_tool_unscoped()` and add explicit authorization checks. Implement role-based access control (RBAC) for tool access: admin-only for refunds, customers can only query own account."
+  },
+  {
+    "id": "F-004",
+    "title": "Unbounded Memory Growth from Unfiltered LLM Output",
+    "file": "agent/memory.py",
+    "line": 13,
+    "severity": "medium",
+    "impact": "LLM can append arbitrary large replies to persistent storage, causing unbounded growth and potential DoS via disk exhaustion or memory overload on read.",
+    "evidence": "Function `remember_from_reply()` at line 13 appends entire `reply` string to notes array without size limit, rate limiting, or content validation. A malicious LLM prompt or compromised model can reply with gigabytes of data. Repeated calls exhaust `/var/lib/acme/agent-memory.json`. On JSON.loads() of huge file, memory spike could crash agent.",
+    "recommendation": "Implement bounded storage: (a) cap total notes size (e.g., 100MB), (b) enforce per-note max length, (c) add rate limiting (e.g., 10 notes/hour), (d) implement TTL with automatic cleanup, (e) consider database (SQLite, PostgreSQL) instead of JSON file for large datasets."
+  },
+  {
+    "id": "F-005",
+    "title": "Symlink Attack on Persistent Store File",
+    "file": "agent/memory.py",
+    "line": 11,
+    "severity": "medium",
+    "impact": "TOCTOU vulnerability and privilege escalation if /var/lib/acme is writable by unprivileged user. Attacker can symlink agent-memory.json to arbitrary file (e.g., /etc/passwd) and cause data overwrite.",
+    "evidence": "STORE = Path('/var/lib/acme/agent-memory.json') at line 11. Code writes to path without atomic operations or permission checks. STORE.write_text(json.dumps(data)) is not atomic; between read and write, attacker with directory write access can replace agent-memory.json with symlink to sensitive file. Root-owned /var/lib/acme still vulnerable if process runs as root.",
+    "recommendation": "Use atomic file operations: open with O_CREAT | O_EXCL, write to temp file with mkstemp(), then os.rename(). Restrict /var/lib/acme permissions to 0700 (owner only). Use a database transaction instead of JSON. If symlinks are not needed, set O_NOFOLLOW flag on open() to reject symlinks."
+  },
+  {
+    "id": "F-006",
+    "title": "Unvalidated account_id Parameter in Tool Execution",
+    "file": "agent/answer.py",
+    "line": 39,
+    "severity": "medium",
+    "impact": "SQL injection, CSV injection, or NoSQL injection if account_id is passed to backend without sanitization. Model can inject queries.",
+    "evidence": "Function `issue_refund()` and `lookup()` accept account_id from LLM decision dict without validation. At line 39: `issue_refund(decision['account_id'], decision['amount'])`. If backend is SQL-based, account_id='1 OR 1=1--' allows injection. No whitelist, regex validation, or parameterized queries shown.",
+    "recommendation": "Validate account_id: (a) enforce format (UUID, alphanumeric, regex), (b) use parameterized queries / prepared statements on backend, (c) reject unexpected characters, (d) rate-limit per account to detect enumeration attacks."
+  },
+  {
+    "id": "F-007",
+    "title": "Unbounded JSON Parsing Without Size Limits",
+    "file": "agent/memory.py",
+    "line": 12,
+    "severity": "medium",
+    "impact": "DoS via memory exhaustion or slow parsing of maliciously crafted large JSON files.",
+    "evidence": "Line 12: `json.loads(STORE.read_text())` reads entire file into memory without size checks. STORE.read_text() on a multi-GB file causes memory spike. json.loads() on deeply nested or compressed JSON can stall parsing.",
+    "recommendation": "Implement: (a) max file size check before read (e.g., 10MB), (b) use streaming JSON parser (ijson) for large datasets, (c) set subprocess timeout if external tool is needed, (d) migrate to database with query limits."
+  },
+  {
+    "id": "F-008",
+    "title": "Unsafe Deserialization of Model Output in run_tool_scoped()",
+    "file": "agent/answer.py",
+    "line": 44,
+    "severity": "medium",
+    "impact": "Assumption that decision['tool'] and decision['account_id'] exist and are strings. If model returns invalid dict, KeyError or type mismatch causes crash or bypass.",
+    "evidence": "Function `run_tool_scoped()` at line 44 accesses decision['tool'] and decision['account_id'] without try/except or type checking. If model returns {\"tool\": 1} (int), the if-check fails silently, returning 'unknown tool' instead of executing intended tool. If account_id is int, lookup(account_id) may fail or behave unexpectedly.",
+    "recommendation": "Validate decision dict structure: (a) check required keys exist, (b) enforce types (tool: str, account_id: str, amount: int), (c) use dataclass or Pydantic model for type safety, (d) raise ValueError with clear error on mismatch."
+  },
+  {
+    "id": "F-009",
+    "title": "No Input Validation on amount Parameter in Refund Tool",
+    "file": "agent/answer.py",
+    "line": 39,
+    "severity": "medium",
+    "impact": "LLM can issue negative refunds (credits), large refunds beyond account balance, or non-integer amounts, causing financial impact.",
+    "evidence": "Function `issue_refund()` at line 39 accepts amount from LLM without checking: (a) amount > 0, (b) amount <= account_balance, (c) amount is integer, (d) decimal precision (cents). Model can call issue_refund('acc123', 999999999) or issue_refund('acc123', -100) to defraud.",
+    "recommendation": "Validate amount: (a) enforce minimum (>0) and maximum (e.g., daily limit $10k), (b) check account balance server-side, (c) enforce integer/Decimal type, (d) require approval step for refunds >threshold, (e) audit log all refund calls."
+  },
+  {
+    "id": "F-010",
+    "title": "Dangerous subprocess.run() with text=True and Capture of Untrusted Output",
+    "file": "agent/answer.py",
+    "line": 58,
+    "severity": "medium",
+    "impact": "If model generates binary data or null bytes, text=True with universal_newlines can cause encoding errors or buffer overflows in downstream code.",
+    "evidence": "Line 58: `subprocess.run(model_output, shell=True, capture_output=True, text=True).stdout`. If model output is binary shell script or contains null bytes, text=True forces UTF-8 decoding with potential errors. Output is returned unsanitized.",
+    "recommendation": "Never use shell=True. If shell is unavoidable, (a) use text=False and decode with error='replace', (b) limit output size (e.g., 1MB), (c) use subprocess.PIPE with select/asyncio timeout, (d) better: replace shell execution with Python function calls or safe whitelist."
+  }
+]}
