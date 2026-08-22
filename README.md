@@ -20,6 +20,8 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
+One dimension **is** measured in this project's favour, and it is not capability. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+
 ## What makes it different
 
 Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,207 lines of corpus across eight role packs, with 163 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.

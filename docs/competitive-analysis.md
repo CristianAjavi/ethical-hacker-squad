@@ -395,6 +395,9 @@ implement it. That one is done.
 | Mantis | 751 | 62 | 12.1 | 10 | No | No |
 | **EHS** | **0** | — | — | — | No | Partially: PCC, labelled an upper bound |
 
+> **Correction, 2026-08-21 evening.** The `Publishes detection quality?` column above says **No** for every competitor. That is **wrong for `AI-Infra-Guard`**, which publishes F1, precision, recall and false-positive rate for a detector on a named benchmark (`SkillTrustBench`) in its own README. It was found by a survey with a rubric fixed before any product was opened: `bench/runs/2026-08-21-field-transparency/`. Two qualifications travel with the correction and neither rescues the original claim: the method behind those figures is not published where the figures are, and the table compares models to each other rather than the product against not using it. The rest of the column was re-checked in the same survey and holds.
+
+
 The three products that ship an attack chain hold **28,477 stars**. The one product that
 took verification seriously holds **751**. That is 38:1, and it is the number people
 quote.

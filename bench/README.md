@@ -58,6 +58,16 @@ The pre-registration predicted the opposite and named what would refute it. The 
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## The one dimension where this project does lead, and it is not capability
+
+[2026-08-21, field transparency](runs/2026-08-21-field-transparency/) — six products, a six-question rubric fixed before any of them was opened, every `yes` needing a URL or a path.
+
+**This project 6/6. `AI-Infra-Guard` 1/6 with one unsettled. The other four: 0/6.**
+
+The prediction was refutable and held. And the most useful thing in it is a **correction to this repository's own competitive analysis**, which claimed no competitor publishes detection quality: `AI-Infra-Guard` does, with F1, precision, recall and FPR on a named benchmark. That document now says so.
+
+**Read this next to everything above it.** It is a claim about what a buyer can *check*, not about what anyone finds. On capability this corpus leads on none of eighteen measurements, and `google/mantis` is measurably ahead of it on precision.
+
 ## The number that governs every other number in this file
 
 The unaided arm was measured at **0.81** agreement in one sitting and **0.60** in the next — same arm, same target, same blind instrument, same judging rule, and a run prompt rewritten because the first one was never stored. **Twenty-one points, from the prompt alone.**
