@@ -64,6 +64,23 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## Reading the two dimensions jointly — an observation, not a result
+
+The bands treat precision and recall separately. Reading them **together** asks a different question: does any arm beat another on **both** at once? That is arithmetic over numbers already published, not a new metric — but **it was not pre-registered**, so it is offered as an observation and labelled as one.
+
+| target | this corpus dominates | dominated by |
+|---|---|---|
+| `rag-agent` (AI-agent surface) | `AI-Infra-Guard` **and** `google/mantis` | — |
+| `express-invoices` (HTTP API) | — | — |
+
+**No arm has ever dominated this corpus on either target.** And immediately the qualification that removes most of the weight from that sentence:
+
+- **The dominance over `AI-Infra-Guard` on `rag-agent` is one refuted claim and 0.17 of recall.** This bench has *measured* that the same artifacts under a different blind judge move recall by up to **0.33, with the sign of the difference flipping**. That margin is below the instrument's own resolution and **is not a durable ordering**.
+- **The dominance over `mantis` on the same target is 19 points of precision**, which is outside that resolution and does survive as a real difference.
+- On `express-invoices` there is no dominance in either direction involving this corpus, and `mantis` dominates `pentest-ai-agents`.
+
+So the durable version is smaller than the table: **on one target this corpus is measurably ahead of one competitor on both dimensions at once; nowhere has any arm been ahead of it on both.** That is still not "best" — it is an absence of anyone clearly better, on two targets at one model scale, against three of the four comparable products in this field.
+
 ## Four arms: the field's three comparable products each fall outside a band
 
 [2026-08-22, third competitor](runs/2026-08-22-third-competitor/) — `0xSteph/pentest-ai-agents` @ `e5d7aa0`, six runs, **all 134 claims from four arms re-pooled and re-judged from scratch**, inter-pass agreement 99%.
