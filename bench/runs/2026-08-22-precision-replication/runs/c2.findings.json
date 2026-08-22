@@ -1,0 +1,275 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (audit lead)",
+    "coverage": {
+      "inventoried": [
+        "MCP configuration (config/mcp.json)",
+        "Support agent Python (agent/answer.py)",
+        "Memory management (agent/memory.py)",
+        "Documentation (README.md)"
+      ],
+      "read": [
+        "MCP configuration (config/mcp.json)",
+        "Support agent Python (agent/answer.py)",
+        "Memory management (agent/memory.py)"
+      ],
+      "not_read": [
+        "Documentation (README.md)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Hardcoded API key in MCP config",
+        "Unrestricted shell execution via subprocess",
+        "Tool authorization bypass potential",
+        "Unsafe model output persistence",
+        "Untrusted content in retrieval index",
+        "Missing environment variable for secrets",
+        "Shared memory file without per-user isolation",
+        "Race conditions in JSON memory storage"
+      ],
+      "reported": [
+        "Hardcoded API key in MCP config",
+        "Unrestricted shell execution via subprocess",
+        "Tool authorization bypass potential",
+        "Unsafe model output persistence",
+        "Untrusted content in retrieval index"
+      ],
+      "dropped": [
+        {
+          "label": "Missing environment variable for secrets",
+          "resolution": "merged",
+          "merged_into": "F-001",
+          "reason": "Absorbed into the hardcoded API key finding; the core issue is the exposed credential, not the mechanism of exposure."
+        },
+        {
+          "label": "Shared memory file without per-user isolation",
+          "resolution": "probable",
+          "reason": "File permissions and ownership at /var/lib/acme/agent-memory.json are not visible; cannot confirm without runtime context (FP-08)."
+        },
+        {
+          "label": "Race conditions in JSON memory storage",
+          "resolution": "probable",
+          "reason": "The JSON read-modify-write pattern is racy, but cannot confirm without knowing the execution model (concurrent vs single-threaded); would need evidence of concurrent calls (FP-08)."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API credential in MCP server configuration",
+      "procedure": "SUP-16",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target/config/mcp.json",
+        "line": 4
+      },
+      "evidence": "The BILLING_API_KEY is set to [REDACTED:secret] in plaintext within the MCP server environment configuration. The format `sk-acme-` indicates an API credential.",
+      "impact": "Any party with access to this configuration file—whether through filesystem access, repository exposure, configuration deployment, or backup—can impersonate the billing service and perform any action the credential permits, including issuing refunds, retrieving sensitive customer data, or modifying account state.",
+      "preconditions": "The configuration file must be accessible to an attacker (local filesystem read, VCS history, artifact deployment, CI logs, or configuration sync).",
+      "recommendation": "Move the credential to a secret manager (AWS Secrets Manager, HashiCorp Vault, Azure Key Vault). Reference it via an environment variable placeholder (${BILLING_API_KEY}) that is set at runtime from the manager. Rotate the exposed credential immediately. Audit access logs to determine whether the credential was used outside authorized channels.",
+      "traceability": [
+        "CWE-798",
+        "CWE-540",
+        "CWE-522",
+        "A02:2025",
+        "A04:2025",
+        "CICD-SEC-6",
+        "SSDF PS.1.1",
+        "NIST 800-53 IA"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is not a placeholder, example, or test fixture; it is a real API credential with the distinctive `sk-acme-` format."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The configuration file is part of the source and is not removed by a build process."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "API credentials have security value; their disclosure enables unauthorized access to the billing service."
+        }
+      ],
+      "limits": "The audit does not determine whether this credential is still active, whether it has been rotated, or what actions have been performed with it since creation.",
+      "unaided_label": "Hardcoded API key in MCP config"
+    },
+    {
+      "id": "F-002",
+      "title": "Unrestricted shell command execution from model output",
+      "procedure": "LOC-05",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target/agent/answer.py",
+        "line": 26
+      },
+      "evidence": "The function `summarize_and_run` accepts a string from the model and executes it directly via `subprocess.run(model_output, shell=True, capture_output=True, text=True)`. No validation, parsing, or allowlist filters the command. The model's text output becomes arbitrary shell code.",
+      "impact": "The language model can execute any shell command with the privileges of the running process: read files, write files, exfiltrate data, launch further attacks, modify system state, or pivot to other machines. The attacker is the model itself (controlled by its input), which is fed untrusted data (customer questions, ticket bodies, web pages).",
+      "preconditions": "The model output must reach the summarize_and_run function. The function is defined but the audit does not show its call sites; however, the presence of the function in the codebase suggests it is invoked somewhere in the agent's workflow.",
+      "recommendation": "Never execute model output as shell code. If the model is intended to describe an operation, parse its response strictly into a finite set of allowed commands, validate all parameters against an allowlist, and reconstruct the command using a list argument to subprocess (shell=False). Prefer a structured output format (JSON) with explicit action types. If shell execution is necessary for a specific tool, implement the tool separately and invoke the model to select between predefined operations, not to generate code.",
+      "traceability": [
+        "CWE-78",
+        "CWE-88",
+        "A03:2025",
+        "A08:2025",
+        "CAPEC-6",
+        "ASVS 5.0 V2",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no compensating control that restricts the commands the model can execute."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The model output is untrusted; it derives from untrusted ingestion (customer questions)."
+        }
+      ],
+      "limits": "The audit does not determine whether summarize_and_run is actually invoked in the current deployment. If it is dead code, the finding is lowered to informational.",
+      "unaided_label": "Unrestricted shell execution via subprocess"
+    },
+    {
+      "id": "F-003",
+      "title": "Model can invoke refund tool without authorization check",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target/agent/answer.py",
+        "line": 19
+      },
+      "evidence": "The run_tool function dispatches to refund or lookup based on decision['tool']. No identity context is passed, no role check is performed, and no object-level authorization is enforced. The function calls issue_refund(account_id, amount) directly. The account_id comes from the model's decision, not from the authenticated user's session.",
+      "impact": "The model can request refunds for any account with any amount without proving that the request is authorized. If the backend does not perform its own authorization check (and authorization should always be server-side), the model becomes an oracle for issuing refunds to customers it chooses. An attacker can manipulate the model's input (via prompt injection or untrusted customer data) to cause unintended refunds.",
+      "preconditions": "The model is given a refund tool and can call it. The caller provides an account_id that is not the caller's own account (or provides a higher amount than they should be able to request). The backend does not independently authorize the refund request.",
+      "recommendation": "Implement role-based access control in the dispatcher. Every tool invocation must include the authenticated user's identity from the session. Tools must never accept account IDs from the model; instead, degrade the model's privilege after it reads external data (per AI-06). Use the Dual LLM pattern: a quarantined model without tools reads customer questions and returns a parsed action (e.g., 'refund_request'), then a privileged model with tools receives only that action and applies server-side authorization. For the refund tool specifically, restrict it to issuing refunds for the authenticated user's own account, never arbitrary accounts.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "A01:2025",
+        "A04:2025",
+        "LLM03:2026",
+        "ASI02",
+        "ASI03",
+        "ASVS 5.0 V1.2"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no authorization check in the dispatcher; identity is not validated before invoking the refund tool."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A principal boundary is crossed: the model (untrusted) determines whether a refund is issued, while the account holder is the one bearing the cost."
+        }
+      ],
+      "limits": "The audit assumes the backend does not perform independent authorization. If the backend validates every refund request against the authenticated user's identity and account, this finding is lowered to informational (defense in depth absent but not load-bearing).",
+      "unaided_label": "Tool authorization bypass potential"
+    },
+    {
+      "id": "F-004",
+      "title": "Model output persisted to shared memory without validation",
+      "procedure": "AI-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target/agent/memory.py",
+        "line": 9
+      },
+      "evidence": "The remember_from_reply function accepts a raw reply string from the model and appends it to a 'notes' array without sanitization, marking, or provenance information. The data is then persisted to disk as JSON. If this function is called with model output that was influenced by untrusted input (customer text, web pages), that text enters persistent memory without any boundary or origin marker.",
+      "impact": "If the model output contains injected instructions or code from untrusted sources, those instructions are stored in persistent memory and may influence future agent behavior or be displayed to humans who interpret the stored text as trustworthy. A prompt injection in a customer question could persist as an instruction for the agent to follow in future sessions.",
+      "preconditions": "The model output is influenced by untrusted content (customer tickets, web browsing results, fetched URLs). The remember_from_reply function is called with that output. Future agent sessions retrieve and process the stored notes.",
+      "recommendation": "Implement spotlighting or delimiter-based content marking (arXiv:2403.14720, Microsoft Research March 2024): wrap every third-party input in explicit markers (e.g., `<untrusted source=\"customer-ticket\">${text}</untrusted>`). Mark the boundary between instructions and data. Alternatively, restrict persistent memory to structured fields from an allowlist (existing ALLOWED_KEYS pattern in remember_preference) rather than accepting arbitrary text. Never retrieve untrusted notes back into an agent session without re-validation and explicit origin marking.",
+      "inference": "The audit shows remember_from_reply accepts arbitrary model output but does not show which function calls it; the inference is that if the model output reaches this function and is influenced by untrusted data, the injection persists. Confirmation would require tracing the call graph.",
+      "what_would_settle_it": "A call to remember_from_reply from a code path that receives untrusted input (e.g., after a fetch_url or search_tickets tool return), or documentation stating remember_from_reply is only called with validated, authored text.",
+      "traceability": [
+        "CWE-77",
+        "CWE-20",
+        "LLM01:2026",
+        "ASI01",
+        "AML.T0051.001"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "There may be a compensating control (e.g., a filtering model upstream) but it is not visible in the code provided."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The model output is untrusted if it derives from customer input, but the code does not show the data flow clearly enough to confirm."
+        }
+      ],
+      "limits": "The audit cannot confirm whether remember_from_reply is actually called or with what inputs. The triage answers depend on understanding the full call graph and data flow.",
+      "unaided_label": "Unsafe model output persistence"
+    },
+    {
+      "id": "F-005",
+      "title": "Customer tickets marked untrusted but ingested into retrieval without filtering",
+      "procedure": "AI-03",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target/agent/memory.py",
+        "line": 27
+      },
+      "evidence": "The ingest_ticket_marked function adds a customer ticket to a retrieval index with metadata `{\"origin\": \"customer-ticket\", \"trust\": \"untrusted\", ...}`. The marking exists in the metadata, but the code does not show a filtering mechanism that would prevent the marked content from being retrieved and used in the agent's response to the model. The marking is passive—recorded but not enforced.",
+      "impact": "A customer can embed instructions or code in their ticket body. When the agent searches the vector store, untrusted content is retrieved and fed to the model without re-evaluation. The model interprets the customer's injected instructions as legitimate context and may act on them. The metadata label 'untrusted' is present but is not a control—it is only informational.",
+      "preconditions": "The retrieval system does not filter by the 'trust' metadata (or filters it out but fails to apply it to the downstream usage). The model is given the customer text as context. A customer writes a question that contains an instruction disguised as a support request.",
+      "recommendation": "Implement privilege degradation: retrieve untrusted content only into a quarantined model without tools (Dual LLM pattern), which extracts structured information and returns a typed response. A second, privileged model with tools then receives only the structured response, never the original customer text. Alternatively, if using a single model, enforce that untrusted content is delimited and marked at the token level (spotlighting), not just in metadata. Apply role-based filtering at retrieval time: exclude untrusted content from searches when the model has access to sensitive tools.",
+      "inference": "The metadata 'trust: untrusted' is recorded but there is no visible code that acts on this label before passing results to the model.",
+      "what_would_settle_it": "Code showing that retrieved results are filtered by trust level before being used, or documentation explaining the trust boundary and how it is enforced.",
+      "traceability": [
+        "CWE-20",
+        "LLM01:2026",
+        "LLM03:2026",
+        "ASI01",
+        "ASI06",
+        "AML.T0051.001"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control may exist in the retrieval client or the model's system prompt, but it is not shown in the provided code."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Customer-authored ticket bodies are untrusted by definition."
+        }
+      ],
+      "limits": "The audit does not see the retrieval client or the model's system prompt. The control may exist elsewhere in the system.",
+      "unaided_label": "Untrusted content in retrieval index"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Secrets in git history",
+      "procedure": "SUP-17",
+      "outcome": "not executed",
+      "where": "No git repository is present in the target. Secret scanning via git history cannot be performed."
+    }
+  ]
+}

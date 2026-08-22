@@ -1,5 +1,16 @@
 # Run 2026-08-21 — the critic stage: v1 deleted true findings, v2 blind to prose fixed it
 
+> # The head-to-head claim below did NOT clear its replication
+>
+> The 21%-against-53% result at the bottom of this page was replicated on a second target — `rag-agent`, 7 planted defects instead of this target's 2 — in `../2026-08-22-precision-replication/`. **The precision half came back stronger: 6% against 30%, a 24-point gap.** The same pre-registration also required ground-truth recall at or above the competitor's, and **it came in below**, 4.33 of 7 against 4.67, so the replication is recorded as not clearing its own criteria and **the claim was withdrawn from the top-level `README.md`.**
+>
+> The margin is one defect in one of three runs, inside this bench's resolution, and the criterion had no noise band. Both facts are in that round, and neither was used to keep the claim.
+>
+> **One caveat on this page is corrected there rather than carried forward**: the statement that this corpus's claims deduplicate far worse than the competitor's does not transfer — on the second target it is 2.2 claims per defect against 2.0.
+>
+> Nothing below is edited.
+
+
 `PREREGISTRATION.md` was committed before any run. It predicted the refuted proportion would fall **and** ground-truth recall would hold at 4/6, and it named the failure mode by name: *a drop in refuted claims that arrives with a drop in ground-truth recall is suppression, not precision, and will be reported as such.*
 
 **That is what happened.**

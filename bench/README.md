@@ -64,6 +64,21 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## The precision claim was replicated, and it did not clear its own criteria
+
+[2026-08-22, precision replication](runs/2026-08-22-precision-replication/) — a second target, `rag-agent`, **7 planted defects and 6 decoys** rather than `wire-decoder`'s 2, picked by a rule written before it was applied.
+
+| | claims | refuted by both passes | recall | claims per defect |
+|---|---|---|---|---|
+| this corpus | 16 | **1 (6%)** | 4.33 / 7 | 2.2 |
+| `google/mantis` | 23 | 7 (30%) | **4.67 / 7** | 2.0 |
+
+**The precision half came back stronger than the original** — 24 points where the pre-registration required 10. **The recall criterion was not met**, and the pre-registration said either failure drops the claim, so the claim is withdrawn from the top-level `README.md`.
+
+The margin is one defect in one of three runs, inside the resolution below, and the criterion had no noise band — an absolute threshold on a 7-item scale. **Both are recorded in the round; neither was used to keep the claim.** What would settle it is named there: more than three runs per arm.
+
+It also corrects a caveat this bench had been carrying: **our deduplication is not worse than the competitor's** — 2.2 claims per defect against 2.0, where the earlier round reported a large gap against us.
+
 ## The one dimension where this project does lead, and it is not capability
 
 [2026-08-21, field transparency](runs/2026-08-21-field-transparency/) — six products, a six-question rubric fixed before any of them was opened, every `yes` needing a URL or a path.

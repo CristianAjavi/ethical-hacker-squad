@@ -1,0 +1,104 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API Key in MCP Configuration File",
+      "file": "config/mcp.json",
+      "line": 6,
+      "severity": "CRITICAL",
+      "impact": "Hardcoded credentials enable any user with access to the configuration file to impersonate the service and access the billing API. This allows unauthorized financial transactions, account takeovers, and service disruption.",
+      "evidence": "Line 6 contains plaintext API key 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a' directly embedded in JSON. The key format matches real Acme API credentials, not a placeholder.",
+      "recommendation": "Remove hardcoded credentials from the configuration file. Load BILLING_API_KEY from environment variables (as already done for DOCS_TOKEN on line 11). Use a secrets management system (AWS Secrets Manager, Vault) and implement credential rotation policies."
+    },
+    {
+      "id": "F-002",
+      "title": "Unauthenticated Tool Execution - Authorization Bypass",
+      "file": "agent/answer.py",
+      "line": 29,
+      "severity": "CRITICAL",
+      "impact": "The model can execute refunds on any customer account without authentication or authorization checks. An attacker can trigger arbitrary refunds via crafted customer questions, violating basic authorization principles and enabling massive financial fraud.",
+      "evidence": "Lines 27-33: run_tool() accepts decision dict with 'account_id' from model output, passing it directly to issue_refund() without verifying the authenticated user has permission. No authentication context is checked. run_tool_scoped() exists (lines 36-43) with proper authorization but is never called.",
+      "recommendation": "Use run_tool_scoped() instead of run_tool(), or move the authentication check into run_tool(). Require that authenticated_account_id from session matches the requested account_id. Remove run_tool() entirely to prevent accidental misuse. Add tests verifying only scoped execution is used."
+    },
+    {
+      "id": "F-003",
+      "title": "Shell Command Injection via Model Output",
+      "file": "agent/answer.py",
+      "line": 48,
+      "severity": "CRITICAL",
+      "impact": "Model output is executed as shell code without sanitization. An attacker can trigger arbitrary command execution by crafting questions that produce shell metacharacters (pipes, semicolons, backticks). This enables complete system compromise including reading files, modifying data, and establishing persistence.",
+      "evidence": "Line 48: subprocess.run(model_output, shell=True, capture_output=True, text=True) passes untrusted model_output directly to shell=True without escaping. No input validation occurs. Example payload 'echo test; rm -rf /var/lib/acme' would delete critical data.",
+      "recommendation": "Never execute model output as shell commands. Use subprocess with shell=False and arguments as list. If code generation is necessary, parse output into AST before execution or use a sandboxed interpreter. Better: eliminate execution entirely and have model return structured data the application interprets deterministically."
+    },
+    {
+      "id": "F-004",
+      "title": "Unrestricted Memory Append - Data Exposure via Model Output",
+      "file": "agent/memory.py",
+      "line": 13,
+      "severity": "HIGH",
+      "impact": "Model output is stored directly to persistent memory without validation. An attacker can inject sensitive data (customer PII, internal information, other users' data) into the shared memory store via crafted questions. All future queries have access to this injected data, exposing it to unauthorized users.",
+      "evidence": "Lines 10-14: remember_from_reply() appends model reply directly to notes list without validation. No per-user isolation at /var/lib/acme/agent-memory.json means data from one customer is accessible to all subsequent queries.",
+      "recommendation": "Validate all model output before persisting. Store only validated structured data, not raw replies. Implement per-user memory isolation so customers cannot access other customers' data. Add audit logging for all memory writes. Consider a vector database instead of JSON appends for RAG contexts."
+    },
+    {
+      "id": "F-005",
+      "title": "Unsafe Document Ingestion - No Validation of Ticket Content",
+      "file": "agent/memory.py",
+      "line": 28,
+      "severity": "HIGH",
+      "impact": "Customer-provided ticket content is indexed into the retrieval store without validation. An attacker can inject false information, contradictory instructions, or sensitive data into the index, causing the model to use that malicious content when answering other customers' questions. Enables cross-customer poisoning.",
+      "evidence": "Lines 26-28 and 31-36: ingest_ticket() and ingest_ticket_marked() call index.add_texts([ticket['body']]) without schema validation or content filtering. Hardcoded 'trust': 'untrusted' metadata provides no downstream filtering.",
+      "recommendation": "Validate ticket content before ingestion: enforce max length, scan for sensitive data (credit cards, SSNs), check for injection patterns. Implement trust-based filtering in retrieval layer (downweight or exclude untrusted documents). Add per-ticket metadata (source, timestamp) for traceability."
+    },
+    {
+      "id": "F-006",
+      "title": "Ineffective Trust Metadata - Marked Trust Filtering Not Enforced",
+      "file": "agent/memory.py",
+      "line": 35,
+      "severity": "MEDIUM",
+      "impact": "The ingest_ticket_marked() function labels documents as 'untrusted' but this metadata is not used downstream during retrieval. The false sense of security can lead developers to ignore risks of poisoned retrieval results.",
+      "evidence": "Lines 31-36: ingest_ticket_marked() hardcodes 'trust': 'untrusted' for customer tickets. However, build_prompt and build_prompt_marked (lines 11-24) do not filter based on trust metadata. Metadata is stored but not enforced.",
+      "recommendation": "Either fully implement trust-based filtering in the retrieval layer (filter untrusted documents, lower their weights, or require explicit opt-in) or remove the unused metadata to avoid false security. Add unit tests verifying untrusted documents are handled correctly in both retrieval functions."
+    },
+    {
+      "id": "F-007",
+      "title": "Unsafe Operation List Validation - Incomplete Input Checking",
+      "file": "agent/answer.py",
+      "line": 54,
+      "severity": "MEDIUM",
+      "impact": "The summarize_and_render() function validates the 'op' field but does not validate the 'value' field. Missing or malformed values cause unexpected behavior. An attacker could provide {'op': 'total'} without 'value' to cause KeyError or provide unbounded values causing DoS.",
+      "evidence": "Lines 51-56: Function checks 'op' is in ['total', 'count', 'average'] but then accesses model_output['value'] without type checking, bounds checking, or handling missing fields.",
+      "recommendation": "Implement complete input validation using a schema validator (jsonschema, pydantic). Enforce both 'op' and 'value' fields, validate value is numeric, add reasonable bounds (reject values > threshold). Handle missing fields gracefully. Apply same validation to all model outputs used in critical functions."
+    },
+    {
+      "id": "F-008",
+      "title": "Ambiguous Tool Execution Functions - Risk of Authorization Bypass",
+      "file": "agent/answer.py",
+      "line": 27,
+      "severity": "HIGH",
+      "impact": "Two nearly identical functions (run_tool() and run_tool_scoped()) exist with different authorization semantics. If a developer accidentally calls run_tool() instead of run_tool_scoped(), authorization is silently bypassed. There are no guards preventing the wrong function from being used.",
+      "evidence": "Lines 27-43: Two functions with overlapping purpose exist. No deprecation warning on run_tool(). No tests visible to enforce which should be used. Presence of both suggests incomplete migration that was never completed.",
+      "recommendation": "Remove run_tool() entirely from the codebase. Move authorization check directly into the primary tool execution function (or into middleware). Add integration tests verifying all tool execution paths use proper authorization. Use linting rules to prevent re-introduction of unscoped variants."
+    },
+    {
+      "id": "F-009",
+      "title": "No Rate Limiting on Tool Execution",
+      "file": "agent/answer.py",
+      "line": 27,
+      "severity": "MEDIUM",
+      "impact": "There are no rate limits on refund tool execution. An attacker can trigger thousands of refund requests in a single session by sending multiple customer questions, leading to massive unauthorized transactions and DoS to legitimate refund processing.",
+      "evidence": "Lines 27-33: run_tool() directly calls issue_refund() without any rate limiting, request counting, or quota checks. No visible code tracks refund requests per user/session/hour/day.",
+      "recommendation": "Implement rate limiting on sensitive operations: add request counter per session/user/hour, reject requests exceeding threshold (e.g., max 5 refunds/hour), log all requests for audit, require human approval for high-value refunds (>$100), use exponential backoff to prevent automated attacks."
+    },
+    {
+      "id": "F-010",
+      "title": "No Audit Logging of Tool Execution",
+      "file": "agent/answer.py",
+      "line": 59,
+      "severity": "MEDIUM",
+      "impact": "There are no logs recording who refunded what amount when. If an unauthorized refund occurs, there is no audit trail to identify the source or support forensic investigation. Compliance requirements (PCI-DSS, SOX) mandate detailed logs of financial transactions.",
+      "evidence": "Lines 59-64: issue_refund() returns a simple string confirmation but does not log the transaction. No visible logging to file, database, or audit service. No request context captured.",
+      "recommendation": "Implement comprehensive audit logging: log all refund requests with timestamp, authenticated user, account_id, amount, and result. Use append-only storage (cannot be modified/deleted). Include request context (IP, user agent, session ID). Send logs to centralized logging service. Retain logs for legal/compliance periods (typically 7 years for financial data)."
+    }
+  ]
+}
