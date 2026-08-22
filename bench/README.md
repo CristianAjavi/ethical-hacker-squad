@@ -166,6 +166,18 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 **Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
+## The seven rules that came out of being wrong
+
+None of these was designed. Each one is what a retraction or a near-miss cost, and several are enforced by `gate-bench-integrity.sh` rather than by good intentions.
+
+1. **Pre-register before the result exists** — the prediction, what would refute it, *and what each outcome forces you to write*. Two rounds in this directory came out exactly as predicted and are published as worthless; without the criterion committed first, both would have shipped as wins.
+2. **Archive the prompt.** The same arm scored 0.81 and 0.60 in two sittings on one target with one instrument, because the run prompt was rewritten. Twenty-one points from wording is larger than any effect this bench has measured. A comparison without its prompt is not comparable to anything, and the gate refuses one that neither carries its prompts nor says it does not.
+3. **State the outside-information policy, identically for every arm.** One run diffed the target against upstream; another cited CVE ids. Finding a defect by diff is not the act of finding it by reading. Also gated.
+4. **A dead run is not a zero.** A run whose agent died is *not measured*, and its partial output is preserved unscored. This rule was first applied when it cost us and has since been applied when it favoured us.
+5. **Never report precision without recall.** An arm that reports nothing is never refuted. A drop in refuted claims that arrives with a drop in ground-truth recall is suppression, and gets that word.
+6. **Two passes, or it is not an instrument.** A single blind judge disagreed with a second one on the two verdicts that decided a case, and a published result had to be withdrawn. Inter-pass agreement is reported as the resolution of the instrument, and no difference smaller than it is reportable.
+7. **Check the artifact before you believe the number.** A pre-registered prediction landed exactly on target while *all three runs failed validation* — the intervention had never been applied. Only the machine-checked contract caught it.
+
 ## What the numbers are worth
 
 **Recall here is recall on this bench.** The cases were written by the same project that wrote the procedures, so a high score partly measures that the corpus describes the code it was written from. That is not nothing — it proves the routing and the patterns hold on code shaped like this — but it is not evidence about code nobody here has seen. Say "recall on the bench", never "detection rate".
