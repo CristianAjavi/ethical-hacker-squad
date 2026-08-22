@@ -75,6 +75,33 @@ Fourteen measurements. **The corpus still does not lead.** 4/6 against 5/6 is on
 
 What it does establish, and this is the first thing in this directory that is both positive and load-bearing: **the tax was the loading, and the loading is fixable.** The content was never the problem, and the fix cost one paragraph plus moving a table out of the router.
 
+## The second retest: the prediction was met, and it proves nothing
+
+`RETEST2-PREREGISTRATION.md` targeted the one thing that got worse: D1 had fallen from 2/3 to 1/3 because two runs *actively refuted* it. The diagnosis was an asymmetry in the contract — `confirmed` costs every triage rule, a dismissal cost one sentence — so a dismissal was made to pay: `refuted` must name `control_at`, the `path:line` of the control on the path to the sink; `merged` must name a finding that exists.
+
+The prediction was **D1 in at least 2 of 3 runs and a total of at least 4/6**.
+
+| | D1 | D2 | total |
+|---|---|---|---|
+| before the loading rule | 2/3 | 0/3 | 2/6 |
+| after the loading rule | 1/3 | 3/3 | 4/6 |
+| after making dismissal expensive | **2/3** | 2/3 | **4/6** |
+| unaided (not re-run) | 2/3 | 3/3 | 5/6 |
+
+Both conditions are met. **And the result is worthless as evidence, because the intervention never ran.**
+
+**All three artifacts failed validation, and all three failed the same way: not one wrote the `resolution` field.** Every dropped candidate came back in the previous `{label, reason}` shape. The rule was in the schema, in the validator, in `team.md` and at the top of all seven auditor subagents, and the reviewer did not apply it. One run refuted D1 again with *"the bounds check at line 87 is intentional and correct"* — the exact failure the change was written to prevent, produced by a run that never saw the field it was supposed to fill.
+
+So: **the outcome was predicted correctly and supports nothing.** D1 moving 1/3 → 2/3 while D2 moved 3/3 → 2/3, with the total unchanged at 4/6, on three runs of a two-defect ground truth, is what noise looks like. Had the artifact contract not been machine-checked, this would have been published as a second confirmed prediction and a second win. It is neither.
+
+### What this actually teaches, which is worth more than the number
+
+**A rule that only a validator enforces is a rule the reviewer can decline.** The loading rule changed behaviour because it changed what the reviewer *does* before it starts. The dismissal rule tried to change what the reviewer *writes* at the end, and a reviewer that has run short of budget skips the ceremony and writes the shape it remembers. Contract fields govern deliverables; they do not govern reasoning.
+
+**And the rule was too weak even on paper.** Requiring a location is cheap. The run that refuted D1 already cited line 87 in prose; with the new field it would have written `control_at: ValueReader.java:87`, passed the validator, and been exactly as wrong — because line 87 is a cast guard, not a bound. A field that asks *where* cannot tell a control that bounds the quantity that matters from one that does not. That distinction is the whole of the finding, and no schema can carry it.
+
+Both of those are recorded here rather than fixed by adding a third field.
+
 ## Files
 
 `PREREGISTRATION.md` is what was committed before anything ran. `groundtruth.json` holds the six blind verdicts joined back to their arms. `runs/` holds all six artifacts. `judging/` holds the batches exactly as the judges received them.
