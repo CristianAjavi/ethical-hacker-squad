@@ -64,6 +64,22 @@ Three asymmetries travel with it, declared before the number was known: our 19 c
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## A second competitor, and the ranking dissolves
+
+[2026-08-22, second competitor](runs/2026-08-22-second-competitor/) — `Tencent/AI-Infra-Guard` @ `4908db1`, the only product in this field that publishes its own detection quality, on its home ground. All 114 claims from three arms re-pooled and **re-judged from scratch**, so no number is carried over. Inter-pass agreement 96%.
+
+| Arm | claims | refuted by both passes | recall | union |
+|---|---|---|---|---|
+| this corpus | 36 | **0 (0%)** | 4.67 / 7 | **7 / 7** |
+| `AI-Infra-Guard` | **31** | 1 (3%) | 4.50 / 7 | 6 / 7 |
+| `google/mantis` | 47 | 9 (19%) | 4.50 / 7 | 6 / 7 |
+
+**The corpus arm's 0% reproduced under a fresh verifier pair** — that was pre-registered to be reported ahead of any comparison, and it did not move. **`AI-Infra-Guard` is far cleaner than `mantis` and indistinguishable from this corpus**: 3% against 0% is one claim out of 31, where the refutation criterion needed ten points. This project is **level with the best measurable competitor, ahead of the other one** — not ahead of the field, and three of six surveyed products have still never been run.
+
+**The lasting result is about the instrument, not the table.** The same twelve artifacts, scored by two different blind judges, moved by up to 0.33 of a defect **and the difference flipped sign**: judge one put this corpus behind `mantis`, judge two put it ahead. That is the same 0.33 that withdrew the claim earlier the same night. **A recall comparison at this N does not order the arms; it only says whether they sit inside one band** — which is why the band was declared before the numbers existed, and why every recall figure here must be read that way.
+
+One profile difference is worth more than the ranking: `AI-Infra-Guard` produced **the fewest claims of any arm** at the same recall and near-identical precision. The specialist is the most economical of the three.
+
 ## The capability claim, withdrawn and then restored on evidence
 
 [2026-08-22, recall resolution](runs/2026-08-22-recall-resolution/) — six NEW runs per arm, the pilot's three excluded because their numbers were known when the band was written.

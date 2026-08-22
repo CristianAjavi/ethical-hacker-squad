@@ -22,15 +22,15 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
-**Two dimensions are measured in this project's favour. One is capability, and it survived a pre-registered replication that was designed to kill it.**
+**Two dimensions are measured in this project's favour. One is capability — and it is a tie with the best product in this field, not a lead over it.**
 
-On **precision at weak scale**, against `google/mantis` — the strongest published competitor in this field — [**0% of this corpus's claims are refuted by two independent adversarial passes against 17% of the competitor's**](bench/runs/2026-08-22-recall-resolution/), over six runs per arm on a target with 7 planted defects and 6 decoys. The pre-registration required a 10-point gap and got 17.
+Against **`Tencent/AI-Infra-Guard`**, the only product here that publishes its own detection quality, on its own home ground of AI-agent security: [**0% of this corpus's claims are refuted by two independent adversarial passes against 3% of theirs**](bench/runs/2026-08-22-second-competitor/) — one claim out of 31, at 4.67 of 7 ground-truth recall against 4.50. **That is a tie, and it is published as a tie.** Against `google/mantis` the same instrument gives 0% against 19%, which is a real gap.
 
-**It is reported with its other half, because precision alone is how a suppression bug looks like a win.** Ground-truth recall came in at **4.50 of 7 against the competitor's 4.83** — 0.33 below, inside the noise band of 0.5 that was written down before the runs. Across its six runs this corpus found **all seven** planted defects at least once; the competitor found six.
+**So the honest sentence is: level with the best that was measurable here, ahead of the other one, on one target at one model scale.** Not ahead of the field. Three of the six surveyed products have never been run as arms at all.
 
-That claim had been **withdrawn earlier the same night** and is not being quietly restored. [A first replication](bench/runs/2026-08-22-precision-replication/) passed on precision and failed the recall criterion by one defect in one of three runs, and the claim came down rather than being argued out of. What settled it was more runs, named in advance: **on three runs the two arms' defect coverage was 6/7 against 7/7, and on six it is 7/7 against 6/7 — the same comparison, flipped, with nothing changed but the run count.**
+The claim was **withdrawn and restored once each in the same night** rather than argued into place. [A replication](bench/runs/2026-08-22-precision-replication/) failed its recall criterion by one defect in one of three runs and the claim came down; [more runs](bench/runs/2026-08-22-recall-resolution/) brought it back inside a band declared in advance. Then a [second competitor](bench/runs/2026-08-22-second-competitor/) narrowed what it may say.
 
-What it is not: one target, one competitor, one model scale, 83 claims about roughly seven defects, and an inter-pass agreement of 88% that a 0.33 recall gap sits well inside. All of that travels with the number.
+**Read the recall numbers as a band, never as a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped** — judge one put this corpus behind `mantis`, judge two put it ahead. That is the resolution of the instrument, measured rather than assumed, and it is why the band exists.
 
 The second dimension is not capability at all.
 
