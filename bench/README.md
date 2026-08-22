@@ -74,6 +74,22 @@ The prediction was refutable and held. And the most useful thing in it is a **co
 
 **Read this next to everything above it.** It is a claim about what a buyer can *check*, not about what anyone finds. On capability this corpus leads on none of eighteen measurements, and `google/mantis` is measurably ahead of it on precision.
 
+## Whole repositories: nobody solves this, on six advisories
+
+[2026-08-22, routing at N](runs/2026-08-22-routing-at-N/) — the thinnest evidence in this bench was also the one holding up its strongest conclusion. The dimension the corpus is *built* for, deciding what to read in a repository nobody reads whole, had three advisories of evidence. It now has six.
+
+| | corpus | unaided |
+|---|---|---|
+| earlier rounds | 0/3 | 1/3 |
+| 2026-08-22, rule-picked Go targets | 0/3 | 0/3 |
+| **total** | **0 / 6** | **1 / 6** |
+
+The pre-registration predicted exactly this — both arms at or below 1/3, gap of one or less — because the honest expectation was that **the task is hard for everyone**, and that is now the published statement rather than *the corpus does not lead*.
+
+**Both arms missed by nine lines.** The advisory lives in `sliceMapToSlice` at `req_resp_decoder.go:936`; both arms independently reported an unchecked type assertion in `deepSet` at line 945. They routed to the right file, read it, found a real bug in it, and neither enumerated the other way that code can be driven. Neither list mentions `sliceMapToSlice`.
+
+**No product in this field should claim whole-repository detection without publishing a number**, and four of five publish none.
+
 ## The number that governs every other number in this file
 
 The unaided arm was measured at **0.81** agreement in one sitting and **0.60** in the next — same arm, same target, same blind instrument, same judging rule, and a run prompt rewritten because the first one was never stored. **Twenty-one points, from the prompt alone.**
