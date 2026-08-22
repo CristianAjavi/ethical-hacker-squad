@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Unbounded recursion depth in nested field structures (readFieldValue mutual recursion)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158-221,139-155,237-249",
+   "impact": "Denial of Service via stack exhaustion. An attacker can construct an AMQP frame with deeply nested tables or arrays, triggering StackOverflowError after roughly 10,000-50,000 levels of nesting (depending on stack frame size and JVM). The error crashes the client.",
+   "evidence": "Method readFieldValue() (lines 158-221) contains a switch statement that handles type discriminators. For type 'F' (line 180-181), it calls `readTable(in)`, which calls `readFieldValue()` in a loop (line 150). For type 'A' (line 183-184), it calls `readArray(in)`, which calls `readFieldValue()` in a loop (line 245). These form mutual recursion: `readFieldValue` \u2192 `readTable` \u2192 `readFieldValue` and `readFieldValue` \u2192 `readArray` \u2192 `readFieldValue`. No recursion depth parameter is threaded through these methods, so an attacker can nest arbitrarily deep: a table containing a field that is a table containing a field that is a table, etc. Each recursion level consumes stack space; depth N costs O(N) bytes of stack."
+  },
+  {
+   "item_id": "F02",
+   "title": "Wire-protocol length drives heap allocation without maximum bound (readBytes)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:83-94",
+   "impact": "Denial of Service via heap exhaustion. An attacker controlling the AMQP connection (malicious server or MITM) can transmit a single frame with a `readBytes` length field set to a large value like 0x7FFFFFFE (2147483646), causing the client to attempt a multi-gigabyte heap allocation. If the allocation succeeds, it exhausts available heap; if rejected by the JVM, it crashes the client. Either way, further operations on that connection fail.",
+   "evidence": "Lines 86-88: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength];` The condition at line 87 acts as a cast-safety guard (prevents overflow during int conversion) but not as a resource limit. It permits allocations up to 2147483646 bytes (~2 GB) based on untrusted wire-protocol input. This matches the vulnerable pattern in WEB-26: 'a cast-safety test (len < Integer.MAX_VALUE, n >= 0) is not a limit.' The code allocates before validating that the promised bytes are actually available in the buffer."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

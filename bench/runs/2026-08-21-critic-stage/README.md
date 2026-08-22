@@ -1,4 +1,4 @@
-# Run 2026-08-21 — the critic stage bought the best precision in this directory by deleting true findings
+# Run 2026-08-21 — the critic stage: v1 deleted true findings, v2 blind to prose fixed it
 
 `PREREGISTRATION.md` was committed before any run. It predicted the refuted proportion would fall **and** ground-truth recall would hold at 4/6, and it named the failure mode by name: *a drop in refuted claims that arrives with a drop in ground-truth recall is suppression, not precision, and will be reported as such.*
 
@@ -27,6 +27,8 @@ Giving that reviewer a dedicated stage whose stated job is to kill claims did no
 
 The competitor's advantage is therefore **not** "has a critic stage". It is having one calibrated so that failing to kill something is the default outcome. Copying the box without the calibration reproduces the box and not the result.
 
+> **That last sentence was written from the score, not from their text, and it is wrong.** Reading their stage afterwards showed it is *harsher* than v1, not gentler. The real mechanism is below, in the v2 section. This paragraph is left standing because being wrong in public is the point of writing the reasoning down.
+
 ## What the verifiers found in our own claims, unprompted
 
 Both passes killed the same two, and they are ours:
@@ -38,13 +40,42 @@ So the arm both over-generalised the one real mechanism onto two places it does 
 
 ## What was done about it
 
-**The automatic invocation is reverted.** A change that fails its own pre-registered measurement does not stay in the shipping path, and this one costs a true defect per run at weak scale.
+**The automatic invocation was reverted.** A change that fails its own pre-registered measurement does not stay in the shipping path, and this one cost a true defect per run at weak scale. *(It is wired again now — but only as v2, and only after v2 passed. See below.)*
 
-`VER-09` stays written, with this measurement inside the procedure itself so the cost is the first thing a reader meets, and it is invoked deliberately rather than by default. That is not dead configuration: it is a documented tool with a measured price, for the case where a reader's triage cost genuinely outweighs recall — and this bench has never measured a case where it does.
+`VER-09` v1 was then removed from the shipped corpus altogether: a procedure the corpus does not want a reviewer to run is not doctrine, it is a bench result.
 
-The next hypothesis, unmeasured and stated as such: **a kill must cost what a claim costs** — the critic must name the line where the bound is enforced on the path to the sink, and failing to find it must leave the finding standing. That was tried once as an artifact field and the reviewer simply declined to write it. Making it the *direction of the default* rather than a field to fill is the untested variant.
+The hypothesis written here at the time — *a kill must cost what a claim costs*, the critic naming the line where the bound is enforced — **was not the one that worked.** It had already been tried as an artifact field and the reviewer declined to write it. What worked was changing what the critic is allowed to *see*.
 
-## Caveats
+## v2 — the critic, blind to the finder's prose
+
+`RETEST-PREREGISTRATION.md` was committed before these runs and after **reading** the competitor's stage instead of inferring it from its score. That reading disproved the diagnosis written above: `google/mantis`'s review stage is **harsher** than v1, not gentler — it instructs the reviewer to assume every finding is a false positive and disprove it. What it does that v1 did not is in the same paragraph: it judges **the claim and the code only, explicitly discarding the finder's prose reasoning as potentially hallucinated.**
+
+v1 handed the critic the whole finding, narrative included. A reviewer short of budget, given a confident rationale, either believes it or finds a flaw in the *prose* and reports the finding dead. Neither is an assessment of the code. v2 gives it the assertion and its location and nothing else.
+
+| | claims | refuted by both passes | ground-truth recall |
+|---|---|---|---|
+| no critic stage | 26 | 62% | 4 / 6 |
+| **v1** — critic sees the whole finding | 6 | 33% | **3 / 6** |
+| **v2** — critic blind to the prose | 6 | **0%** | **6 / 6** |
+| competitor `google/mantis` | 17 | 53% | — |
+| unaided, no method | 28 | 68% | 4 / 6 |
+
+**Both halves of the prediction hold: recall at or above 4/6, refuted proportion below 62%.** It is the first change in this sequence to pass its pre-registered test on both metrics, and the only reason it could be published is that the test demanded both — v1 posted better precision than the competitor and was suppression.
+
+**v1 against v2 is the clean comparison**: same target, same model, same run prompt, same instruments, same six claims. The only variable is whether the critic sees the prose. 3/6 → 6/6 and 33% → 0%.
+
+### What this does not establish
+
+- **Six claims cannot carry a proportion** against 17, 26 or 28. What is comparable is recall on identical slots, and v1-versus-v2 at equal N.
+- The arm now reports **exactly the two ground-truth defects and nothing else**. On a target with only two known defects, this bench cannot tell a perfectly-calibrated critic from one that would also kill a true third finding. That needs a target with more ground truth, and it has not been run.
+- Both verifiers, while refuting nothing, recorded **real errors inside the surviving claims**: one cites lines 147 and 241 as allocation sites when neither allocates anything proportional to the declared length, one says "client or server" for a client-side class, one overstates a thread-level crash as an application crash. Claims that survive attack can still be sloppy, and precision does not measure that.
+- One target, one weak model, three runs.
+
+### What shipped
+
+`VER-09` is in the corpus, wired as step 8 of the leader workflow, **after** it passed — not before. v1 shipped first and had to be reverted; that order is not repeated. The idea of where a critic should be blind came from reading `google/mantis` at its pinned commit; no text of theirs is in this repository.
+
+## Caveats on v1
 
 - **Six claims cannot carry a proportion.** 33% against 17, 26 and 28 claims is not a like-for-like comparison, and the count is the result rather than the denominator. Recall, at 3/6 against 4/6 on identical slots, **is** comparable.
 - One target, one weak model, three runs.

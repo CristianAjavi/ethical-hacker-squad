@@ -1,0 +1,133 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad",
+    "coverage_declaration": "Audited Java deserialization code in ValueReader.java (1 file, 281 LOC). This is a partial audit of a published library: injection, deserialization and file handling were exercised; object-level authorization, business logic, and platform-specific concerns were not applicable. No dependencies checked in this audit. Procedure: ad-hoc (deserialization of binary AMQP protocol data from untrusted source).",
+    "coverage": {
+      "inventoried": [
+        "Java source code: ValueReader.java",
+        "Maven pom.xml"
+      ],
+      "read": [
+        "Java source code: ValueReader.java"
+      ],
+      "not_read": [
+        "Maven pom.xml"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded memory allocation via length-prefix fields",
+        "Recursive data structure parsing without depth limits",
+        "Potential integer overflow in timestamp multiplication"
+      ],
+      "reported": [
+        "Unbounded memory allocation via length-prefix fields",
+        "Recursive data structure parsing without depth limits"
+      ],
+      "dropped": [
+        {
+          "label": "Potential integer overflow in timestamp multiplication",
+          "resolution": "refuted",
+          "reason": "Line 269 multiplies in.readLong() * 1000. Both operands are long (64-bit), so multiplication result fits in long without overflow.",
+          "control_at": "ValueReader.java:269"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation in AMQP binary deserialization",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 88,
+        "component": "ValueReader.readBytes()"
+      },
+      "evidence": "readBytes() allocates byte[contentLength] where contentLength is read from untrusted AMQP wire protocol (line 86). The check at line 87 allows allocation up to Integer.MAX_VALUE - 1 bytes (~2.1 GB). Called recursively from readLongstr(), readTable(), readArray() via readFieldValue().",
+      "impact": "Denial of Service: attacker can send AMQP message with oversized length-prefix to cause OutOfMemoryError, crashing the client or server.",
+      "preconditions": "Attacker can send AMQP protocol messages to a RabbitMQ client using this library. No authentication required if client connects to attacker-controlled broker.",
+      "recommendation": "Implement a configurable maximum size limit for field values (e.g., 128 MB). Check contentLength against this limit before allocation. Apply same limit to readTable() and readArray() methods. Consider implementing streaming decompression instead of loading entire values into memory.",
+      "traceability": [
+        "CWE-502: Deserialization of Untrusted Data",
+        "CWE-770: Allocation of Resources Without Limits or Throttling",
+        "OWASP A08:2021 Software and Data Integrity Failures"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "contentLength is directly read from untrusted DataInputStream at line 86 with no validation before use"
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control in readBytes() prevents the allocation. TruncatedInputStream is only created after the byte array is already allocated"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is in the shipped artifact, not debug-only"
+        }
+      ],
+      "limits": "This finding assumes standard JVM memory constraints. Real-world impact depends on available heap size and whether connection is from untrusted network or internal.",
+      "unaided_label": "Unbounded memory allocation via length-prefix fields"
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursion depth in AMQP field value deserialization",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 181,
+        "component": "ValueReader.readFieldValue()"
+      },
+      "evidence": "readFieldValue() is recursive. Case 'F' (line 181) calls readTable(), which calls readFieldValue() in a while loop (line 150). Case 'A' (line 184) calls readArray(), which calls readFieldValue() in a while loop (line 245). No recursion depth counter or maximum nesting level enforced. Attack vector: send nested table structure Table{Table{Table{...}}} 10,000+ levels deep.",
+      "impact": "Denial of Service: attacker can cause StackOverflowError by crafting deeply nested AMQP table or array structures, crashing the client.",
+      "preconditions": "Attacker can send AMQP protocol messages with nested table/array structures. Connection to attacker-controlled or compromised broker.",
+      "recommendation": "Implement a maximum recursion depth counter in readFieldValue(). Increment on entry, decrement on exit, throw exception if depth exceeds limit (e.g., 100 levels). Alternatively, convert recursive descent parser to iterative with explicit stack management.",
+      "traceability": [
+        "CWE-674: Uncontrolled Recursion",
+        "CWE-789: Memory Allocation with Excessive Size Value",
+        "OWASP A03:2021 Injection"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nesting depth is attacker-controlled through AMQP message structure; not constant"
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists in the code to limit recursion depth"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This recursive code path is shipped in production artifact"
+        }
+      ],
+      "limits": "Stack overflow reliability varies by JVM implementation, frame size, and available stack space. Typical exhaustion at 10K-100K nesting levels. Does not affect applications that validate message structure before parsing.",
+      "unaided_label": "Recursive data structure parsing without depth limits"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Integer overflow in timestamp computation",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java:269 multiplication of long * long fits in 64-bit signed integer for all valid Unix timestamps"
+    }
+  ]
+}
