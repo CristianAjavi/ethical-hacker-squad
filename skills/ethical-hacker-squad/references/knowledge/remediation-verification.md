@@ -1,8 +1,10 @@
 # Knowledge pack - verifier
 
-> **When to load this file:** whenever you are checking somebody else's work - a patch in `harden` or `verify` mode (`VER-01`..`VER-08`), or **a finished finding list in `audit` mode, before the report leaves** (`VER-09`).
+> **When to load this file:** whenever you are checking somebody else's work - a patch in `harden` or `verify` mode (`VER-01`..`VER-08`).
 > **Do not load it if:** you are the one repairing. That is the sibling file, [remediation.md](remediation.md), which holds `REM-01`..`REM-07`. Never the same agent for both.
-> **Cost:** ~250 lines.
+>
+> **A stage that attacks the finished list in `audit` mode was written, measured and removed.** It bought the best precision this project has recorded and paid for it by deleting a true defect from every run. The measurement is in `bench/runs/2026-08-21-critic-stage/`; it is not doctrine here because the corpus does not ask a reviewer to do it.
+> **Cost:** ~222 lines.
 
 ## Selective loading index
 
@@ -13,7 +15,6 @@
 | §8 Verification outcome | you are about to report the state of a fix | VER-05 |
 | §9 Tooling limits | you are relying on SAST, linters or scanners | VER-06 |
 | §10 What was not checked | always, at closing | VER-07 |
-| §11 Attacking the finished list | `audit` mode, before the report leaves | VER-09 |
 
 ## How to use a procedure
 
@@ -218,34 +219,3 @@ A closing table with: what was left unchecked, why (lack of environment, data, a
 **Traceability**: internal process; the skill's security contract
 **Tooling**: none. This is report discipline, and it is what separates a verification from a declaration.
 
-### VER-09 Attack the finished list, in `audit` mode, where there is no patch to verify
-
-**Where to look**
-Every `confirmed` and `probable` finding, after the specialist stopped writing and before the report leaves. You did not find them, and you are not being asked whether they are well written.
-
-**Vulnerable pattern**
-A squad that triages *while* it writes and then ships. Triage inside the act of writing is the author checking their own work at the moment they are most committed to it — not an attack from a context that never wanted the finding to be true.
-
-Measured, not asserted. Three arms, one target, a weak model, every claim checked twice by independent adversarial verifiers: a competing product with an explicit stage for this refuted **53%** of its own claims; this corpus, triaging only while writing, **62%**; unaided review with no method, **68%**. The stage is the difference — and this corpus already had the adversarial role, `VER-01`, wired only to `harden` where a patch exists. In `audit` nothing ever invoked it, so the list shipped unattacked.
-
-**What rules it out (false positive)**
-Nothing rules out running it; it costs one pass. What changes is the standard: with no patch and no reproduction you are attacking a claim about code, so the only evidence that counts is the code.
-
-Rules: FP-01, FP-02, FP-08.
-
-**Minimal test**
-For each finding, in this order:
-
-1. Try to find the line that kills it: a bound that is enforced, a guard that catches it, a caller that cannot reach it, a factual error about the code, or the absence of any attacker who could exercise it.
-2. Only when you have genuinely failed, let it stand.
-
-Three outcomes, and the third is not a courtesy:
-
-- **killed** — into `ruled_out` with the line you relied on. It never just disappears: a finding written and then refuted is information the reader wants.
-- **stands** — it survived an attack, a stronger claim than it had before.
-- **undecidable here** — the answer lives outside the scope. That is `probable` with `what_would_settle_it`, never silence and never a polite `stands`.
-
-Two failures this stage is for, both seen in real runs of this corpus and of the competitor: a claim that **states the code backwards**, and a claim whose premise is **inverted by the guard it cites**. Both read fluently; neither survives one hostile reading.
-
-**Traceability**: internal process; the triage rules are the questions, and this is the pass that asks them again from a context that never wanted the finding to be true
-**Tooling**: none. No scanner tells you a claim describes the opposite of what the code does.

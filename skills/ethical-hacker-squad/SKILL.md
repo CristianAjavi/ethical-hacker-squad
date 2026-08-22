@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,237 lines across eighteen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,207 lines across eighteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
@@ -104,13 +104,7 @@ In `harden` mode, order changes by risk and start with small high-value fixes. P
 
 The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both. It runs relevant tests, available static analysis and negative checks, then records what was checked, what was not, and why.
 
-### 8. Attack the list before it ships
-
-**In `audit` mode too, and this is the step that was missing.** Every `confirmed` and `probable` finding goes to `ehs-verifier` in a fresh context, under `VER-09`, whose only job is to kill it: find the enforced bound, the guard, the unreachable caller, the factual error about the code. Survivors ship. Casualties move to `ruled_out` with the line that killed them — never silently dropped. What cannot be decided inside the scope is `probable` with `what_would_settle_it`.
-
-Measured, three arms on one target: a competing product with this stage refuted 53% of its own claims, this corpus without it 62%, unaided review 68%. The adversarial role already existed and was wired only to `harden`, where a patch exists; in `audit` nothing invoked it and the list shipped unattacked.
-
-### 9. Deliver the report
+### 8. Deliver the report
 
 Consolidate duplicates and separate confirmed findings, probable risks pending validation, hardening improvements, and tests not run for authorization or environment reasons. Declare coverage honestly using `references/traceability.md`: name the standard families you actually exercised and the ones you did not.
 

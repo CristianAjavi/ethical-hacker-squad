@@ -231,8 +231,24 @@ def main() -> int:
         # rather than merely asserted.
         up = (data.get("engagement") or {}).get("unaided_pass")
         if isinstance(up, dict):
-            cand = set(up.get("candidates") or [])
-            kept = set(up.get("reported") or [])
+            # These are declared as arrays of strings. A run that writes objects
+            # here used to crash this validator with TypeError instead of being
+            # told what was wrong - and a crash is not a verdict, it is a gate
+            # that could not measure. Found by a real run, not by reasoning.
+            def _labels(field):
+                raw = up.get(field) or []
+                if not isinstance(raw, list):
+                    fail(f"engagement.unaided_pass.{field} must be a list of short labels, not "
+                         f"{type(raw).__name__}")
+                    return set()
+                bad = [x for x in raw if not isinstance(x, str)]
+                for x in bad:
+                    fail(f"engagement.unaided_pass.{field} contains a {type(x).__name__} where a short "
+                         "label string belongs; the set arithmetic this field exists for cannot run over it")
+                return {x for x in raw if isinstance(x, str)}
+
+            cand = _labels("candidates")
+            kept = _labels("reported")
             dropped_rows = up.get("dropped") or []
             gone = set()
             ids = {f.get("id") for f in (data.get("findings") or []) if isinstance(f, dict)}
