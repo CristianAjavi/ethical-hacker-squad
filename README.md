@@ -4,6 +4,22 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 > **Authorized use only.** This skill is for auditing systems you own or have explicit permission to test. Its safety contract forbids persistence, exfiltration, destruction, denial of service, real phishing, stealth evasion and lateral movement, and requires authorization before scanning remote targets, exploiting a vulnerability, or touching production.
 
+## What it is measured to do, and what it is not
+
+This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
+
+**Sixteen blinded measurements against the same model working with no corpus at all — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
+
+One measurement is larger than the comparison: across twelve weak-model runs and 54 claims, **neither arm produced a single true finding beyond the two the ground truth already named.** Everything else was refuted by two independent adversarial verifiers.
+
+What *is* measured, and is narrower than "finds more":
+
+- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format has no field for;
+- a **coverage declaration** that must resolve every surface it inventories as read or not-read, so a reader can tell silence from a clean bill — a blinded reader test caught one of our own reports failing exactly that, which is why a validator now enforces it;
+- **zero decoys reported** on eleven constructs built to be mistaken for the defect beside them.
+
+Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
+
 ## What makes it different
 
 Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,186 lines of corpus across eight role packs, with 163 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
