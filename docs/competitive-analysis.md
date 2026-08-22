@@ -50,7 +50,7 @@ product in this document, ours included. See §3.4.
 | AgSec | `msoedov/agentic_security` | Apache-2.0 (no NOTICE file) | 1,965 | 275 | 2024-04-11 | 2026-07-31 | Black-box jailbreak scanner: fires HuggingFace prompt datasets at an LLM endpoint and reports a refusal rate |
 | Mantis | `google/mantis` | Apache-2.0 | 751 | 86 | 2026-06-15 | 2026-08-15 | 17 markdown skills forming a state machine over code review; ships **zero** vulnerability knowledge, all rigour is in the verification contract. **Corrected 2026-08-21 by fetching it:** at commit `5f76be0` it ships **33** skills, and it was run here on four targets — see the two runs cited above |
 | **EHS** | `CristianAjavi/ethical-hacker-squad` | MIT | 0 | 0 | — | 2026-08-16 | This repository: 122 six-field procedures, 8 subagents, 6 gates, audit-only |
-| **EHS**, as of 2026-08-21 | same | MIT | — | — | — | 2026-08-21 | **160** six-field procedures across 17 files, 8 subagents, **18 gates** (every one the requirements document declares now runs, eight with their own negative-proof battery), 8 bench cases with 39 planted defects and 38 decoys, and six published measurement runs |
+| **EHS**, as of 2026-08-22 | same | MIT | — | — | — | 2026-08-22 | **164** six-field procedures across 19 files, 9 subagents, **22 gates** (every one the requirements document declares now runs; 18 of them need neither a live repository nor an open PR, and **15 carry their own negative-proof battery**), 8 bench cases with 39 planted defects and 38 decoys, and **28 published measurement runs** — 10 of them pre-registered before any result existed, and **one retracted in place under a banner** |
 
 ---
 
