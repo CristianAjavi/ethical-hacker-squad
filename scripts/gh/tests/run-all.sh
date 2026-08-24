@@ -74,6 +74,8 @@ suite "apply-governance.sh against a simulated API (rc=0 is reachable)" \
   bash "$SP/test-governance-rc0.sh"
 suite "NEGATIVE: no declared protection field is left unwatched" \
   bash "$SP/test-governance-drift.sh"
+suite "battery-detects: a battery that proves nothing" \
+  bash "$SP/test-battery-detects.sh"
 
 echo ""
 echo "==============================================================="
