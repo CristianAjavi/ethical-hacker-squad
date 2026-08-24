@@ -1,0 +1,84 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded attacker-controlled heap allocation when decoding long strings and byte fields (missing length-vs-available check)",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 87,
+      "severity": "high",
+      "impact": "Any peer that can put a field on the wire can make the client JVM attempt a single ~2 GiB allocation from a 5-byte input, producing OutOfMemoryError. This is not scoped to the connection: an OOM takes down unrelated work in the same JVM, and the attack is cheap enough to repeat. Reachable pre-authentication, because the client parses the connection.start server-properties table (readTable -> readFieldValue 'S' -> readLongstr -> readBytes) before it authenticates, so a rogue, compromised or MITM'd broker can OOM the client during the handshake; post-authentication it is reachable from message headers and basic properties.",
+      "evidence": "readBytes() trusts the 32-bit length prefix and allocates before reading any payload: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength]; in.readFully(buffer); return buffer; } else { throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\"); }`. The only guard rejects lengths >= Integer.MAX_VALUE, so 0x7FFFFFFE (2147483646) is accepted and allocated; contentLength is never compared with the bytes actually remaining in the enclosing frame or TruncatedInputStream, and the readFully() that would fail happens only after the array exists. Upstream main has this check and this file does not: `final int available = in.available(); // make sure the content length is consistent with the frame size; if (contentLength > available) throw new MalformedFrameException(\"Claimed length \" + contentLength + \" exceeds available data (\" + available + \" bytes)\");` This file is therefore a regression against the hardened upstream version.",
+      "recommendation": "Restore a consistency check before allocating: reject with MalformedFrameException when the declared length exceeds the bytes still available in the enclosing frame/TruncatedInputStream, and additionally cap it with a configurable ceiling (the client already exposes maxInboundMessageBodySize). Do not rely on available() alone as the bound if the class can be handed a non-buffered stream (see F-003); prefer an explicit remaining-bytes budget threaded through the reader, or read into a growable buffer in bounded chunks."
+    },
+    {
+      "id": "F-002",
+      "title": "Uncontrolled recursion on nested tables and arrays (missing MAX_FIELD_VALUE_NESTING_DEPTH) leads to StackOverflowError",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 181,
+      "severity": "high",
+      "impact": "A single small frame containing deeply nested field-tables/field-arrays drives unbounded mutual recursion and raises StackOverflowError on the connection's I/O thread. Because it is an Error rather than the IOException/MalformedFrameException the frame handler is written for, it unwinds out of the parser, tears down the connection, and can leave partially built state behind; repeated frames make it a cheap, repeatable denial of service. Nesting costs only 5 bytes per level in an array ('A' plus a 4-byte length) and 6-7 bytes per level in a table, so a normal 128 KiB frame yields on the order of 25,000 recursion levels, far beyond a default JVM thread stack. Like F-001 this is reachable pre-authentication through the connection.start server-properties table.",
+      "evidence": "The recursion has no depth parameter and no guard: readFieldValue() dispatches `case 'F': value = readTable(in); break;` (line 181) and `case 'A': value = readArray(in); break;` (line 184); readTable() (line 139) loops `String name = readShortstr(tableIn); Object value = readFieldValue(tableIn);` and readArray() (line 237) loops `Object value = readFieldValue(arrayIn); array.add(value);`. Nothing tracks or limits how deep the cycle readFieldValue -> readTable/readArray -> readFieldValue goes. Upstream main declares `static final int MAX_FIELD_VALUE_NESTING_DEPTH = 32;` and threads a depth argument through both readers (`private static Map<String, Object> readTable(DataInputStream in, int depth)` / `private static List<Object> readArray(DataInputStream in, int depth)`, each opening with `if (depth > MAX_FIELD_VALUE_NESTING_DEPTH) throw new MalformedFrameException(\"Too many levels of nested tables/arrays ...\")`). Those declarations and checks are entirely absent from this file.",
+      "recommendation": "Restore the depth limit: add MAX_FIELD_VALUE_NESTING_DEPTH (32 upstream), thread an int depth through readFieldValue/readTable/readArray, and throw MalformedFrameException as soon as it is exceeded. Keep the public no-depth overloads as thin wrappers that start at depth 0 so callers cannot bypass the check."
+    },
+    {
+      "id": "F-003",
+      "title": "Table and array framing is bounded only by InputStream.available(), which silently truncates and can desynchronize the parse",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 148,
+      "severity": "medium",
+      "impact": "available() is a hint, not an end-of-stream signal. ValueReader's constructor is public and its javadoc advertises 'streaming over the given DataInputStream', so a caller can legitimately hand it a socket-backed stream; whenever the kernel buffer is momentarily empty mid-table the loop terminates early. Fields are then dropped with no exception raised and no indication to the caller (a consumer simply does not see a header it was relying on, e.g. an authorization or routing attribute), and the bytes that were not consumed remain in the underlying stream where they are subsequently decoded as the next value or the next method argument, i.e. parser desynchronization with attacker-chosen leftover bytes. The same weakness makes available() a fragile basis for the F-001 size check.",
+      "evidence": "readTable() drives its loop with `while(tableIn.available() > 0) { String name = readShortstr(tableIn); Object value = readFieldValue(tableIn); ... }` (line 148) and readArray() with `while(arrayIn.available() > 0) { ... }` (line 244). Neither verifies afterwards that the TruncatedInputStream limit was fully consumed, and neither validates the declared length against the enclosing frame beforehand: `long tableLength = unsignedExtend(in.readInt());` (line 142) and `long length = unsignedExtend(in.readInt());` (line 240) accept anything up to 4294967295 and pass it straight to `new TruncatedInputStream(in, ...)`.",
+      "recommendation": "Do not use available() as the loop terminator or as a length oracle. Track the declared table/array length explicitly, count consumed bytes, and stop at exactly that count; reject with MalformedFrameException if the declared length exceeds the enclosing frame's remaining bytes or if the body does not consume the declared length exactly. If the class is only ever meant to be fed a fully buffered stream, make that a hard precondition (fully-buffered wrapper, private constructor, or an explicit remaining-bytes budget) rather than an implicit assumption of a public API."
+    },
+    {
+      "id": "F-004",
+      "title": "Duplicate table keys are silently resolved first-wins, creating a parser differential on security-relevant headers",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 151,
+      "severity": "low",
+      "impact": "The wire format permits a field name to appear more than once in a table; this decoder keeps the first occurrence and silently discards every later one, with no error and no signal to the caller. Other components in the path (the broker, non-Java clients, proxies) are not guaranteed to resolve duplicates the same way. An attacker able to append a second copy of a security-relevant header (tenant identifier, signature, expiry, routing hint) can therefore make this client act on a different value than the component that inspected the message before it, which is the classic shape of a request-smuggling/authorization-bypass primitive at the application layer.",
+      "evidence": "`while(tableIn.available() > 0) { String name = readShortstr(tableIn); Object value = readFieldValue(tableIn); if(!table.containsKey(name)) table.put(name, value); }` - the containsKey guard drops later duplicates silently. The dropped value has already been fully parsed, so the choice is purely about which one the caller sees.",
+      "recommendation": "Reject duplicate field names with MalformedFrameException rather than picking one silently, which is the only behaviour that cannot differ from a peer's interpretation. If backward compatibility forbids that, document the first-wins rule explicitly in the public API and log at warn level so operators can detect the condition."
+    },
+    {
+      "id": "F-005",
+      "title": "Lenient UTF-8 decoding of table keys allows distinct wire bytes to collide on the same map key",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 70,
+      "severity": "low",
+      "impact": "new String(bytes, charset) uses the REPLACE action: malformed, truncated or overlong UTF-8 is silently rewritten to U+FFFD instead of being rejected. Many different byte sequences therefore decode to the same String, so an attacker can craft a key whose bytes differ from a legitimate header but whose decoded form is identical. Combined with the first-wins duplicate rule (F-004), a crafted key placed before the genuine one shadows it in the resulting map, and the application never learns that the bytes on the wire were not what it thinks it read.",
+      "evidence": "`private static String readShortstr(DataInputStream in) throws IOException { byte [] b = new byte[in.readUnsignedByte()]; in.readFully(b); return new String(b, \"utf-8\"); }` - no validation of the byte sequence, and the charset is looked up by name (which also forces the caller to handle UnsupportedEncodingException for a charset that is guaranteed present).",
+      "recommendation": "Decode with a CharsetDecoder obtained from StandardCharsets.UTF_8 and configured with onMalformedInput(CodingErrorAction.REPORT) and onUnmappableCharacter(CodingErrorAction.REPORT), converting a CharacterCodingException into MalformedFrameException. At minimum switch to StandardCharsets.UTF_8 instead of the string literal."
+    },
+    {
+      "id": "F-006",
+      "title": "Silent 64-bit overflow when converting an AMQP timestamp to java.util.Date",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 269,
+      "severity": "low",
+      "impact": "The AMQP timestamp is a peer-supplied 64-bit POSIX seconds value. Multiplying it by 1000 in long arithmetic overflows silently for magnitudes above roughly 9.2e15, wrapping to an arbitrary and possibly negative instant. Applications that use the message timestamp for freshness, expiry or replay decisions can be handed a Date that bears no relation to the value actually sent, and the wrap is fully attacker-controlled: a chosen input maps to a chosen bogus output.",
+      "evidence": "`private static Date readTimestamp(DataInputStream in) throws IOException { return new Date(in.readLong()*1000); }` - no range check on the value read and no overflow-checked multiply.",
+      "recommendation": "Use Math.multiplyExact (or an explicit range check against Long.MAX_VALUE/1000 and Long.MIN_VALUE/1000) and throw MalformedFrameException on out-of-range values, rather than producing a wrapped Date."
+    },
+    {
+      "id": "F-007",
+      "title": "readTable returns an immutable map for empty tables and a mutable HashMap otherwise, letting a peer toggle an exception path in consumer code",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 143,
+      "severity": "low",
+      "impact": "The mutability of the returned map depends on data the peer controls. Consumer code that reads headers and then adds to or removes from the returned map works for every message with at least one header and throws UnsupportedOperationException the moment a peer sends a message whose headers table is empty. That makes an unhandled-exception path in downstream message handling directly selectable by the sender - a cheap way to poison a consumer or force repeated redelivery/dead-lettering.",
+      "evidence": "`if (tableLength == 0) return Collections.emptyMap();` on the empty path, versus `Map<String, Object> table = new HashMap<String, Object>();` returned on every other path.",
+      "recommendation": "Return the same type in both cases - either always a fresh mutable HashMap (`return new HashMap<String, Object>()` for the empty case) or wrap every result in Collections.unmodifiableMap so callers get one consistent, documented contract."
+    },
+    {
+      "id": "F-008",
+      "title": "Release signing key selected by a 32-bit short OpenPGP key ID",
+      "file": "pom.xml",
+      "line": 124,
+      "severity": "low",
+      "impact": "32-bit short key IDs are cheap to collide (demonstrated publicly against the whole strong set of the keyserver network). maven-gpg-plugin passes the value straight to gpg as the local-user selector, so if a key with a colliding short ID is ever present in the signing machine's keyring - planted, imported by accident, or fetched from a keyserver - gpg can select the wrong key and the released artifacts get signed by it. That is a supply-chain integrity risk on the one step whose entire purpose is proving artifact provenance.",
+      "evidence": "`<gpg.keyname>6026DFCA</gpg.keyname>` (line 124), consumed by both release profiles as `<keyname>${gpg.keyname}</keyname>` (lines 287 and 335) in the maven-gpg-plugin sign execution.",
+      "recommendation": "Pin the full 40-hex-character key fingerprint instead of the short ID, and have CI fail the release if the fingerprint of the key actually used does not match the expected value."
+    }
+  ]
+}

@@ -1,0 +1,399 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern4/certificates/target/lemur/certificates - the certificate module of a Flask certificate-management service: lemur/certificates/views.py (1909 lines, 15 flask_restful resources) and lemur/certificates/service.py (1455 lines, service layer).",
+    "commit": "not available: the target was supplied as two loose source files with no VCS metadata in reach, so findings are anchored by path and line number instead.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (extern4/corpus), web-api role",
+    "coverage_declaration": "Exercised, by static reading only: every HTTP resource registered in views.py:1853-1909 and every function in service.py. Packs opened: web-api.md SS0-SS4 (WEB-01..WEB-10) and web-api-clientside-logic.md SS7-SS9 and SS11 (WEB-15..WEB-19, WEB-22, WEB-23), routed by coverage.md rows 'HTTP routes, controllers' and 'ORM usage, raw SQL'. NOT exercised: nothing was executed, no request was issued, no test was run, and no network was used. NOT in scope and therefore not read, although several findings depend on them: lemur/certificates/schemas.py (the marshmallow input and output schemas that constrain every 'data' argument), lemur/database.py (database.filter, database.sort_and_page, database.update), lemur/auth/service.py and lemur/auth/permissions.py (AuthenticatedResource, CertificatePermission, AuthorityPermission, StrictRolePermission), lemur/domains/service.py (is_authorized_for_domain), lemur/certificates/models.py, lemur/logs/service.py and every plugin under lemur/plugins. Deployment configuration was not provided, so no value of CERTIFICATE_CREATE_REQUEST_VALIDATION, CERTIFICATE_UPDATE_REQUEST_VALIDATION, CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION, ALLOW_CERT_DELETION or CERT_NAME_RESOLVER could be established. Surfaces with no coverage here because they are absent from the two files: front-end code, CSP and CORS configuration, rate limiting, session and cookie configuration, and dependency inventory. A clean result on an unread file is not a clean file: see ruled_out for the bound of each negative.",
+    "authorization": "Read-only static audit of an authorized target, per the engagement brief. No remote host was contacted, no active or network test was run, and the target was neither modified nor executed; no authorization for active testing was requested or used."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Certificate export runs its authorization check only inside the requires_key branch",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 1577,
+        "component": "CertificateExport.post - POST /certificates/<int:certificate_id>/export"
+      },
+      "evidence": "views.py:1570-1621. The handler loads any certificate by client-supplied id, takes the export plugin from the request body (`plugin = data[\"plugin\"][\"plugin_object\"]`, line 1575), and then nests its only authorization check two levels deep:\n\n  1577  if plugin.requires_key:\n  1578      if not cert.private_key:  -> 400\n  1588      else:\n  1590          if g.current_user != cert.user:\n  1592              permission = CertificatePermission(owner_role, [x.name for x in cert.roles])\n  1596              if not permission.can():  -> 403\n  1604  options = data[\"plugin\"][\"plugin_options\"]\n  1606  log_service.create(g.current_user, \"key_view\", certificate=cert)\n  1607  extension, passphrase, data = plugin.export(cert.body, cert.chain, cert.private_key, options)\n\nWhen the caller selects a plugin whose `requires_key` is false, no branch of lines 1577-1602 executes, so no CertificatePermission check runs at all - yet line 1607-1609 still hands `cert.private_key` to that plugin unconditionally, and line 1606 still records the call as a `key_view`. The authorization decision is therefore delegated to a plugin capability flag chosen by the requester, not to a permission. Every sibling handler in the file (views.py:734, 942, 1097, 1154, 1270, 1677, 1754, 1829) runs the same CertificatePermission check unconditionally at the top of the handler; this one is the single exception.",
+      "impact": "An authenticated user with no relationship to the certificate reaches the export path for any certificate id, bypassing the ownership and role check every other certificate mutation and key-read enforces. The material returned is whatever the selected plugin produces from `cert.body`, `cert.chain` and `cert.private_key`; the private key is passed in regardless of the flag, so the exposure is bounded only by plugin behaviour rather than by an access decision.",
+      "preconditions": "A valid authenticated session (AuthenticatedResource) and at least one registered export plugin whose `requires_key` attribute is false. No role, ownership or membership is needed.",
+      "recommendation": "Move the CertificatePermission check out of the `if plugin.requires_key:` branch and run it unconditionally, immediately after the 404 check at views.py:1573, exactly as CertificatePrivateKey.get does at views.py:734. Do not let a request-selected plugin attribute decide whether an authorization check runs. Additionally, stop passing `cert.private_key` to plugins that declare they do not need it: pass `None` when `plugin.requires_key` is false, so the flag becomes a real capability boundary rather than a hint.",
+      "inference": "Whether a plugin that declares `requires_key = False` actually emits material derived from the private key it is handed at views.py:1607 was not observed: lemur/plugins is outside the audited scope. The missing authorization check is observed directly; the size of what it exposes is the inferred link.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "CWE-639",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only authorization construct on this route is the one inside the skipped branch. AuthenticatedResource establishes identity, not object permission - views.py:734 and views.py:942 show that the module expects an explicit CertificatePermission check per handler, and no mandatory middleware performs it, since eight other handlers each write it out by hand."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "The sink is `plugin.export(cert.body, cert.chain, cert.private_key, options)` at views.py:1607. What a requires_key=False plugin does with the third argument cannot be read: lemur/plugins was not in the audited scope. This is why the finding is probable and not confirmed."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named explicitly: `cert.user` and the certificate's owner role at views.py:1590-1592. The handler is reached by any authenticated user for any certificate id, so the boundary crossed is between distinct certificate owners."
+        }
+      ],
+      "limits": "This does not establish that any specific deployed plugin leaks key material, and it does not establish what CertificatePermission.can() would have returned for a given user. It establishes only that on this route the check does not run at all for one class of request."
+    },
+    {
+      "id": "F-002",
+      "title": "The export-key validation hook has one reader and the second key-egress route is not it",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 741,
+        "component": "CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION - CertificatePrivateKey.get vs CertificateExport.post"
+      },
+      "evidence": "The deployment-supplied gate on private-key egress is read exactly once in the audited scope:\n\n  views.py:741  if current_app.config.get(\"CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION\"):\n  views.py:742      message, code = current_app.config.get(\"CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION\")(cert, g.current_user)\n\n`grep -n 'CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION' views.py service.py` returns those two lines and nothing else. Both are inside CertificatePrivateKey.get (GET /certificates/<id>/key).\n\nThere are two routes in this module that put private-key material on the wire, and the code itself says so: both call `log_service.create(g.current_user, \"key_view\", certificate=cert)` - views.py:746 for the key route and views.py:1606 for CertificateExport.post (POST /certificates/<id>/export, registered at views.py:1890-1894). The export route never consults the hook. The same asymmetry does not exist for the create hook, which is read on both creation routes (views.py:517 and views.py:662), or for the update hook, read on all four update routes (views.py:952, 1107, 1280, 1843) - which is what makes this one look like an omission rather than a design.",
+      "impact": "A deployment that installs CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION to gate key export - a break-glass approval, a ticket reference, an audit callback - has that gate applied on /certificates/<id>/key and not on /certificates/<id>/export. A caller who would be refused on the first route obtains the same class of material by choosing the second, and the operator has no signal that the control was skipped.",
+      "preconditions": "The deployment configures CERTIFICATE_EXPORT_KEY_REQUEST_VALIDATION (it is optional and unset by default), and the caller passes the export route's own permission check - or, per F-001, chooses a plugin for which that check does not run.",
+      "recommendation": "Call the same hook in CertificateExport.post before line 1607, with the same `(cert, g.current_user)` signature, whenever the resolved plugin will receive `cert.private_key`. Better, put both routes behind one `export_private_key(cert, user)` service function that owns the permission check, the config hook and the audit record, so a future third egress route cannot silently miss any of the three.",
+      "inference": "That the hook is configured in the target deployment, and that no module outside the two audited files also invokes it on the export path, are both inferred: no deployment configuration was supplied and lemur/ outside this package was not read. Per WEB-23 that makes the answer UNKNOWN, not a clean bill.",
+      "traceability": [
+        "CWE-863",
+        "CWE-284",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The control is a deployment-supplied callable held in Flask config, and no configuration artifact, ticket or written statement about it arrived with the target. WEB-23 and FP-08 both say that absence of the configuration is UNKNOWN and never HOLDS, so this finding is capped at probable and is written down rather than dropped."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it looks like: an ordinary `current_app.config.get(...)` callable invoked with `(cert, g.current_user)` at views.py:742. It is not a decorator applied elsewhere, not dependency injection, and not consumed by name - the identical pattern is written out explicitly on six other handlers in the same file."
+        }
+      ],
+      "limits": "This does not establish what the hook does when configured, nor that the export route is exploitable on its own. It establishes that a control the codebase reads on one private-key route is not read on the other."
+    },
+    {
+      "id": "F-003",
+      "title": "Certificate upload skips the create-request validation hook when destinations are supplied",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 655,
+        "component": "CertificatesUpload.post - POST /certificates/upload"
+      },
+      "evidence": "views.py:651-666, the whole handler body after the role gate:\n\n  651  if not StrictRolePermission().can():  -> 403\n  654  data[\"creator\"] = g.user\n  655  if data.get(\"destinations\"):\n  656      if data.get(\"private_key\"):\n  657          return service.upload(**data)          <- returns here\n  658      else:\n  659          raise Exception(\"Private key must be provided in order to upload certificate to AWS\")\n  662  if current_app.config.get(\"CERTIFICATE_CREATE_REQUEST_VALIDATION\"):\n  663      message, code = current_app.config.get(\"CERTIFICATE_CREATE_REQUEST_VALIDATION\")(data)\n  664      if message and code:\n  665          return dict(message=message), code\n  666  return service.upload(**data)\n\nThe early return at line 657 is upstream of the validation hook, so any upload carrying a non-empty `destinations` list together with a `private_key` reaches `service.upload(**data)` without the hook ever being called. The sibling creation route runs the same hook with no such escape (views.py:517-520), and additionally validates the owner (views.py:514) and the issuance authorization (views.py:535-541); this route does neither. The `raise` at line 659 is also an uncaught exception used as an input-validation failure, so a request with destinations and no key produces a 500 rather than a 4xx.",
+      "impact": "A deployment-installed create-time control - the hook operators use to enforce naming policy, owner policy, or an approval reference - is bypassed by adding a destination to the request. The bypassed path is the more privileged of the two, because it is the branch that pushes the certificate and its private key to an external destination such as a cloud account.",
+      "preconditions": "A valid session that passes StrictRolePermission, the deployment configuring CERTIFICATE_CREATE_REQUEST_VALIDATION, and a request body carrying both `destinations` and `private_key`.",
+      "recommendation": "Run the CERTIFICATE_CREATE_REQUEST_VALIDATION block before the `if data.get(\"destinations\")` branch, so a single ordered gate covers both exits; then replace the `raise Exception(...)` at line 659 with an explicit 400 response. Structurally, the check belongs in `service.upload()` where both exits converge, so a later branch cannot reintroduce the skip.",
+      "inference": "That the deployment configures CERTIFICATE_CREATE_REQUEST_VALIDATION is inferred, not observed: it is an optional Flask config value and no configuration was supplied. If it is unset, the ordering defect is latent rather than live.",
+      "traceability": [
+        "CWE-863",
+        "CWE-20",
+        "WSTG-BUSL-*",
+        "ASVS 5.0 V2",
+        "A01:2025",
+        "API6:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Whether the hook is configured lives outside the repository, in deployment configuration that did not arrive with the target. FP-08 is explicit that this is UNKNOWN and never HOLDS."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is a plain early `return` inside an `if` at views.py:657, in the same function body as the hook it precedes. There is no decorator, wrapper or later re-entry that would run the hook on that path: `service.upload()` at service.py:478-497 does not call it either."
+        }
+      ],
+      "limits": "This does not establish what the hook enforces when configured, and it does not evaluate StrictRolePermission, which is defined outside the scope. It establishes the ordering: one exit of the handler is upstream of the check."
+    },
+    {
+      "id": "F-004",
+      "title": "Issuance authorization checks only DNSName SANs and ignores every other SAN type",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/service.py",
+        "line": 1369,
+        "component": "allowed_issuance_for_domain, reached from CertificatesList.post"
+      },
+      "evidence": "service.py:1369-1382 in full:\n\n  def allowed_issuance_for_domain(common_name, extensions):\n      check_permission_for_cn = True if common_name else False\n      if extensions and extensions.get(\"sub_alt_names\"):\n          for san in extensions[\"sub_alt_names\"][\"names\"]:\n              if isinstance(san, x509.DNSName):\n                  if san.value == common_name:\n                      check_permission_for_cn = False\n                  is_authorized_for_domain(san.value)\n      if check_permission_for_cn:\n          is_authorized_for_domain(common_name)\n\n`is_authorized_for_domain` is called only under `isinstance(san, x509.DNSName)`. Any other subject-alternative-name type in the same list - x509.IPAddress, x509.UniformResourceIdentifier, x509.RFC822Name, x509.DirectoryName, x509.OtherName - falls through the loop with no authorization call, and does not set `check_permission_for_cn` either. The two guards that skip the function entirely are visible at the call site, views.py:538-539: it runs only when `not g.user.is_admin_or_global_cert_issuer and not data[\"authority\"].is_private_authority`. A request that supplies an empty `common_name` and only non-DNSName SANs passes through the function with zero authorization calls made.",
+      "impact": "A user authorized for no domain at all obtains a certificate carrying names the domain authorization layer never saw. An IPAddress SAN is honoured by TLS clients for direct-to-IP connections, and a UniformResourceIdentifier or RFC822Name SAN is honoured by the client identity and S/MIME paths, so the resulting certificate asserts an identity the requester was never entitled to.",
+      "preconditions": "A valid authenticated session that passes StrictRolePermission and AuthorityPermission for a public (non-private) authority, the caller not being admin or global cert issuer, and the input schema accepting a SAN entry whose type is not x509.DNSName.",
+      "recommendation": "Make the loop fail closed: authorize each SAN by its type - resolve IPAddress and UniformResourceIdentifier through the equivalent ownership check, and reject any SAN type the authorization layer has no rule for, rather than letting it fall through. Assert afterwards that the number of authorization decisions taken equals the number of names in the request, so a new SAN type added to the schema cannot silently arrive unauthorized.",
+      "inference": "That the certificate input schema accepts SAN entries of a type other than x509.DNSName, and that the configured issuer plugin carries them into the issued certificate, are both inferred: lemur/certificates/schemas.py and lemur/plugins were outside the audited scope. The omission in the loop is observed directly.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "CWE-20",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control could live in CertificateInputSchema (lemur/certificates/schemas.py), which is not in the audited scope and which could constrain sub_alt_names to DNSName only. Nothing in the two audited files performs that constraint, and per FP-01 an unread layer is not an established control."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`extensions` and `common_name` are the request body: they arrive as `data[\"extensions\"]` and `data[\"common_name\"]` at views.py:539, straight from the client-supplied JSON parsed by certificate_input_schema. Nothing between the request and the function constrains the SAN list to an allowlist inside these files."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the owner of the domain, IP or URI being asserted - is_authorized_for_domain exists precisely to represent that principal, and the finding is that it is not consulted for those name types."
+        }
+      ],
+      "limits": "This does not establish which SAN types the schema admits, nor that any specific issuer emits them. It establishes that the authorization function reached from the create route makes no decision about them."
+    },
+    {
+      "id": "F-005",
+      "title": "Issuance authorizes the request fields while minting signs the caller's own CSR",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/certificates/service.py",
+        "line": 447,
+        "component": "mint() vs CertificatesList.post authorization"
+      },
+      "evidence": "Authorization and issuance read two different objects.\n\nThe check, views.py:538-539:\n  if not g.user.is_admin_or_global_cert_issuer and not data[\"authority\"].is_private_authority:\n      service.allowed_issuance_for_domain(data[\"common_name\"], data[\"extensions\"])\n\nThe issuance, service.py:446-455:\n  # allow the CSR to be specified by the user\n  if not kwargs.get(\"csr\"):\n      csr, private_key = create_csr(**kwargs)\n  else:\n      csr = str(kwargs.get(\"csr\"))\n      private_key = None\n  cert_body, cert_chain, external_id = issuer.create_certificate(csr, kwargs)\n\nWhen the request carries a `csr`, `create_csr()` - the only function in the module that builds the subject and the SAN extension from `common_name` and `extensions` (service.py:788-871) - is never called. The bytes handed to the issuing authority are the caller's, while the names the authorization function inspected were the separate `common_name` and `extensions` fields of the same request body. Nothing in either audited file compares the two. The module is aware that a caller-supplied CSR is a distinct object: `csr_imported` is a separate signal from `csr_created` (service.py:41-44, 450, 453), and reissue explicitly deletes it before re-creating (service.py:1018-1020).",
+      "impact": "If the two are not bound to each other upstream, a caller authorized for a domain they control sends `common_name` and `extensions` naming that domain, and a `csr` naming a domain they do not, and receives a publicly trusted certificate for the second. That is unauthorized issuance for an arbitrary name - the highest-value outcome this module has.",
+      "preconditions": "A valid session passing StrictRolePermission and AuthorityPermission for a public authority, the caller being neither admin nor global cert issuer, the request carrying a `csr` field, and the input schema not re-deriving or cross-checking the names in that CSR.",
+      "recommendation": "Derive the authorization input from the artifact that will actually be signed: when `csr` is present, parse it and run allowed_issuance_for_domain over the subject CN and the SAN extension read out of the CSR itself, then reject the request if those names differ from `common_name` and `extensions`. Authorize the object you sign, never a parallel description of it.",
+      "inference": "Whether CertificateInputSchema already binds `csr` to `common_name` and `extensions` - by re-deriving them from the CSR or by rejecting a mismatch - was not observed: lemur/certificates/schemas.py is outside the audited scope. That single link is what separates this from a confirmed finding, and it is the first thing a maintainer should check.",
+      "traceability": [
+        "CWE-863",
+        "CWE-345",
+        "CWE-20",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The compensating control this finding needs would be a schema-level validator binding the CSR names to the authorized fields, in lemur/certificates/schemas.py, which was not in the audited scope. FP-01 requires naming the control's location and arguing no path reaches the sink around it; neither can be done from the two files given, so the answer is UNKNOWN and the status is capped at probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`kwargs['csr']` at service.py:447 originates in the request body: views.py:396 receives `data` from certificate_input_schema and passes it to service.create(**data) at views.py:543, which forwards it to mint(**kwargs) at service.py:507. The comment on service.py:446 states the intent outright: 'allow the CSR to be specified by the user'."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the owner of the domain named in the caller's CSR, represented by is_authorized_for_domain, which in this path is asked about a different set of names."
+        }
+      ],
+      "limits": "This does not establish that the schema fails to bind the two, and it does not establish issuer behaviour. It establishes that within the audited files the authorization input and the signed artifact are independent objects, and that no code between them compares the names."
+    },
+    {
+      "id": "F-006",
+      "title": "Query filters are parsed without validation and raise on well-formed but unexpected input",
+      "procedure": "WEB-22",
+      "status": "confirmed",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 146,
+        "component": "CertificatesListValid.get and service.render"
+      },
+      "evidence": "views.py:138-146. `filter` is declared optional - `self.reqparse.add_argument(\"filter\", type=str, location=\"args\")`, with no `required=True` and no default - and is then used as if it were both present and shaped:\n\n  144  args = self.reqparse.parse_args()\n  145  args[\"user\"] = g.user\n  146  common_name = args.pop(\"filter\").split(\";\")[1]\n\nGET /certificates/valid with no `filter` yields None from parse_args, so `.split` raises AttributeError; GET /certificates/valid?filter=cn yields a one-element list, so `[1]` raises IndexError. Neither is caught in the handler.\n\nThe same shape recurs in the service layer at service.py:618-620 - `terms = filt.split(\";\")` then `term = f\"%{terms[1]}%\"` - reached from /certificates, /certificates/name/<name> and /notifications/<id>/certificates; at service.py:661, where `cast(terms[1], Integer)` is applied to an arbitrary string; and at service.py:708-712, where `int(serial_number[2:], 16)` is applied to any value beginning '0x'. Each raises on input the route accepts.",
+      "impact": "The attacker gains nothing beyond an error response: the request is authenticated, the exception is raised before any data-bearing branch, and no attacker-controlled value reaches a dangerous sink. It is recorded because the response body of these 500s is produced by an error handler outside this scope, and because a route that raises on its own documented parameter is the shape under which a real input-validation defect hides.",
+      "preconditions": "Any authenticated session. No role or ownership is required.",
+      "recommendation": "Declare `filter` with `required=True` on CertificatesListValid, and parse it with a helper that validates the `key;value` shape once and returns a 400 on anything else, rather than indexing `[1]` at four separate call sites. Do the same for the '0x' serial branch and the `cast(..., Integer)` id branch, both of which should reject a non-numeric value rather than let the driver raise.",
+      "traceability": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-209",
+        "WSTG-ERRH-*",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer in the audited files constrains the parameter before line 146: reqparse is configured without `required` or `type` coercion beyond str, and `@validate_schema(None, certificates_output_schema)` at views.py:52 validates the response, not the request - its first argument is None."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The path is production code on a registered route: CertificatesListValid is mounted at views.py:1869-1871 as /certificates/valid, with no debug flag or environment guard anywhere in the handler."
+        }
+      ],
+      "limits": "This does not establish what the application's error handler returns for an uncaught exception - that handler is outside the scope - so no claim is made about stack-trace disclosure. It establishes only that the routes raise on inputs they accept."
+    },
+    {
+      "id": "F-007",
+      "title": "Deleted certificates stay readable by id and by name, private key included",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 1164,
+        "component": "Certificates.delete vs service.get / query_name"
+      },
+      "evidence": "Deletion is a flag, and only one read path honours it.\n\nThe write, views.py:1142-1167: the route is gated on `ALLOW_CERT_DELETION`, refuses an already-deleted certificate at line 1150, then performs `service.update(certificate_id, deleted=True)` at line 1164 and returns 'Certificate deleted', 204 at line 1166.\n\nThe reads: `service.get()` is `database.get(Certificate, cert_id)` with no `deleted` predicate (service.py:51-58), and `query_name()` filters on `Certificate.name` alone (service.py:728-738). Every by-identifier route therefore still returns the record after deletion - GET /certificates/<id> (views.py:846), GET /certificates/<id>/key (views.py:729), POST /certificates/<id>/export (views.py:1570), GET /certificates/<id>/replacements (views.py:1494) and GET /certificates/name/<name> (views.py:257). Only the list route excludes them, and only conditionally: service.py:705-706, `if current_app.config.get(\"ALLOW_CERT_DELETION\", False): query = query.filter(Certificate.deleted == false())`.",
+      "impact": "A certificate the API reported as deleted, together with its stored private key, remains retrievable by anyone who still passes its ownership or role check - which is unchanged by the deletion, since neither the roles nor the key are cleared. The operator's mental model after a 204 is that the material is gone; it is only hidden from one listing. The attacker gains nothing they did not already hold, which is what bounds the severity, but the response given to the operator is inaccurate.",
+      "preconditions": "ALLOW_CERT_DELETION enabled, a certificate deleted through the route, and a caller who is its creator or holds its owner role - the same position they held before the deletion.",
+      "recommendation": "Either exclude `deleted` certificates from `service.get()` and `query_name()` so the flag means what the 204 says, or make the delete path clear the private key and the roles as well. Whichever is chosen, make it one decision in the service layer rather than a filter written into one of six read paths.",
+      "traceability": [
+        "CWE-212",
+        "CWE-459",
+        "CWE-200",
+        "ASVS 5.0 V14",
+        "A09:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only place the `deleted` column is consulted on read is service.py:705, inside render(), and it is conditional on ALLOW_CERT_DELETION. No mandatory layer applies it: the by-id routes call service.get() at service.py:57, which is database.get() with no predicate."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The retention is not a declared bounded exposure anywhere in the two files: the route returns the literal string 'Certificate deleted' with 204 at views.py:1166 and the docstring at views.py:1116-1141 describes the operation as 'Delete a certificate', with nothing naming a retention window or a soft-delete contract."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data retained includes `cert.private_key`, returned by GET /certificates/<id>/key at views.py:747. A private key is security-bearing by construction, so this is not the non-sensitive-data exculpation."
+        }
+      ],
+      "limits": "This does not establish the retention policy the operator intended, nor what happens at the database layer in database.update(). It establishes which read paths consult the `deleted` flag and which do not."
+    },
+    {
+      "id": "F-008",
+      "title": "Private-key export through the plugin route leaves no export_private_key audit record",
+      "procedure": "WEB-22",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 1606,
+        "component": "CertificateExport.post audit trail"
+      },
+      "evidence": "The key route writes two records: `log_service.create(g.current_user, \"key_view\", certificate=cert)` at views.py:746, and then a dedicated audit entry at views.py:752-757 carrying who reached it and how - `access_via = \"creator\" if g.current_user == cert.user else \"rbac\"`, plus `creator_id` and `current_owner`, under the action name `export_private_key`.\n\nThe export route writes only the first: views.py:1606 calls `log_service.create(g.current_user, \"key_view\", certificate=cert)` and there is no `audit_log` call anywhere in CertificateExport.post. `grep -n 'audit_log' views.py service.py` returns exactly one hit, views.py:752.",
+      "impact": "No exploit path is claimed. The consequence is on the defender's side: an investigation that pivots on the `export_private_key` action, or on the `access_via` field that distinguishes a creator from an RBAC grantee, sees the key route and not the export route. Combined with F-001 and F-002 the same route is the one where the authorization check and the config hook are also absent, so the least-controlled key-egress path is also the least-recorded one.",
+      "preconditions": "None beyond reaching the export route.",
+      "recommendation": "Emit the same `log_service.audit_log(\"export_private_key\", ...)` record from CertificateExport.post whenever `cert.private_key` is passed to the plugin, with the same access_via, creator_id and current_owner fields. Putting both routes behind one service function, as F-002 recommends, makes the record structural instead of a line a future route can forget.",
+      "traceability": [
+        "CWE-778",
+        "CWE-223",
+        "WSTG-ERRH-*",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mandatory logging layer: both records on the key route are written by hand inside the handler (views.py:746 and views.py:752), which is why the second one is missing from the sibling handler at views.py:1606."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both handlers are registered production routes - views.py:1885-1894 mounts /certificates/<id>/key and /certificates/<id>/export - with no build-time or environment gate on either."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "The export route is not unlogged: `log_service.create(g.current_user, \"key_view\", certificate=cert)` still runs at views.py:1606, so a record of the access exists and only the richer audit entry and its access_via context are missing. That bounds this to a defence-in-depth gap rather than a blind spot, and it is written down rather than dropped."
+        }
+      ],
+      "limits": "This does not establish what log_service.audit_log or log_service.create persist, or where - lemur/logs/service.py is outside the scope. It establishes the asymmetry between two handlers in the same file."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "SQL, ORM and NoSQL injection through the search and pagination parameters",
+      "procedure": "WEB-07",
+      "outcome": "inconclusive",
+      "where": "Every filter branch read in service.render (service.py:592-718), query_name (728-738), query_common_name (741-779) and like_domain_query (720-726) builds SQLAlchemy expressions with bound values - `ilike(term)`, `func.lower(...).like(...)`, `== cast(terms[1], Integer)` - and no f-string, `text()`, `.raw(` or string concatenation reaches a query in either file. `stats()` constrains its metric against an explicit allowlist before `getattr(Certificate, req_metric)` (service.py:882-886). Two branches leave the scope and were not settled: `database.filter(query, Certificate, terms)` at service.py:670, which receives the client's raw `key;value` terms, and `database.sort_and_page(query, Certificate, args)` at service.py:709, which receives the client's `sort_by` and `sort_dir` - the ORDER BY column and direction are exactly the positions WEB-07 says cannot be parameterized. Both live in lemur/database.py, which was not in the audited scope; reading it is what would settle this."
+    },
+    {
+      "class": "OS command execution",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "No `os.system`, `subprocess`, `os.popen`, `shell=True` or backtick construct appears in either file; the full import list of both modules (service.py:8-39, views.py:8-38) contains no process-spawning module. Bound: the two audited files only."
+    },
+    {
+      "class": "Template and expression injection, and code evaluation",
+      "procedure": "WEB-09",
+      "outcome": "refuted",
+      "where": "No `render_template_string`, `eval`, `exec`, `compile` or expression-parser call in either file. The only dynamic dispatch is `getattr(Certificate, req_metric)` at service.py:891, which is preceded by the allowlist at service.py:882-886, and `getattr(g, \"caller_application\", None)` at views.py:260, whose attribute name is a literal. Bound: the two audited files only."
+    },
+    {
+      "class": "Server-side request forgery from the HTTP surface",
+      "procedure": "WEB-10",
+      "outcome": "inconclusive",
+      "where": "No HTTP client is imported or called in either file. One outbound-connection sink exists: `get_certificate_via_tls(domain_name, port, timeout)` at service.py:1315, where `domain_name` comes from stored certificate_associations rows and `port` from the LEMUR_PORTS_FOR_DEPLOYED_CERTIFICATE_CHECK config list. Its entry point, identify_and_persist_expiring_deployed_certificates (service.py:1243), is reached from no route registered in views.py:1853-1909, so it is not reachable within a request. It is left inconclusive rather than refuted because the stored domain values originate from certificates a user can upload, which makes it a second-order path whose scheduler and whose get_certificate_via_tls implementation are both outside the scope."
+    },
+    {
+      "class": "Deserialization of untrusted data",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "No pickle, yaml, marshal or jsonpickle use in either file. The only untrusted-blob parser is `x509.load_pem_x509_csr(csr.encode(), default_backend())` at service.py:784, which parses ASN.1 into objects and evaluates nothing; the certificate body path uses the same cryptography primitives. Bound: the two audited files only."
+    },
+    {
+      "class": "Mass assignment through the update path",
+      "procedure": "WEB-06",
+      "outcome": "inconclusive",
+      "where": "`update(cert_id, **kwargs)` at service.py:369-380 applies `setattr(cert, key, value)` for every key it receives with no allowlist, and its request-facing caller is views.py:996, `service.update(certificate_id, **data)`. Whether `data` can carry an unintended attribute depends entirely on certificate_edit_input_schema in lemur/certificates/schemas.py, which was not in the audited scope. Reading that schema's declared fields is what would settle it."
+    },
+    {
+      "class": "CSRF and ambient credential confusion",
+      "procedure": "WEB-15",
+      "outcome": "not executed",
+      "where": "Not assessable from the scope given: authentication is inherited from AuthenticatedResource in lemur/auth/service.py, and whether a cookie alone authorizes these routes - the condition WEB-15 turns on - cannot be read from views.py or service.py. No CSRF construct, exemption or token check appears in either file."
+    },
+    {
+      "class": "Rate limiting and unbounded operations",
+      "procedure": "WEB-18",
+      "outcome": "not executed",
+      "where": "No throttle, limiter or quota construct appears in either file, and the expensive routes are visible - certificate issuance at views.py:396 and the unpaginated `return query.all()` branch of query_common_name at service.py:779. Whether an application-level limiter is registered in the Flask factory could not be established: the factory is outside the audited scope, so this is recorded as unmeasured rather than as absent."
+    }
+  ]
+}

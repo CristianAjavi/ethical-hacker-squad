@@ -1,0 +1,74 @@
+{
+  "schema": "ehs.external-cases/v1",
+  "selection": {
+    "rule": "the most recent reviewed advisories matching the filter, in API order, keeping those with a fix commit in the project's own repository",
+    "ecosystem": "pip",
+    "severity": "high",
+    "requested": 3,
+    "population_page": 30,
+    "rejected": [
+      {
+        "advisory": "GHSA-23m2-mghx-vqmf",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-533j-2v4q-mw5h",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-p77j-g7h5-r2vw",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-w47q-945m-q9pc",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-9gmc-jqmh-3rvm",
+        "why": "no fix commit in its references"
+      }
+    ]
+  },
+  "honest_limit": "somebody still types the ecosystem and the severity; the filter is recorded so a reader can see the population and rerun it",
+  "cases": [
+    {
+      "advisory": "GHSA-pxmc-2ffp-8j67",
+      "cve": "CVE-2026-71417",
+      "repository": "https://github.com/Netflix/lemur",
+      "fix": "851389ae737a6d6bf16c1f9ca64a2ce56c1cc5c6",
+      "parent": "e9ade7dad5c9bc1369a831554ed6df3277c9cbae",
+      "fix_files": [
+        "lemur/certificates/views.py"
+      ],
+      "advisory_summary": "Lemur: Any user can revoke arbitrary certificates at the CA by uploading a duplicate record and revoking it",
+      "advisory_description": "## Summary\n\nRepo under test: https://github.com/Netflix/lemur\n\n`PUT /api/1/certificates/<id>/revoke` authorizes the caller against the *Lemur database row* (creator == current user, or `CertificatePermission` over the row's roles) rather than the underlying CA-side certificate identity. Separately, `POST /api/1/certificates/upload` lets any user passing `StrictRolePermission` create a new `Certificate` row while freely supplying `body`, `authority` (resolved by id/name with no `AuthorityPermission` check) and `external_id`; there is no uniqueness constraint on `body`, `serial`, or `external_id`.\n\nAn attacker can therefore read a target certificate's public `body`, `authority.id`, and `external_id` via `GET /certificates/<id>`, upload a duplicate row, and revoke that duplicate. The creator-bypass skips `CertificatePermission`, the empty-endpoints check passes because the duplicate has none, and `service.revoke()` then revokes at the CA using the attacker-supplied `body` (ACME) or `external_id` (DigiCert/Entrust/Google CA/CFSSL) under the authority's stored CA credentials \u2014 revoking the real production certificate.\n\n## Affected route\n\n`POST /api/1/certificates/upload` \u2192 `PUT /api/1/c"
+    },
+    {
+      "advisory": "GHSA-cfh6-pv5c-38jv",
+      "cve": "CVE-2026-71308",
+      "repository": "https://github.com/Netflix/lemur",
+      "fix": "286874535160952143b0afe2d356642669f9d4c6",
+      "parent": "e9ade7dad5c9bc1369a831554ed6df3277c9cbae",
+      "fix_files": [
+        "lemur/certificates/service.py",
+        "lemur/certificates/views.py"
+      ],
+      "advisory_summary": "Lemur: Unchecked `replaces[]` lets any user silence notifications and hijack auto-rotation for arbitrary certificates",
+      "advisory_description": "## Summary\n\nRepo under test: https://github.com/Netflix/lemur\n\nThe certificate create and upload endpoints accept a `replaces[]` (alias `replacements`) array that is resolved to live `Certificate` ORM objects with no ownership or `CertificatePermission` check on the referenced certificates. The SQLAlchemy `Certificate.replaces` append listener then immediately sets `victim.notify = False` and populates `victim.replaced`. From that point the victim certificate is excluded from auto-reissue, its expiration notifications are silenced, and the periodic `certificate_rotate` Celery task deploys the attacker's certificate (`endpoint.certificate.replaced[0]`) onto every endpoint serving the victim certificate.\n\nAny authenticated non-read-only user can therefore silently substitute their own certificate onto production load balancers and Kubernetes secrets they hold no role on, while suppressing the legitimate certificate's lifecycle automation.\n\n## Affected route\n\n`POST /api/1/certificates`\n`POST /api/1/certificates/upload`\n`PUT /api/1/certificates/<id>`\n\n## Affected code\n\n- [`lemur/certificates/schemas.py:402`](https://github.com/Netflix/lemur/blob/main/lemur/certificates/schemas.py#L402)"
+    },
+    {
+      "advisory": "GHSA-6c8m-q6g9-vrw3",
+      "cve": "CVE-2026-71307",
+      "repository": "https://github.com/Netflix/lemur",
+      "fix": "751c970ec42a53d00ecc9c6a96e0e51b6737ae53",
+      "parent": "2fedb8fba47a36990a9c7edc390d5260145ff403",
+      "fix_files": [
+        "lemur/destinations/schemas.py",
+        "lemur/destinations/views.py",
+        "lemur/plugins/lemur_sftp/plugin.py"
+      ],
+      "advisory_summary": "Lemur: Authenticated low-privilege users can read plaintext destination credentials (SFTP password / private-key passphrase) via the destinations API",
+      "advisory_description": "### Summary\nLemur's destination read endpoints -- `GET /api/1/destinations` and `GET /api/1/destinations/<id>` -- return the full set of stored plugin option values to any authenticated user, with no authorization check and no redaction of secret-bearing options. The sibling write endpoints (`POST`/`PUT`/`DELETE`) are gated with `@admin_permission.require(http_exception=403)`, but the two read handlers are protected only by `login_required` (inherited from `AuthenticatedResource`). They do not even exclude `read-only` users.\n\nThe built-in SFTP destination plugin (`sftp-destination`) stores its `password` and `privateKeyPass` options in cleartext in the `destinations.options` column (the plugin's own docstring states \"Passwords are not encrypted and stored as a plain text.\"). Because `DestinationOutputSchema` serializes every option value verbatim, any authenticated principal -- including a `read-only` user -- can retrieve these credentials and use them to authenticate to the remote SFTP server to which Lemur deploys certificates.\n\n\n### Details\nRead endpoints lack the authorization that their write siblings enforce:\n\n`lemur/destinations/views.py`\n```python\nclass DestinationsList(Aut"
+    }
+  ]
+}

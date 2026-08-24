@@ -4,20 +4,61 @@ The leader staffs only the relevant roles. Every specialist returns evidence, im
 
 Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
 
-Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Five packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Six packs are stored as **more than one file** for size reasons — `mobile`, `supply-chain` and `ai-safety` as three — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|
 | Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
-| Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` | `WEB-01`..`WEB-22` |
+| Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` | `WEB-01`..`WEB-26` |
 | Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
-| Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` | `INF-01`..`INF-18` |
+| Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` + `knowledge/infra-cloud-cicd-platforms.md` | `INF-01`..`INF-23` |
 | Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-25` |
 | AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-28` |
 | Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
 | Local applications | `ehs-local-app` | `knowledge/local-app.md` | `LOC-01`..`LOC-15` |
-| Remediator | `ehs-remediator` | `knowledge/remediation.md` (part A) | `REM-01`..`REM-07` |
-| Verifier | `ehs-verifier` | `knowledge/remediation.md` (part B) | `VER-01`..`VER-08` |
+| Remediator | `ehs-remediator` | `knowledge/remediation.md` | `REM-01`..`REM-07` |
+| Verifier | `ehs-verifier` | `knowledge/remediation-verification.md` | `VER-01`..`VER-09` |
+
+## Dispatching through Claude Code
+
+- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate, and decide priorities. You do not delegate integration or judgement.
+- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in a single message so they run in parallel.
+
+### Preferred path: the plugin's own subagents
+
+When this skill is installed as a plugin, it ships dedicated subagents whose tool access is enforced by the harness, not merely requested in a prompt:
+
+| `subagent_type` | Role | Write access |
+|---|---|---|
+| `ehs-web-api` | Web, backend and API | none (read-only tools) |
+| `ehs-mobile` | Android, iOS, APK | none |
+| `ehs-infra-cloud` | IaC, containers, Kubernetes, CI/CD | none |
+| `ehs-supply-chain` | Dependencies, provenance, secrets | none |
+| `ehs-ai-safety` | LLM applications, agents, MCP, RAG | none |
+| `ehs-privacy-abuse` | Personal data and product abuse | none |
+| `ehs-local-app` | CLI, desktop apps, published libraries, installers | none |
+| `ehs-remediator` | Applies fixes (`harden` mode only) | `Edit`, `Write` |
+| `ehs-verifier` | Independent verification | none |
+
+Auditors have no `Edit` or `Write`. That is structural but incomplete: `Bash` can write through the shell, so in `audit` mode confirm with `git status --porcelain` that the tree is unchanged, and treat a modification as a contract breach worth reporting.
+
+Each carries its own safety contract and loads its own pack, so your prompt supplies only: scope and paths, mode, target language, assigned components, and anything specific to this engagement.
+
+### Fallback path: no plugin agents available
+
+Copied into `~/.claude/skills/` rather than installed as a plugin, those subagents do not exist. `references/team.md` holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
+
+Never let the same agent both fix and verify.
+
+## The order that comes before every pack
+
+**Read your assigned files with your own judgement first, and write down what you would report with no corpus at all. Only then open your pack.**
+
+Those labels go into `engagement.unaided_pass.candidates`, and the validator enforces what happens to them: each one ends as a finding carrying its `unaided_label`, or in `dropped` with the reason your second reading overturned your first.
+
+**A dismissal costs what an assertion costs.** Dropping a candidate as `refuted` requires `control_at` - the `path:line` where the control that makes it harmless is enforced, on the path that reaches the sink. Dropping it as `merged` requires the id of the finding that absorbed it. This is not bookkeeping: measured on a small-context model, a reviewer short of budget does not fall silent, it refutes confidently - two runs dismissed a real unbounded allocation, one asserting the bounds were correct and one citing the length cap of a different method. Confirming cost every triage rule and dismissing cost a sentence, and that price difference is a thumb on the scale. **If you cannot point at the control, you have not refuted anything - you have run out of time, and `probable` with `what_would_settle_it` is how you say so.** `no procedure covers it` is refused as a reason - that case is `procedure: ad-hoc`, which is a first-class value precisely so nothing has to be bent to fit.
+
+The measurement behind this rule is in `bench/`: against the same model working with no corpus at all, the packs found the same defects and no more, missed a published advisory while the right file was open, and produced *less* agreement between repeated runs than unaided review did. A pack that is opened first stops being a checklist and starts being a boundary. Opened second, it can only add.
 
 ## Leader / security-lead
 
@@ -67,6 +108,12 @@ Order: accept only `confirmed` and authorized findings; a `probable` one goes ba
 
 ## Verifier / verifier
 
+**In `audit` mode you also run, under `VER-09`, and you run BLIND to the finder's prose.** You are handed each assertion and its location - not the evidence narrative, not the impact narrative - and you decide against the code. If you cannot point at the line that makes an assertion false, it stands.
+
+
+**In `audit` mode you run too, under `VER-09`.** There is no patch and no fix to check: you are handed the finished list of `confirmed` and `probable` findings and your only job is to kill them. Attack first, concede last. A finding you kill goes to `ruled_out` with the line you relied on, never quietly out of the report. A finding you cannot decide inside the scope is `probable` with `what_would_settle_it`, never a polite pass.
+
+This exists because it was measured missing: three arms on one target, every claim attacked twice by independent verifiers, and a competing product carrying this stage refuted 53% of its own claims where this corpus refuted 62% and unaided review 68%. The adversarial posture was already written; nothing invoked it when there was no patch.
 Order: work from the finding and the diff, not from the remediator's conclusion. Reproduce the original case and its variants, run relevant tests, hunt for bypasses and regressions, and give every result one verification outcome from `vocabulary.md`. A check that could not settle the question is `inconclusive`, `not executed` or `blocked` according to why — never a soft version of `verified`. Do not edit unless the leader explicitly reassigns you.
 
 ## Dispatching without the plugin subagents

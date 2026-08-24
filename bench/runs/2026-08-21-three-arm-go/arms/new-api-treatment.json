@@ -1,0 +1,378 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern3/new-api/target (Go API gateway: common/init.go, constant/env.go, router/api-router.go)",
+    "commit": "not available - source snapshot supplied without VCS metadata; no .git under the audited path",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (extern3) - manual specialist run",
+    "coverage_declaration": "Read-only audit of three Go files: process initialisation and environment configuration (common/init.go, 182 lines), the runtime constant table (constant/env.go, 26 lines) and the complete /api route table (router/api-router.go, 400 lines). Packs opened: web-api.md SS0-SS4 and web-api-clientside-logic.md SS7-SS9, SS11 (routes, controllers and middleware in the inventory), plus local-app.md SS0 and SS4 (the target is a long-running daemon with CLI flags that creates directories on the host) and infra-cloud-cicd-exposure.md SS5 (environment-driven deployment configuration). NOT exercised, and therefore not covered: every controller.* handler, every middleware.* implementation (target/middleware/ is an empty directory in the supplied scope), the data layer, the session store construction, templates, the front end, dependencies and build configuration. No code was executed, no network traffic was generated, and no dynamic test was run - every judgement below is a static read of the three files named above. Absence of a finding in an uncovered area is 'not looked for', not 'not present'.",
+    "authorization": "Authorized read-only source review; no remote or active test was performed, so no authorization reference was exercised."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unauthenticated setup endpoints omit the anti-automation controls every sibling credential route carries",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 21,
+        "component": "SetApiRouter -> GET/POST /api/setup"
+      },
+      "evidence": "router/api-router.go:15-19 shows the only middleware on the /api group: RouteTag, gzip, BodyStorageCleanup and GlobalAPIRateLimit. Lines 21-22 then mount `apiRouter.GET(\"/setup\", controller.GetSetup)` and `apiRouter.POST(\"/setup\", controller.PostSetup)` with no further middleware at all. Every other unauthenticated route that touches credentials or account state carries at least one extra gate: line 68 `/user/register` = CriticalRateLimit + TurnstileCheck, line 69 `/user/login` = CriticalRateLimit + TurnstileCheck, line 42 `/reset_password` = CriticalRateLimit + TurnstileCheck, line 43 `/user/reset` = CriticalRateLimit, line 41 `/verification` = EmailVerificationRateLimit + TurnstileCheck. The setup pair is the single account-provisioning surface in the table with neither. common/init.go:114-124 gives the budgets these names map to: GLOBAL_API_RATE_LIMIT defaults to 180 requests per 180 seconds, CRITICAL_RATE_LIMIT to 20 per 1200 seconds - so /api/setup gets a budget roughly 60x looser than /api/user/login.",
+      "impact": "POST /api/setup is the bootstrap route that provisions the first administrator. Reached by an unauthenticated caller it yields administrator control of the gateway, which in this product means the channel table (upstream provider API keys), all user records, all quota and billing state, and the root-only outbound-fetch endpoints at lines 204, 225 and 250. GET /api/setup gives an unauthenticated caller an oracle for the initialization state, so the window does not have to be guessed. Even where the handler does refuse to re-run, the absence of CriticalRateLimit and TurnstileCheck leaves the provisioning route open to automated racing at 180 attempts per 180 seconds against every fresh or re-provisioned deployment, and to enumeration of which deployments are un-initialized.",
+      "preconditions": "Network reachability of /api. For the administrator-takeover impact, controller.PostSetup must either not verify that setup has already completed, verify it non-atomically, or the deployment must be observed during its initialization window - which GET /api/setup discloses.",
+      "recommendation": "Do not rely solely on a state check inside the handler. Put the same anti-automation gates on the bootstrap pair that the sibling credential routes already carry - `middleware.CriticalRateLimit()` and `middleware.TurnstileCheck()` on POST /api/setup, CriticalRateLimit on GET /api/setup - and make the initialization guard an explicit fail-closed middleware that is registered on the route rather than a branch inside the controller, so the route stops existing once setup completes. Make the completion check a single atomic conditional write (INSERT ... WHERE NOT EXISTS or a unique constraint on the root role) so two concurrent POSTs cannot both pass it, and log every call to either route.",
+      "inference": "Whether controller.PostSetup refuses to run after initialization, and whether that check is atomic, was not observed: the controller package is outside the supplied scope (target/ contains only common/, constant/, router/ and an empty middleware/). The route-level facts - no authentication, no critical rate limit, no bot check, and an unauthenticated state oracle beside it - were read directly.",
+      "traceability": [
+        "CWE-862",
+        "CWE-307",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The candidate compensating control is an initialization check inside controller.PostSetup. That package is not in the supplied scope, so the control could not be located or read. Per the FP-08 doctrine restated in triage.md, absence of evidence is never HOLDS; this caps the finding at probable."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named and the boundary is explicit: an anonymous internet caller crossing to the administrator principal. router/api-router.go:15-19 shows the /api group carries no authentication middleware, so nothing establishes a first principal at all on this route."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure is intended only for the pre-initialization window, but nothing in the route table bounds it to that window and nothing rate-bounds it. FP-05 requires naming what bounds the exposure; here the only candidate bound is the unread handler check, which is FP-01, not FP-05."
+        }
+      ],
+      "limits": "This does not establish that an administrator can actually be created on an already-initialized instance - that depends on controller.PostSetup, which was not supplied. What it does establish, entirely from the route table and the rate-limit defaults, is that the bootstrap pair is unauthenticated, is a state oracle, and is the only credential-adjacent public route with neither a critical rate limit nor a bot check."
+    },
+    {
+      "id": "F-002",
+      "title": "Log directory created world-writable with mode 0777 and no umask set by the process",
+      "procedure": "LOC-08",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 74,
+        "component": "InitEnv -> log directory creation"
+      },
+      "evidence": "common/init.go:67-79 resolves the --log-dir flag (default \"./logs\", line 21) to an absolute path and, when the directory is absent, creates it with `os.Mkdir(*LogDir, 0777)`. 0777 is the most permissive mode available; the process sets no umask anywhere in the file, so the effective mode is whatever the inherited umask leaves - 0755 under the common 022, and a literal 0777 under the umask 0 that container images frequently run with. The directory is not incidental: router/api-router.go:218-219 exposes `GET /performance/logs` (controller.GetLogFiles) and `DELETE /performance/logs` (controller.CleanupLogFiles), so the service reads this directory back and serves its contents to a root-authenticated operator.",
+      "impact": "Crossing named per local-app.md SS0: another local user on the same host, to the gateway service. Where the effective mode is world-writable, any local account can append to, truncate or replace files in the log directory - destroying the record of an intrusion, or planting content that is later returned verbatim to a root operator through GET /performance/logs. Where it is only world-readable, any local account reads the gateway's operational logs, which for an LLM relay routinely carry user identifiers, token identifiers, model and quota activity and upstream error bodies. os.Mkdir also creates only the leaf, so an operator pointing --log-dir at a nested path gets a fatal error rather than the directory - the same line is both the permission defect and a robustness one.",
+      "preconditions": "The log directory does not already exist at first start (otherwise the pre-existing mode is kept, unchanged by this code). For the write-side impact, the process umask must not mask the group and other write bits, and a second local account must exist on the host.",
+      "recommendation": "Create the directory with a restrictive mode and stop depending on the ambient umask: `os.MkdirAll(*LogDir, 0o750)` followed by an explicit `os.Chmod(*LogDir, 0o750)` (Mkdir applies the umask to the requested mode, Chmod does not), and set the file mode on the log writer itself to 0o640. If group access is not needed, use 0o700 / 0o600. MkdirAll also fixes the nested-path failure. Document the expected owner and mode of the log directory in the deployment guide so a container image cannot silently reintroduce 0777.",
+      "inference": "The effective mode on disk was not observed - the target must not be executed, and the deployment's umask and account model are not in the supplied scope. What was read directly is the requested mode 0777, the absence of any umask call in the process, and the fact that the service serves this directory's contents back through a root-gated route.",
+      "traceability": [
+        "CWE-276",
+        "CWE-732",
+        "CWE-668",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "UNKNOWN",
+          "reason": "local-app.md SS0 requires naming the second principal. This finding names 'another local user on the same host', but whether such an account exists cannot be established from the supplied scope: on a single-user container running as one uid there is no second principal and the finding collapses to a hardening note; on a shared or multi-tenant host it does not. No deployment manifest was supplied."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The content is not public and something downstream does trust it: router/api-router.go:218-219 mounts controller.GetLogFiles and controller.CleanupLogFiles so the service itself reads this directory and returns its contents to an operator, and common/init.go:151 shows error logging is a first-class feature of the product (ERROR_LOG_ENABLED)."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The path is not debug-only or build-gated: InitEnv is the process's ordinary startup path and the block runs whenever --log-dir resolves to a directory that does not yet exist, with the flag defaulting to ./logs at common/init.go:21."
+        }
+      ],
+      "limits": "This does not establish what the log files themselves contain, nor their individual modes - the logger is outside the supplied scope. It establishes only the mode requested for the containing directory and the absence of any umask control around it."
+    },
+    {
+      "id": "F-003",
+      "title": "The same GetUserGroups handler is mounted both behind UserAuth and with no authentication at all",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 77,
+        "component": "SetApiRouter -> GET /api/user/groups vs GET /api/user/self/groups"
+      },
+      "evidence": "router/api-router.go:77 registers `userRoute.GET(\"/groups\", controller.GetUserGroups)` on the bare /api/user group, which carries no authentication middleware. Line 82, inside `selfRoute` whose chain is `selfRoute.Use(middleware.UserAuth())` at line 80, registers `selfRoute.GET(\"/self/groups\", controller.GetUserGroups)` - the identical handler symbol. The same function therefore answers on /api/user/groups with no principal established and on /api/user/self/groups with one. Line 324-328 shows the operator-facing view of the same domain object is admin-gated: `groupRoute.Use(middleware.AdminAuth())` guarding controller.GetGroups.",
+      "impact": "An anonymous caller can enumerate the deployment's user-group taxonomy. In this product a group is the billing and access tier - it carries the group ratio (a price multiplier) and determines which models a member may reach - so the anonymous view discloses the operator's private tier structure, the existence of internal or VIP tiers and their relative pricing, without an account. The gain is reconnaissance, not access: the attacker learns what tiers exist rather than joining one.",
+      "preconditions": "Network reachability of /api. The disclosure is only meaningful if controller.GetUserGroups returns the same payload to an anonymous caller as to an authenticated one, rather than branching on the session.",
+      "recommendation": "Do not mount one handler at two authentication levels. If the registration page genuinely needs a public tier list, split it into a dedicated handler that returns an explicit, minimal public projection (display name only, no ratio, no internal groups) and mount that on the public path, keeping controller.GetUserGroups exclusively under middleware.UserAuth(). If it does not, delete the line 77 registration - line 82 already serves authenticated callers.",
+      "inference": "Whether controller.GetUserGroups branches on the presence of a session, and what fields its payload carries, was not observed: the controller package is outside the supplied scope. What was read directly is that one handler symbol is registered on an authenticated path and an unauthenticated one.",
+      "traceability": [
+        "CWE-862",
+        "CWE-200",
+        "WSTG-ATHZ-*",
+        "ASVS 5.0 V8",
+        "A01:2025",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The candidate compensating control is a session branch inside controller.GetUserGroups that would return a reduced payload to an anonymous caller. The controller package is not in the supplied scope, so that branch could neither be confirmed nor excluded."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is anonymous caller to authenticated user: the two registrations differ precisely by middleware.UserAuth() at router/api-router.go:80, so the code itself declares that a principal is expected for this data on one path."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "UNKNOWN",
+          "reason": "Whether the group payload carries pricing multipliers and internal tier names, or only display labels with no security value, is decided by controller.GetUserGroups, which was not supplied. If it is inert display data the finding drops to informational under FP-10."
+        }
+      ],
+      "limits": "This does not establish what an anonymous request actually returns. It establishes the registration asymmetry, which is a defect on its own terms: a handler written for an authenticated caller is reachable without one, and any future change to its payload silently becomes public."
+    },
+    {
+      "id": "F-004",
+      "title": "Logout is a GET route authorized by an ambient cookie, with no anti-CSRF gate visible in the chain",
+      "procedure": "WEB-15",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 74,
+        "component": "SetApiRouter -> GET /api/user/logout"
+      },
+      "evidence": "router/api-router.go:74 registers `userRoute.GET(\"/logout\", controller.Logout)` - a state-changing operation on a safe HTTP method. The chain that reaches it is visible in full and contains no anti-CSRF middleware: the /api group applies RouteTag, gzip, BodyStorageCleanup and GlobalAPIRateLimit (lines 16-19), the /user group adds nothing, and the route itself adds nothing. That the credential is ambient is established inside the supplied scope: common/init.go:49-58 reads SESSION_SECRET and refuses to start when it is left at the documented default 'random_string', which is the signing key of a cookie-backed session store, and every authenticated route in this table relies on middleware.UserAuth() rather than on a mandatory custom header.",
+      "impact": "Any third-party page the victim visits can terminate their gateway session with a bare sub-resource load (`<img src=\"https://target/api/user/logout\">`) - no script, no CORS preflight, and SameSite=Lax does not stop a top-level GET. The attacker gains denial of the victim's session, not access to it: a nuisance and a plausible step in a social-engineering chain (force a logout, then present a phishing login), which is why this is low and not medium.",
+      "preconditions": "The session credential is carried in a cookie the browser attaches automatically, and no anti-CSRF middleware is installed outside the file audited here. The victim must visit an attacker-controlled or attacker-influenced page while logged in.",
+      "recommendation": "Make logout a POST (or DELETE) and require a token the browser does not attach on its own - either an anti-CSRF token bound to the session and verified server-side, or a mandatory custom request header that forces a preflight. Set SameSite=Strict on the session cookie as defence in depth, and audit the rest of the table for the same shape: GET /api/user/epay/notify (line 76) and GET /api/subscription/epay/notify (line 180) are also state-changing GETs, though those are machine callbacks rather than browser-reachable flows.",
+      "inference": "That no global CSRF middleware exists is inferred from the chain that is visible: the engine-level middleware installed before SetApiRouter is called lives in the router package's entry point, which was not supplied. Every middleware layer that this file itself installs was read directly and none of them is a CSRF check.",
+      "traceability": [
+        "CWE-352",
+        "WSTG-SESS-*",
+        "ASVS 5.0 V3",
+        "A01:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A mandatory anti-CSRF middleware could be installed on the gin.Engine before SetApiRouter runs; that entry point is outside the supplied scope. The four middlewares this file does install on /api (router/api-router.go:16-19) were read and none of them is one. Absence of evidence is not HOLDS."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it looks like: a route named /logout bound to controller.Logout on GET. It is not a page render or a redirect target - it sits in the same /api/user group as the JSON login and registration handlers, all of which return API responses."
+        }
+      ],
+      "limits": "This does not establish that the session credential is in fact a cookie rather than a bearer header, nor what controller.Logout invalidates server-side. It establishes that a state-changing operation is bound to GET and that no CSRF control exists anywhere in the middleware chain this file builds."
+    },
+    {
+      "id": "F-005",
+      "title": "TLS_INSECURE_SKIP_VERIFY disables certificate validation process-wide by mutating http.DefaultTransport",
+      "procedure": "WEB-19",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 86,
+        "component": "InitEnv -> TLS client configuration"
+      },
+      "evidence": "common/init.go:86-95 reads TLS_INSECURE_SKIP_VERIFY (default false) and, when true, reaches into the process-global default client transport: it type-asserts `http.DefaultTransport.(*http.Transport)` and sets `tr.TLSClientConfig.InsecureSkipVerify = true`, or substitutes the package-level InsecureTLSConfig when no TLSClientConfig exists. The target is an API gateway whose whole purpose is outbound HTTPS: common/init.go:104-107 tunes RELAY_TIMEOUT and the relay connection pool, and router/api-router.go mounts outbound-fetch handlers at lines 204 (FetchCustomOAuthDiscovery), 225 (FetchUpstreamRatios), 249-258 (FetchUpstreamModels, Codex OAuth, Ollama pull) and 379/382 (TestIoNetConnection). Nothing in the file scopes the change to one channel, one host or one client.",
+      "impact": "The switch is per-process, not per-upstream. An operator who sets it to work around one upstream with a bad certificate silently disables certificate validation for every outbound connection the process makes on the default transport: upstream LLM provider calls carrying the channel API keys, OAuth token exchanges with the identity providers configured at router/api-router.go:201-210, payment provider calls, and the OIDC discovery fetch. An attacker in a network position on any of those paths - a hostile transit network, a compromised egress proxy, DNS or ARP control on the container network - can then read and rewrite that traffic, which means harvesting upstream provider credentials and forging identity-provider responses. There is no in-application signal that the flag is on: no startup warning is emitted, unlike the SESSION_SECRET default which does log one at lines 52-54.",
+      "preconditions": "An operator sets TLS_INSECURE_SKIP_VERIFY=true in the deployment, and an attacker holds a network position on at least one outbound path.",
+      "recommendation": "Do not mutate http.DefaultTransport. Scope the relaxation to the connection that needs it: build a dedicated *http.Transport for the specific channel or upstream whose certificate cannot be validated, or better, pin that upstream's CA with tls.Config.RootCAs so validation still happens against a known root. If a global escape hatch must exist, log a loud startup warning in the same style as the SESSION_SECRET check at common/init.go:52-54, and refuse the flag when a production marker is present.",
+      "inference": "That any deployment actually enables the flag was not observed: it defaults to false at common/init.go:86 and no deployment configuration, compose file or manifest was supplied. The blast radius of the flag when it is on - the process-wide default transport rather than a scoped client - was read directly at lines 87-94.",
+      "traceability": [
+        "CWE-295",
+        "WSTG-CRYP-*",
+        "ASVS 5.0 V11",
+        "A04:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no compensating layer: the mutation targets http.DefaultTransport, which is precisely the shared object every caller that does not build its own transport will use, so a control would have to exist in each of those callers rather than in one place that cannot be skipped."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The branch ships in the released binary. It is gated by an environment variable an operator may set in production, not by a build tag, a debug constant or a test harness, and FP-04 requires evidence from the shipped artifact that the path is absent - here the path is present and reachable at runtime."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct reads exactly as it appears: InsecureSkipVerify set to true on the shared default transport, with the fallback branch assigning a package-level InsecureTLSConfig. There is no scoping wrapper, no per-channel client and no benign alternative reading."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "NOT_APPLICABLE",
+          "reason": "The defect is the blast radius of a configuration switch, not a data flow reaching a sink. No attacker-supplied value participates in the chain, so the question FP-02 asks does not apply to this class."
+        }
+      ],
+      "limits": "This does not establish that any real deployment enables the flag, nor that the relay path uses http.DefaultTransport rather than a transport of its own - the relay client construction is outside the supplied scope. It establishes that the flag, when set, is unscoped by construction."
+    },
+    {
+      "id": "F-006",
+      "title": "Upstream provider safety filtering is disabled by default for Gemini and Cohere relays",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "common/init.go",
+        "line": 110,
+        "component": "InitEnv -> provider safety defaults"
+      },
+      "evidence": "common/init.go:110-111 sets `GeminiSafetySetting = GetEnvOrDefaultString(\"GEMINI_SAFETY_SETTING\", \"BLOCK_NONE\")` and `CohereSafetySetting = GetEnvOrDefaultString(\"COHERE_SAFETY_SETTING\", \"NONE\")`. BLOCK_NONE and NONE are the most permissive values each provider accepts: a deployment that sets neither environment variable relays every Gemini and Cohere request with the provider's content filtering turned fully off. Two other defaults in the same initialiser lean the same way - common/init.go:134 turns DIFY_DEBUG on by default, and line 151 leaves ERROR_LOG_ENABLED off by default, so the noisier setting is opt-out and the audit-relevant one is opt-in.",
+      "impact": "No security boundary is crossed and no exploit path is asserted; this is recorded because an operator reading the deployment guide would reasonably assume provider defaults apply. The consequences are the operator's, not an attacker's: unfiltered generations attributable to the operator's provider account, and the abuse-policy exposure that comes with them. It also means the gateway, not the provider, becomes the only place content policy can be enforced, and nothing in the audited scope enforces it there.",
+      "preconditions": "GEMINI_SAFETY_SETTING and COHERE_SAFETY_SETTING are left unset, which is the out-of-the-box state.",
+      "recommendation": "Default to the provider's own default rather than to the most permissive value - leave the field unset upstream when the environment variable is absent, so the provider's policy applies - and make BLOCK_NONE / NONE an explicit operator opt-in. If the permissive default is a deliberate product decision for a gateway that must not second-guess its callers, state it in the deployment documentation next to the variable, so it is a decision the operator makes knowingly.",
+      "traceability": [
+        "CWE-1188",
+        "A02:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "UNKNOWN",
+          "reason": "This may well be an intended product decision - a relay arguably should not impose policy its callers did not ask for - but FP-05 requires naming what bounds the exposure, and no design note, documentation or configuration was supplied that declares the choice or bounds it."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "Real but bounded to informational: the default changes the upstream provider's content filtering, not an access-control or authentication decision, no attacker gains a capability from it, and an operator can restore filtering with a single environment variable. Recorded rather than deleted, per FP-10."
+        }
+      ],
+      "limits": "The relay code that consumes GeminiSafetySetting and CohereSafetySetting is outside the supplied scope, so this does not establish how the value is transmitted to each provider - only what value the process starts with when the environment is silent."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Function-level authorization on the privileged route groups (BFLA)",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "All 249 live route registrations in router/api-router.go were enumerated and split by middleware chain: 208 resolve through a group-level or route-level middleware.UserAuth / AdminAuth / RootAuth / TokenAuthReadOnly, 41 reach a handler with none. Every one of the 208 was checked for a gap between the group's Use() chain and the verb registered on it, and none was found: the admin, root, channel, token, redemption, vendor, models, deployments, prefill-group, subscription and performance groups each install their gate with Use() before the block, and the two highest-value routes tighten it further - POST /channel/:id/key adds RootAuth + CriticalRateLimit + DisableCache + SecureVerificationRequired (line 235) and POST /channel/fetch_models adds RootAuth (line 250). The bound: this establishes that a gate is registered, not that the gate is correct - middleware/ is empty in the supplied scope, so what UserAuth, AdminAuth and RootAuth actually verify was never read."
+    },
+    {
+      "class": "Route shadowing between the self and admin sub-groups mounted on the same /api/user prefix",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "router/api-router.go:79-146 mounts selfRoute (UserAuth) and adminRoute (AdminAuth) on the identical /api/user/ prefix, which is the shape where a parameter route can swallow an authenticated-user path. Each pair was compared: every selfRoute path is a static first segment (/self, /models, /token, /passkey, /aff, /topup, /pay, /amount, /checkin, /2fa, /oauth) while the adminRoute paths that could collide use :id (lines 133-145), and gin gives static children priority over a wildcard sibling. adminRoute.GET(\"/topup\") at line 130 and selfRoute.GET(\"/topup/info\") at line 95 differ in depth, not in gate. No self path resolves into the admin group or the reverse."
+    },
+    {
+      "class": "Hardcoded credentials or key material in the audited source",
+      "procedure": "WEB-19",
+      "outcome": "refuted",
+      "where": "All three files scanned for the high-precision formats (ghp_, AKIA, sk-ant-, xox*, PEM private-key headers) and for base64-like literals of 40 or more characters. The single hit was a route path string, ListWaffoPancakeSubscriptionProductOptions at router/api-router.go:197 - a Go identifier, not a secret. All secret material in scope is read from the environment: SESSION_SECRET and CRYPTO_SECRET at common/init.go:49-63, which additionally refuse to start on the documented placeholder value 'random_string'. The bound: three files, no git history was available to scan."
+    },
+    {
+      "class": "Missing attempt limiting on second-factor verification",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "POST /api/user/login/2fa at router/api-router.go:70 was checked because it carries no TurnstileCheck while /login and /register do. It does carry middleware.CriticalRateLimit(), whose defaults are read in scope at common/init.go:122-124: 20 requests per 1200 seconds. That is a real attempt limit against a six-digit code, so the claim does not hold. The bound: whether the limiter keys on the identity or on the source IP - the difference between a limit and an evadable one - is decided in middleware/, which is empty in the supplied scope."
+    },
+    {
+      "class": "BOLA / IDOR and tenant scoping on identifier-bearing routes",
+      "procedure": "WEB-04",
+      "outcome": "not executed",
+      "where": "The route table carries 49 registrations with an :id or equivalent path parameter (channel, token, redemption, vendor, model, deployment, subscription plan, user). Deciding whether each handler scopes the lookup to the calling principal requires the controller and model packages, which are not in the supplied scope. No claim either way is made about this class."
+    },
+    {
+      "class": "Mass assignment and property-level exposure",
+      "procedure": "WEB-06",
+      "outcome": "not executed",
+      "where": "No DTO, serializer, ORM model or binding code exists in the three supplied files. The class cannot be reached from a route table."
+    },
+    {
+      "class": "Data-layer injection (SQL, ORM, NoSQL)",
+      "procedure": "WEB-07",
+      "outcome": "not executed",
+      "where": "No query construction, ORM call or raw SQL appears in common/init.go, constant/env.go or router/api-router.go. The only database-adjacent line in scope is SQLITE_PATH at common/init.go:64-66, which is a filesystem path read from the environment, not a query."
+    },
+    {
+      "class": "OS command execution and template or expression injection",
+      "procedure": "WEB-08",
+      "outcome": "not executed",
+      "where": "No os/exec, no shell invocation and no template rendering in the supplied files. The imports of common/init.go are flag, fmt, log, net/http, os, path/filepath, strconv, strings and time; none is an interpreter."
+    },
+    {
+      "class": "Deserialization of untrusted data",
+      "procedure": "WEB-11",
+      "outcome": "not executed",
+      "where": "No decoder, unmarshaller or object-reconstruction call in scope. constant.MaxRequestBodyMB at common/init.go:138 shows a decompressed-body cap exists as a defence against zip-bomb style input, but the code that applies it lives in middleware/, which is empty in the supplied scope."
+    },
+    {
+      "class": "File upload and path traversal",
+      "procedure": "WEB-12",
+      "outcome": "not executed",
+      "where": "No upload or file-serving handler in scope. The two user-influenced paths that are in scope were read: the --log-dir flag at common/init.go:21,67-79 (operator-supplied, not remote) and SQLITE_PATH at line 64. Neither takes remote input. GET /performance/logs at router/api-router.go:218 is a file-serving route but its handler was not supplied."
+    },
+    {
+      "class": "SSRF and egress control on operator-configurable upstream fetches",
+      "procedure": "WEB-10",
+      "outcome": "inconclusive",
+      "where": "Six outbound-fetch handlers were located in the route table: FetchCustomOAuthDiscovery (line 204), FetchUpstreamRatios (225), FetchUpstreamModels (249), FetchModels (250), the Ollama pull/delete/version group (257-260) and TestIoNetConnection (379, 382). Every one sits behind AdminAuth or RootAuth, and FetchModels is tightened to RootAuth inside an already-admin group - which reads as a deliberate acknowledgement that a body-supplied base URL is the stronger primitive. Whether any of them validates the destination could not be established: the handlers are outside the supplied scope, and nothing in scope restricts egress."
+    },
+    {
+      "class": "CORS and caching of credentialed responses",
+      "procedure": "WEB-16",
+      "outcome": "inconclusive",
+      "where": "middleware.CORS() is applied at exactly two places, router/api-router.go:285 (the /usage group) and 320 (before GET /log/token), and both sit over routes authenticated by middleware.TokenAuthReadOnly() - the shape where a reflected origin plus credentials matters. The gin Use() ordering was checked and is correct: the Use() at line 320 follows the earlier logRoute registrations, so it applies only to the /log/token route beneath it, not retroactively to the admin log routes at lines 306-313. What the allowed origins are, and whether Access-Control-Allow-Credentials is set, could not be read - target/middleware/ is an empty directory."
+    },
+    {
+      "class": "Integrity of unauthenticated payment callbacks",
+      "procedure": "WEB-18",
+      "outcome": "inconclusive",
+      "where": "Eight unauthenticated money-moving callbacks were enumerated: /stripe/webhook, /creem/webhook, /waffo/webhook and /waffo-pancake/webhook/:env (lines 56-61), /user/epay/notify on both POST and GET (75-76), and /subscription/epay/notify plus /subscription/epay/return on both verbs (179-182). None carries authentication or a rate limit beyond the group's GlobalAPIRateLimit, which is the expected shape - a provider callback cannot present a session - so their integrity rests entirely on in-handler signature verification that was not supplied. Two structural facts were read and are worth carrying: the epay callbacks accept GET, so the signed material travels in the query string and lands in access logs; and the :env segment at line 61 is explained in a source comment as operator-registered with the handler enforcing the match, which is a control this audit could not verify."
+    },
+    {
+      "class": "Open redirect through the trusted-domain allowlist",
+      "procedure": "WEB-10",
+      "outcome": "inconclusive",
+      "where": "common/init.go:170-181 builds constant.TrustedRedirectDomains from TRUSTED_REDIRECT_DOMAINS, defaulting to the empty string, so an unconfigured deployment starts with an empty allowlist. constant/env.go:24-26 documents the intended semantics: 'Domains support subdomain matching (e.g. example.com matches sub.example.com)'. Two questions decide whether this is a finding and neither can be answered in scope: whether an empty list fails closed (every redirect rejected) or open (no restriction applied), and whether the suffix match is anchored on a dot boundary or is a bare strings.HasSuffix, which would let evil-example.com pass. The consumer of constant.TrustedRedirectDomains is outside the supplied scope. Flagged for follow-up rather than reported, because guessing either answer would manufacture the finding."
+    },
+    {
+      "class": "Session lifecycle, cookie attributes and fixation",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "The session secret path was read end to end in scope - common/init.go:49-58 refuses to start on the placeholder 'random_string' and otherwise takes SESSION_SECRET from the environment, and line 59-63 derives CryptoSecret from it when CRYPTO_SECRET is unset. The store construction, the cookie options (Secure, HttpOnly, SameSite), identifier regeneration on login and server-side invalidation on logout all live outside the supplied files. Note recorded for the operator: because CryptoSecret falls back to SessionSecret, rotating SESSION_SECRET also rotates the key protecting anything encrypted at rest unless CRYPTO_SECRET is set explicitly."
+    },
+    {
+      "class": "Rate-limit keying and coverage of expensive routes",
+      "procedure": "WEB-18",
+      "outcome": "inconclusive",
+      "where": "All five limiter budgets were read at common/init.go:114-128 (global API 180/180s, global web 60/180s, critical 20/1200s, search 10/60s, email verification) and mapped onto the route table: CriticalRateLimit is attached to 30 route registrations, SearchRateLimit guards 2 (token search at line 274 and user log search at 313) while the other seven /search routes rely on the group budget only. Whether any limiter keys on identity rather than on source IP - the difference between a control and a speed bump - is decided in middleware/, which is empty in the supplied scope."
+    },
+    {
+      "class": "Disclosure through debug modes, errors and logs",
+      "procedure": "WEB-22",
+      "outcome": "inconclusive",
+      "where": "Three switches were located in scope: DEBUG at common/init.go:82, DIFY_DEBUG which defaults to true at line 134, and ERROR_LOG_ENABLED which defaults to false at line 151. The default-on debug flag and the default-off error log are worth an operator's attention, but what either one emits is decided by consumers outside the supplied scope, so no disclosure claim is made. Recorded so the next reader does not repeat the search."
+    },
+    {
+      "class": "JWT and self-contained token verification",
+      "procedure": "WEB-01",
+      "outcome": "not executed",
+      "where": "No token parsing or signature verification appears in the supplied files. The route table shows the product uses opaque API tokens (middleware.TokenAuthReadOnly, the token key-retrieval routes at lines 276 and 281) alongside sessions, but the verification code is outside scope."
+    },
+    {
+      "class": "Environment separation, deployment secrets and infrastructure state",
+      "procedure": "INF-17",
+      "outcome": "not executed",
+      "where": "No IaC, no Dockerfile, no compose file, no .env and no CI configuration was supplied - the scope is three Go files. The 49 distinct environment variables read in common/init.go were enumerated as the configuration surface an operator must get right, but nothing shows how any of them is delivered at deploy time."
+    }
+  ]
+}

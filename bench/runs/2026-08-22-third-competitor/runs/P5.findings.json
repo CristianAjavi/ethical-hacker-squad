@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT Signature Verification Missing",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "critical",
+      "impact": "Complete authentication bypass. Attacker can forge any JWT token and impersonate any user/tenant.",
+      "evidence": "jwt.decode(bearer) is called without signature verification. jwt.verify() was not used. This allows unauthenticated attackers to create tokens with arbitrary claims (sub, role, tenant) and gain unauthorized access.",
+      "recommendation": "Replace jwt.decode() with jwt.verify(bearer, SECRET_KEY) with proper error handling. Ensure all auth paths validate signatures before trusting claims. Add a SECRET_KEY to environment variables."
+    },
+    {
+      "id": "F-002",
+      "title": "Missing Authorization Check on Invoice Detail Endpoint",
+      "file": "routes/invoices.js",
+      "line": 8,
+      "severity": "high",
+      "impact": "Insecure Direct Object Reference (IDOR). Any authenticated user can read any invoice by guessing IDs, leading to unauthorized disclosure of financial data.",
+      "evidence": "GET /invoices/:id queries 'SELECT * FROM invoices WHERE id = $1' with only id parameter, no owner_id filter. Compare to /receipts/:id which correctly checks 'AND owner_id = $2'. req.user.id is available but not used.",
+      "recommendation": "Add owner_id check: WHERE id = $1 AND owner_id = $2, [req.params.id, req.user.id]. Audit all other endpoints for similar IDOR patterns."
+    },
+    {
+      "id": "F-003",
+      "title": "SQL Injection via ORDER BY Column Name",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "high",
+      "impact": "SQL injection via ORDER BY clause. Attacker can inject SQL into the order parameter to exfiltrate data, modify queries, or escalate privileges.",
+      "evidence": "const order = req.query.order || 'created_at'; ... ORDER BY ${order}. User input from req.query.order is directly interpolated into the SQL query string without parameterization or allowlist validation, unlike /payments which uses a SORTABLE allowlist.",
+      "recommendation": "Use a whitelist allowlist of permitted columns (e.g., SORTABLE = {created_at, updated_at, amount}) and validate input against it before interpolation. Never trust user input for identifiers."
+    },
+    {
+      "id": "F-004",
+      "title": "Server-Side Request Forgery (SSRF) in Logo Fetching",
+      "file": "lib/remote.js",
+      "line": 5,
+      "severity": "high",
+      "impact": "SSRF allows attacker to fetch internal resources, port scan the network, or interact with internal services (metadata endpoints, admin panels). Can lead to credential theft, RCE, or network reconnaissance.",
+      "evidence": "fetchLogo(url) calls fetch(url) directly without validating the URL. No hostname allowlist, no protocol restriction. Attacker can pass arbitrary URLs like 'http://localhost:8080/admin', 'http://169.254.169.254/latest/meta-data/', or internal IP ranges.",
+      "recommendation": "Implement hostname validation: use URL allowlist (e.g., ALLOWED set like fetchAsset), restrict to HTTPS, reject private IP ranges (10.0.0.0/8, 172.16.0.0/12, 127.0.0.1, localhost). Use a library like 'ip' to validate addresses."
+    },
+    {
+      "id": "F-005",
+      "title": "Stored Cross-Site Scripting (XSS) in Invoice Note",
+      "file": "lib/render.js",
+      "line": 4,
+      "severity": "high",
+      "impact": "Stored XSS. Attacker can inject malicious JavaScript into an invoice note, which executes in the browser of anyone viewing that invoice, stealing cookies, session tokens, or performing actions on their behalf.",
+      "evidence": "invoiceNote(note) returns `<div class=\"note\">${note}</div>` without escaping. The 'note' variable is directly interpolated into HTML. customerName() and footer() correctly use escapeHtml(), but invoiceNote() does not.",
+      "recommendation": "Replace with: return `<div class=\"note\">${escapeHtml(note)}</div>;`. Add a security scanning test to ensure all user-controlled output is escaped. Consider using a template engine with auto-escaping."
+    },
+    {
+      "id": "F-006",
+      "title": "Weak Hostname Validation in Asset Fetching",
+      "file": "lib/remote.js",
+      "line": 2,
+      "severity": "medium",
+      "impact": "Hostname validation can be bypassed via DNS rebinding attacks or subdomain squatting. If assets.example.com is delegated to attacker-controlled DNS, attacker can serve malicious content or perform SSRF-like attacks.",
+      "evidence": "ALLOWED = new Set(['assets.example.com']); only checks parsed.hostname against a hardcoded set with one entry. No DNS pinning, no rate limiting on resolution, no TTL validation. DNS rebinding attacks can change the IP after initial validation.",
+      "recommendation": "Pin resolved IPs or use dedicated CDN tokens. Consider allowlisting by IP range if possible. Add DNS resolution caching and validation. Use SRI (Subresource Integrity) hashes to validate fetched content."
+    },
+    {
+      "id": "F-007",
+      "title": "No URL Validation on Branding Preview Endpoint",
+      "file": "routes/invoices.js",
+      "line": 38,
+      "severity": "medium",
+      "impact": "POST /branding/preview does not validate req.body.logoUrl before passing to fetchLogo(). Combined with F-004 (SSRF), allows unauthenticated or low-privilege users to trigger SSRF.",
+      "evidence": "router.post('/branding/preview', async (req, res) => { const image = await fetchLogo(req.body.logoUrl); }. No validation of logoUrl parameter. fetchLogo() itself has no safeguards (F-004). Attackers can inject URLs pointing to internal services.",
+      "recommendation": "Validate and sanitize req.body.logoUrl: whitelist protocol (https only), reject private IP ranges, validate hostname against allowlist. Add rate limiting to prevent repeated SSRF attempts."
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (corpus-based)",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire format deserialization)"
+      ],
+      "read": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire format deserialization)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unsafe string encoding from raw bytes",
+        "Recursive deserialization without depth limit",
+        "Untrusted BigDecimal construction"
+      ],
+      "reported": [
+        "Unsafe string encoding from raw bytes",
+        "Recursive deserialization without depth limit"
+      ],
+      "dropped": [
+        {
+          "label": "Untrusted BigDecimal construction",
+          "reason": "BigDecimal is constructed from 4-byte array with explicit scale, and the framework handles the conversion safely without code execution risk"
+        }
+      ]
+    },
+    "coverage_declaration": "This audit examined a Maven-based Java client library for RabbitMQ. The single source file ValueReader.java contains AMQP wire-protocol deserialization logic. Coverage is limited to manual code inspection of the provided file and pom.xml. No dynamic analysis, network testing, or bytecode instrumentation was performed. The audit does not include the full RabbitMQ client codebase or integration with real brokers."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unvalidated UTF-8 string decoding from untrusted wire data",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 70
+      },
+      "evidence": "The readShortstr() method at line 70 constructs a String from raw bytes using the 'utf-8' charset without validating that the input is well-formed UTF-8. The byte array length is read as a single unsigned byte (line 68), limiting maximum short-string length to 255 bytes. If an AMQP peer sends malformed UTF-8 sequences, the String constructor may accept replacement characters.",
+      "impact": "An attacker sending malformed UTF-8 sequences in AMQP messages could cause silent data corruption or inconsistent state if the application logic depends on exact string matching. This is low-impact because Java's String class does not execute code from the input and will only produce characters, but semantic attacks are possible if the application trusts field names or routing keys.",
+      "preconditions": "The attacker must be able to send AMQP protocol messages to the client library, requiring either direct network access to the RabbitMQ client or control over a trusted AMQP peer.",
+      "recommendation": "Explicitly validate UTF-8 sequences before constructing String objects, or use CharsetDecoder with REPORT mode to reject malformed input rather than silently applying replacement characters. Alternatively, document this behavior and advise applications to validate critical strings (like queue names, exchange names) independently.",
+      "inference": "A malformed UTF-8 sequence in an AMQP message is inferred to reach this code path based on the design of readShortstr() being called from readFieldValue() during table parsing, but actual exploitation depends on whether the application logic branches on the decoded string value.",
+      "what_would_settle_it": "A test case showing that (a) malformed UTF-8 in an AMQP short-string field produces a different String object than expected, and (b) this causes incorrect behavior in downstream code that uses the string.",
+      "unaided_label": "Unsafe string encoding from raw bytes",
+      "traceability": [
+        "CWE-20",
+        "CWE-176"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The byte array is read from an untrusted DataInputStream (line 68-69), so the attacker can control its content."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The String constructor in Java with a charset does accept malformed UTF-8 and produce characters with replacement behavior, so the sink is dangerous with untrusted input."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This method is in the main library code path and is not test-only or behind a feature flag."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data flows from an untrusted AMQP peer (crossing a trust boundary) into the client application."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Java's built-in UTF-8 decoding behavior is used, but whether there is an external configuration or validation layer in the broader RabbitMQ client was not verified in this limited audit."
+        }
+      ],
+      "limits": "This finding does not establish that UTF-8 validation is absent in the complete application. The ValueReader class may be wrapped by higher-level code that validates strings. No integration testing was performed to show actual exploitation."
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursive deserialization allows stack exhaustion",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 184
+      },
+      "evidence": "The readFieldValue() method (line 158-221) is recursive. It calls readTable() at line 181 for case 'F', and readArray() at line 184 for case 'A'. The readTable() method (lines 139-155) calls readFieldValue() again (line 150). The readArray() method (lines 237-249) also calls readFieldValue() again (line 245). There is no recursion depth limit checked in any of these methods. A malicious AMQP message containing deeply nested tables or arrays (e.g., a table containing an array containing a table containing an array...) will exhaust the Java stack and cause StackOverflowError.",
+      "impact": "An attacker who can send AMQP protocol messages to the client can craft a message with deeply nested tables/arrays that triggers a StackOverflowError, causing the client process to crash. This is a denial-of-service attack that terminates the client connection handler.",
+      "preconditions": "The attacker must be able to send AMQP protocol messages to the RabbitMQ client. This requires network access to the client's AMQP listener or control over an intermediate AMQP broker. This is often the case in multi-tenant or open deployments.",
+      "recommendation": "Implement a recursion depth counter in readFieldValue() and throw a MalformedFrameException if a hardcoded limit (e.g., 10 or 20 levels) is exceeded. Pass the counter as a parameter through the call chain or store it in a ThreadLocal variable. Alternatively, refactor to use an iterative approach with an explicit stack instead of recursion.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-674",
+        "A01:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no compensating control that enforces a recursion depth limit in the readFieldValue chain."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting depth is attacker-controlled via the AMQP message wire format."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code is in the main library deserialization path, not test-only."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Untrusted AMQP data flows from the network into the deserializer, crossing a trust boundary."
+        }
+      ],
+      "limits": "The actual recursion depth required to trigger StackOverflowError depends on the JVM heap size and stack frame size, which was not measured. This audit assumes the default JVM stack size of ~1 MB."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Deserialization of arbitrary classes (code execution)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The readFieldValue() method only deserializes primitive types, BigDecimal, Date, String, LongString, Map, and List. It does not support arbitrary class instantiation or reflection-based object creation."
+    },
+    {
+      "class": "Integer overflow in byte vector length parsing",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The readBytes() method uses unsignedExtend() (line 86) to safely convert a signed int to a long, checking if contentLength < Integer.MAX_VALUE before casting (line 87). This prevents integer overflow exploitation."
+    }
+  ]
+}

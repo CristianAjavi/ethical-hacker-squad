@@ -144,19 +144,38 @@ def main() -> int:
                 if m:
                     procedures.add(f"{m.group(1)}-{int(m.group(2)):02d}")
 
-    # the doc and the schema must agree on which fields exist
+    # The doc and the schema must agree on which fields exist AND AT WHICH LEVEL.
+    # The level is not a detail: `ruled_out` is a sibling of `findings`, the field
+    # table listed it among the per-finding rows, and a blinded specialist
+    # faithfully put it inside all nine of its findings, where
+    # `additionalProperties: false` rejects it. The artifact was thrown out over
+    # a defect in this document. So the table states the level in the row - a
+    # bare name is top-level, `engagement.x` and `findings[].x` are the others -
+    # and this check reads only table rows, in both directions.
     doc = read(root, DOC)
-    documented = set(re.findall(r"`([a-z_]+(?:\.[a-z_]+)?)`", doc))
-    findings_props = schema["properties"]["findings"]["items"]["properties"]
-    problems: list[str] = []
-    for key in list(schema["properties"]) + list(findings_props):
-        if key in ("engagement", "findings"):
+    documented: set[str] = set()
+    for line in doc.splitlines():
+        if not line.lstrip().startswith("|"):
             continue
-        if key not in documented:
-            problems.append(f"{DOC}: the schema has `{key}` and the field table does not explain it")
-    for key in schema["properties"]["engagement"]["properties"]:
-        if f"engagement.{key}" not in documented:
-            problems.append(f"{DOC}: the schema has `engagement.{key}` and the field table does not explain it")
+        cell = line.split("|")[1] if line.count("|") >= 2 else ""
+        documented.update(re.findall(r"`(engagement\.[a-z_]+|findings\[\]\.[a-z_]+|[a-z_]+)`", cell))
+    findings_props = schema["properties"]["findings"]["items"]["properties"]
+    engagement_props = schema["properties"]["engagement"]["properties"]
+    problems: list[str] = []
+
+    expected = {k for k in schema["properties"] if k not in ("engagement", "findings")}
+    expected |= {f"engagement.{k}" for k in engagement_props}
+    expected |= {f"findings[].{k}" for k in findings_props}
+    for name in sorted(expected - documented):
+        problems.append(
+            f"{DOC}: the schema has `{name}` and the field table does not explain it at that level")
+    # and the other way: a row for a field the schema does not have sends an
+    # auditor to write something the validator will refuse.
+    for name in sorted(documented - expected):
+        if name in ("engagement", "findings") or "." not in name and name not in schema["properties"]:
+            continue
+        problems.append(
+            f"{DOC}: the field table has a row for `{name}`, which the schema does not declare there")
 
     if not targets:
         fixtures = sorted((root / FIXTURES).rglob("*.json")) if (root / FIXTURES).is_dir() else []
@@ -179,6 +198,104 @@ def main() -> int:
             found.append(msg)
 
         check_shape(data, schema, "", fail)
+
+        # The inventory must be resolved. A blinded reader test found a report that
+        # inventoried a data-access layer, named knex as the routing signal that
+        # selected its procedures, and then listed that layer in neither what it
+        # read nor what it did not - and the reader's verdict was that silence
+        # about SQL injection there was not evidence of its absence. Prose could
+        # not stop that. Set arithmetic can.
+        cov = (data.get("engagement") or {}).get("coverage")
+        if isinstance(cov, dict):
+            inv = set(cov.get("inventoried") or [])
+            examined = set(cov.get("read") or [])
+            skipped = set(cov.get("not_read") or [])
+            for s in sorted(inv - (examined | skipped)):
+                fail(f"engagement.coverage: {s!r} is inventoried and resolved as neither read nor "
+                     "not_read - that silence is what a reader mistakes for a clean bill")
+            for s in sorted(examined & skipped):
+                fail(f"engagement.coverage: {s!r} is in both `read` and `not_read`")
+            for s in sorted((examined | skipped) - inv):
+                fail(f"engagement.coverage: {s!r} is resolved but was never inventoried")
+
+        # The unaided pass must be resolved too, for the same reason and against a
+        # sharper measurement. Eleven runs said the corpus arm found what an
+        # unaided engineer found and no more, missed one advisory while holding
+        # the right file open, and agreed with ITSELF less across repeated runs
+        # (0.68 against 0.81) - its stable core plus a different tail each time.
+        # The reading those numbers support is substitution: what a procedure
+        # named got found, what it did not name got bent into the nearest
+        # procedure or quietly dropped. So a candidate written down before any
+        # pack was opened has exactly two honest endings, reported or dropped
+        # with a reason, and `reported` has to be provable against the findings
+        # rather than merely asserted.
+        up = (data.get("engagement") or {}).get("unaided_pass")
+        if isinstance(up, dict):
+            # These are declared as arrays of strings. A run that writes objects
+            # here used to crash this validator with TypeError instead of being
+            # told what was wrong - and a crash is not a verdict, it is a gate
+            # that could not measure. Found by a real run, not by reasoning.
+            def _labels(field):
+                raw = up.get(field) or []
+                if not isinstance(raw, list):
+                    fail(f"engagement.unaided_pass.{field} must be a list of short labels, not "
+                         f"{type(raw).__name__}")
+                    return set()
+                bad = [x for x in raw if not isinstance(x, str)]
+                for x in bad:
+                    fail(f"engagement.unaided_pass.{field} contains a {type(x).__name__} where a short "
+                         "label string belongs; the set arithmetic this field exists for cannot run over it")
+                return {x for x in raw if isinstance(x, str)}
+
+            cand = _labels("candidates")
+            kept = _labels("reported")
+            dropped_rows = up.get("dropped") or []
+            gone = set()
+            ids = {f.get("id") for f in (data.get("findings") or []) if isinstance(f, dict)}
+            for row in dropped_rows:
+                if isinstance(row, dict) and isinstance(row.get("label"), str):
+                    gone.add(row["label"])
+                    reason = (row.get("reason") or "").strip()
+                    if reason.lower().startswith(("no procedure", "the pack has no procedure",
+                                                  "not in the corpus", "no matching procedure")):
+                        fail(f"engagement.unaided_pass: {row['label']!r} is dropped because no "
+                             "procedure covers it, and that is the one reason this field exists to "
+                             "refuse - a finding with no procedure is `ad-hoc`, not absent")
+                    # A dismissal has to cost what an assertion costs. Measured: a
+                    # weaker model on a short budget does not go quiet, it refutes
+                    # confidently - twice dismissing a real unbounded allocation,
+                    # once by asserting the bounds were fine and once by citing the
+                    # length cap of a different method.
+                    res = row.get("resolution")
+                    if res == "refuted" and not (row.get("control_at") or "").strip():
+                        fail(f"engagement.unaided_pass: {row['label']!r} is refuted with no `control_at` - "
+                             "a refutation names the line where the bound is enforced on the path to the "
+                             "sink, exactly as a confirmation names where it is missing")
+                    if res == "merged":
+                        into = (row.get("merged_into") or "").strip()
+                        if not into:
+                            fail(f"engagement.unaided_pass: {row['label']!r} is merged into nothing - "
+                                 "name the finding that absorbed it")
+                        elif into not in ids:
+                            fail(f"engagement.unaided_pass: {row['label']!r} is merged into {into!r}, "
+                                 "which is not a finding in this artifact")
+            for s in sorted(cand - (kept | gone)):
+                fail(f"engagement.unaided_pass: {s!r} was a candidate before any pack was opened and "
+                     "is resolved as neither reported nor dropped - that is the substitution this "
+                     "field exists to make visible")
+            for s in sorted(kept & gone):
+                fail(f"engagement.unaided_pass: {s!r} is in both `reported` and `dropped`")
+            for s in sorted((kept | gone) - cand):
+                fail(f"engagement.unaided_pass: {s!r} is resolved but was never a candidate")
+
+            labelled = {f.get("unaided_label") for f in (data.get("findings") or [])
+                        if isinstance(f, dict) and isinstance(f.get("unaided_label"), str)}
+            for s in sorted(kept - labelled):
+                fail(f"engagement.unaided_pass: {s!r} is declared reported, but no finding carries it "
+                     "as `unaided_label` - the claim has to be checkable against the findings")
+            for s in sorted(labelled - cand):
+                fail(f"a finding carries unaided_label {s!r}, which is not among the candidates of "
+                     "engagement.unaided_pass")
 
         for i, f in enumerate(data.get("findings", []) if isinstance(data.get("findings"), list) else []):
             if not isinstance(f, dict):
@@ -207,6 +324,14 @@ def main() -> int:
                     fail(f"{where}: `confirmed` with confidence `low` - nobody followed the path")
             if status == "probable" and not f.get("inference"):
                 fail(f"{where}: `probable` must name the link that was inferred, in `inference`")
+            # A gap named with no way to close it sends the reader nowhere. Across a
+            # day of blinded runs the arms volunteered this unprompted and the
+            # verifiers said out loud that it was what let them mark a claim
+            # undecidable rather than wave it through; requiring it makes the habit
+            # part of the contract instead of a courtesy.
+            if status == "probable" and not f.get("what_would_settle_it"):
+                fail(f"{where}: `probable` must say what would settle it - the artifact, file or "
+                     "symbol that turns the inference into an observation")
             if status == "withdrawn" and not f.get("withdrawn_reason"):
                 fail(f"{where}: `withdrawn` must say why the claim did not survive")
 

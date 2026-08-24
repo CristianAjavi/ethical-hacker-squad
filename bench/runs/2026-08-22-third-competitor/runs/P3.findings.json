@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "SQL Injection in /invoices endpoint via ORDER BY clause",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "critical",
+      "impact": "An attacker can execute arbitrary SQL queries by manipulating the 'order' query parameter, potentially exfiltrating all invoices from all users, deleting data, or executing commands on the database.",
+      "evidence": "Line 24: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); - The 'order' variable from req.query.order is interpolated directly into the SQL string without parameterization. The /payments endpoint (line 32) demonstrates the correct pattern using a SORTABLE allowlist.",
+      "recommendation": "Implement a whitelist/allowlist pattern similar to SORTABLE on line 29. Define valid column names in a constant (e.g., const INVOICE_SORT = { created_at: 'created_at', amount: 'amount' }) and validate req.query.order against it before use. Never interpolate untrusted input into SQL queries."
+    },
+    {
+      "id": "F-002",
+      "title": "Missing JWT signature verification in authentication",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "critical",
+      "impact": "Authentication is completely bypassed. An attacker can forge arbitrary JWT tokens with any user ID and role claims, impersonating any user in the system. All protected endpoints relying on req.user will be compromised.",
+      "evidence": "Line 6: const claims = jwt.decode(bearer); - The code uses jwt.decode() which only decodes the JWT payload without verifying the signature. No verification happens. A valid JWT requires jwt.verify(bearer, secret, ...). The token signature is never checked against any secret.",
+      "recommendation": "Replace jwt.decode() with jwt.verify(bearer, JWT_SECRET, { algorithms: ['HS256'] }) where JWT_SECRET is a securely managed secret. Store the secret in environment variables (process.env.JWT_SECRET), not in code. Implement middleware that checks req.user exists on protected routes. Handle jwt.verify() errors by rejecting the request."
+    },
+    {
+      "id": "F-003",
+      "title": "Server-Side Request Forgery (SSRF) via unrestricted URL fetching",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "critical",
+      "impact": "An attacker can make the server fetch arbitrary URLs, including internal services, local files via file:// protocol, or metadata endpoints (e.g., AWS IMDSv2 at 169.254.169.254). This can lead to exfiltration of secrets, internal service compromise, or information disclosure.",
+      "evidence": "Line 6: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); } - The function accepts user-supplied URL (from req.body.logoUrl on line 38 of invoices.js) with zero validation. The redirect: 'follow' setting amplifies the attack by following redirects to any destination. The ALLOWED whitelist on line 2 is only used by fetchAsset(), not by fetchLogo().",
+      "recommendation": "Apply URL validation to fetchLogo(): (1) Whitelist allowed protocols (https:// only, never http://, file://, data://, etc.); (2) Parse and validate the hostname against a whitelist (e.g., customer CDNs only); (3) Use redirect: 'error' to reject redirects; (4) Implement timeout and size limits to prevent DoS; (5) Consider using a dedicated image proxy/validator service. Example: new URL(url) to parse, then check parsed.protocol and parsed.hostname."
+    },
+    {
+      "id": "F-004",
+      "title": "Reflected Cross-Site Scripting (XSS) in invoiceNote function",
+      "file": "lib/render.js",
+      "line": 5,
+      "severity": "high",
+      "impact": "An attacker can inject malicious JavaScript into invoice notes that will execute in the browser of any user viewing that invoice. This enables session hijacking, credential theft, malware injection, or defacement. Contrast with customerName() on line 10, which correctly uses escapeHtml().",
+      "evidence": "Line 5: return `<div class=\"note\">${note}</div>`; - The 'note' parameter is directly interpolated into HTML without escaping. Line 10 demonstrates the correct pattern: return `<span class=\"name\">${escapeHtml(name)}</span>;` The invoiceNote function is vulnerable because escapeHtml() is imported but not used for the note field.",
+      "recommendation": "Escape the note parameter: return `<div class=\"note\">${escapeHtml(note)}</div>;` Ensure all user-supplied content is escaped before being rendered in HTML context. Consider using a templating engine with auto-escaping (e.g., EJS, Pug) instead of string interpolation. Add Content-Security-Policy header to the HTTP response to prevent inline script execution."
+    },
+    {
+      "id": "F-005",
+      "title": "Broken Object-Level Authorization (BOLA/IDOR) on /invoices/:id endpoint",
+      "file": "routes/invoices.js",
+      "line": 7,
+      "severity": "high",
+      "impact": "An attacker can enumerate and read invoices belonging to other users by guessing or iterating invoice IDs. There is no ownership check. The /receipts/:id endpoint (line 13-18) correctly implements this check, but /invoices/:id does not.",
+      "evidence": "Lines 7-10: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }); - The query only filters by invoice ID, not by owner. Compare to /receipts/:id (lines 13-18): 'SELECT * FROM receipts WHERE id = $1 AND owner_id = $2' with [req.params.id, req.user.id] - this is the correct pattern.",
+      "recommendation": "Add owner_id check to the /invoices/:id query: db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]). Return 404 if no invoice matches, not 403, to avoid leaking that the invoice exists. Apply the same pattern to all endpoints that fetch user-specific data."
+    },
+    {
+      "id": "F-006",
+      "title": "Missing authentication middleware on protected endpoints",
+      "file": "routes/invoices.js",
+      "line": 1,
+      "severity": "high",
+      "impact": "If req.user is not set by upstream middleware, the authentication bypass is complete. Even with JWT verification in place, there is no evidence that middleware enforces authentication on these routes. req.user.id is assumed to exist without checks.",
+      "evidence": "The routes use req.user.id (line 24, 32) and req.user (line 16) without verifying these properties exist. No middleware is visible in the router file or invoked to ensure authentication. If no upstream middleware sets req.user, these routes will fail with undefined errors or expose null values.",
+      "recommendation": "Implement authentication middleware that validates the JWT and sets req.user: const authMiddleware = (req, res, next) => { const token = (req.headers.authorization || '').replace('Bearer ', ''); try { const decoded = jwt.verify(token, process.env.JWT_SECRET); req.user = decoded; next(); } catch (err) { res.status(401).json({ error: 'Unauthorized' }); } }; Then apply it: router.use(authMiddleware); at the top of the router file, before all routes."
+    },
+    {
+      "id": "F-007",
+      "title": "tagRequest function with dead code and potential null dereference",
+      "file": "lib/auth.js",
+      "line": 14,
+      "severity": "medium",
+      "impact": "Line 14 references req.session.user which is never set elsewhere (req.session is not initialized). This is dead code / unreachable and indicates incomplete implementation or copy-paste error. The function attempts to use claims from unverified JWT (same issue as F-002).",
+      "evidence": "Lines 11-14: The tagRequest function decodes JWT (without verification), increments metrics with claims.tenant, then returns req.session.user - but req.session is never initialized or populated. Express does not provide req.session by default without express-session middleware. The return value is never used in the invoices.js routes.",
+      "recommendation": "Either remove tagRequest if it's not used, or implement it correctly: (1) Verify the JWT with jwt.verify() (fixes F-002); (2) Initialize req.session via express-session middleware or use req.user instead; (3) Return the user object from currentUser() function or return it from tagRequest(); (4) Add error handling for malformed tokens (claims might be null if decode fails)."
+    }
+  ]
+}

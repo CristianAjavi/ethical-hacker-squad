@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Command Injection via Arbitrary Shell Execution",
+      "file": "agent/answer.py",
+      "line": 36,
+      "severity": "Critical",
+      "impact": "Arbitrary code execution with full process privileges. An attacker can execute arbitrary system commands, modify files, exfiltrate data, establish reverse shells, or compromise the entire system.",
+      "evidence": "Function summarize_and_run() at lines 36-37 directly passes model-generated output to subprocess.run(shell=True) without any validation, sanitization, or allowlisting. The function explicitly documents it runs 'the shell snippet the model produced' with shell interpretation enabled via shell=True parameter.",
+      "recommendation": "1. Remove shell=True and parse command as list of arguments instead. 2. Implement strict allowlist of permitted commands. 3. Use subprocess.run with shell=False and explicit argument list. 4. Add input validation and reject any model output containing shell metacharacters. 5. Consider removing this function entirely if not essential to functionality."
+    },
+    {
+      "id": "F-002",
+      "title": "Hardcoded API Credentials in Configuration",
+      "file": "config/mcp.json",
+      "line": 5,
+      "severity": "High",
+      "impact": "Exposure of billing API credentials allowing unauthorized access to billing MCP server. An attacker with access to the configuration file can perform arbitrary billing operations, issue unauthorized refunds, modify customer accounts, and commit financial fraud.",
+      "evidence": "The BILLING_API_KEY 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a' is hardcoded in plaintext in config/mcp.json at line 5 within the env section of the billing server configuration. The key format (sk-* prefix) matches standard API credential patterns and is directly usable without modification.",
+      "recommendation": "1. Move all credentials to environment variables or secure secret management (AWS Secrets Manager, HashiCorp Vault, etc). 2. Use environment variable references like '${BILLING_API_KEY}' in configuration file. 3. Rotate the exposed API key immediately. 4. Add config/mcp.json to .gitignore. 5. Implement credential scanning in pre-commit hooks. 6. Use principle of least privilege for API keys (limit scope, permissions, rotation period)."
+    },
+    {
+      "id": "F-003",
+      "title": "Unrestricted Account Access in Tool Execution",
+      "file": "agent/answer.py",
+      "line": 30,
+      "severity": "High",
+      "impact": "Cross-account authorization bypass allowing the model to access and modify any customer account. An attacker can issue refunds to arbitrary accounts, lookup private information for any customer, and perform unauthorized financial transactions.",
+      "evidence": "The run_tool() function at lines 30-35 accepts decision['account_id'] directly from the model without validating it against the authenticated session. The function receives a session parameter but completely ignores it when executing tools. In contrast, run_tool_scoped() (lines 37-44) demonstrates the correct pattern by extracting account_id from session['authenticated_account_id'], proving that authorization checks were intentionally omitted from run_tool().",
+      "recommendation": "1. Always use run_tool_scoped() pattern instead of run_tool(). 2. Enforce account_id validation against session['authenticated_account_id']. 3. Reject any tool request targeting an account other than the authenticated user's account. 4. Implement role-based access control (RBAC) for tool execution. 5. Add audit logging for all tool executions. 6. Implement transaction approval workflows for high-value operations like refunds."
+    },
+    {
+      "id": "F-004",
+      "title": "Memory Poisoning via Unrestricted Persistent State Storage",
+      "file": "agent/memory.py",
+      "line": 11,
+      "severity": "Medium",
+      "impact": "Agent memory poisoning allowing persistent injection of malicious instructions into the agent's long-term memory. Subsequent agent interactions will be influenced by the poisoned memory, potentially causing the agent to violate security policies, change behavior, or execute attacker-controlled instructions.",
+      "evidence": "The remember_from_reply() function at lines 11-14 accepts arbitrary string input (reply parameter) with no validation and directly appends it to the persistent memory store at /var/lib/acme/agent-memory.json. The stored data is shared across all sessions and can influence future agent behavior. There is no size limit on the notes array, enabling denial of service through unbounded file growth.",
+      "recommendation": "1. Validate and sanitize all data before storing in persistent memory. 2. Implement strict schema validation for memory contents. 3. Add size limits to prevent unbounded growth. 4. Use separate, scoped memory stores for different types of data. 5. Implement memory integrity checks and anomaly detection. 6. Add audit logging for all memory modifications. 7. Consider removing unrestricted remember_from_reply() in favor of structured remember_preference() with schema validation."
+    }
+  ]
+}
