@@ -25,6 +25,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
+| promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
@@ -156,6 +157,25 @@ Proved in the negative by 11 cases, including a control run and two that must ex
 Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
 
 Proved in the negative by 7 cases built on throwaway repositories, because a delta gate can only be exercised by making a delta.
+
+## The promotion invariant — who judges is always main
+
+The release `verify` job checks out **two** trees: `tools/` is the tip of `main`, the code that JUDGES; `source/` is the candidate commit, the content BEING JUDGED. `main`'s gates are copied over the candidate's own and run with `working-directory: source`.
+
+That arrangement has one soft spot, and it is not in the copy: `python3 -c`, a heredoc on stdin and `python3 -` all put the **working directory** first on `sys.path`. A `yaml.py` or a `json.py` sitting in the candidate tree would be imported by the gates judging it, and the candidate would be approving itself through the back door. `PYTHONSAFEPATH: '1'` closes it, and has been set on that workflow since it was found.
+
+`gate-promotion-safepath.sh` is the part the closure rule demands and the mitigation did not have: **the check that fails if the mitigation is removed.** Two triggers, either of which requires `PYTHONSAFEPATH` in scope:
+
+| | Trigger | Scope that satisfies it |
+|---|---|---|
+| `T1` | a job that checks out **two or more trees** and then runs a step with a `working-directory:` — or a `cd` inside a `run:` block | the workflow or the job `env:` |
+| `T2` | a step whose `run:` invokes python while its working directory is not the workspace root | the workflow, the job or the step `env:` |
+
+**`T1` exists because `T2` alone was a measured false green.** Written first as "a step that runs python outside the root", this gate passed the real `release.yml` *and* passed a mutant with `PYTHONSAFEPATH` deleted — because the word `python` appears nowhere in that step. It runs `./scripts/gates/run-all.sh`; python is reached through the gates the runner invokes. A rule that greps for `python` reads the exposed release workflow as clean.
+
+**A declared `PYTHONSAFEPATH` is not automatically a mitigation.** CPython acts on a **non-empty string**, so `'0'` and `'false'` switch it *on* — the value is not a boolean — and only an empty value leaves the interpreter prepending the working directory. `PYTHONSAFEPATH: ''` therefore mitigates nothing while reading in review exactly like a mitigation, and the gate reports that case with its own sentence.
+
+Proved in the negative twice: 14 fixtures under `scripts/gates/fixtures/safepath/` run on every invocation as the gate's own self-test, and a 7-case mutant bank over the live `release.yml`, recorded in `scripts/gates/fixtures/safepath/README.md`.
 
 ## The findings artifact
 
