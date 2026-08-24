@@ -585,3 +585,77 @@ measurement.
 - **If a real engagement shows the corpus does not improve findings over a bare model**,
   the central premise of §3.1 fails and the product needs rethinking, not extending.
   Nobody has run that test — not us, not them.
+
+## What they shipped after we measured them — read from the diffs, 2026-08-24
+
+`scripts/gh/competitive-freshness.sh` reported two of the three comparable products past
+the commit this project measured them at. This is what moved, read from the commits rather
+than from anyone's README.
+
+### `Tencent/AI-Infra-Guard` — `4908db1` → `32df94d`
+
+Two commits, two files, both documentation: *"fix CVE counts after case-collision duplicate
+removal"*. They corrected a **stale count in their own docs**. Nothing in the product moved,
+so the measurement taken against `4908db1` describes the current product.
+
+### `google/mantis` — `5f76be0` → `56377ad`
+
+Two commits, **49 files**, and this one matters:
+
+> *Use the skills for ADK reference harness, improve sandbox examples, model tiering,
+> **evals**, observability, testing, and secure dev skill*
+
+Three things arrived, and two of them are ground this project does not hold.
+
+**1. A skill.** `mantis-advise/SKILL.md`, 179 lines — the same packaging this project
+uses. Convergent, and it says the format is not a differentiator.
+
+**2. Sandboxed execution environments.** `gce_env.py` (606 lines), `gvisor_env.py`,
+`microsandbox_env.py`, `static_env.py`, plus a GCE setup document. That is **reproduction
+infrastructure**, and this project has none. It is not an oversight here: reproduction is
+declared out of scope, and the cost of that declaration has already been measured — in
+`../bench/runs/2026-08-22-third-competitor/`, a competitor's rubric discounted a finding of
+ours for *no reproduction evidence*, and the note in that round says plainly that the
+discount is **our constraint showing up in their score**.
+
+**3. Per-stage eval datasets.** `reference/evals/` — `calibrate`, `critic`,
+`deduplication`, `patch`, `reflect`, `report`, `reproduce`, `review`. They measure each
+STAGE of their pipeline. This project measures end to end: a round asks whether the squad
+found the defect, never whether the deduplicator deduplicates.
+
+## Where that leaves the comparison, stated in both directions
+
+| | `google/mantis` @ `56377ad` | this project |
+|---|---|---|
+| granularity | **per stage**, eight datasets | end to end only |
+| reproduction | **executable PoC per case**, four sandbox backends | declared out of scope, and it costs points in others' rubrics |
+| dataset size | 1 case in `patch`, 6 in `review` | 10 cases, 39 run directories |
+| blinding | none visible in the datasets | two independent adversarial passes, provenance held where no judge prompt names it |
+| pre-registration | none visible | every round, criteria committed before the numbers exist |
+| published negatives | none found | many, including withdrawn claims and a retracted round |
+
+**They are ahead on two axes and this project is ahead on two.** Saying otherwise in either
+direction would be the kind of claim this document exists to refuse.
+
+## How to improve on it rather than copy it
+
+Their `patch_dataset.json` carries the answer inside the question. The
+`vulnerability_description` field reads *"SQL string interpolation in fetch_user. **Fix by
+using parameterized query:** `cursor.execute("SELECT * FROM users WHERE name = ?", ...)`"* —
+so the case measures whether a patcher can apply a fix it was handed, not whether it can
+find one. A per-stage eval built here should not repeat that: the stage under test does not
+get told the answer, which is the same rule the detection rounds already follow.
+
+So the two moves, in the order the evidence supports:
+
+1. **Per-stage evals with this project's method.** Their granularity, this project's
+   blinding and pre-registration. It is the cheaper of the two and it closes the axis where
+   their instrument is finer than ours.
+2. **Reproduction.** The expensive one, and the honest note is that it is not only
+   infrastructure: it changes what the engagement rules allow, and those rules are why
+   several findings here are `probable` rather than `confirmed`. It should be decided as a
+   scope question first and a build second.
+
+Neither is started. Recording what they shipped is not the same as matching it, and this
+section is the first half only.
+
