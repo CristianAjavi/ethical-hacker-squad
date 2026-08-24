@@ -10,7 +10,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| `G1` manifest and structure | running | `gate-plugin-integrity.sh`, `gate-plugin-version.sh` |
+| `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test, `gate-plugin-version.sh` + self-test |
 | `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
 | `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
@@ -25,13 +25,14 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
+| verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
-| verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
-| label taxonomy | running | `gate-labels-taxonomy.sh` |
+| label taxonomy | running | `gate-labels-taxonomy.sh` + self-test |
+| negative proof | running | `gate-negative-proof.sh` + self-test |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -50,6 +51,40 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### The four that had never been observed failing
+
+This document has asked, since it was written, that **every** gate be proved in the negative. Measured against `run-all.sh --list`, four of seventeen had no negative proof of any kind — no battery, no fixtures, no inline self-test:
+
+| Gate | What goes wrong silently without it | Cases now |
+|---|---|---|
+| `gate-plugin-version.sh` | a frozen `version` in `plugin.json` makes `/plugin update` skip the plugin: commits merge for months and no installed user receives them, with no error | 13 |
+| `gate-plugin-integrity.sh` | the shape of everything a user loads — frontmatter, links, symlinks, the execute bit, the size budget | 20 |
+| `gate-verdict-vocabulary.sh` | the five-spellings drift this vocabulary was written to end, coming back | 12 |
+| `gate-labels-taxonomy.sh` | GitHub **drops** an undeclared label without a word and the issue arrives unclassified | 12 |
+
+Three of the four run on a throwaway tree built by the battery; `gate-verdict-vocabulary.selftest.sh` copies the real corpus instead, because a hand-written vocabulary would drift from the one the gate polices. `gate-labels-taxonomy.sh` resolves its root from its own location and takes no override, so its battery copies the gate into the throwaway tree rather than changing the gate to be testable.
+
+Two of those 57 cases are worth naming. `gate-plugin-integrity.sh` states in a comment that a `grep '^allowed-tools:'` was *demonstrated evadable* — `"allowed-tools": Bash(*)` and `allowed-tools : Bash(*)` are the same key to any YAML parser and neither starts with the literal. All three spellings are now measured, plus the `EHS_ALLOW_TOOLS_FRONTMATTER=1` escape hatch that must still let a human say yes. And the only route into `gate-plugin-version.sh`'s base-ref lookup is channel `latest` *with* a version declared; on `stable` there is no diff to compute and on a versionless `latest` there is nothing to bump. Two drafts of that battery asserted `2` from those dead ends and were wrong about the gate, not the other way round.
+
+### And the check that keeps it that way
+
+The batteries above are the fix. `gate-negative-proof.sh` is the other half this repository's closure rule always asks for: it fails when a gate carries no negative proof at all.
+
+A gate proves itself in exactly one of two shapes, and the gate accepts only those two:
+
+| | Shape | Gates using it |
+|---|---|---|
+| sibling | a non-empty `<gate>.selftest.sh` beside it, which the CI step discovers | 14 |
+| inline | the gate READS `${GATE_SELFTEST:-1}` — the switch whose only effect is to cap its verdict at `2` when the self-test is skipped, so a gate that has not measured itself can never sign a green | 4 |
+
+**The marker is a parameter expansion, not a substring**, and a mutant is why: renaming the variable inside a gate to `GATE_SELFTEST_RENAMED` left the first version of this check green, because `grep GATE_SELFTEST` matches that too — as it matches a comment that merely mentions the switch. Both spellings are now negative fixtures.
+
+An empty `<gate>.selftest.sh` fails on its own line: a battery in name only reads like a proof and is not one.
+
+What this gate deliberately does **not** answer is whether the proof is any good — whether its cases are real, whether they cover the rules that matter, whether an assertion is strong. Counting files cannot answer that, and a gate implying otherwise would be worse than this one. It answers exactly one question, *does a negative proof exist*, and the reviewer answers the rest.
+
+Proved in the negative by 9 fixtures run as its own self-test, and by a mutant bank over the real `scripts/gates/`: deleting a sibling battery, emptying one, and removing a gate's inline self-test each give `1`; the untouched tree gives `0`.
 
 ## G1 — Manifest and structure
 
