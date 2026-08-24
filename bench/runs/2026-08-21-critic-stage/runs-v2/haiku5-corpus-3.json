@@ -1,0 +1,110 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "commit": "HEAD",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ehs-security-audit (haiku)",
+    "coverage": {
+      "inventoried": ["src/main/java/com/rabbitmq/client/impl/ValueReader.java"],
+      "read": ["src/main/java/com/rabbitmq/client/impl/ValueReader.java"],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "unbounded-memory-allocation",
+        "long-overflow-timestamp",
+        "recursion-depth-dos"
+      ],
+      "reported": [
+        "unbounded-memory-allocation",
+        "recursion-depth-dos"
+      ],
+      "dropped": [
+        {
+          "label": "long-overflow-timestamp",
+          "resolution": "refuted",
+          "reason": "The Date constructor accepts milliseconds since epoch; while overflow is technically possible with extreme values, the practical attack surface is negligible because timestamps are expected to be near current time (around 1.6B seconds in epoch range). RabbitMQ frames are validated and sized, and constructing a Date object with an overflowed value is not exploitable without a corresponding application bug.",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269"
+        }
+      ]
+    },
+    "coverage_declaration": "Analyzed single Java class (ValueReader) handling AMQP protocol deserialization. Examined buffer operations, memory allocation, recursion patterns, and integer arithmetic. Used procedure WEB-11 for deserialization context. No remote testing performed; analysis limited to code review and local feasibility reasoning.",
+    "authorization": null
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation via readBytes length prefix",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86
+      },
+      "evidence": "Lines 86-94: The readBytes() method reads a 32-bit unsigned integer from the stream as contentLength, then allocates a byte array of size (int)contentLength. The check `if(contentLength < Integer.MAX_VALUE)` permits allocation of up to Integer.MAX_VALUE-1 bytes (approximately 2GB). This allocation is triggered whenever tables or long strings with large size fields are parsed: lines 103 (readLongstr), 147 (readTable), 241 (readArray).",
+      "impact": "An attacker sending a single AMQP frame with a large length-prefixed field (e.g., 2GB) forces the JVM to allocate contiguous memory, causing denial of service through heap exhaustion. The application will throw OutOfMemoryError and may crash.",
+      "preconditions": "Attacker must be able to send AMQP frames to the RabbitMQ server. The server must parse the frame using ValueReader, which is the standard path for all AMQP method and content parsing.",
+      "recommendation": "Add an upper-bound check on contentLength before allocating. For example: if(contentLength > MAX_ALLOWED_SIZE) throw new MalformedFrameException(...) where MAX_ALLOWED_SIZE is configurable and conservatively set (e.g., 128MB). This prevents single-frame allocations from consuming excessive memory.",
+      "verification": "not executed",
+      "traceability": ["CWE-400", "CWE-770", "WSTG-INPV-05"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists in the code path. The allocation happens immediately after the size check without any other gate."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The size field is attacker-controlled via the AMQP frame from the network."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink (byte[] allocation) is unsafe with untrusted sizes. Java's array allocation directly requests memory from the JVM heap."
+        }
+      ],
+      "limits": "Verification requires executing a test against a running RabbitMQ client instance with a crafted AMQP frame. This analysis is based on code review only.",
+      "unaided_label": "unbounded-memory-allocation"
+    },
+    {
+      "id": "F-002",
+      "title": "Stack exhaustion via unbounded recursion in field value parsing",
+      "procedure": "WEB-11",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158
+      },
+      "evidence": "The readFieldValue() method (lines 158-221) is called recursively: case 'F' (line 181) calls readTable() which calls readFieldValue() again; case 'A' (line 184) calls readArray() which calls readFieldValue() again. No recursion depth limit is enforced in the code. A deeply nested table-of-tables or array-of-arrays can exhaust the call stack.",
+      "impact": "An attacker sending a frame with deeply nested AMQP table or array structures (e.g., a table containing a table containing a table, repeated N levels deep) will cause a StackOverflowError, crashing the consumer application.",
+      "preconditions": "Attacker must be able to send AMQP frames. The RabbitMQ client must parse the field values using readFieldValue(). The nesting depth required depends on the JVM stack size configuration.",
+      "recommendation": "Introduce a recursion depth counter passed through readFieldValue() -> readTable() -> readFieldValue() and readArray() -> readFieldValue() calls. Reject any field value nesting deeper than a configurable limit (e.g., 32 levels).",
+      "inference": "The recursion depth limit is not explicitly visible in the code. While TruncatedInputStream bounds the outer loop iteration, it does not bound the recursive call depth.",
+      "what_would_settle_it": "A grep search for 'depth' or 'recursion' or 'MAX_NESTING' in the ValueReader class, or a stack-trace experiment with a crafted frame containing 100+ nested tables.",
+      "verification": "not executed",
+      "traceability": ["CWE-674", "CWE-400", "WSTG-INPV-05"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A depth limit may exist in a caller (e.g., the frame dispatcher) before ValueReader is invoked, but the code does not show it."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker is an external AMQP peer, crossing a trust boundary."
+        }
+      ],
+      "limits": "This is a probable finding because the recursion limit, if any, must be verified in the calling context. Local class analysis alone cannot rule out a guard at a higher level.",
+      "unaided_label": "recursion-depth-dos"
+    }
+  ],
+  "ruled_out": []
+}

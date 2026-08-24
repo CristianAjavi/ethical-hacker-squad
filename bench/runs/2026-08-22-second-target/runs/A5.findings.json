@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "SQL Injection in /invoices Route ORDER BY Clause",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "Critical",
+      "impact": "Complete database compromise - attacker can read, modify, or delete arbitrary data through SQL injection in the ORDER BY clause. Can lead to unauthorized data access, data destruction, and privilege escalation at the database level.",
+      "evidence": "Line 24: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); User-supplied req.query.order parameter is directly concatenated into the SQL query without validation or parameterization. The same file correctly implements parameterized queries elsewhere (e.g., lines 8, 14-16) and uses a whitelist approach for /payments endpoint (lines 29-34), showing inconsistent security practices.",
+      "recommendation": "Implement a whitelist-based field mapping for allowed sort columns, following the pattern used in the /payments endpoint. Example: const SORTABLE = { created_at: 'created_at', amount: 'total_cents' }; const column = SORTABLE[req.query.order] || 'created_at'; Then use: db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${column}`, [req.user.id])"
+    },
+    {
+      "id": "F-002",
+      "title": "JWT Authentication Bypass via Unverified Token Decoding",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "Critical",
+      "impact": "Complete authentication system failure - any attacker can forge arbitrary JWT tokens without knowing the signing key and impersonate any user, bypassing all access controls. This enables unauthorized access to all user data including invoices, receipts, and payment information. Can lead to privilege escalation if attacker claims admin role.",
+      "evidence": "Lines 4-8 and 11-15: Functions currentUser() and tagRequest() use jwt.decode() instead of jwt.verify(). The jwt.decode() function only performs base64 decoding without signature verification. No signing key is used, no try-catch error handling for invalid tokens, allowing any JWT with any claims to be accepted as valid.",
+      "recommendation": "Replace jwt.decode() with jwt.verify() using a secret key. Example: const SECRET_KEY = process.env.JWT_SECRET; const claims = jwt.verify(bearer, SECRET_KEY); Add try-catch blocks to handle signature verification failures and return null/default user object on verification errors. Store the secret key in environment variables, never hardcode it."
+    },
+    {
+      "id": "F-003",
+      "title": "Server-Side Request Forgery (SSRF) in fetchLogo Function",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "High",
+      "impact": "Attacker can abuse the /branding/preview endpoint to make the server perform HTTP requests to arbitrary URLs, enabling: (1) access to cloud metadata endpoints (169.254.169.254) to steal AWS credentials; (2) port scanning of internal networks; (3) access to internal services and databases; (4) reading local files via file:// protocol in some environments; (5) denial of service through resource exhaustion.",
+      "evidence": "Lines 5-8: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); } The function accepts any URL parameter without validation, whitelist checks, or protocol restrictions. The redirect: 'follow' option amplifies the attack surface. Contrast with fetchAsset() function (lines 11-16) which correctly implements a domain whitelist (ALLOWED set), demonstrating that developers knew about this vulnerability but failed to apply the same protection pattern.",
+      "recommendation": "Implement strict URL validation with domain whitelisting. Add protocol validation (http/https only), check against allowed hosts list, block internal IP ranges (127.0.0.1, 192.168.x.x, 10.x.x.x, 172.16-31.x.x) and cloud metadata endpoints (169.254.169.254). Use redirect: 'error' instead of 'follow' to prevent open redirect attacks. Example: const ALLOWED_DOMAINS = ['cdn.example.com']; const parsed = new URL(url); if (!ALLOWED_DOMAINS.includes(parsed.hostname)) throw new Error('Host not allowed');"
+    },
+    {
+      "id": "F-004",
+      "title": "Cross-Site Scripting (XSS) in invoiceNote Function",
+      "file": "lib/render.js",
+      "line": 5,
+      "severity": "High",
+      "impact": "Attacker can inject malicious JavaScript into invoice notes, compromising any user viewing that invoice. Can lead to: (1) session hijacking and account takeover via cookie/token theft; (2) credential harvesting through fake login forms; (3) malware distribution; (4) keylogging; (5) phishing redirection. If admin users view compromised invoices, entire application can be compromised.",
+      "evidence": "Lines 4-6: function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } User-supplied note parameter is directly inserted into HTML without any escaping. The same file contains customerName() function (lines 9-11) which correctly uses escapeHtml() on user data: `${escapeHtml(name)}` This shows inconsistent security practices within the same module - proof that developers knew to escape but failed to apply it consistently.",
+      "recommendation": "Use the already-imported escapeHtml library to escape the note parameter: function invoiceNote(note) { return `<div class=\"note\">${escapeHtml(note)}</div>`; } If rich HTML formatting is required, use a sanitization library like isomorphic-dompurify with strict whitelist of allowed tags (only <b>, <i>, <em>, <strong>, <p>, <br>) and no attributes."
+    }
+  ]
+}

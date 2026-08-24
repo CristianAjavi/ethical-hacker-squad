@@ -1,0 +1,303 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (AI safety specialist)",
+    "coverage_declaration": "Inventory: Python agent code (agent/answer.py, agent/memory.py), MCP configuration (config/mcp.json), README. Read: all four files, focusing on tool authorization, prompt injection, secrets, and data handling. Not read: remote dependencies, external MCP servers, production logs. Procedures exercised: AI-01 (lethal trifecta), AI-02 (interpolation without delimitation), AI-05 (authorization by model text), AI-06 (privilege degradation), AI-11 (secrets in MCP config), SUP-16 (secrets in working tree). Not exercised: AI-03 (indirect ingestion), AI-04 (versioned instruction files), AI-08 (tool poisoning), AI-10 (OAuth/token validation), supply-chain procedures for dependency provenance (not present in target).",
+    "coverage": {
+      "inventoried": [
+        "Python agent code: agent/answer.py",
+        "Python agent code: agent/memory.py",
+        "MCP configuration: config/mcp.json",
+        "Documentation: README.md"
+      ],
+      "read": [
+        "Python agent code: agent/answer.py",
+        "Python agent code: agent/memory.py",
+        "MCP configuration: config/mcp.json",
+        "Documentation: README.md"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Hardcoded API key in MCP configuration",
+        "Shell execution of model-generated code",
+        "Authorization bypass: model selects arbitrary account",
+        "Untrusted ticket text in retrieval index",
+        "Unrestricted JSON mutation from model output",
+        "Missing validation on refund amount in output"
+      ],
+      "reported": [
+        "Hardcoded API key in MCP configuration",
+        "Shell execution of model-generated code",
+        "Authorization bypass: model selects arbitrary account",
+        "Untrusted ticket text in retrieval index",
+        "Unrestricted JSON mutation from model output",
+        "Missing validation on refund amount in output"
+      ],
+      "dropped": []
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API key in MCP server configuration",
+      "procedure": "SUP-16",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "config/mcp.json",
+        "line": 6
+      },
+      "evidence": "Line 6 contains: \"BILLING_API_KEY\": \"sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a\". The key matches the format of a real API token (32 hex characters after prefix sk-). Distinctive format prefix.",
+      "impact": "An attacker with read access to the configuration file, or via a developer's terminal history, can use the exposed key to authenticate as the billing service integration and perform billing operations on behalf of the application.",
+      "preconditions": "The configuration file is checked into version control or accessible in an environment where credentials may be leaked.",
+      "recommendation": "Rotate the exposed key immediately. Replace the hardcoded key with a reference to an environment variable (e.g., `${BILLING_API_KEY}`), and populate the variable from a secrets manager or CI/CD environment at runtime. Add `.mcp.json` to `.gitignore` and review git history for this file with `git log -p -- config/mcp.json` to identify if it was committed before.",
+      "traceability": [
+        "CWE-798",
+        "CWE-540",
+        "A02:2025",
+        "CICD-SEC-6"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control prevents the file from being read by an unauthorized party."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is a fully-formed API key in a distinctive format, not a placeholder or example."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The file is part of the source configuration and is not removed by any build step."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No evidence that a secrets manager or external configuration service governs this value."
+        }
+      ],
+      "limits": "The audit assumes the key format is genuine based on distinctive format. Confirmation of validity requires testing against the provider, which is not performed in audit mode."
+    },
+    {
+      "id": "F-002",
+      "title": "Arbitrary shell command execution from model output",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 48
+      },
+      "evidence": "Line 48: `return subprocess.run(model_output, shell=True, capture_output=True, text=True).stdout`. The function `summarize_and_run` passes the model's text output directly to `shell=True`, which executes it as a shell command. The model_output parameter is not constrained by the function signature or by any validation before execution.",
+      "impact": "A compromised model response, or one influenced by adversarial prompts or poisoned context (e.g., from retrieved documents), can cause the agent to execute arbitrary shell commands with the privileges of the process running the agent, potentially compromising the host, reading sensitive files, or pivoting to other systems.",
+      "preconditions": "The `summarize_and_run` function must be called with model output. The function is defined but the audit does not confirm whether it is invoked in the main agent loop.",
+      "recommendation": "Remove shell=True and use subprocess.run with a list of arguments instead of a shell string, or use shlex.split() with appropriate validation. Better: replace shell invocation with a bounded set of named operations the model can select via tool dispatch, rather than generating code. Implement a deny-list or parse model output to extract only recognized commands before execution.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-78",
+        "CWE-77",
+        "LLM01:2026",
+        "LLM03:2026",
+        "A03:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No authorization middleware or input parser intervenes before the shell call."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "model_output is arbitrary text from the LLM, which is under attacker influence."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "subprocess.run with shell=True is a direct execution sink."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The agent crosses the trust boundary: untrusted model content (influenced by adversarial prompts or poisoned RAG data) reaches a privileged operation."
+        }
+      ],
+      "limits": "The audit does not execute the agent or confirm the function is reachable from the main loop. The finding asserts the code pattern is present and dangerous by construction."
+    },
+    {
+      "id": "F-003",
+      "title": "Object-level authorization bypass: model selects account ID for refund",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 30
+      },
+      "evidence": "Lines 29-33 define `run_tool()` with no identity context. Line 30-31: if tool is 'refund', it calls `issue_refund(decision[\"account_id\"], decision[\"amount\"])` where both account_id and amount come from decision, which is the parsed model output. Contrast with lines 36-43 (`run_tool_scoped`): it receives a `session` parameter and binds the operation to `session[\"authenticated_account_id\"]`, forbidding refunds entirely. The comment on line 38 shows the correct pattern exists but is not used.",
+      "impact": "The model can direct refunds to any account by including the target account ID in its tool call. An attacker who can influence the model's context (via prompt injection, poisoned RAG data, or malicious tool output) can cause the system to refund arbitrary accounts, resulting in financial loss.",
+      "preconditions": "The `run_tool()` function must be invoked with model decisions. The code shows `run_tool()` is defined but does not confirm which dispatcher is used in production.",
+      "recommendation": "Always use `run_tool_scoped()` or an equivalent pattern that binds operations to the authenticated user's identity. Pass the session context down to every sensitive operation. In tool dispatch, reject any decision that specifies an account_id that does not match the authenticated session. Add a test that attempts a cross-account refund and verifies it is rejected.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "LLM03:2026",
+        "ASI02",
+        "A01:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code contains no authorization check that binds the operation to the authenticated user."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "account_id comes directly from the model's decision, which is attacker-controllable via prompt injection or RAG poisoning."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The operation crosses trust boundaries: the model (influenced by untrusted content) commands a financial action on any account."
+        }
+      ],
+      "limits": "The audit assumes the vulnerable `run_tool()` function is the active dispatcher. A codebase might use only `run_tool_scoped()` in practice, in which case the risk is lower, but the presence of the vulnerable variant invites misuse."
+    },
+    {
+      "id": "F-004",
+      "title": "Untrusted ticket content ingested into retrieval index without sanitization",
+      "procedure": "AI-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/memory.py",
+        "line": 35
+      },
+      "evidence": "Lines 31-36 define `ingest_ticket_marked()`, which calls `index.add_texts([ticket[\"body\"]], metadatas=[{...\"trust\": \"untrusted\"...}])`. The ticket body is marked as untrusted but is still added to the retrieval index. The metadata marks it untrusted but there is no evidence in the code that retrieval later filters or delimiters the untrusted content. In answer.py line 13, retrieved docs are interpolated into the prompt via f-string without markup: `joined = \"\\n\".join(docs)`, which means untrusted content from retrieved tickets enters the model's context in the same textual plane as the system prompt.",
+      "impact": "An attacker can submit a support ticket (or via another ingestion channel) with prompt-injection payloads. When the agent retrieves that ticket to answer another customer's question, the injected prompt influences the model's behavior, potentially causing it to leak information, change tool behavior, or violate policies.",
+      "preconditions": "The retrieval system is in use and untrusted ticket content reaches the index. The agent uses retrieved content without delimitation or provenance marking in the prompt.",
+      "inference": "The code marks tickets as untrusted but does not show filtering or delimitation at retrieval time. A separate code path might apply these controls, but the audit does not show it.",
+      "what_would_settle_it": "Inspection of the code path where `index.search()` or retrieval is called and the results are formatted into the prompt. Evidence of spotlighting (delimiting and marking untrusted blocks) or a deterministic extractor that returns typed fields instead of free text would refute the finding.",
+      "recommendation": "Apply spotlighting: delimit untrusted content with clear markers (e.g., `<document origin=\"customer-ticket\" trust=\"untrusted\">...</document>`) and encode or mark every token of the untrusted block. Alternatively, extract only typed fields from tickets (date, amount, sender) and never include free-form body text. Test with a canary string in a ticket and verify it does not appear in the model's output without explicit repetition.",
+      "traceability": [
+        "CWE-20",
+        "CWE-77",
+        "LLM01:2026",
+        "ASI01",
+        "AML.T0051.001"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "It is unknown whether a downstream filter applies before the content reaches the model. The metadata is present but not verified to be enforced."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ticket body is attacker-controlled (anyone can submit a support ticket)."
+        }
+      ],
+      "limits": "The audit reads two files and does not trace the full retrieval → prompt flow. If a middle layer filters or delimiters untrusted content, the finding may not apply."
+    },
+    {
+      "id": "F-005",
+      "title": "Unrestricted model output persisted to persistent JSON store",
+      "procedure": "AI-06",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "agent/memory.py",
+        "line": 13
+      },
+      "evidence": "Lines 10-14 define `remember_from_reply()`. Line 13: `data.setdefault(\"notes\", []).append(reply)` appends the model's reply directly to a JSON array without validation. The reply is arbitrary text from the LLM, and once persisted to `/var/lib/acme/agent-memory.json`, it becomes part of the agent's long-term state. Later retrievals of this memory are likely to re-feed it into the model, creating a feedback loop for prompt injection or state poisoning.",
+      "impact": "A poisoned model response (e.g., influenced by injected prompts or adversarial context) is stored permanently. On subsequent agent runs, the poisoned data is retrieved and fed back to the model, amplifying the attack. An attacker can thus corrupt the agent's long-term reasoning and cause persistent behavioral changes.",
+      "preconditions": "The `remember_from_reply()` function is called and the model's output is untrusted (influenced by adversarial prompts or RAG data).",
+      "recommendation": "Add validation to `remember_from_reply()`: accept only predefined fields or a schema (similar to `remember_preference()`). Store structured data, not free-form replies. If free-form notes are necessary, mark their provenance and implement a TTL or review gate before re-ingesting them. Test that injected payloads in a reply are not executed or escalated when the memory is later retrieved.",
+      "traceability": [
+        "CWE-94",
+        "CWE-400",
+        "CWE-269",
+        "LLM01:2026",
+        "LLM03:2026"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No schema validation or gate enforces safe content before persistence."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "reply comes from the model, which is under attacker influence."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The agent crosses a trust boundary: untrusted content (the reply) is promoted to persistent state."
+        }
+      ],
+      "limits": "The audit does not confirm that memory is retrieved and re-fed to the model in a later conversation. If the memory store is write-only and never read, the attack surface is smaller."
+    },
+    {
+      "id": "F-006",
+      "title": "Refund amount not validated in model-generated output",
+      "procedure": "AI-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "agent/answer.py",
+        "line": 51
+      },
+      "evidence": "Lines 51-56 define `summarize_and_render()`. Line 54 checks that `model_output.get(\"op\")` is in an allowed set, but line 56 accesses `model_output[\"value\"]` without any validation (range, type, format). The refund function (line 59-60) accepts an amount directly from the tool call. If the model decides to issue a refund, it specifies both account_id (F-003) and amount, neither of which is validated against business rules (e.g., maximum refund per day, negative amounts, fractional cents).",
+      "impact": "The model can craft a refund decision with an arbitrarily large or negative amount. Without validation, the system would issue a refund of any size, potentially resulting in financial loss (large refunds) or error states (negative refunds).",
+      "preconditions": "The refund tool is invoked and the amount field is not validated by a downstream payment processor.",
+      "inference": "The code shows the op field is validated but the value field is not. It is inferred that downstream validation might apply, but the application code does not show it.",
+      "what_would_settle_it": "Inspection of the `issue_refund()` function and the payment processor it calls to confirm that amount validation occurs. Alternatively, inspection of the tool invocation in the agent loop to confirm bounds are enforced before the refund tool is offered to the model.",
+      "recommendation": "Add validation to the amount field: check that it is a positive number, within a maximum per transaction, and matches the currency precision. Alternatively, remove the ability of the model to specify amount and instead offer the agent a menu of predefined refund tiers (e.g., `refund_full_order`, `refund_shipping`, `refund_item_X`). Add a test that attempts an unreasonably large refund and verifies it is rejected.",
+      "traceability": [
+        "CWE-20",
+        "CWE-840",
+        "LLM03:2026",
+        "ASI02"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Unknown whether downstream validation applies in the payment processor. The application code does not show validation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The amount comes from the model, which is under attacker influence."
+        }
+      ],
+      "limits": "The audit does not follow the refund call to a payment processor. If the processor validates amounts, the risk may be mitigated. However, the absence of validation in the agent code is a design weakness."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Silent tool failure (unknown tool)",
+      "procedure": "AI-05",
+      "outcome": "refuted",
+      "where": "Lines 33 and 43 return 'unknown tool' instead of raising an exception. This is suboptimal but does not constitute an exploitable vulnerability because the error message is visible to the user and does not mask a permission check. The finding was a hardening note rather than a confirmed vulnerability."
+    }
+  ]
+}

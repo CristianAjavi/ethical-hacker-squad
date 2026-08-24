@@ -1,0 +1,334 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (haiku2-corpus-3)",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven build manifest)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire protocol parser)"
+      ],
+      "read": [
+        "pom.xml (Maven build manifest)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire protocol parser)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "SNAPSHOT version in released artifact",
+        "Hardcoded GPG key ID in source control",
+        "Outdated/EOL dependencies (Groovy, SLF4J, Jetty)",
+        "Unbounded buffer allocation in readBytes()",
+        "Unbounded recursion in readTable/readArray",
+        "Unrecognized type handling in readFieldValue()"
+      ],
+      "reported": [
+        "SNAPSHOT version in released artifact",
+        "Hardcoded GPG key ID in source control",
+        "Outdated/EOL dependencies (Groovy, SLF4J, Jetty)",
+        "Unbounded buffer allocation in readBytes()",
+        "Unbounded recursion in readTable/readArray",
+        "Unrecognized type handling in readFieldValue()"
+      ],
+      "dropped": []
+    },
+    "coverage_declaration": "Exercised: supply-chain.md §1-§4 (manifest review, malicious packages, secrets scanning), §7 (artifact signing); supply-chain-source-lifecycle.md §11 (source lifecycle); web-api.md §3 (injection, deserialization), §5 (file parsing). Not exercised: supply-chain.md §5 (transitive dependencies, requires network/mvn), §9 (branch protection, requires GitHub access), §10 (repository access control); remote endpoint scanning (not in scope)."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "SNAPSHOT Version in Release Manifest Violates Reproducibility",
+      "procedure": "SUP-02",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "line": 7
+      },
+      "evidence": "<version>5.34.0-SNAPSHOT</version>",
+      "impact": "Downstream consumers receive non-reproducible builds; artifact is development-grade, not a stable release. Each build may pull different code from the repository at build time.",
+      "preconditions": "Artifact published or referenced with SNAPSHOT suffix; no release workflow removes it before distribution.",
+      "recommendation": "Remove -SNAPSHOT suffix before release. Create git tag v5.34.0 and update pom.xml to <version>5.34.0</version>. Ensure CI/CD release pipeline strips SNAPSHOT only in the release branch.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-345: Insufficient Verification of Data Authenticity",
+        "SLSA Build L1: Pinned Dependencies",
+        "SLSA Source L1: Version Control"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The SNAPSHOT suffix is attacker-controllable in the sense that a compromised build system could produce different artifacts; this is not a literal constant."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The SNAPSHOT version is present in the release artifact, not a debug-only path."
+        }
+      ],
+      "limits": "Analysis limited to the pom.xml file. Whether the artifact is actually distributed with this version requires CI/CD log review (not in scope)."
+    },
+    {
+      "id": "F-002",
+      "title": "Hardcoded GPG Key ID in Source Control Enables Key Enumeration",
+      "procedure": "SUP-08",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "line": 124
+      },
+      "evidence": "<gpg.keyname>6026DFCA</gpg.keyname>",
+      "impact": "GPG key ID exposure enables attackers to enumerate which key was used for signing. If the key is later compromised, attackers can forge past releases or retroactively sign malicious artifacts using the known key ID.",
+      "preconditions": "Key ID is public in git history; key is used for release signing. Attacker possesses the private key (via compromise or insider threat).",
+      "recommendation": "Move key ID to environment variable in CI/CD only. Replace hardcoded value with: <gpg.keyname>${env.RELEASE_GPG_KEYNAME}</gpg.keyname>. Store the actual key ID in GitHub Secrets or vault, not in source.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-798: Use of Hard-Coded Credentials",
+        "SLSA 3.0 §5: Hermetic Builds",
+        "CWE-1104: Use of Unmaintained Third Party Components"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The key ID is hardcoded in the repository and accessible to anyone with git access."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The actual key storage and management policy (whether the key is protected, rotated, etc.) is not documented in the repository. CI/CD secret management lives outside source control."
+        }
+      ],
+      "limits": "Does not assess whether the private key itself has been compromised. Assessment limited to exposure of the key ID in source control."
+    },
+    {
+      "id": "F-003",
+      "title": "Groovy Build Dependency EOL Without Security Updates",
+      "procedure": "SUP-04",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "line": 81
+      },
+      "evidence": "<groovy.all.version>2.4.21</groovy.all.version>",
+      "impact": "Groovy 2.4.21 reached end-of-life in 2015 (9 years ago). No security patches are available. If a vulnerability is discovered in the codegen phase, it cannot be remediated.",
+      "preconditions": "Build process executes Groovy scripts for AMQP code generation. A vulnerability exists in Groovy 2.4.21 that is unknown or unfixed.",
+      "recommendation": "Upgrade to Groovy 4.0.15 (latest stable). Test that codegen output is unchanged: compare src/main/java/com/rabbitmq/client/AMQP.java and AMQImpl.java before and after upgrade.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-1104: Use of Unmaintained Third Party Components",
+        "OWASP A06: Vulnerable and Outdated Components"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control is documented that would mitigate Groovy vulnerabilities."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The version is hardcoded and does not change."
+        }
+      ],
+      "limits": "Does not include a specific CVE demonstrating active exploitation. Impact assessment is based on EOL status and the principle that unpatched dependencies represent inherent risk."
+    },
+    {
+      "id": "F-004",
+      "title": "SLF4J 1.7.36 End-of-Life Dependency",
+      "procedure": "SUP-04",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "line": 58
+      },
+      "evidence": "<slf4j.version>1.7.36</slf4j.version>",
+      "impact": "SLF4J 1.7.36 reached end-of-life in October 2022. Later versions (2.0+) include bug fixes and security hardening. Using EOL versions increases exposure to known issues.",
+      "preconditions": "Runtime includes slf4j-api for logging. A known issue or vulnerability exists in 1.7.36 that is fixed in 2.0+.",
+      "recommendation": "Upgrade to SLF4J 2.0.11 or later (drop-in replacement; API compatible). Test that logging output and behavior are unchanged.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-1104: Use of Unmaintained Third Party Components",
+        "OWASP A06: Vulnerable and Outdated Components"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control is documented."
+        }
+      ],
+      "limits": "Upgrade path is a drop-in replacement, reducing compatibility risk. Impact is lower than Groovy due to higher testability."
+    },
+    {
+      "id": "F-005",
+      "title": "Jetty 9.4.58 End-of-Life Test Dependency",
+      "procedure": "SUP-04",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "line": 70
+      },
+      "evidence": "<jetty.version>9.4.58.v20250814</jetty.version>",
+      "impact": "Jetty 9.4.x reached end-of-life. Latest version 11.0.x contains security hardening and bug fixes. Low immediate impact because Jetty is used only in test scope, not production.",
+      "preconditions": "Test suite runs integration tests using Jetty servlet container. The test scope limits production exposure.",
+      "recommendation": "Upgrade to Jetty 11.0.x+ for test runs. Verify that test suite passes with new version.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-1104: Use of Unmaintained Third Party Components"
+      ],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "HOLDS",
+          "reason": "Jetty is scoped to <scope>test</scope> only, meaning it does not ship in the release artifact."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "This is a defense-in-depth improvement. Production artifacts do not include Jetty. Risk is bounded to test environment."
+        }
+      ],
+      "limits": "Only addresses test-scope dependencies. Production artifact does not ship with Jetty."
+    },
+    {
+      "id": "F-006",
+      "title": "Unbounded Buffer Allocation in readBytes() Permits Denial of Service",
+      "procedure": "WEB-05",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86
+      },
+      "evidence": "final long contentLength = unsignedExtend(in.readInt());\nif(contentLength < Integer.MAX_VALUE) {\n    final byte [] buffer = new byte[(int)contentLength];\n    in.readFully(buffer);\n    return buffer;\n}",
+      "impact": "An attacker can craft an AMQP message with a length-prefixed field claiming up to 2.1GB of data. The client will attempt to allocate a 2.1GB byte array, causing OutOfMemoryError and denial of service.",
+      "preconditions": "Attacker controls the AMQP message stream (e.g., compromised broker, man-in-the-middle). Network stream delivers a crafted length prefix.",
+      "recommendation": "Define a maximum payload size constant (e.g., MAX_BYTES_LENGTH = 134217728 for 128MB). Throw UnsupportedOperationException if contentLength exceeds this limit. Make the limit configurable via ValueReader constructor parameter.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-400: Uncontrolled Resource Consumption",
+        "OWASP A05:2021: Misconfiguration",
+        "CWE-131: Incorrect Calculation of Buffer Size"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The contentLength value is attacker-controlled via the network stream."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The Java byte array constructor does execute directly with the attacker-controlled size."
+        }
+      ],
+      "limits": "Does not account for JVM heap size or garbage collection behavior. Practical OOM threshold depends on JVM heap configuration. Analysis assumes standard configurations."
+    },
+    {
+      "id": "F-007",
+      "title": "Unbounded Recursion in readTable() and readArray() Permits Stack Overflow",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 150
+      },
+      "evidence": "private static Map<String, Object> readTable(DataInputStream in) throws IOException {\n    ...\n    Object value = readFieldValue(tableIn);\n    ...\n}\n\ncase 'F':\n    value = readTable(in);\n    break;\ncase 'A':\n    value = readArray(in);\n    break;",
+      "impact": "An attacker can craft an AMQP message containing tables nested 10,000+ levels deep. Each level consumes stack frame space. This causes StackOverflowException and denial of service.",
+      "preconditions": "Attacker controls AMQP message content. Message contains deeply nested tables or arrays (e.g., a table containing a table containing a table, repeated).",
+      "recommendation": "Add a depth parameter to readFieldValue(): readFieldValue(DataInputStream in, int depth). Throw MalformedFrameException if depth > MAX_DEPTH (e.g., 100). Increment depth when entering table/array, check at each level.",
+      "inference": "No depth counter is observed in the code. Java stack is finite (typically ~1MB default). Deeply nested structures will exhaust it.",
+      "what_would_settle_it": "Run a test: attempt to read a 5000-level nested table and verify that StackOverflowException is thrown, confirming the vector. Benchmark: measure actual recursion depth at failure point on target JVM.",
+      "traceability": [
+        "CWE-674: Uncontrolled Recursion",
+        "OWASP A04:2021: Insecure Deserialization"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nesting depth is attacker-controlled via AMQP message structure."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recursion is a real language feature that consumes stack. There is no stack depth check."
+        }
+      ],
+      "limits": "Actual recursion depth at failure depends on stack size configuration and payload structure. Integration test with a real broker would confirm exploitability. AMQP protocol legitimately supports nested tables; the fix must permit reasonable nesting (e.g., ≥100 levels) while bounding pathological cases."
+    },
+    {
+      "id": "F-008",
+      "title": "Silent Type Corruption in readFieldValue() Error Reporting",
+      "procedure": "WEB-03",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 217
+      },
+      "evidence": "default:\n    throw new MalformedFrameException(\"Unrecognised type in table\");",
+      "impact": "Attacker sends an AMQP message with an invalid type byte (e.g., 0xFF). The exception is thrown but does not include the actual byte value, making debugging difficult. Attackers can craft messages that trigger cryptic errors, potentially used for protocol confusion or information gathering.",
+      "preconditions": "AMQP message contains a table with an unrecognized type marker. Error message is logged or exposed to the client.",
+      "recommendation": "Include the actual type byte in the error message. Replace exception with: throw new MalformedFrameException(\"Unrecognised type in table: 0x\" + Integer.toHexString(typeCode & 0xff) + \" (\" + (char)typeCode + \")\");",
+      "inference": "The type byte value is not captured in the error message. This is inferred from the default case not logging the typeCode variable.",
+      "what_would_settle_it": "Unit test: call readFieldValue() with type byte 0xFF and verify that the error message includes '0xFF' or similar hex representation. Inspect actual exception log output.",
+      "traceability": [
+        "CWE-91: Likely Incorrect Type Casting or Conversion",
+        "CWE-388: Error Handling with Incomplete Information"
+      ],
+      "triage": [
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Error messages are often logged or exposed; incomplete information can aid attackers."
+        }
+      ],
+      "limits": "This is an informational finding focused on error handling quality. No direct exploit path is demonstrated. The fix is a low-cost logging improvement."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Hardcoded credentials or private keys",
+      "procedure": "SUP-08",
+      "outcome": "refuted",
+      "where": "Secret pattern scanning (regex for common secret formats: AWS AKIA, Anthropic sk-ant-, GitHub ghp_, PEM headers) found no matches in source code. GPG key ID is metadata, not a secret."
+    },
+    {
+      "class": "Vulnerable library deserialization (ObjectInputStream on untrusted data)",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "Code review of ValueReader.java found no use of ObjectInputStream, XStream, or other unsafe Java deserializers. All deserialization is explicit type-based (not reflection-based)."
+    },
+    {
+      "class": "XXE or expression language injection",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "No XML/YAML parsing or template engines found. BigDecimal construction does not use format strings or user-controlled format specifiers."
+    },
+    {
+      "class": "Runtime.exec() or ProcessBuilder with user input",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "Code review found no calls to Runtime.exec(), ProcessBuilder, or shell invocation. Only Java library code, no external process spawning."
+    }
+  ]
+}

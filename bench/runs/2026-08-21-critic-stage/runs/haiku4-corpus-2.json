@@ -1,0 +1,182 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku4",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP protocol wire format decoder)"
+      ],
+      "read": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP protocol wire format decoder)"
+      ],
+      "not_read": []
+    },
+    "coverage_declaration": "This audit examined the RabbitMQ Java client library ValueReader class, which parses AMQP protocol binary data. Analysis focused on: (1) deserialization and input validation (web-api.md §3, §5 transferred to local-app context), (2) resource allocation bounds (CWE-400/CWE-770), and (3) dependency management (supply-chain.md §1-§4, §7, §11). No external connectivity, remote testing, or compilation was performed. The audit is limited to static code review without running the full test suite or measuring against the AMQP specification limits external to this file.",
+    "unaided_pass": {
+      "candidates": [
+        {
+          "id": "UNAIDED-001",
+          "title": "Unbounded memory allocation from wire-supplied contentLength in readBytes()",
+          "note": "readInt() from wire is cast to unsigned long, checked against Integer.MAX_VALUE, then allocated as array; values up to 2GB could be allocated on a single field"
+        },
+        {
+          "id": "UNAIDED-002",
+          "title": "Unbounded memory allocation from wire-supplied tableLength in readTable()",
+          "note": "Same pattern as readBytes(); tableLength read from wire and wrapped in TruncatedInputStream without limit"
+        },
+        {
+          "id": "UNAIDED-003",
+          "title": "Unbounded memory allocation from wire-supplied length in readArray()",
+          "note": "Same pattern as readTable(); array length read from wire without explicit limit"
+        }
+      ],
+      "reported": [
+        "UNAIDED-001",
+        "UNAIDED-002",
+        "UNAIDED-003"
+      ],
+      "dropped": []
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation via wire-supplied field length in readBytes()",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:83-95",
+      "evidence": "Lines 86-88: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength];` — readInt() is controlled by attacker via wire protocol; check allows any value < 2,147,483,647; allocation proceeds with cast to int",
+      "impact": "An attacker who controls AMQP protocol input can cause the JVM to allocate arrays up to ~2GB per field, exhausting heap memory and causing denial of service. Multiple fields in a single message could exceed available memory faster.",
+      "preconditions": "Attacker must be able to send AMQP protocol frames to the client. Network position or compromised broker required.",
+      "recommendation": "Implement a reasonable per-field size limit (e.g., 100MB or lower) that reflects AMQP specification or application requirements. Document the limit and enforce it before allocation. Example: `if (contentLength > MAX_FIELD_SIZE_BYTES) throw new MalformedFrameException(...)`",
+      "inference": "The AMQP 0.9.1 specification limit on field sizes is assumed to be larger than typical application payloads but must be verified. If the specification permits multi-gigabyte fields legitimately, this finding moves to `hardening` rather than `probable`.",
+      "what_would_settle_it": "The official AMQP 0.9.1 specification or RabbitMQ documentation stating the maximum permitted size for a single field value, and whether the current Integer.MAX_VALUE bound aligns with specification and deployment practice.",
+      "unaided_label": "UNAIDED-001",
+      "traceability": "CWE-400 (Uncontrolled Resource Consumption), CWE-770 (Allocation of Resources Without Limits), CWE-20 (Improper Input Validation)",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control in this method or its callers that enforces a smaller limit on field sizes before reaching the allocation at line 88."
+        },
+        "FP-02": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "contentLength is read directly from wire via unsignedExtend(in.readInt()) at line 86; it is attacker-controlled."
+        },
+        "FP-03": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is a memory allocation (new byte[(int)contentLength]); the JVM does not safely constrain this based on framework defaults."
+        },
+        "FP-04": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path exists in the shipped artifact; it is not debug-only or test-only."
+        },
+        "FP-08": {
+          "answer": "UNKNOWN",
+          "reason": "Whether the AMQP specification or RabbitMQ deployment guidelines impose a reasonable upper limit on field sizes that would make this allocation safe is not evident from the code. This would require external documentation."
+        }
+      },
+      "limits": "This finding does not establish a practical attack scenario without knowing (1) the AMQP specification size limit, (2) RabbitMQ broker enforcement, and (3) whether applications using this library operate in a trusted network. It demonstrates a resource-consumption risk that is bounded by available memory."
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded memory allocation via wire-supplied table length in readTable()",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:139-154",
+      "evidence": "Lines 142-147: `long tableLength = unsignedExtend(in.readInt()); if (tableLength == 0) return Collections.emptyMap(); Map<String, Object> table = new HashMap<String, Object>(); DataInputStream tableIn = new DataInputStream(new TruncatedInputStream(in, tableLength));` — tableLength is read from untrusted wire input; no limit check before TruncatedInputStream wraps with that length",
+      "impact": "An attacker who controls AMQP protocol input can cause the JVM to track a TruncatedInputStream that claims to contain up to 4GB of data, and force repeated read() calls on the wire stream. While the TruncatedInputStream will eventually stop after reading that many bytes, it could trigger a denial-of-service if the message is not fully read or if reading becomes blocking. Additionally, the HashMap is populated with all field names and values from the table, so a very large table could exhaust memory during deserialization.",
+      "preconditions": "Attacker must be able to send AMQP protocol frames to the client. Network position or compromised broker required.",
+      "recommendation": "Implement a per-table size limit analogous to F-001, or use the same global limit. Enforce the limit before creating TruncatedInputStream: `if (tableLength > MAX_TABLE_SIZE_BYTES) throw new MalformedFrameException(...)`",
+      "inference": "The AMQP specification limit on table field sizes is assumed to exist but must be verified. If tables are expected to be small (typical key-value collections), this is a high-severity issue; if tables can legitimately be gigabytes, the finding moves to `hardening`.",
+      "what_would_settle_it": "The official AMQP 0.9.1 specification or RabbitMQ documentation stating the maximum permitted size for a table field, and whether a real-world attack could realistically send a multi-gigabyte table.",
+      "unaided_label": "UNAIDED-002",
+      "traceability": "CWE-400 (Uncontrolled Resource Consumption), CWE-770 (Allocation of Resources Without Limits), CWE-20 (Improper Input Validation)",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces a limit on tableLength before TruncatedInputStream is instantiated at line 147."
+        },
+        "FP-02": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "tableLength is read directly from wire via unsignedExtend(in.readInt()) at line 142; it is attacker-controlled."
+        },
+        "FP-03": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is a TruncatedInputStream wrapper around the wire stream; it does not safely bound the amount of data the stream will attempt to read."
+        },
+        "FP-04": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is active in the shipped artifact; it is not behind a debug flag or test-only."
+        },
+        "FP-08": {
+          "answer": "UNKNOWN",
+          "reason": "Whether the AMQP specification enforces a table size limit is not documented in this file. External specification would settle this."
+        }
+      },
+      "limits": "This finding assumes tables can be sent as part of AMQP field values. If AMQP restricts tables to a smaller scope or the protocol is never used to transmit untrusted table sizes, the severity would be lower."
+    },
+    {
+      "id": "F-003",
+      "title": "Unbounded memory allocation via wire-supplied array length in readArray()",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:236-249",
+      "evidence": "Lines 240-242: `long length = unsignedExtend(in.readInt()); DataInputStream arrayIn = new DataInputStream(new TruncatedInputStream(in, length)); List<Object> array = new ArrayList<Object>();` — length is read from untrusted wire; no limit before TruncatedInputStream; ArrayList will expand as elements are added from wire",
+      "impact": "An attacker who controls AMQP protocol input can cause the JVM to read and deserialize an array with up to 4GB of data. The ArrayList will expand dynamically, consuming memory for each deserialized element. If the array contains complex nested structures (nested tables or arrays), the memory consumption and parsing time could exceed available resources.",
+      "preconditions": "Attacker must be able to send AMQP protocol frames to the client. Network position or compromised broker required.",
+      "recommendation": "Implement a per-array size limit or global element count limit. Enforce before TruncatedInputStream: `if (length > MAX_ARRAY_SIZE_BYTES) throw new MalformedFrameException(...)`  Additionally, consider limiting the depth of nested structures to prevent stack exhaustion from recursive readFieldValue() calls.",
+      "inference": "The AMQP specification limit on array sizes is assumed to exist but must be verified. Recursively nested arrays could amplify the memory exhaustion risk beyond a single large array.",
+      "what_would_settle_it": "The official AMQP 0.9.1 specification or RabbitMQ documentation stating the maximum permitted size for an array field, and testing with deeply nested structures (array of arrays of arrays...) to measure actual memory consumption.",
+      "unaided_label": "UNAIDED-003",
+      "traceability": "CWE-400 (Uncontrolled Resource Consumption), CWE-770 (Allocation of Resources Without Limits), CWE-20 (Improper Input Validation)",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces a limit on array length before TruncatedInputStream is instantiated at line 241."
+        },
+        "FP-02": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "length is read directly from wire via unsignedExtend(in.readInt()) at line 240; it is attacker-controlled."
+        },
+        "FP-03": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is a TruncatedInputStream wrapper; ArrayList.add() will consume memory for each deserialized element without bound."
+        },
+        "FP-04": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is active in the shipped artifact; array parsing is a standard AMQP feature."
+        },
+        "FP-08": {
+          "answer": "UNKNOWN",
+          "reason": "Whether the AMQP specification enforces an array size limit is not documented in this file."
+        }
+      },
+      "limits": "This finding is closely related to F-002 (table size) and F-001 (field size). The root cause is the absence of limits on structures read from untrusted wire input. Whether this constitutes a practical vulnerability depends on AMQP specification and real-world deployment constraints."
+    }
+  ],
+  "ruled_out": [
+    {
+      "title": "Unsafe casting in unsignedExtend() (line 45-49)",
+      "reason": "The unsignedExtend() method safely masks the sign bit via bitwise AND with INT_MASK. The pattern `long extended = value; return extended & INT_MASK;` is a standard Java idiom for unsigned extension and does not allow overflow."
+    },
+    {
+      "title": "Integer overflow in readUnsignedInt() (line 223-234)",
+      "reason": "The four-byte read is properly bounded by checking for EOF (-1) on each byte. The shift operations are within bounds for the 32-bit result. The method returns a long, which safely holds the unsigned 32-bit value."
+    },
+    {
+      "title": "Missing null check on readFieldValue() recursion (line 150, 245)",
+      "reason": "While readFieldValue() is called recursively from within readTable() and readArray(), the recursion is bounded by the TruncatedInputStream, which will eventually reach the declared end of the table or array. Stack overflow is unlikely unless the declared length is malicious AND the stream does not deliver data at the declared rate, but this is a resource exhaustion issue (F-002, F-003), not a null-reference defect."
+    }
+  ]
+}

@@ -1,0 +1,311 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target — a message-broker client library, limited to the wire-format value decoder (src/main/java/com/rabbitmq/client/impl/ValueReader.java) and the dependency manifest (pom.xml)",
+    "commit": "5.34.0-SNAPSHOT (version declared in pom.xml; no VCS metadata present in the provided tree, so no commit id could be recorded)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad",
+    "authorization": "Authorized read-only static review of the two files above. No network access, no execution of the target, no modification of the target. No remote or active test was run, so no external authorization reference applies.",
+    "coverage": {
+      "inventoried": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java — decoder for AMQP wire-format values read off a socket",
+        "pom.xml — Maven dependency manifest, plugin/build definition and release profiles",
+        "com.rabbitmq.client.impl.TruncatedInputStream — bounding stream constructed by readTable and readArray",
+        "com.rabbitmq.client.impl.LongStringHelper — wrapper applied to the byte array returned by readBytes",
+        "Callers of ValueReader: com.rabbitmq.client.impl.ContentHeaderPropertyReader and the frame/method argument readers",
+        "com.rabbitmq.client.MalformedFrameException and com.rabbitmq.client.LongString — public API types the decoder throws and returns",
+        "deps/rabbitmq_codegen (${codegen.dir}) — external AMQP specification consumed at generate-sources",
+        "src/main/scripts/generate_amqp_sources.groovy and codegen.py — build-time scripts invoked by groovy-maven-plugin",
+        "Test sources and integration-test configuration referenced by the surefire/failsafe configuration",
+        "Repository metadata, CI workflow definitions, lock or SBOM artifacts",
+        "Resolved dependency versions and their published support calendars"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java — decoder for AMQP wire-format values read off a socket",
+        "pom.xml — Maven dependency manifest, plugin/build definition and release profiles"
+      ],
+      "not_read": [
+        "com.rabbitmq.client.impl.TruncatedInputStream — bounding stream constructed by readTable and readArray",
+        "com.rabbitmq.client.impl.LongStringHelper — wrapper applied to the byte array returned by readBytes",
+        "Callers of ValueReader: com.rabbitmq.client.impl.ContentHeaderPropertyReader and the frame/method argument readers",
+        "com.rabbitmq.client.MalformedFrameException and com.rabbitmq.client.LongString — public API types the decoder throws and returns",
+        "deps/rabbitmq_codegen (${codegen.dir}) — external AMQP specification consumed at generate-sources",
+        "src/main/scripts/generate_amqp_sources.groovy and codegen.py — build-time scripts invoked by groovy-maven-plugin",
+        "Test sources and integration-test configuration referenced by the surefire/failsafe configuration",
+        "Repository metadata, CI workflow definitions, lock or SBOM artifacts",
+        "Resolved dependency versions and their published support calendars"
+      ]
+    },
+    "coverage_declaration": "Two files were exercised and nothing else. Routing came from coverage.md: pom.xml routes to supply-chain (supply-chain.md §1-§4, §7 and supply-chain-source-lifecycle.md §11); a published library whose code parses untrusted binary input routes to web-api as a partial surface (web-api.md §3, §5) plus local-app.md §5 for public-API defaults, and the resource-consumption class is covered by WEB-26 in web-api-clientside-logic.md §9. What was exercised: every allocation, loop bound and recursive entry point in ValueReader.java, traced from the wire byte to the sink; the full manifest for dependency scope, plugin version pinning, build-time code execution, registry resolution and release signing. What was NOT exercised, and where silence is therefore silence rather than a clean bill: every class named in `not_read` above. In particular the bounding behaviour of TruncatedInputStream, the frame-size limit that may or may not sit in front of this decoder, and the exception handling of ValueReader's callers were all unreadable in this scope, and each of them is the named gap of a finding below. No dependency was checked against an advisory feed or a support calendar: no network was used, so the absence of a dependency-vulnerability finding here is an unmeasured result, not a clean one (SUP-24). Also not exercised, and outside every pack in this corpus: native memory safety, and anything requiring a debugger or a fuzzer — which is what would settle the two resource-consumption findings by demonstration rather than by reading."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "A 32-bit length taken off the socket sizes a byte array before any payload arrives, behind a cast guard that is not a limit",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 88,
+        "component": "ValueReader.readBytes(DataInputStream)"
+      },
+      "evidence": "Lines 83-95:\n    final long contentLength = unsignedExtend(in.readInt());\n    if(contentLength < Integer.MAX_VALUE) {\n        final byte [] buffer = new byte[(int)contentLength];\n        in.readFully(buffer);\n        return buffer;\n    } else {\n        throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\");\n    }\nThe size expression traces back four lines to `in.readInt()` on the peer's socket; `unsignedExtend` (lines 45-49) widens it to the range 0..4294967295 so the value cannot be negative. The only guard is `contentLength < Integer.MAX_VALUE`, which is a cast-safety test: it prevents the narrowing cast from wrapping and admits every value below ~2147483647. The array is committed on line 88 and the bytes are only demanded on line 89, so the allocation happens before the peer has to prove it owns the data. Reached from three places in this file: readLongstr (lines 100-104, the public readLongstr on 108) and readFieldValue cases 'S' (line 163) and 'x' (line 211), the latter two being reachable inside any field table.",
+      "impact": "A peer that can write to the socket — a hostile or compromised broker, or an on-path attacker on a connection without TLS — commits up to roughly 2 GB of client heap per decoded value by sending four bytes. The result is an OutOfMemoryError in the process that embeds this library, which is an availability failure of the consuming application rather than of the broker. Because the byte-vector and long-string types are legal inside a field table, the same trick can be repeated per table entry within one frame, so the peer does not need many round trips.",
+      "preconditions": "The client has connected to a peer it does not control, or an attacker is on the path of a plaintext AMQP connection. No credential on the client side is needed: the decoder runs on whatever the peer sends, and field tables are exchanged during the connection handshake, before the client has authenticated the peer.",
+      "recommendation": "Bound the length against something the peer does not choose, and do it before the array exists. Compare `contentLength` against the bytes actually remaining in the enclosing frame, or against a configured maximum exposed on the connection factory with a conservative default, and raise MalformedFrameException when it is exceeded. Where a value may legitimately be large, read it in bounded chunks into a growing buffer whose total is capped, rather than pre-sizing from the declared length. The cast guard should stay, but it must not be the only check; both readLongstr and the 'x' field-value case must be covered, not just the public entry point.",
+      "inference": "That no enclosing layer bounds this length before readBytes runs. The frame reader that supplies the DataInputStream, and the negotiated frame-max that would bound it, are not in the provided scope, so the absence of an outer limit was argued from what is missing here rather than observed.",
+      "what_would_settle_it": "com/rabbitmq/client/impl/Frame.java (how the payload stream handed to ValueReader is bounded) and the connection class that performs frame-max negotiation, read together with the connection-handshake path that decodes the server-properties table before frame-max has been agreed. Either shows a bound that runs before line 88, or it does not.",
+      "traceability": [
+        "CWE-789",
+        "CWE-400",
+        "CWE-190",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "NIST 800-53 SC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control could exist one layer out — a frame-size cap applied by the frame reader before the payload stream reaches ValueReader. That code (Frame.java and the connection's frame-max negotiation) is listed in engagement.coverage.not_read and was not available, so its location and its unskippability cannot be quoted. Per FP-08's doctrine the answer is UNKNOWN, never HOLDS; this is what caps the finding at `probable`."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "This does not establish the maximum allocation reachable in a deployed client: if a frame-size cap exists upstream, the practical ceiling drops from ~2 GB to that cap, and the finding becomes a smaller amplification rather than none. It does not establish that an OutOfMemoryError is unrecoverable for the embedding application, and it does not claim any confidentiality or integrity impact. It was reasoned from source only — nothing was executed against the target, and no allocation was measured."
+    },
+    {
+      "id": "F-002",
+      "title": "Mutual recursion between the field-value, table and array decoders carries no depth counter",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "ValueReader.readFieldValue / readTable / readArray"
+      },
+      "evidence": "The cycle is closed inside this one file and no signature on it carries a depth parameter:\n  line 158  static Object readFieldValue(DataInputStream in)\n  line 181      case 'F':  value = readTable(in);   // -> line 139 readTable\n  line 184      case 'A':  value = readArray(in);   // -> line 237 readArray\n  line 150      readTable:  Object value = readFieldValue(tableIn);\n  line 245      readArray:  Object value = readFieldValue(arrayIn);\nreadTable is declared `private static Map<String,Object> readTable(DataInputStream in)` (line 139) and readArray `private static List<Object> readArray(DataInputStream in)` (line 237): neither takes a level argument, and no counter, ThreadLocal or configured maximum appears anywhere in the file. Each level of nesting costs the peer a handful of bytes — inside an array, one type byte 'A' plus a four-byte length is five bytes per frame of stack — while each level allocates a fresh TruncatedInputStream, a fresh DataInputStream and, for a table, a HashMap (lines 145-147, 241-243).",
+      "impact": "A peer that sends a deeply nested field table or field array drives the decoding thread into a StackOverflowError at a cost of a few bytes per stack frame. StackOverflowError is an Error, not an IOException, so it does not travel the path that MalformedFrameException (line 217) was written for: a caller that closes the connection cleanly on IOException will not catch it. The reachable outcome is the death of the connection's I/O thread, plus the per-level stream and map objects allocated on the way down. This is the neighbouring class WEB-26 names alongside the allocation in F-001, and both are reachable through the same readFieldValue switch.",
+      "preconditions": "Same as F-001: the peer on the other end of the socket is not trusted, or an attacker is on the path of a plaintext connection. Field tables and field arrays are ordinary protocol content, exchanged in message headers and in the connection handshake, so no credential or non-default setting is required to reach the recursion.",
+      "recommendation": "Thread an explicit depth argument through readFieldValue, readTable and readArray, incremented on each descent and compared against a small configured maximum, and throw MalformedFrameException when it is exceeded — so the failure arrives as the protocol error the callers already handle rather than as an Error. Keep the private no-depth overloads only as entry points that start the counter at zero, so no future call site can re-enter the cycle uncounted.",
+      "inference": "That the total bytes a peer may put into one frame permit enough nesting levels to exhaust a default JVM stack. The frame-size limit that would bound the byte budget lives outside this scope, so the arithmetic from bytes-per-level to frames-to-overflow rests on an assumed frame budget rather than an observed one.",
+      "what_would_settle_it": "com/rabbitmq/client/impl/Frame.java together with the connection's default and negotiated frame-max: dividing that budget by the five bytes a nesting level costs gives the reachable depth, which either exceeds a default stack or does not. A JVM run that decodes a synthetic nested table would settle it by demonstration, and executing the target was outside this engagement.",
+      "traceability": [
+        "CWE-674",
+        "CWE-400",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "NIST 800-53 SC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The same unread layer as F-001 could bound this indirectly: a frame-size cap limits the bytes available for nesting and therefore the depth. Frame.java and the frame-max negotiation are in engagement.coverage.not_read, so no control location can be quoted and no argument can be made that every path reaches the recursion through it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "This does not establish the exact nesting depth required to overflow, which depends on the JVM's stack size and on the frame budget that was not readable here. It does not establish what the embedding application does when the decoding thread dies — that depends on the callers, which were not read — and it claims no impact beyond availability of the connection and, potentially, of the process."
+    },
+    {
+      "id": "F-003",
+      "title": "The default build executes generator scripts over an external specification checkout that the manifest does not pin, and compiles the result into the published jar",
+      "procedure": "SUP-04",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "pom.xml",
+        "line": 595,
+        "component": "org.codehaus.gmaven:groovy-maven-plugin execution `generate-amqp-sources`"
+      },
+      "evidence": "The plugin is bound to the default lifecycle, not to a profile (pom.xml lines 595-638): goal `execute` at phase `generate-sources`, `<source>${groovy-scripts.dir}/generate_amqp_sources.groovy</source>`, with `<script>${basedir}/codegen.py</script>` and `<spec>${codegen.dir}/amqp-rabbitmq-${codegen.spec_version}.json</spec>`. The properties block resolves `${codegen.dir}` to `${basedir}/deps/rabbitmq_codegen` and documents it as \"a working copy of rabbitmq-codegen\"; `${codegen.spec_version}` is `0.9.1`, which pins the file name of the specification, not its content. build-helper-maven-plugin then adds `${project.build.directory}/generated-sources/src/main/java` to the compile roots (lines 640-658), so whatever those scripts emit is compiled into the artifact that maven-jar-plugin packages and central-publishing-maven-plugin publishes. Nowhere in the manifest is there a digest, a checksum verification, a signature check or a pinned revision for the contents of `${deps.dir}` — grep for `http://` returns only XML namespace declarations, so the risk here is not an unverified download inside the pom but an unverified working copy the pom consumes.",
+      "impact": "Whoever controls the contents of `deps/rabbitmq_codegen` on the machine that performs a release controls Java source that is compiled into the published library, with no signature or hash standing in the way. This is the shape SUP-04 exists for: the malicious content never has to appear in this repository's source tree, only in the build input, and the released jar carries it to every consumer. The same execution also runs a Groovy script and a Python script under the build's identity at generate-sources, so a compromise of either script file is code execution in the release environment.",
+      "preconditions": "An attacker must be able to influence the contents of the codegen working copy or of the two generator scripts — by compromising the upstream repository the checkout comes from, by tampering with a build agent's workspace, or by landing a change in the script files. That second issue is not demonstrated here, which is why this is rated medium rather than higher.",
+      "recommendation": "Pin the build input the way the artifact is pinned: consume the specification at a fixed revision or, better, by digest — a submodule pinned to a commit, or a checked-in copy of the specification with a recorded SHA-256 that the build verifies before the generator reads it. Fail the build when the digest does not match, rather than trusting whatever the working copy holds. Record the generated sources' provenance in the release attestation alongside the existing GPG signature so a consumer can tell which specification produced a given jar.",
+      "inference": "That `deps/rabbitmq_codegen` is populated from a remote repository at a revision nobody pins. The manifest states only that the directory \"should point to a working copy\"; the script or CI step that actually creates it is outside the provided scope, so the unpinned-fetch link was inferred from the absence of any pin in the manifest rather than observed in a fetch command.",
+      "what_would_settle_it": "The provisioning of `${deps.dir}` — a `.gitmodules` entry, a Makefile or shell script that clones rabbitmq_codegen, or the release CI workflow — read together with the release job. Any one of them shows either a pinned commit and a verification step, or a floating branch checkout.",
+      "traceability": [
+        "CWE-494",
+        "CWE-829",
+        "CWE-427",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-4",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpation would be that the step runs only in a documented local development environment and not in the build that produces the published artifact. It does not hold: the execution sits in `<build><plugins>` at pom.xml line 595, outside every `<profile>`, so it runs on every invocation including the `release` profile at lines 299-343, and its output is added to the compile roots by build-helper-maven-plugin at line 640."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A control could live outside the repository — a pinned submodule, a CI step that checks out a fixed revision, or an internal mirror serving a fixed specification. No such artifact was provided, and FP-08 is explicit that without the exported artifact the answer is UNKNOWN and never HOLDS."
+        }
+      ],
+      "limits": "This does not establish that the codegen input is currently unpinned in the project's real release pipeline — only that nothing in the manifest pins it. It says nothing about the integrity of the generator scripts themselves, which were not in scope, and it is not a claim that any published artifact has been tampered with."
+    },
+    {
+      "id": "F-004",
+      "title": "The peer chooses whether the decoder fails with a protocol exception or with an unchecked one, on a path declared to throw IOException",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 92,
+        "component": "ValueReader.readBytes(DataInputStream)"
+      },
+      "evidence": "readBytes is declared `throws IOException` (lines 83-84) and every other malformed-input path in the file honours that contract — readFieldValue's default branch throws MalformedFrameException (lines 216-218), which is an IOException. The one exception is the else branch on lines 91-94:\n    } else {\n        throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\");\n    }\nUnsupportedOperationException is a RuntimeException. Which branch runs is decided entirely by the four bytes the peer sent on line 86: a declared length at or above Integer.MAX_VALUE selects the unchecked exception, anything below it selects the allocation path of F-001. So a remote peer, with no credential, picks the exception type that leaves this decoder.",
+      "impact": "A caller that closes the connection cleanly on IOException — the contract this method declares, and the one MalformedFrameException was written for — does not catch this. The peer can therefore steer the failure onto whatever generic handler sits above, which is at best a different shutdown path than the protocol-error one and at worst none, leaving the connection thread to die without the orderly close and listener notification the IOException path provides. The attacker gains a choice of failure mode on a client they were already able to disconnect, which is a small gain, not a new capability.",
+      "preconditions": "The same untrusted peer as F-001, sending a byte vector or long string whose declared length is at or above 2147483647.",
+      "recommendation": "Make every malformed-input rejection in this class an IOException — throw MalformedFrameException here as the default branch of readFieldValue already does — so the failure travels the path the callers handle. This becomes moot once F-001's real bound is in place, because the bound rejects the oversized length before this branch is reachable; the two fixes belong in the same change.",
+      "inference": "That the callers catch IOException to shut the connection down and do not also catch RuntimeException. The callers listed in engagement.coverage.not_read were unavailable, so the consequence of the unchecked exception escaping was argued from the declared `throws IOException` contract rather than observed at a catch site.",
+      "what_would_settle_it": "The catch blocks in ValueReader's callers — the frame and method-argument readers and the connection's I/O loop — which either already catch RuntimeException around decoding or do not.",
+      "traceability": [
+        "CWE-248",
+        "CWE-703",
+        "CWE-20"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "Whether this is bounded to informational depends on whether a caller already catches RuntimeException around the decode loop, which would make the divergence invisible. That code is in engagement.coverage.not_read, so the downgrade cannot be justified with an artifact; the finding is reported at `low` with the question left open rather than downgraded on an assumption."
+        }
+      ],
+      "limits": "This establishes an inconsistency in the exception contract of a single method, not an exploitable consequence: the consequence lives in the callers, which were not read. It grants no confidentiality or integrity impact and no capability the peer did not already have by closing the socket."
+    },
+    {
+      "id": "F-005",
+      "title": "The timestamp decoder multiplies an attacker-chosen 64-bit value by 1000 with no overflow check",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "ValueReader.readTimestamp(DataInputStream)"
+      },
+      "evidence": "Lines 266-270:\n    private static Date readTimestamp(DataInputStream in) throws IOException\n    {\n        return new Date(in.readLong()*1000);\n    }\n`in.readLong()` returns the peer's full signed 64-bit value with no range check, and the multiplication by 1000 is Java long arithmetic, which wraps silently rather than throwing. Any value whose magnitude exceeds roughly 9.2e15 produces a product that has wrapped, so the Date handed to the application is unrelated to the seconds the peer encoded — and the peer, choosing the input, chooses the wrapped output too. Reached from readFieldValue case 'T' (lines 177-179), i.e. from inside any field table, and from the public readTimestamp() on line 274.",
+      "impact": "An application that reads the AMQP timestamp property for ordering, expiry, deduplication or audit receives a Date the peer selected freely, including one far in the past or the future, from an encoded seconds value that looks unremarkable. Nothing is corrupted inside the library; the damage, if any, is in the consumer's use of the value. A peer that can set the timestamp field at all already influences it, so the extra capability is the ability to reach millisecond values that a non-wrapping conversion could not produce, and to do so without the encoded seconds looking anomalous to anything that inspects the frame.",
+      "preconditions": "The same untrusted peer as F-001, and a consuming application that treats the decoded timestamp as meaningful for a security or correctness decision. Where the timestamp is only displayed or logged, this grants nothing.",
+      "recommendation": "Use Math.multiplyExact and reject the frame with MalformedFrameException when it overflows, or bound the seconds value to a sane range before converting. Either way the peer should not be able to choose a silently wrapped result; a rejected frame is a better outcome than a Date nobody can explain.",
+      "inference": "That some consumer treats the decoded timestamp as load-bearing. Only the decoder was in scope, so the step from a wrapped Date to any consequence rests on how applications use the property rather than on a call site that was read.",
+      "what_would_settle_it": "The consumers of the timestamp property — the message-properties class that surfaces it and any code in the library that compares or expires on it — which either use the value in a decision or merely carry it.",
+      "traceability": [
+        "CWE-190",
+        "CWE-20",
+        "ASVS 5.0 V11"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "Whether the impact reaches a user depends on a consumer using the timestamp for a decision, and no consumer was in scope. FP-10 downgrades to informational only with the argument for why the impact does not reach; that argument cannot be made from the two files read, so the finding stays at `low` rather than being downgraded on an assumption."
+        }
+      ],
+      "limits": "This does not establish that any consumer relies on the timestamp, and it is not an allocation or an availability issue — the wrapped product sizes nothing. It was read from source; no decode was executed."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unbounded pre-sizing of the table and array containers themselves (WEB-26, the collection variant rather than the byte-array variant)",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "ValueReader.readTable lines 139-155 and readArray lines 237-249. Both read a 32-bit length off the wire, but neither uses it to size a container: the length only configures a TruncatedInputStream, while the HashMap (line 145) and the ArrayList (line 243) are created empty and grow as bytes actually arrive. That is the exculpation WEB-26 names — 'the structure grows as bytes arrive rather than being pre-sized' — so the declared length here buys the peer nothing it did not already pay for in bytes. Bounded to these two methods; the elements they read still reach the readBytes allocation of F-001."
+    },
+    {
+      "class": "Silent truncation of a table or array from using available() as the framing condition",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "ValueReader.readTable line 148 (`while(tableIn.available() > 0)`) and readArray line 244. Whether a socket-backed stream can report zero available bytes mid-structure — which would end the loop early and silently drop trailing entries — depends entirely on TruncatedInputStream.available(), which is in engagement.coverage.not_read. The question was asked and could not be answered from the two files provided; reading TruncatedInputStream would settle it."
+    },
+    {
+      "class": "Duplicate-key semantics in a decoded field table as a header-smuggling surface",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "ValueReader.readTable lines 151-152 keep the FIRST occurrence of a repeated key (`if(!table.containsKey(name)) table.put(name, value)`). A smuggling finding needs a second party that resolves duplicates differently — last-wins on the broker or in a proxy. No broker-side or intermediary code was in scope, so the divergence could not be established either way. The client-side rule is recorded here so the next reader does not repeat the trace."
+    },
+    {
+      "class": "Known-vulnerable, outdated or end-of-support dependencies (SUP-02, SUP-13, SUP-24)",
+      "procedure": "SUP-24",
+      "outcome": "not executed",
+      "where": "pom.xml. The version inventory was built offline and is complete for direct dependencies: compile scope resolves slf4j-api 1.7.36, netty 4.2.15.Final, metrics-core 4.2.39, micrometer-core 1.17.0, opentelemetry-api 1.63.0 and jackson-databind 2.21.3; test and build scope adds logback-classic 1.2.13, jetty-servlet 9.4.58.v20250814, bouncycastle 1.84, gson 2.14.0 and groovy-all 2.4.21. The second field SUP-24 requires — the vendor's declared end-of-support date, and any advisory match — has no offline oracle and the engagement forbids network use and advisory lookup. Per SUP-24 these components are therefore recorded as UNMEASURED, not clean: the absence of a dependency finding in this artifact carries no information about them. Closing this needs an advisory feed and the vendors' support calendars."
+    },
+    {
+      "class": "Mutable or floating references to build-time dependencies (SUP-09) and manifest version ranges (SUP-02)",
+      "procedure": "SUP-09",
+      "outcome": "refuted",
+      "where": "pom.xml, all 21 plugin declarations and all 26 dependency declarations. Every plugin carries an explicit `<version>` resolved from a property to a fixed value — no LATEST, no RELEASE, no omitted version — and every dependency version is a fixed string with no range operator. Bounded to this manifest: the transitive graph was not resolved, which needs the network."
+    },
+    {
+      "class": "Dependency confusion and multi-registry resolution (SUP-05, SUP-06)",
+      "procedure": "SUP-05",
+      "outcome": "refuted",
+      "where": "pom.xml declares no `<repositories>`, no `<pluginRepositories>` and no mirror configuration, so resolution goes to the default central repository only and there is no second index for a higher version to win from. The published coordinates use the `com.rabbitmq` groupId the project itself controls. Bounded to the manifest: a settings.xml on a build agent could still add an index, and none was provided."
+    },
+    {
+      "class": "Unsigned release artifacts (SUP-12)",
+      "procedure": "SUP-12",
+      "outcome": "refuted",
+      "where": "pom.xml lines 275-296 and 323-343: maven-gpg-plugin signs artifacts in both the `snapshots` and `release` profiles, with the key identified by the `gpg.keyname` property, and central-publishing-maven-plugin is configured with `autoPublish=false`. Bounded to signing: no SLSA provenance attestation is generated anywhere in this manifest, which is a separate gap and is why F-003 recommends recording generated-source provenance alongside the signature."
+    },
+    {
+      "class": "Secrets committed in the audited files (SUP-16 class, secret scanning)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "pom.xml and ValueReader.java were read in full. The only credential-shaped value is `<gpg.keyname>`, which is a public GPG key identifier and not a secret; publishing credentials are referenced indirectly by server id (`publishingServerId=central`) and live in a settings.xml outside the tree. Bounded to these two files: no repository history was available to scan, so this says nothing about secrets in past commits."
+    },
+    {
+      "class": "Insecure-by-default parameters in the public API of this class (LOC-10)",
+      "procedure": "LOC-10",
+      "outcome": "inconclusive",
+      "where": "ValueReader's exported surface is one constructor taking a DataInputStream and eight no-argument read methods (lines 57-60, 74-133, 252-278). There is no default argument, no injected callable and no toggle to be insecure-by-default here — but the parameter this class most needs, a maximum decoded size, does not exist at all, and where the connection factory ought to expose it is outside this scope. That absent knob is the recommendation of F-001, not a separate finding."
+    }
+  ]
+}

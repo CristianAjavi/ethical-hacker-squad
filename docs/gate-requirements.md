@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Sixteen gates execute on every push and pull request through `.github/workflows/ci.yml`, four of them with their own self-test battery. What has **not** landed: `stable`, a tagged release, the knowledge loop, and gates `G5` and `G7`. Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -16,21 +16,26 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
-| `G5` licence hygiene | specified | — |
+| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test |
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
-| `G7` protected paths | specified | — |
+| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
-| `G9` repository quality | partly running | `.github/workflows/scorecard.yml`; the threshold subset is not gated yet |
+| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
+| promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` |
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
+| governance contract | running | `gate-governance-contract.sh` + self-test |
+| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
+| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -120,6 +125,7 @@ What it enforces:
 2. **Declared counts.** Corpus lines, procedure count and file count, wherever prose states them, against measurement.
 3. **Declared ranges.** The upper bound of `` `AI-01`..`AI-28` `` must be the highest identifier that exists.
 4. **Pack headers and the loading map.** The `**Cost:** ~N lines` estimate and the per-file table, within 10 lines.
+4b. **Every table row that names a pack file.** A row saying `` `ai-safety-data-output.md` | `AI-12`..`AI-24` `` is a claim about which procedures live in that file, and a file carrying such a table must carry a row for **every** pack file. Check 3 only looks at ranges starting at `01`, which is how three rows of `README.md` drifted and the whole `local-app` pack stayed missing from the front-page table while every other check was green.
 5. **Anatomy and identifiers.** Every procedure carries the six mandatory fields from `scripts/meter/packs.json`; its `Traceability` line names at least one identifier or declares explicitly that none applies; every backticked token matches a family in `scripts/gates/data/identifier-families.json`; and no identifier appears outside backticks.
 6. **The roster.** `references/team.md`, `agents/` and `packs.json` name the same roles, agents and files. A pack no role owns is never loaded; an agent absent from the roster is never dispatched.
 7. **Routing.** Every `` `pack.md` §N `` in `coverage.md` names a section that exists.
@@ -128,7 +134,7 @@ What it enforces:
 
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
-Proved in the negative by `gate-corpus-contract.selftest.sh`: 17 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 20 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## The triage rules
 
@@ -156,6 +162,25 @@ Proved in the negative by 11 cases, including a control run and two that must ex
 Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
 
 Proved in the negative by 7 cases built on throwaway repositories, because a delta gate can only be exercised by making a delta.
+
+## The promotion invariant — who judges is always main
+
+The release `verify` job checks out **two** trees: `tools/` is the tip of `main`, the code that JUDGES; `source/` is the candidate commit, the content BEING JUDGED. `main`'s gates are copied over the candidate's own and run with `working-directory: source`.
+
+That arrangement has one soft spot, and it is not in the copy: `python3 -c`, a heredoc on stdin and `python3 -` all put the **working directory** first on `sys.path`. A `yaml.py` or a `json.py` sitting in the candidate tree would be imported by the gates judging it, and the candidate would be approving itself through the back door. `PYTHONSAFEPATH: '1'` closes it, and has been set on that workflow since it was found.
+
+`gate-promotion-safepath.sh` is the part the closure rule demands and the mitigation did not have: **the check that fails if the mitigation is removed.** Two triggers, either of which requires `PYTHONSAFEPATH` in scope:
+
+| | Trigger | Scope that satisfies it |
+|---|---|---|
+| `T1` | a job that checks out **two or more trees** and then runs a step with a `working-directory:` — or a `cd` inside a `run:` block | the workflow or the job `env:` |
+| `T2` | a step whose `run:` invokes python while its working directory is not the workspace root | the workflow, the job or the step `env:` |
+
+**`T1` exists because `T2` alone was a measured false green.** Written first as "a step that runs python outside the root", this gate passed the real `release.yml` *and* passed a mutant with `PYTHONSAFEPATH` deleted — because the word `python` appears nowhere in that step. It runs `./scripts/gates/run-all.sh`; python is reached through the gates the runner invokes. A rule that greps for `python` reads the exposed release workflow as clean.
+
+**A declared `PYTHONSAFEPATH` is not automatically a mitigation.** CPython acts on a **non-empty string**, so `'0'` and `'false'` switch it *on* — the value is not a boolean — and only an empty value leaves the interpreter prepending the working directory. `PYTHONSAFEPATH: ''` therefore mitigates nothing while reading in review exactly like a mitigation, and the gate reports that case with its own sentence.
+
+Proved in the negative twice: 14 fixtures under `scripts/gates/fixtures/safepath/` run on every invocation as the gate's own self-test, and a 7-case mutant bank over the live `release.yml`, recorded in `scripts/gates/fixtures/safepath/README.md`.
 
 ## The findings artifact
 
@@ -201,6 +226,12 @@ The gate enforces what is mechanically enforceable:
 
 **Honest limitation:** this cannot prove absence of plagiarism. It catches the obvious failure mode — pasting a checklist or a control description — and nothing more. The real control is upstream: the corpus is written from scratch and cites identifiers rather than text, and the pull request template requires that assertion explicitly.
 
+**Implemented 2026-08-21** as `gate-licence-hygiene.sh`. Four measurements, and two of them found something the first time they ran: **OpenSSF** was absent from `NOTICE.md` while the corpus cited `SLSA Build L2`/`L3`, and `docs/coverage/mapa-microsoft.md` carried five verbatim quotations of Microsoft, AWS and Google terms-of-use text while `NOTICE.md` stated in the present tense that the repository contains no copied text. The first is fixed with an attribution section; the second is a real exception and is now declared as one — a `licence:quoted-terms` region for the case where the wording of a licence **is** the evidence for a licence determination, counted and printed on every run, with `NOTICE.md` narrowed to say exactly that.
+
+**The denylist is stored as hashes, not phrases.** A list built to stop us copying somebody's words should not itself be a copy of them, so `scripts/gates/data/verbatim-denylist.json` holds SHA-256 prefixes of normalised eight-word windows, and `scripts/licence/add-verbatim-phrase.py` turns a phrase into entries without ever writing it down. The list is empty today and its size is printed on every run, because an empty denylist that passes silently is decoration.
+
+Proved in the negative by `gate-licence-hygiene.selftest.sh`: 9 cases — a pasted attributed quotation, the same quotation inside the exempt region (which must stay green), an identifier owner nobody attributed, an allowlisted source with no licence recorded, a denylisted phrase present in the corpus, and three cases that must exit `2`.
+
 ## G6 — Secret scanning
 
 No credential in the working tree or in history. Detection uses distinctive-format patterns before entropy, since entropy alone is a poor primary detector and format patterns reach far higher precision. Exit `2` if the scanner is unavailable — an absent scanner is not a clean repository.
@@ -229,6 +260,12 @@ NOTICE.md
 ```
 
 These define what the system may do and what it may read. An automation that can edit its own limits has none. Human branches may touch them; the maintainer reviews.
+
+**Implemented 2026-08-21** as `gate-protected-paths.sh`, and the list above is no longer prose: it is checked, line for line and in order, against `scripts/gates/data/protected-paths.json`, so the rule and the sentence documenting it cannot drift apart. Two self-test cases exist for exactly that drift, one in each direction.
+
+**A human branch touching a protected path is printed, never silently allowed.** The maintainer reviews it, and can only review what the run tells them is there — so the gate lists every protected path in the diff and says which pattern caught it. What it does not judge is whether the change is a good one: it asks who is changing the limits.
+
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 10 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, a human branch touching one, the documented list and the enforced list drifting in each direction, and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
 
 ## G8 — Regression guard on quality issues
 
@@ -264,6 +301,14 @@ Gate on the subset that reflects real risk here:
 
 The aggregate is recorded as informational with a **no-regression** rule: it may not drop more than 0.5 below the previous recorded value without failing. Exit `2` if Scorecard could not run.
 
+**Implemented 2026-08-21** as `gate-scorecard-threshold.sh`, run by the `threshold` job of `scorecard.yml` over a second, unpublished run in JSON — the SARIF the measurement job produces carries findings, not per-check scores. Three things it does that a threshold check usually does not:
+
+- **A check Scorecard could not run comes back as `-1`, and that is `2`, not a pass.** The exit-code doctrine of this repository, applied to somebody else's tool: a subset gate that silently skips the check it could not read is worse than no gate, because it reports green.
+- **The aggregate is judged by movement, and the baseline lives in `docs/scorecard-baseline.json`, edited by hand in a pull request.** A workflow that can rewrite its own baseline can ratchet itself down one run at a time. No baseline recorded yet is printed as *nothing to compare*, never treated as fine.
+- **The table above is the gate.** It is parsed and compared, check for check and number for number, against `scripts/gates/data/scorecard-thresholds.json`, with a self-test case for the drift.
+
+It does not run in the offline suite, because its input needs the network and a repository token; `run-all.sh` names it in the deferred list with the workflow that does run it, since a gate that is quietly absent is indistinguishable from a gate that passed. Proved in the negative by `gate-scorecard-threshold.selftest.sh`: 11 cases, including a check below its minimum, a check absent from the results, a check that came back inconclusive, an aggregate falling just within the contract and one falling past it.
+
 ## Label taxonomy
 
 Labels are English, matching the repository language. Anyone wiring automation should use exactly these strings.
@@ -295,6 +340,25 @@ Every label is prefixed. The single source of truth is `scripts/gh/labels.sh`; `
 Renaming a label moves historical issues, so `labels.sh` never deletes: surplus labels are listed as a warning. The Spanish-to-English rename was free because no taxonomy label had been created on GitHub yet - verified by a dry run reporting `create=35 update=0`.
 
 Applying labels to externally submitted issues must be **deterministic**, derived from the structured fields of the issue form. It must never come from a model's reading of free prose: that would be a language model taking a write action based on untrusted text, which is the exact chain this repository is built to avoid. If a routing decision cannot be made from the form's fields, the correct fix is to add a field to the form.
+
+## The contract inside governance.json
+
+`scripts/gh/governance.json` carries two lists that describe the same thing from two sides:
+
+| | Field | What it means |
+|---|---|---|
+| declared | `promotion.required_contexts` | the checks the weekly promotion verifies on the candidate commit |
+| enforced | `branches.<source_branch>.protection.required_status_checks.checks` | the checks GitHub actually requires before a merge |
+
+They must name the same contexts. They did not: `workflow-hardening` was in the first and absent from the second, so the job ran on every pull request and its red gated nothing — required by prose. That is `F-005` of the blinded self-audit, issue #16.
+
+`gate-governance-contract.sh` fails while the two disagree. It is a **separate gate rather than a block inside `apply-governance.sh`** because that script needs `gh`, admin credentials and a live repository, so it runs when a person runs it; comparing two lists inside one file needs no network and therefore runs on every pull request like everything else. `apply-governance.sh --check` folds the gate's exit code into its own verdict, the same way it delegates the label taxonomy to `labels.sh`.
+
+A context enforced by the protection and **not** declared as required is reported and does not fail: that direction is stricter than declared, not a hole.
+
+Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
+
+Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
 
 ## Branch naming
 

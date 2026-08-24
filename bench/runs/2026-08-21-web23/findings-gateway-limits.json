@@ -1,0 +1,321 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-limits/target (Go upload gateway: server.go, config/env.go, handlers/handlers.go, middleware/limits.go, router/routes.go, README.md)",
+    "commit": "unversioned working tree, no VCS metadata in scope; sha256 of the six audited files concatenated = 33e9ee855ee8b029eff2213b432f7a59fa3db007208d0079261a4deba9671181",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad web-and-API specialist, corpus bench-limits/corpus (web-api.md WEB-01..WEB-12, web-api-clientside-logic.md WEB-13..WEB-23, triage.md FP-01..FP-10, vocabulary.md, findings.schema.json)",
+    "coverage_declaration": "Read end to end: all six files of the target. Exercised statically: the route table against the middleware registrations, and every constant whose name declares a bound against its readers (the WEB-23 minimal test). Not exercised: nothing was executed, built, compiled or requested; the target was read only and no network was used. Not in reach and therefore not covered: router/private.go (named in router/routes.go:11 and absent from the scope), the storage package that defines store() and that config/env.go:17 declares as the consumer of the Storage struct tags, the verify() implementation behind the delivery webhook, go.mod and the dependency set, and every deployment artifact (ingress, API gateway, WAF, container and network policy) that README.md refers to as deploy/README. Findings that depend on any of those are reported as probable with the inferred link named, never as confirmed. Classes looked for and not found are listed in ruled_out with the bound of how far each check reached; absence of a class there means it was not present in this scope, not that the deployed system is free of it.",
+    "authorization": "Authorized read-only local review of the directory above. No remote target, no active test and no execution of the target; nothing requiring a separate authorization was run."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "The one route that reads the whole body into memory is the one route the body limiter does not wrap",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "router/routes.go",
+        "line": 17,
+        "component": "public route table / handlers.Upload"
+      },
+      "evidence": "router/routes.go registers three routes on the public mux; two are wrapped and one is not:\n  15: mux.Handle(\"/v1/status\", middleware.BodyLimit(http.HandlerFunc(handlers.Status)))\n  16: mux.Handle(\"/v1/hooks/delivery\", middleware.BodyLimit(http.HandlerFunc(handlers.Delivery)))\n  17: mux.Handle(\"/v1/upload\", http.HandlerFunc(handlers.Upload))\nThe unwrapped one is the only handler that buffers the body:\n  handlers/handlers.go:10: body, err := io.ReadAll(r.Body)\nhandlers.Status (handlers.go:37) writes a status code and never touches the body; handlers.Delivery (handlers.go:24) does read it and is wrapped. The limiter is therefore applied to the route that does not need it and omitted from the route that does. grep over the whole scope returns exactly one call site for http.MaxBytesReader (middleware/limits.go:12) and no other size check on any path.",
+      "impact": "An unauthenticated caller sends an arbitrarily large body to /v1/upload and the process allocates all of it on the heap before any check runs. A few concurrent multi-gigabyte requests exhaust memory and the gateway is OOM-killed, taking every route with it, including the health endpoint the load balancer polls. No credential, session or attacker-uncontrolled precondition stands in the way: router/routes.go:10-11 declares the whole surface reachable without a session.",
+      "preconditions": "Network reach to the listener (server.go:15 binds :8080) and the ability to send a request body. Nothing else.",
+      "recommendation": "Apply the limiter once to the whole mux instead of per route, so that registering a route cannot silently opt out of it: wrap router.New()'s result in middleware.BodyLimit, or set Handler: middleware.BodyLimit(router.New()) in server.go:16. Independently, make handlers.Upload stream to storage rather than io.ReadAll, so one request is bounded by the limiter and not by available memory. Then make the invariant executable: a test that walks the registered route table and fails when a handler that reads a body is not behind the limiter, so the omission cannot come back by hand.",
+      "traceability": ["CWE-400", "CWE-770", "CWE-1188", "A04:2025", "A05:2025", "ASVS 5.0 V11", "NIST 800-53 SC"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating control exists and is skippable, which FP-01 explicitly excludes: middleware.BodyLimit is a wrapper the registrar may forget, and router/routes.go:17 is the line where it was forgotten. The server timeouts are not a substitute: server.go:17-18 set ReadHeaderTimeout and WriteTimeout from StreamTimeout, which bound how long a request may take, not how many bytes it may carry."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the shipped path, not debug scaffolding: main() at server.go:16 serves router.New() directly and router.New is the only route table in the scope. There is no build tag, environment flag or test-only guard anywhere in the six files."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A layer in front could cap the body (nginx client_max_body_size, an ingress proxy-body-size, an API gateway) and no such artifact arrived: README.md points at a deploy/README that is not in the scope, and the scope contains no manifest, chart, ingress or gateway configuration. Per FP-08 and WEB-23 this is UNKNOWN, never HOLDS, which is why this finding is probable rather than confirmed."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no benign reading of the construct: MaxBytesReader is called by symbol at middleware/limits.go:12 and the wrapper is applied by symbol at router/routes.go:15-16, so the omission on line 17 is visible in the same file in one step, with no tag, reflection, injection or generated code in between."
+        }
+      ],
+      "inference": "Reachability from an untrusted network without an upstream body cap. The code path was read end to end, from route registration to io.ReadAll; what was not observed is the deployment in front of :8080, because no deployment artifact is in the scope. If an ingress with a body cap is produced, the severity drops to whatever that cap allows and the finding moves to the gateway configuration rather than disappearing.",
+      "limits": "It does not establish what handlers.Upload then does with the buffered bytes: store() is not defined anywhere in the scope, so any disk, quota or object-naming consequence downstream of the read is outside this finding. It also does not establish a concurrency or byte figure, since nothing was executed."
+    },
+    {
+      "id": "F-002",
+      "title": "MAX_UPLOAD_MB is a documented, operator-settable knob that nothing in the codebase reads",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "config/env.go",
+        "line": 34,
+        "component": "config tunables"
+      },
+      "evidence": "config/env.go declares the knob at line 12 and assigns it from the environment at line 34:\n  12: MaxUploadMB    int\n  34: MaxUploadMB = envInt(\"MAX_UPLOAD_MB\", 128)\nand the comment above the block (config/env.go:8-9) states that every one of these is documented in deploy/README and can be set per environment. Counting readers as WEB-23 prescribes, over the whole scope: grep -rn 'MaxUploadMB' returns exactly two hits, the declaration and the assignment, and zero readers. The contrast inside the same file is what makes it unarguable: MaxBodyMB has a real reader (middleware/limits.go:12), RateLimitBurst has one (middleware/limits.go:20) and StreamTimeout has two (server.go:17-18). MaxUploadMB alone has none. It is a plain package variable with no struct tag, so the tag-driven exculpation that applies to config.Storage does not apply to it.",
+      "impact": "An operator sets MAX_UPLOAD_MB=8 to cap uploads, deploys, and uploads stay unlimited. The knob does not merely fail to help, it manufactures the belief that the control is present, which is why WEB-23 exists; a reviewer who reads the declaration reads it as proof the limit is enforced. Concretely, it is the configured cap for the very path F-001 leaves unbounded, so the operator's only apparent lever over upload size does nothing.",
+      "preconditions": "None. The knob is inert whatever value it is given, including the 128 default.",
+      "recommendation": "Either enforce it or delete it, and do not ship the third option. Enforce: bound the upload path with MaxUploadMB (a dedicated middleware on /v1/upload, or MaxBytesReader with int64(config.MaxUploadMB)<<20 inside handlers.Upload) so the documented name matches the behaviour. Delete: remove the variable, the envInt call and the deploy/README entry, so that nobody configures a control that does not exist. Then add the check that stops it recurring: a test that asserts every exported config tunable has at least one reader, failing the build on a zero-reader knob, since staticcheck's U1000 and its equivalents stay quiet on a package variable that is assigned at start-up.",
+      "traceability": ["CWE-400", "CWE-770", "CWE-1188", "A04:2025", "A05:2025", "ASVS 5.0 V11", "NIST 800-53 SC"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The reader could be real and live outside the files given: the storage package that defines store() is not in the scope, and it could read config.MaxUploadMB. WEB-23 states this case explicitly and rules that it is UNKNOWN rather than HOLDS. The search that would settle it: grep for MaxUploadMB across the storage package and any package importing gateway/config. Two facts bound the doubt without removing it: nothing in the scope imports a storage package by name, and even a reader there would be downstream of the io.ReadAll at handlers.go:10, so it could not bound the memory allocation."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The by-name consumption exculpation does not fit this construct. MaxUploadMB is a bare package variable assigned imperatively in Load() at config/env.go:34, with no env, json, mapstructure or viper tag and no reflection over the package. The one construct in this file that does qualify for that exculpation is the Storage struct at config/env.go:18-21, whose fields carry env: and default: tags and which the comment at line 17 declares is read wholesale by the storage package; that construct is in ruled_out, and the difference between the two is precisely why this one is reported."
+        }
+      ],
+      "inference": "That no package outside the given scope reads config.MaxUploadMB. Every file in the scope was searched and none does; what was not observed is the storage package and anything else importing gateway/config, because they are not in reach.",
+      "limits": "It does not establish that upload size is unbounded in the deployed system, only that this knob does not bound it; F-001 carries the unbounded path itself. It does not establish what value operators actually set, and it makes no claim about the other three tunables, which do have readers."
+    },
+    {
+      "id": "F-003",
+      "title": "The rate limiter is defined and registered on no route, so no reachable endpoint is throttled",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "middleware/limits.go",
+        "line": 18,
+        "component": "middleware.Throttle / public route table"
+      },
+      "evidence": "middleware.Throttle is defined at middleware/limits.go:18-26 and documented as rejecting a caller that exceeds the configured burst. grep -rn 'Throttle' over the whole scope returns two hits, the doc comment at line 17 and the definition at line 18, and zero registrations. The route table that ships, router/routes.go:15-17, wires BodyLimit twice and Throttle never, so all three public routes serve at whatever rate the client can generate. The knob behind it, RateLimitBurst, is assigned at config/env.go:35 with a default of 20 and is read only at middleware/limits.go:20, inside the middleware that nothing calls: this is WEB-23's one-reader-that-is-itself-never-called shape, one level down from a zero-reader knob.",
+      "impact": "Every public endpoint accepts unlimited request volume from a single caller with no credential. On /v1/upload that compounds F-001: unlimited size at unlimited rate against a handler that buffers each body in memory, and unlimited writes into whatever store() persists to, which is a cost and content-abuse channel as well as an availability one. The operator's configured RATE_LIMIT_BURST has no effect on any reachable path, so the same false assurance as F-002 applies here.",
+      "preconditions": "Network reach to the listener. No credential is required for any of the three routes (router/routes.go:10-11).",
+      "recommendation": "Register the limiter on the public surface, and register it where a new route inherits it rather than where a new route must remember it: wrap the mux returned by router.New() in middleware.Throttle, and put the expensive route behind a stricter per-identity quota than the health check. Fix the limiter itself before wiring it, because F-004 and F-005 make the current implementation crash-prone and ineffective. Then make the omission detectable: a test over the registered route table asserting that every state-changing route is behind the limiter.",
+      "traceability": ["CWE-770", "CWE-799", "CWE-1188", "A04:2025", "A06:2025", "ASVS 5.0 V2", "API4:2023"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Rate limiting could be enforced by a layer in front (an API gateway, a WAF, an ingress rate-limit annotation) and no such artifact arrived: the scope holds no deployment configuration and README.md's deploy/README is not in reach. FP-08 makes that UNKNOWN, not HOLDS. Separately, router/routes.go:11 says the authenticated surface lives in router/private.go, a file that does not exist in the scope; if Throttle is registered there, it still would not cover the three public routes registered here, which are the ones this finding is about."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no indirection that could hide a registration: router.New builds a plain *http.ServeMux with three literal mux.Handle calls (router/routes.go:13-17), there is no framework Use() chain, no dependency injection and no generated wiring anywhere in the scope, and server.go:16 passes that mux straight to http.Server.Handler."
+        }
+      ],
+      "inference": "That no route reaches Throttle. Every registration in the scope was read and none does; what was not observed is router/private.go, named at router/routes.go:11 and absent, which could register it for the authenticated surface. That would not change the finding for the three public routes.",
+      "limits": "It does not establish that a limiter would be effective once wired: F-005 shows the current keying and refill logic would not limit a reconnecting caller, and F-004 shows what happens under concurrency. It makes no claim about limits enforced outside the process."
+    },
+    {
+      "id": "F-004",
+      "title": "The rate limiter's bucket map is read and written from concurrent handlers with no synchronization",
+      "procedure": "WEB-17",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "middleware/limits.go",
+        "line": 28,
+        "component": "middleware.allow / buckets"
+      },
+      "evidence": "middleware/limits.go:40 declares a package-level map shared by every request: var buckets = map[string]int{}. allow() at lines 28-38 reads it and writes it with no mutex, no sync.Map and no channel:\n  29: bucket, ok := buckets[key]\n  33: if bucket <= 0 { return false }\n  36: buckets[key] = bucket - 1\nallow() is called from middleware/limits.go:20, inside Throttle's http.HandlerFunc, and net/http serves every connection in its own goroutine, so two in-flight requests execute lines 29 and 36 concurrently by construction. The sequence is also a read-decide-write with no atomicity: the check at line 33 and the decrement at line 36 are separated, so two requests can both pass a check that only one should.",
+      "impact": "Concurrent map writes are not a data race Go tolerates: the runtime detects them and terminates the process with a fatal error that no recover() can catch. Any two simultaneous requests through the limiter therefore kill the gateway, which turns the control meant to protect against volume into the cheapest way to take the service down. The weaker consequence, if the crash is not hit, is that the read-decide-write lets more requests through the burst than the configured value.",
+      "preconditions": "Throttle must be registered on a route. It is not registered on any of the three public routes today (F-003), so on the surface that is visible this code is not reached; router/routes.go:11 names a router/private.go that is not in the scope and could register it. The precondition is therefore not attacker-controlled, but it is exactly what the recommended fix for F-003 supplies.",
+      "recommendation": "Guard the state and make the decision atomic in the same step, not in two: a sync.Mutex held across the read, the check and the decrement, or a per-key atomic counter. Do not fix it by reaching for sync.Map, which removes the crash but leaves the read-decide-write gap. While there, give the bucket a refill (see F-005) and bound the map's growth, since one entry per key with no eviction is itself an unbounded allocation driven by the client. Wire Throttle only after this is fixed, so that fixing F-003 does not ship this.",
+      "traceability": ["CWE-362", "CWE-367", "CWE-400", "WSTG-BUSL-*", "ASVS 5.0 V2", "A06:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no synchronizing layer between the handler and the map. middleware/limits.go imports only net/http and gateway/config (lines 3-7); no sync package, no mutex, no channel and no single-goroutine dispatcher exists anywhere in the scope, and server.go:14-19 uses the standard http.Server, which serves each connection in its own goroutine."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code is ordinary shipped code, not test scaffolding: middleware/limits.go carries no build tag, no _test suffix and no environment guard, and Throttle is exported for registration. Whether a route reaches it is a separate question, answered under preconditions and in F-003, not a matter of the path being absent from the build."
+        }
+      ],
+      "inference": "Reachability. The race itself was read end to end in code that is in the scope and needs nothing external to be true; what is inferred is that some route reaches Throttle, which no file in the scope shows and which router/private.go, absent from the scope, could supply.",
+      "limits": "It does not establish that the crash occurs today, because no route in the visible table reaches allow(); the finding is that the limiter cannot be turned on safely as written. Nothing was executed, so no race detector run, no reproduction and no timing measurement backs it beyond reading the code and Go's documented map semantics."
+    },
+    {
+      "id": "F-005",
+      "title": "The rate limiter keys on RemoteAddr including the ephemeral port and never refills the bucket",
+      "procedure": "WEB-18",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "middleware/limits.go",
+        "line": 20,
+        "component": "middleware.Throttle / middleware.allow"
+      },
+      "evidence": "The key is the full remote address, not the client identity and not even the client's address:\n  20: if !allow(r.RemoteAddr, config.RateLimitBurst) {\nhttp.Request.RemoteAddr is host:port, and the port is a fresh ephemeral one per TCP connection, so every reconnection produces a key the map has never seen and allow() at middleware/limits.go:29-32 seeds it with a full burst again. In the other direction, nothing ever gives a bucket back: allow() only ever decrements (line 36), there is no timer, no ticker, no timestamp on the entry and no eviction anywhere in the file, so once a key reaches zero, line 33 denies it forever for the life of the process.",
+      "impact": "Two failures that point opposite ways and are both in the same twelve lines. An attacker keeps a fresh burst per connection and reconnects, so the configured burst of 20 bounds requests per connection rather than per caller and the limiter does not limit. A legitimate caller who reuses one keep-alive connection is permanently denied after its 20th request, with no recovery short of a restart, so the limiter denies service to the well-behaved client it was written to protect.",
+      "preconditions": "Same as F-004: Throttle must be registered on a route, which no file in the scope does.",
+      "recommendation": "Key on the identity, not the transport: the authenticated principal where there is one, and otherwise the client address with the port stripped (net.SplitHostPort) and the proxy chain resolved deliberately rather than trusting a forwarded header. Give the bucket real refill semantics, a token bucket or a leaky bucket with a rate and a timestamp per entry, so denial is temporary and capacity returns, and evict idle keys so the map cannot grow without bound. Cover both directions with a test: N requests over N connections must be limited, and a caller must recover after the refill interval."
+      ,
+      "traceability": ["CWE-770", "CWE-799", "CWE-20", "WSTG-BUSL-*", "ASVS 5.0 V2", "A06:2025", "API4:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No other layer in the scope enforces a rate: grep for the limiter shows Throttle is the only rate control in the six files and it is registered nowhere (F-003), and there is no per-identity quota, queue or budget anywhere in handlers/handlers.go. The claim that an upstream gateway limits instead is answered under F-003's FP-08, which is UNKNOWN for lack of any deployment artifact."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "RemoteAddr is not being used here as a label or a log field where the port would be harmless: it is passed as the map key at middleware/limits.go:20 and used verbatim at lines 29 and 36, so the port participates in the identity the limit is counted against. Go documents RemoteAddr as the network address in host:port form and net/http fills it from the connection."
+        }
+      ],
+      "inference": "Reachability, as in F-004: the keying and the missing refill were read directly, but no route in the scope reaches Throttle, so the behaviour is latent rather than live.",
+      "limits": "It grants an attacker nothing beyond what F-003 already grants today, since no route is throttled at all; it is reported because it is what the fix for F-003 would ship if the middleware were simply wired as it stands. It does not establish behaviour behind a proxy, where RemoteAddr would be the proxy's address and the limiter would count every caller as one."
+    },
+    {
+      "id": "F-006",
+      "title": "The server sets no ReadTimeout and no IdleTimeout, so idle keep-alive connections are never reclaimed",
+      "procedure": "WEB-18",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "server.go",
+        "line": 14,
+        "component": "http.Server"
+      },
+      "evidence": "server.go:14-19 constructs the server with four fields and two timeouts:\n  16: Handler:           router.New(),\n  17: ReadHeaderTimeout: time.Duration(config.StreamTimeout) * time.Second,\n  18: WriteTimeout:      time.Duration(config.StreamTimeout) * time.Second,\nReadTimeout and IdleTimeout are absent and therefore zero. Go's net/http derives the idle deadline from IdleTimeout and falls back to ReadTimeout when it is unset; with both zero no read deadline is set on a connection waiting for its next request. The two timeouts that are set take StreamTimeout, whose default is 300 at config/env.go:36, so the header read and the whole handler-plus-write phase each get five minutes.",
+      "impact": "A client opens keep-alive connections, completes one cheap request on each, for instance GET /v1/status, and then holds them open indefinitely at no cost to itself. Each held connection keeps a goroutine and a file descriptor, so connection slots and descriptors are exhausted without any traffic to notice, and this needs no credential. The five-minute ReadHeaderTimeout and WriteTimeout also mean a single slow request occupies a goroutine for that long, which raises the cost of the unbounded read in F-001 rather than bounding it.",
+      "preconditions": "Network reach to the listener and the ability to open concurrent TCP connections. No credential.",
+      "recommendation": "Set IdleTimeout explicitly to a small value, seconds rather than minutes, and set ReadTimeout so the body read is bounded in time as well as in bytes; keep ReadHeaderTimeout separate and short. Do not derive all of them from one StreamTimeout knob, because a header read, a body read, an idle socket and a response write have different natural bounds and one number cannot be right for all four. Bound concurrent connections as well, with a net.Listener limiter, so that reclaiming a connection is not the only defence.",
+      "traceability": ["CWE-400", "CWE-770", "WSTG-BUSL-*", "ASVS 5.0 V2", "A06:2025", "API4:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing else in the scope closes an idle connection: middleware/limits.go touches only the body size and the burst counter, no handler in handlers/handlers.go sets Connection: close, and server.go:20 calls ListenAndServe on the struct shown with no further configuration."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A load balancer or proxy in front commonly enforces its own idle timeout, and no such artifact arrived: the scope contains no deployment configuration and README.md's deploy/README is not in reach. FP-08 makes that UNKNOWN, not HOLDS."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defence in depth whose server-side equivalent exists elsewhere: there is no second mechanism in the scope that reclaims connections, so the missing timeouts are the only control over connection lifetime. The impact is small, which is why the severity is low, but it is not zero and it is not covered elsewhere."
+        }
+      ],
+      "inference": "The behaviour of net/http when IdleTimeout and ReadTimeout are both zero, which was read from Go's documented semantics rather than observed in a running process, since nothing was executed. Reachability from an untrusted network is the same unobserved link as in F-001.",
+      "limits": "It does not establish how many connections the deployed process can hold before exhaustion, which depends on the descriptor limit and the memory of the host, none of which is in the scope. It makes no claim about HTTP/2, which the scope does not configure and where connection accounting differs."
+    },
+    {
+      "id": "F-007",
+      "title": "Object writes on /v1/upload require no credential, no signature and no quota",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "router/routes.go",
+        "line": 17,
+        "component": "public route table / handlers.Upload"
+      },
+      "evidence": "The route table declares its own trust model at router/routes.go:10-11: anything registered here is reachable without a session, and the authenticated surface lives in router/private.go, a file that does not exist in the scope. Of the three routes registered on that surface, two carry a control of their own and the third carries none. /v1/status returns a bare 200 and exposes nothing (handlers.go:37-39). /v1/hooks/delivery verifies a signature before it does anything and fails closed with 401 (handlers.go:29-32). /v1/upload accepts the body and persists it with no check of any kind (handlers.go:9-20): there is no Authorization header read, no signature, no token, no session lookup and no call into any authorization helper anywhere in handlers/handlers.go, and the object name is taken straight from the query string at handlers.go:15, r.URL.Query().Get(\"name\").",
+      "impact": "Anyone who can reach the listener can write objects into the gateway's storage, and choose their name, without holding any credential. That is a cost and content channel: filling the store, planting content that is later served under the operator's domain, and overwriting an existing object if store() does not refuse a name that already exists. Combined with F-001 and F-003 the same request is also unbounded in size and unlimited in rate, so the three compound into one unauthenticated write primitive with no ceiling.",
+      "preconditions": "Network reach to the listener. Nothing else; that is the point of the finding.",
+      "recommendation": "Decide the trust model for this route explicitly rather than by placement. If uploads belong to callers, move the route to the authenticated surface router/routes.go:11 already points at, and require the caller's identity before the body is read. If uploads must stay credential-free, then bound them the way the delivery hook is bounded: a signed, short-lived, single-use upload grant that names the object and its maximum size, verified before io.ReadAll, plus a per-grant quota. Either way stop deriving the object name from an unauthenticated query parameter.",
+      "traceability": ["CWE-306", "CWE-862", "WSTG-ATHZ-*", "ASVS 5.0 V8", "A01:2025", "API5:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no authentication layer to be found anywhere in the scope: server.go:16 passes router.New() straight to the server with no wrapping middleware, router.New applies only middleware.BodyLimit, and middleware/limits.go contains only the size cap and the burst counter. Nothing in handlers/handlers.go inspects a credential except the signature check at handlers.go:29, which belongs to the delivery route."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure is declared intentional at router/routes.go:10-11 but FP-05 requires naming what bounds it, and nothing does: no authentication, no signature, no size limit (F-001), no rate limit (F-003) and no quota, on a route that performs a state-changing write. The two sibling routes on the same intentionally public surface each have their bound, a nil attack surface for the health check and signature verification for the webhook, which is what a bounded public exposure looks like and what this route lacks."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is crossed: the writer is any unauthenticated caller and the owner of the affected storage is the operator, whose bucket is named in config/env.go:19 as a deployment-configured resource. This is not a per-user private directory or an internal-only binding; server.go:15 binds :8080 on all interfaces."
+        }
+      ],
+      "inference": "Whether an upstream layer authenticates callers before proxying to :8080, and whether the placement of this route on the public mux is intended rather than an oversight. Neither could be observed: no deployment artifact is in the scope and router/private.go, the file that would show what the authenticated surface holds, is absent. What was observed, and is not inferred, is that no code in the scope checks any credential on this route.",
+      "limits": "It does not establish what store() accepts, whether it overwrites an existing name, or whether the object is later served back over HTTP, because the storage package is not in the scope; the traversal and object-naming question that depends on it is recorded in ruled_out as inconclusive rather than claimed here."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "A declared limit that nothing enforces: config.Storage.MaxObjectMB (STORAGE_MAX_OBJECT_MB, default 512)",
+      "procedure": "WEB-23",
+      "outcome": "refuted",
+      "where": "config/env.go:18-21. It has the exact shape the procedure looks for, a name that states a bound and zero readers under grep -rn 'MaxObjectMB' across the whole scope, and it is not a finding. FP-09 holds: the value is consumed by name rather than by symbol. The field carries env:\"STORAGE_MAX_OBJECT_MB\" and default:\"512\" tags, the sibling field carries env:\"STORAGE_BUCKET\", and the comment at line 17 names the consumer, the storage package, which reads the struct wholesale through those tags. It is also not assigned in Load() at lines 32-37, unlike the four package variables, so a symbol search could not find a reader even in principle. Bound: the storage package is not in the scope, so the tag reader was not read; what was established is that the zero-reader signal does not apply to a tag-consumed struct, which is why this construct was not reported while MaxUploadMB, a bare untagged variable assigned in Load(), was."
+    },
+    {
+      "class": "A declared limit that nothing enforces: config.StreamTimeout (STREAM_TIMEOUT, default 300)",
+      "procedure": "WEB-23",
+      "outcome": "refuted",
+      "where": "config/env.go:36 and server.go:17-18. Two real readers, ReadHeaderTimeout and WriteTimeout, both applied to the http.Server that main() runs, so the knob does reach an enforcement point that no route can skip (FP-01). What the value does not cover, the absent ReadTimeout and IdleTimeout, is reported separately as F-006 rather than as an unenforced knob."
+    },
+    {
+      "class": "A declared limit that nothing enforces: config.MaxBodyMB (MAX_BODY_MB, default 32)",
+      "procedure": "WEB-23",
+      "outcome": "refuted",
+      "where": "config/env.go:33 and middleware/limits.go:12. One real reader, http.MaxBytesReader, inside a middleware that is registered on two of the three public routes (router/routes.go:15-16), so the knob is enforced where the wrapper is applied (FP-01). The route where the wrapper is not applied is F-001; the knob itself is not the defect."
+    },
+    {
+      "class": "Path traversal and attacker-chosen object names on upload (WEB-12)",
+      "procedure": "WEB-12",
+      "outcome": "inconclusive",
+      "where": "handlers/handlers.go:15, store(r.URL.Query().Get(\"name\"), body). The source is fully client-controlled and reaches the call with no validation, canonicalisation, extension allowlist or length check anywhere in the scope. The sink could not be read: store is declared in no file of the target, there is no go.mod and no storage package in reach, so whether the name takes part in a filesystem path, an object key or neither was not established. Reported as inconclusive rather than as a finding because the procedure requires seeing the path assembly; what is claimed instead, and is observable, is that the name is unauthenticated, which is part of F-007. Naming the storage package would settle it in one read."
+    },
+    {
+      "class": "Webhook signature verification: algorithm, key handling and constant-time comparison (WEB-01, WEB-19)",
+      "procedure": "WEB-19",
+      "outcome": "inconclusive",
+      "where": "handlers/handlers.go:29, verify(r.Header.Get(\"X-Signature\"), body). verify is defined in no file of the scope, so the algorithm, the key source, whether the comparison is constant-time and whether a replay window exists could not be read. What was established and is positive: the check precedes any success response and fails closed with 401 (lines 29-32), it runs over the body that was read rather than over a re-parsed copy, and the route is wrapped in BodyLimit (router/routes.go:16) so the body read before verification is bounded. No credential, key or token literal appears anywhere in the scope."
+    },
+    {
+      "class": "XSS and client-side sinks (WEB-13, WEB-14)",
+      "procedure": "WEB-13",
+      "outcome": "not executed",
+      "where": "The pattern the procedures look for is absent from the inventory: no template engine, no HTML rendering, no static assets, no JavaScript and no browser-facing output anywhere in the six files. The three handlers write status codes and fixed strings through http.Error only (handlers/handlers.go:12, 16, 19, 26, 30, 33, 38), and no security header is set anywhere, which is consistent with an API surface that renders nothing. The section was not loaded for reporting."
+    },
+    {
+      "class": "CSRF, CORS and caching of private responses (WEB-15, WEB-16)",
+      "procedure": "WEB-16",
+      "outcome": "not executed",
+      "where": "Absent from the inventory: no cookie is set or read anywhere in the scope, there is no session store and no ambient credential, and no Access-Control-* or Cache-Control header is written by any handler or middleware. The only credential material on the surface is the X-Signature header on the delivery route, which a browser does not attach on its own. Bound: no response of the deployed system was observed, only the code that would emit one."
+    },
+    {
+      "class": "Disclosure through errors, traces and logs (WEB-22)",
+      "procedure": "WEB-22",
+      "outcome": "refuted",
+      "where": "handlers/handlers.go:12, 16, 26 and 30 return fixed strings, bad request, storage error and bad signature, and never the error value, so no path, version, query or internal type reaches the client. Nothing in the scope logs the body, the headers or the signature; there is no logger, no debug flag and no stack-trace configuration in any of the six files. The reverse defect is worth recording rather than reporting: there is no logging at all, so a failed signature check, a storage failure or a flood of unauthenticated uploads leaves no trace to reconstruct."
+    },
+    {
+      "class": "Injection into a data layer, an OS command or an interpreter (WEB-07, WEB-08, WEB-09)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "No sink of any of the three classes exists in the scope: no SQL, ORM or NoSQL client, no database import, no os/exec, no shell invocation, no template rendering and no eval-equivalent anywhere in the six files. The only imports across the target are net/http, io, os, strconv and time. The single client-controlled value in the code, the name query parameter, reaches store() and no interpreter that is in reach; that unresolved sink is recorded above under WEB-12."
+    },
+    {
+      "class": "Secrets, credentials and TLS verification (WEB-19)",
+      "procedure": "WEB-19",
+      "outcome": "refuted",
+      "where": "No credential, key, token or high-entropy literal appears in any of the six files; every tunable is read from the environment through envInt (config/env.go:23-30) or through the env struct tags of config.Storage. There is no TLS configuration to weaken, no InsecureSkipVerify and no outbound client in the scope. Bound: no environment file, secret store or deployment manifest was in reach, so this covers the source tree only."
+    }
+  ]
+}

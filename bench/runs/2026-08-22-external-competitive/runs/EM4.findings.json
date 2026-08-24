@@ -1,0 +1,100 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT Decompression Logic Error - Reader Closed Before Read",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 200,
+      "severity": "CRITICAL",
+      "impact": "All compressed JWT tokens will fail to decompress, resulting in authentication bypass or 401 errors. The gzip reader is closed on line 202 before io.ReadAll() attempts to read from it on line 205, causing data loss.",
+      "evidence": "Function decodeAndDecompressTokenString (lines 188-207): zr.Close() called before io.ReadAll(zr), and error from Close() is logged but ignored, so function doesn't signal decompression failure.",
+      "recommendation": "Read from the gzip reader before closing it. Move io.ReadAll(zr) before zr.Close(). Handle errors properly and return empty string only if decompression actually fails.",
+      "review_status": "VERIFIED",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-002",
+      "title": "Cookie Splitting Algorithm Can Cause Data Loss With UTF-8",
+      "file": "pkg/cookie/cookie.go",
+      "line": 168,
+      "severity": "HIGH",
+      "impact": "If a multi-byte UTF-8 sequence spans a cookie split boundary, the algorithm decrements 'r' without checking if it goes below 'l', potentially causing data loss or infinite loops when splitting large cookies containing non-ASCII characters.",
+      "evidence": "splitCookie function (lines 168-177): Inner loop `for !utf8.RuneStart(longString[r]) { r-- }` can decrement r below l if UTF-8 sequence is longer than maxLen, creating invalid slice [l:r].",
+      "recommendation": "Add bounds checking: ensure r > l after UTF-8 boundary adjustment. If r==l after adjustment, move both l and r forward to prevent zero-length or negative-length slices.",
+      "review_status": "VERIFIED",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "F-003",
+      "title": "SigningKey Error Not Checked in NewVPJWT",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 106,
+      "severity": "MEDIUM",
+      "impact": "If SigningKey() returns an error (e.g., due to invalid private key file), the error is only logged but not returned. token.SignedString(key) could fail or use incorrect key material, leading to invalid tokens or security bypass.",
+      "evidence": "Lines 106-109: key, err := cfg.SigningKey(); if err != nil { log.Errorf(\"%s\", err) } - error is logged but execution continues with potentially nil/invalid key.",
+      "recommendation": "Check error and return early: `if err != nil { return \"\", fmt.Errorf(\"signing key error: %w\", err) }`",
+      "review_status": "VERIFIED",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-004",
+      "title": "OAuth State Parameter Not Time-Bound",
+      "file": "handlers/auth.go",
+      "line": 67,
+      "severity": "MEDIUM",
+      "impact": "OAuth state parameter is validated but has no expiration check. If a session cookie persists beyond reasonable timeout, an attacker could replay old state values to perform CSRF attacks against the OAuth flow.",
+      "evidence": "AuthStateHandler (lines 55-127): state validation on line 67 only checks if session.Values[\"state\"] == queryState, with no timestamp validation or maximum age check.",
+      "recommendation": "Add timestamp to state value and verify it's not older than 15-30 minutes. Invalidate state after use.",
+      "review_status": "VERIFIED",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "F-005",
+      "title": "DecryptionKey Error Not Checked in ParseTokenString",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 145,
+      "severity": "MEDIUM",
+      "impact": "If DecryptionKey() returns an error (invalid private key file or RSA key parsing failure), the error is logged but execution continues with potentially nil key, causing ParseWithClaims to fail or use wrong key.",
+      "evidence": "Lines 145-148: key, err := cfg.DecryptionKey(); if err != nil { log.Errorf(\"%s\", err) } - error ignored and execution continues.",
+      "recommendation": "Return error immediately if key loading fails: `if err != nil { return nil, fmt.Errorf(\"decryption key error: %w\", err) }`",
+      "review_status": "VERIFIED",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-007",
+      "title": "Session Key Not Validated for Sufficient Length",
+      "file": "handlers/handlers.go",
+      "line": 59,
+      "severity": "MEDIUM",
+      "impact": "The session store is initialized with cfg.Cfg.Session.Key (line 59) without validation that the key has sufficient entropy. If a user provides a short session key in config, it could be brute-forced to forge session cookies.",
+      "evidence": "Line 59: sessstore = sessions.NewCookieStore([]byte(cfg.Cfg.Session.Key)) - no validation of key length or entropy. Gorilla sessions recommends keys >= 32 bytes.",
+      "recommendation": "Add validation in config to ensure Session.Key is at least 32 bytes long (256 bits). Consider using secure random generation if not provided.",
+      "review_status": "VERIFIED",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "F-008",
+      "title": "Potential Denial of Service via Large JWT Token",
+      "file": "pkg/jwtmanager/jwtcache.go",
+      "line": 58,
+      "severity": "LOW",
+      "impact": "The JWT cache stores entire response headers without size limits. An attacker could potentially create a very large JWT with many claims/headers to consume memory. No maximum JWT size is enforced.",
+      "evidence": "JWTCacheHandler (line 92): Cache.Set(jwt, w.Header().Clone(), cacheExp) - no size validation on jwt parameter before caching.",
+      "recommendation": "Add a maximum JWT size check (e.g., 10KB) before attempting to decompress/parse. Reject oversized tokens.",
+      "review_status": "VERIFIED",
+      "confidence": "LOW"
+    },
+    {
+      "id": "F-009",
+      "title": "PublicAccess Flag Bypasses All Authorization",
+      "file": "handlers/validate.go",
+      "line": 124,
+      "severity": "HIGH",
+      "impact": "The PublicAccess flag in configuration (line 124) allows bypassing all authorization if a JWT fails validation. If this is accidentally set to true in production, all protected sites become publicly accessible without authentication.",
+      "evidence": "send401or200PublicAccess function: if cfg.Cfg.PublicAccess is true, returns OK200 regardless of JWT validity. This is intended for testing but is a serious misconfiguration risk.",
+      "recommendation": "Add startup warning if PublicAccess is enabled. Consider restricting this flag to only be used in testing mode. Document the security implications clearly.",
+      "review_status": "VERIFIED",
+      "confidence": "MEDIUM"
+    }
+  ]
+}

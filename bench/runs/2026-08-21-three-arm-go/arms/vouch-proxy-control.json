@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Slice length taken verbatim from an attacker-supplied cookie name allows unbounded allocation (remote memory exhaustion)",
+      "file": "pkg/cookie/cookie.go",
+      "line": 130,
+      "severity": "high",
+      "impact": "Any unauthenticated client that can reach the validation endpoint can make the process allocate an arbitrarily large slice with a single request header. `Cookie: VouchCookie_1of900000000` asks for a 900M-element []string (~14 GB of backing array on 64-bit). Depending on the value chosen this is either a recoverable `makeslice: len out of range` panic or a genuine allocation that drives the process into `runtime: out of memory` - a fatal, unrecoverable error that kills the whole auth service, taking down every site that depends on it for authorization. No credentials, no valid session and no prior request state are needed.",
+      "evidence": "Line 126 does `numParts, err = strconv.Atoi(xyArray[1])`, where `xyArray` is derived purely from `cookie.Name`, and line 130 immediately does `cookieParts = make([]string, numParts)`. Between those two statements there is no upper bound, no lower bound, and no cross-check against the number of `_XofY` cookies actually present in the request. A negative Y (`VouchCookie_1of-1`) reaches `make([]string, -1)` on the same line. Go's cookie-name validator accepts `_`, `-` and digits as token characters, so every payload here survives `r.Cookies()`.",
+      "recommendation": "Validate `numParts` before allocating: reject anything `< 1` or above a hard ceiling (a JWT can only ever split into a handful of ~4000-byte chunks, so a constant such as `maxCookieParts = 10` is already generous). Better still, size the slice from the number of matching cookies actually observed in `r.Cookies()` rather than from a number the client chose, and return an error when the two disagree."
+    },
+    {
+      "id": "F-002",
+      "title": "Out-of-range slice write from the X in an attacker-supplied `_XofY` cookie name panics the request handler",
+      "file": "pkg/cookie/cookie.go",
+      "line": 136,
+      "severity": "high",
+      "impact": "A single crafted request header aborts the authorization handler. `Cookie: VouchCookie_9of1` sizes `cookieParts` to 1 and then writes to index 8; `Cookie: VouchCookie_0of1` writes to index -1. Both are `index out of range` panics on the hot path that every proxied request traverses. net/http recovers per connection, so the practical effect is a 500 / dropped connection per request plus a full stack trace in the logs - cheap, repeatable, unauthenticated request-level denial of service and log flooding. Any deployment that calls this helper outside an http.Handler goroutine (or that runs behind a recover-less wrapper) loses the whole process.",
+      "evidence": "Line 133 parses `i` from `xyArray[0]` - the client-controlled X - and line 136 writes `cookieParts[i-1] = cookie.Value` with no check that `1 <= i <= numParts`. `numParts` itself is fixed by whichever `_XofY` cookie happens to be seen first (line 125, `if numParts == -1`), and the client controls cookie ordering, so X and Y need not be consistent with each other.",
+      "recommendation": "After parsing `i`, bail out unless `i >= 1 && i <= len(cookieParts)`, returning the same `multipart cookie fail` error used for the parse failures. Also reject a second `_XofY` cookie whose Y disagrees with the already-established `numParts`, and reject a duplicate X rather than silently overwriting a part."
+    },
+    {
+      "id": "F-003",
+      "title": "Cookie name without the literal `of` separator indexes past the end of the split result and panics",
+      "file": "pkg/cookie/cookie.go",
+      "line": 126,
+      "severity": "high",
+      "impact": "`Cookie: VouchCookie_x` is enough to panic the handler. It is the cheapest of the three crash paths - no arithmetic, no ordering trick, just a cookie whose name starts with the configured prefix and contains no `of`. Same effect as F-002: unauthenticated 500 / connection reset per request against the component that gates access to everything behind the proxy.",
+      "evidence": "Line 123-124 produce `xyArray := strings.Split(xOFy, \"of\")`. When `xOFy` contains no `of`, `Split` returns a one-element slice, and line 126 unconditionally dereferences `xyArray[1]`. The only guard on the line is the error branch of `strconv.Atoi`, which never runs because the panic happens while evaluating the argument. The `strings.HasPrefix` test on line 118 is the only filter on the name, and it does not constrain the remainder at all.",
+      "recommendation": "Check `len(xyArray) == 2` (and that both elements are non-empty) before touching either index, returning the existing `multipart cookie fail` error otherwise. Parsing the suffix with a compiled anchored regexp such as `^([0-9]+)of([0-9]+)$` - or `strings.Cut` plus explicit length checks - closes F-002 and F-003 together and makes the accepted shape explicit."
+    },
+    {
+      "id": "F-004",
+      "title": "Session JWT is written to the log in cleartext at debug level",
+      "file": "pkg/cookie/cookie.go",
+      "line": 121,
+      "severity": "medium",
+      "impact": "The cookie value handled here is the bearer credential for the whole SSO session. With debug logging enabled - which is the first thing operators turn on when diagnosing a login loop, exactly the scenario multipart cookies exist for - the complete token is written to stdout and into whatever log pipeline collects it. Anyone with read access to logs (ops staff, a log-shipping SaaS, a compromised sidecar, a support bundle pasted into an issue) can replay the token and impersonate the user for the remaining lifetime of the JWT. Logs also usually long outlive the session and sit outside the trust boundary the cookie flags (HttpOnly, Secure) were chosen to enforce.",
+      "evidence": "Lines 119-122 log `\"cookieValue\", cookie.Value` for each part, and lines 146-148 log the fully reassembled token as `\"combined cookie\"`. Both emit the raw value with no redaction, truncation or hashing.",
+      "recommendation": "Never log the value. Log what is actually useful for the multipart bug being diagnosed - the cookie name, the part index, the total, and `len(cookie.Value)`. If a correlation handle is genuinely needed, log a short truncated hash of the value rather than the value itself."
+    },
+    {
+      "id": "F-005",
+      "title": "ClearCookie omits the SameSite attribute that SetCookie sets, so logout can fail to delete the session cookie",
+      "file": "pkg/cookie/cookie.go",
+      "line": 165,
+      "severity": "low",
+      "impact": "The deletion Set-Cookie is not written with the same attribute set as the cookie it is meant to overwrite. In a deployment configured with `sameSite: none` (the configuration needed when the proxy is used from cross-site or embedded contexts, see SameSite() at line 191), the delete response carries no SameSite attribute and is therefore treated as Lax; browsers reject it in the cross-site contexts where the original cookie was set and delivered. The user believes they have logged out, the session cookie survives in the browser, and the still-valid JWT keeps authorizing requests. The window equals the remaining JWT lifetime, and the failure is silent on both ends.",
+      "evidence": "SetCookie (lines 54-98) sets `SameSite: sameSite` on every cookie it writes. ClearCookie (lines 165-174) writes `Name`, `Value`, `Path`, `Domain`, `Expires`, `Secure` and `HttpOnly` but no `SameSite` and no `MaxAge: -1`. The set path and the clear path have drifted apart.",
+      "recommendation": "Build the deletion cookie from the same attribute set as `setCookie` - add `SameSite: sameSite` and `MaxAge: -1` - or, better, express deletion as `setCookie(w, r, \"delete\", -1)` so there is one place where cookie attributes are decided and the two paths cannot drift again."
+    },
+    {
+      "id": "F-006",
+      "title": "Split cookie parts are built to the size budget of the base name, so every emitted part exceeds the 4000-byte target",
+      "file": "pkg/cookie/cookie.go",
+      "line": 73,
+      "severity": "low",
+      "impact": "The chunk size is computed from a cookie whose name is the plain configured name, but each part is then emitted under a longer name (`<name>_1of3`, and longer again once the count reaches double digits). Every part therefore lands over the ~4000-byte budget the code deliberately set for itself, by the width of the added suffix. On the browsers this ceiling exists to accommodate, the oversized part gets dropped, `Cookie()` reassembles a token with a hole in it, validation fails and the user is bounced into a redirect loop - a self-inflicted availability problem in exactly the large-token (many groups/claims) deployments this code path was written for.",
+      "evidence": "Line 66 measures `emptyCookieSize` from a cookie named `cfg.Cfg.Cookie.Name`, and line 73 passes `maxCookieSize-emptyCookieSize` as the chunk length; line 76 then renames each part to `fmt.Sprintf(\"%s_%dof%d\", cfg.Cfg.Cookie.Name, i+1, len(cookieParts))`. The suffix length is never subtracted from the budget.",
+      "recommendation": "Subtract the worst-case suffix from the chunk budget before splitting - compute `emptyCookieSize` from a cookie already carrying a representative `_XofY` name, or explicitly deduct `len(fmt.Sprintf(\"_%dof%d\", n, n))`. Since the part count depends on the chunk size, either iterate to a fixed point or use a conservative constant such as 8 bytes."
+    },
+    {
+      "id": "F-007",
+      "title": "splitCookie has no guard for a non-positive chunk length: negative index panic or an unbounded append loop",
+      "file": "pkg/cookie/cookie.go",
+      "line": 205,
+      "severity": "low",
+      "impact": "If `maxLen` reaches 0 the loop makes no progress - `l, r = r, r+0` leaves `r` unchanged while appending an empty string on every iteration - and the process spins allocating until it dies. If `maxLen` goes negative, `longString[r]` on line 206 indexes with a negative offset and panics. Reaching either state requires a configured cookie name plus domain long enough that the empty cookie serialization approaches 4000 bytes, so this is an operator-triggered rather than attacker-triggered failure, but it turns a configuration mistake into a hang or a crash instead of an error. The inner `r--` walk is likewise unbounded and can run below `l` on input that is not valid UTF-8.",
+      "evidence": "Line 73 computes the argument as `maxCookieSize-emptyCookieSize` with no floor, and `splitCookie` (lines 201-212) uses it directly as both the initial `r` and the loop stride, with no validation of `maxLen` and no lower bound on the `for !utf8.RuneStart(longString[r]) { r-- }` walk.",
+      "recommendation": "Return an error (or fall back to a safe minimum) when `maxCookieSize-emptyCookieSize` is not comfortably positive, and defend inside `splitCookie` by rejecting `maxLen <= 0`. Bound the rune-start walk with `r > l` so malformed input cannot drive the index negative."
+    }
+  ]
+}

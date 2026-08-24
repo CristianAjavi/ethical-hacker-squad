@@ -15,7 +15,7 @@
 #   * The only token in play is the automatic GITHUB_TOKEN with `issues: read` and
 #     `contents: read` over a PUBLIC repository: it grants access to nothing an anonymous
 #     user could not read, and it cannot write. No repo secret is exposed.
-name: Issue closure gate
+name: PR-context gates
 
 on:
   pull_request:
@@ -35,15 +35,51 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Run the offline selftest
+      - name: Run the offline selftests
+        run: |
+          set -uo pipefail
+          worst=0
+          for s in gate-issue-closure gate-protected-paths; do
+            rc=0
+            "./scripts/gates/$s.selftest.sh" || rc=$?
+            echo "$s: rc=$rc"
+            [ "$rc" -gt "$worst" ] && worst=$rc
+          done
+          case "$worst" in
+            0) echo "::notice title=Selftests OK::Both gates distinguish 0/1/2." ;;
+            1) echo "::error title=Selftest FAILS::A gate no longer fails when it must." ;;
+            *) echo "::error title=COULD NOT MEASURE::A selftest could not run." ;;
+          esac
+          exit "$worst"
+
+  protected:
+    name: Protected paths (an automation may not edit its own limits)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run the gate
+        env:
+          # The branch name is untrusted content from a fork PR. It arrives as an
+          # environment variable and is passed as an argument, never interpolated
+          # into the shell text of this step.
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: origin/${{ github.base_ref }}
         run: |
           set -uo pipefail
           rc=0
-          ./scripts/gates/gate-issue-closure.selftest.sh || rc=$?
+          ./scripts/gates/gate-protected-paths.sh --branch "$HEAD_REF" --base "$BASE_REF" || rc=$?
           case "$rc" in
-            0) echo "::notice title=Selftest OK::The gate distinguishes 0/1/2." ;;
-            1) echo "::error title=Selftest FAILS::The gate no longer fails when it must." ;;
-            2) echo "::error title=COULD NOT MEASURE::The selftest could not run." ;;
+            0) echo "::notice title=Gate OK::Measured and correct." ;;
+            1) echo "::error title=Gate FAILS::An automated branch touches a path that defines its own limits." ;;
+            2) echo "::error title=COULD NOT MEASURE::The gate could not measure. An rc=0 never means 'I did not review it'." ;;
+            *) echo "::error title=Gate broken::unexpected exit code $rc" ;;
           esac
           exit "$rc"
 

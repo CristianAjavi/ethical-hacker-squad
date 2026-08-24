@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {
+   "id": "M-001",
+   "file": "src/main/java/com/rabbitmq/client/ConnectionFactoryConfigurator.java",
+   "line": 306,
+   "title": "Property-file TLS configuration silently installs a trust-all TrustManager unless ssl.validate.server.certificate is explicitly set to true",
+   "impact": "Any application configured through the property/property-file path with `ssl.enabled=true` and no explicit `ssl.validate.server.certificate=true` accepts ANY server certificate. An attacker positioned on the network path between the application and the broker (ARP/DNS spoofing, a compromised hop, a hostile egress proxy) terminates the TLS session with a self-signed certificate and obtains the SASL PLAIN username and password, then relays or forges all AMQP traffic in both directions. The failure is silent apart from a log line, and the operator's mental model -- 'I turned TLS on' -- is exactly wrong.",
+   "evidence": "ConnectionFactoryConfigurator.java:306 defaults validateServerCertificate to Boolean.FALSE when the property is absent, and line 402 in setUpBasicSsl consequently calls `cf.useSslProtocol(sslAlgorithm, new TrustEverythingTrustManager())`, whose checkServerTrusted is an empty method (TrustEverythingTrustManager.java:29).",
+   "severity": "HIGH"
+  },
+  {
+   "id": "M-002",
+   "file": "src/main/java/com/rabbitmq/client/ConnectionFactory.java",
+   "line": 1104,
+   "title": "NIO transport seeds its pre-handshake frame-payload limit from maxInboundMessageBodySize (64 MiB) while blocking IO and Netty seed it from FRAME_MIN_SIZE (4 KiB)",
+   "impact": "An unauthenticated peer -- a MITM, or any host that answers on the broker address before TLS/SASL completes -- can force a NIO client to allocate up to 64 MiB (or whatever the application configured, which is often larger) per frame, repeatedly, before authentication. The exact same client on the blocking or Netty transport is limited to 4 KiB in that window. The bound that ConnectionFactory#setMaxInboundMessageBodySize exists to enforce is applied inconsistently across transports, so an application's hardening choice does not mean the same thing on all three.",
+   "evidence": "ConnectionFactory.java:1104 passes `this.maxInboundMessageBodySize` (default 67108864, line 242) to the NIO frame-handler factory, while lines 1122 and 1135 pass `AMQP.FRAME_MIN_SIZE` (4096) for Netty and blocking IO; FrameBuilder.java:60 turns that seed into framePayloadLimit and line 100 allocates `new byte[framePayloadSize]` from it, before Connection.Tune narrows it at AMQConnection.java:439.",
+   "severity": "MEDIUM"
+  }
+ ]
+}
