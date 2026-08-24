@@ -87,6 +87,8 @@ suite "NEGATIVE: no declared protection field is left unwatched" \
   bash "$SP/test-governance-drift.sh"
 suite "merge-preview: the combination CI never judges" \
   bash "$SP/test-merge-preview.sh"
+suite "battery-detects: a battery that proves nothing" \
+  bash "$SP/test-battery-detects.sh"
 
 # The net, computed HERE and not where the last suite happened to be when it was
 # written: a `suite` line added below that point would be invoked and still
@@ -101,8 +103,6 @@ for f in "$SP"/test-*.sh "$SP"/test-*.py; do
   - $(basename "$f")" ;;
   esac
 done
-suite "battery-detects: a battery that proves nothing" \
-  bash "$SP/test-battery-detects.sh"
 
 echo ""
 echo "==============================================================="
