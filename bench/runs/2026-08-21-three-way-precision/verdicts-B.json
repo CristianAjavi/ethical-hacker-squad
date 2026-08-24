@@ -1,0 +1,106 @@
+{
+  "verdicts": [
+    {
+      "claim_id": "M01",
+      "verdict": "supported",
+      "why": "Line 269 is plain long arithmetic (`in.readLong()*1000`) with no Math.multiplyExact or range test, and the 64-bit field is peer-controlled, so any value above ~9.2e15 wraps silently; I found no guard in ValueReader.java and no caller-side bound in the target. Real but negligible impact, since the attacker already controls the resulting Date directly.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269"
+    },
+    {
+      "claim_id": "M02",
+      "verdict": "refuted",
+      "why": "`new String(b, \"utf-8\")` at line 70 is functionally correct — readShortstr declares `throws IOException`, which already covers the checked UnsupportedEncodingException — and the claim itself states \"No security impact\". Style/micro-performance preference with no attacker and no impact.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70"
+    },
+    {
+      "claim_id": "M03",
+      "verdict": "undecidable",
+      "why": "Whether `tableIn.available()` at line 148 can report 0 while bytes remain depends entirely on TruncatedInputStream's available() override (line 147) and on whether the underlying frame stream is fully buffered — TruncatedInputStream.java and the frame-reading caller are not under the target path, so neither confirmation nor refutation is possible from these two files.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148"
+    },
+    {
+      "claim_id": "M04",
+      "verdict": "undecidable",
+      "why": "The quotes at lines 148 and 244 are accurate and the general InputStream.available() contract is stated correctly, but whether the contract is actually violated here is a property of TruncatedInputStream (lines 147, 242) and of the stream it wraps, neither of which exists under the target path.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148"
+    },
+    {
+      "claim_id": "M05",
+      "verdict": "refuted",
+      "why": "Factual error about the protocol: the AMQP 0-9-1 `timestamp` field is a 64-bit POSIX time_t, i.e. seconds, while java.util.Date's constructor takes milliseconds, so the `*1000` at line 269 is the required unit conversion, not a 1000x error or an interoperability bug.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269"
+    },
+    {
+      "claim_id": "M06",
+      "verdict": "supported",
+      "why": "Line 88 allocates `new byte[(int)contentLength]` before `in.readFully(buffer)` on line 89, so a 4-byte length prefix just under Integer.MAX_VALUE forces a ~2GB zero-filled allocation with zero payload bytes actually delivered; the only check (line 87) bounds it at Integer.MAX_VALUE and nothing else in the file caps it.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88"
+    },
+    {
+      "claim_id": "M07",
+      "verdict": "supported",
+      "why": "Same eager-allocation path as M06 (lines 86-88): the `contentLength < Integer.MAX_VALUE` test admits ~2GB, and lines 142 and 240 do read their length prefixes with no upper bound at all; I could not find any sanity limit in ValueReader.java.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86"
+    },
+    {
+      "claim_id": "M08",
+      "verdict": "undecidable",
+      "why": "Line 244 is quoted correctly and is the same pattern as line 148, so it stands or falls with M03 — and that turns on TruncatedInputStream.available() (line 242), a file not under the target path.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:244"
+    },
+    {
+      "claim_id": "M09",
+      "verdict": "refuted",
+      "why": "Unlike line 88, lines 145 and 243 pre-allocate nothing from the declared length: the HashMap/ArrayList grow only as bytes actually arrive through the TruncatedInputStream created at lines 146-147 and 241-242, so a declared tableLength of 2GB costs nothing by itself and heap use stays proportional to bytes really sent. The requested \"explicit capacity reservation\" from an attacker-controlled length would itself be the pre-allocation vulnerability.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:145"
+    },
+    {
+      "claim_id": "M10",
+      "verdict": "refuted",
+      "why": "Lines 151-152 are a deliberate, deterministic first-wins policy, not an oversight: a Map<String,Object> structurally cannot retain two values under one key, and the alternative (a bare `put`) would let a trailing duplicate silently override an earlier entry. No attacker gain and no impact are shown.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151"
+    },
+    {
+      "claim_id": "M11",
+      "verdict": "refuted",
+      "why": "Same guard at lines 151-152; the substance of the claim is a missing log line (\"without logging, exception, or signal\") plus an attacker's unmet expectation that both values survive, neither of which is a defect. The behaviour is deterministic and is the safer of the two possible duplicate policies.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151"
+    },
+    {
+      "claim_id": "M12",
+      "verdict": "supported",
+      "why": "The cycle is real and unguarded: readFieldValue dispatches to readTable at line 181 and readArray at line 184, and those call back into readFieldValue at lines 150 and 245 with no depth counter anywhere in the file; each nesting level costs only ~6 wire bytes (empty shortstr name + 'F' + 4-byte length), so a normal-sized frame reaches thousands of frames of stack.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181"
+    },
+    {
+      "claim_id": "M13",
+      "verdict": "refuted",
+      "why": "The masking is the guard, not the hole: unsignedExtend (lines 45-48) ANDs with 0xffffffffL so contentLength is always in [0, 2^32-1], and any int with the sign bit set becomes >= 2^31, failing the test at line 87 and throwing at lines 92-93 before `new byte[...]` is reached. No negative length can bypass the bounds check, and the claim names no other mechanism.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86"
+    },
+    {
+      "claim_id": "M14",
+      "verdict": "refuted",
+      "why": "The pinned value at pom.xml:81 is groovy-all 2.4.21 — itself a 2021 maintenance release of the 2.4 branch — which falsifies the claim's premise of \"EOL in 2015\" and \"no security updates since 2016\". It is a plugin-scoped dependency (pom.xml:597-603) that only runs the repo's own generate_amqp_sources.groovy over in-repo inputs (lines 620-634), so no attacker-controlled input reaches it.",
+      "line": "pom.xml:81"
+    },
+    {
+      "claim_id": "M15",
+      "verdict": "supported",
+      "why": "Confirmed the same unbounded mutual recursion as M12: readTable (line 139) -> readFieldValue (line 150) -> readTable (line 181), and readArray (line 237) -> readFieldValue (line 245) -> readArray (line 184), with no depth parameter or counter in the file and no length-based bound that would stop nesting.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:139"
+    },
+    {
+      "claim_id": "M16",
+      "verdict": "refuted",
+      "why": "The bound the claim says is missing is already enforced: `in.readUnsignedByte()` at line 172 confines scale to 0-255 and line 173 fixes the unscaled value at exactly 4 bytes, so the BigDecimal built at line 175 stores a 32-bit magnitude plus an int scale in constant memory — BigDecimal never materializes 10^scale digits, so no \"extreme precision\" or resource exhaustion is reachable.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:172"
+    },
+    {
+      "claim_id": "M17",
+      "verdict": "refuted",
+      "why": "The claim names no CVE and no path by which attacker-controlled input reaches logback: pom.xml:439 confirms test scope, and the 1.2 pin at line 64 is the branch matching the project's slf4j 1.7.36 (line 58), so it is a deliberate compatibility choice rather than a neglected dependency. An older version number with no identified vulnerability and no attacker is not a defect.",
+      "line": "pom.xml:64"
+    }
+  ]
+}

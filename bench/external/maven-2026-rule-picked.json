@@ -1,0 +1,76 @@
+{
+  "schema": "ehs.external-cases/v1",
+  "selection": {
+    "rule": "the most recent reviewed advisories matching the filter, in API order, keeping those with a fix commit in the project's own repository",
+    "ecosystem": "maven",
+    "severity": "high",
+    "requested": 3,
+    "population_page": 30,
+    "rejected": [
+      {
+        "advisory": "GHSA-4899-mpch-38p3",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-hmq9-67w8-j5pw",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-8cfx-wx3q-mh5q",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-2mc4-j865-9q4r",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-vmr9-j6wf-pmh2",
+        "why": "no fix commit in its references"
+      },
+      {
+        "advisory": "GHSA-wf6j-gr27-g7ch",
+        "why": "no fix commit in its references"
+      }
+    ]
+  },
+  "honest_limit": "somebody still types the ecosystem and the severity; the filter is recorded so a reader can see the population and rerun it",
+  "cases": [
+    {
+      "advisory": "GHSA-45ph-gxxr-gwgw",
+      "cve": "CVE-2026-53966",
+      "repository": "https://github.com/xwiki/xwiki-platform",
+      "fix": "448b0f074cc6711410eb2647c4740454c92d1626",
+      "parent": "8b71bc4b8b7b76d7d519c4daf1bcd33a74e94624",
+      "fix_files": [
+        "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java"
+      ],
+      "advisory_summary": "XWiki Platform Live Data Live Table Connector has privilege escalation from edit to script right through Live Data editing",
+      "advisory_description": "### Impact\nAny user who can edit a page in XWiki can use Live Data's edit REST API in XWiki to change the rights on that page. This allows the user to obtain script right on the page. Script right allows the user to execute potentially dangerous Velocity scripts and send unfiltered HTML and JavaScript to the client. If there are other security checks, e.g., in extensions, implemented as listeners to `UserUpdatingDocumentEvent` and similar `User\u2026` events, these checks can be circumvented, too.\n\n### Patches\nThis vulnerability has been patched by properly calling all checks in Live Data in XWiki 16.10.17, 17.4.10, 17.10.4 and 18.1.0.\n\n### Workarounds\nWe're not aware of any workarounds apart from upgrading."
+    },
+    {
+      "advisory": "GHSA-6g32-pxv4-2wfj",
+      "cve": "CVE-2026-63337",
+      "repository": "https://github.com/rabbitmq/rabbitmq-java-client",
+      "fix": "0032f75f9dc3df847f94b2b85a16119250bf63cb",
+      "parent": "3bbc091af69756e428467abeb594d5a08c45da3b",
+      "fix_files": [
+        "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java"
+      ],
+      "advisory_summary": "RabbitMQ Java client: Unvalidated Class.forName in JSON-RPC ProcedureDescription enables arbitrary class loading",
+      "advisory_description": "The JSON-RPC tools in `com.rabbitmq.tools.jsonrpc` perform `Class.forName(javaReturnType)` with `initialize=true` on class names received from untrusted AMQP messages, without any validation or allowlist.\n\n**Vulnerable code** (`ProcedureDescription.java:101-127`):\nWhen a `JsonRpcClient` connects, it calls `system.describe` and receives a service description from the AMQP queue. The response JSON includes `javaReturnType` fields that are reflectively set via `JSONUtil.tryFill()`, triggering `setJavaReturnType()` \u2192 `computeReturnTypeAsJavaClass()` \u2192 `Class.forName(javaReturnType)`.\n\n**Attack scenario:**\n1. Victim uses `JsonRpcClient` to connect to a JSON-RPC service via RabbitMQ\n2. Attacker (co-tenant on shared broker, or MITM) intercepts the `system.describe` request\n3. Attacker responds with crafted `javaReturnType` values\n4. Victim's client calls `Class.forName(attackerInput)` with default `initialize=true`\n5. Static initializers of attacker-specified classes execute in victim's JVM\n\nAdditionally, the loaded class from `getReturnType()` is passed to `mapper.parse(replyStr, expectedType)` at `JsonRpcClient.java:168`, potentially enabling type-confusion.\n\n**Recommended fix:** Use `C"
+    },
+    {
+      "advisory": "GHSA-68mj-5wr7-6fgg",
+      "cve": "CVE-2026-69219",
+      "repository": "https://github.com/rabbitmq/rabbitmq-java-client",
+      "fix": "388209356c6478088efce4d8a07b68e73837a7a0",
+      "parent": "cbba12b84560e6ee38388cfd3ce11244494ac01d",
+      "fix_files": [
+        "pom.xml",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "advisory_summary": "RabbitMQ Java client ValueReader: Oversized LongString/bytes length triggers OOM via unchecked allocation",
+      "advisory_description": "## Summary\n\n`ValueReader.readBytes()` allocates a byte array sized by a wire-declared content length without validating it against actual frame data. A malicious AMQP peer triggers OOM by declaring a ~2GB string/bytes field.\n\n## Vulnerable Code\n\n`src/main/java/com/rabbitmq/client/impl/ValueReader.java` lines 83-95:\n\n```java\nprivate static byte[] readBytes(final DataInputStream in) throws IOException {\n    final long contentLength = unsignedExtend(in.readInt());\n    if(contentLength < Integer.MAX_VALUE) {\n        final byte[] buffer = new byte[(int)contentLength];  // allocates before reading\n        in.readFully(buffer);\n        return buffer;\n    }\n}\n```\n\n## Attack Scenario\n\nA malicious AMQP server sends a LongString field (type tag 'S') with declared length `0x7FFFFFFE` (2,147,483,646). The check `contentLength < Integer.MAX_VALUE` passes. `new byte[2147483646]` attempts ~2GB allocation, causing `OutOfMemoryError` before `readFully()` attempts to read data.\n\nThe allocation size is attacker-controlled and is NOT validated against the frame size or `TruncatedInputStream` bounds. Exploitable pre-authentication via `connection.start` server-properties table.\n\n## Impact\n\nDenial of ser"
+    }
+  ]
+}

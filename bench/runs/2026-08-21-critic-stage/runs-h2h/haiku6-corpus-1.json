@@ -1,0 +1,134 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku-6",
+    "coverage_declaration": "Analyzed one Java deserialization class (ValueReader) from RabbitMQ client library. Examined data parsing logic, type handling, and recursion patterns. Scope limited to supplied files: pom.xml and single source file. No access to test suite, full project context, or compiled artifacts. Coverage includes: deserialization/parsing logic, numeric overflow patterns, resource exhaustion vectors. Not covered: full build analysis, dependency advisory check (pom.xml manifests present but deep CVE analysis deferred), test coverage validation, upstream library behavior.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven manifest)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (protocol deserialization)"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "not_read": [
+        "pom.xml (dependency manifest analyzed for context only, no deep CVE check)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "timestamp_overflow_multiplication",
+        "unbounded_recursion_array_table",
+        "large_buffer_allocation_dos",
+        "truncatedinputstream_behavior_unknown"
+      ],
+      "reported": [
+        "timestamp_overflow_multiplication",
+        "unbounded_recursion_array_table"
+      ],
+      "dropped": [
+        {
+          "label": "large_buffer_allocation_dos",
+          "resolution": "refuted",
+          "reason": "The allocation size is bounded by Integer.MAX_VALUE check at line 87. If contentLength >= Integer.MAX_VALUE, an exception is thrown (line 92), preventing allocation. For valid values < Integer.MAX_VALUE, the JVM will throw OutOfMemoryError naturally if memory is exhausted, which is not a distinguishable security issue from legitimate large-file processing.",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87"
+        },
+        {
+          "label": "truncatedinputstream_behavior_unknown",
+          "resolution": "out_of_scope",
+          "reason": "TruncatedInputStream is not provided in the target files. Cannot analyze its implementation or behavior. Assuming it correctly implements DataInputStream interface and respects the length limit passed to it."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Integer overflow in timestamp deserialization",
+      "procedure": "WEB-11",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "readTimestamp()"
+      },
+      "evidence": "Line 269: `return new Date(in.readLong()*1000);` Multiplies a long value read directly from the untrusted network stream by 1000 without overflow checking. When the long value exceeds Long.MAX_VALUE/1000 (~9.22e18), the multiplication overflows, producing incorrect timestamps.",
+      "impact": "An attacker sending an AMQP message with an extreme timestamp value (e.g., Long.MAX_VALUE) can cause the multiplication to overflow, resulting in a Date object with an incorrect timestamp. This could affect any application logic that depends on correct message timestamps for TTL calculation, message ordering, or validity checks.",
+      "preconditions": "The attacker must be able to send AMQP protocol messages with a custom timestamp field (type 'T') to a system using this ValueReader.",
+      "recommendation": "Use Math.multiplyExact(long, long) to detect overflow, or check bounds explicitly before multiplication: `if (timestamp > Long.MAX_VALUE / 1000 || timestamp < Long.MIN_VALUE / 1000) throw new MalformedFrameException(...)`. Alternatively, validate that timestamps fall within a reasonable range (e.g., within ±300 years of epoch).",
+      "inference": "The overflow occurs in the code with certainty, but whether the overflowed timestamp causes security impact depends on downstream message processing logic, which is not shown in the supplied files.",
+      "what_would_settle_it": "Examination of the code that consumes the Date object returned by readTimestamp(), or a test demonstrating that an overflowed timestamp bypasses TTL checks, message routing, or other timestamp-dependent security controls.",
+      "traceability": [
+        "CWE-190",
+        "CWE-191"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists. The timestamp value is used directly by the Date constructor without prior bounds checking or validation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Value comes from in.readLong(), reading directly from untrusted network stream at line 269."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The multiplication operator in Java does not detect or prevent overflow; it silently wraps, and Date() accepts the overflowed value."
+        }
+      ],
+      "limits": "This analysis assumes the timestamp field is reachable via normal AMQP message processing. The actual impact depends on whether downstream code uses the overflowed timestamp value in security-critical operations.",
+      "unaided_label": "timestamp_overflow_multiplication"
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursion in nested table and array deserialization",
+      "procedure": "WEB-11",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "readFieldValue()"
+      },
+      "evidence": "readFieldValue() at line 158 calls readTable() (line 181) or readArray() (line 184) in switch branches. readTable() at line 139 and readArray() at line 237 both invoke readFieldValue() in a loop (lines 150, 245). This forms an unbounded mutual recursion with no depth counter or limit. A message containing nested tables (type 'F') or arrays (type 'A') can recurse arbitrarily deep.",
+      "impact": "Stack overflow causing denial of service. A maliciously crafted AMQP message with deeply nested structures (e.g., table containing table containing table... repeated hundreds of times) exhausts the JVM call stack, triggering StackOverflowError and crashing the message handler or entire application.",
+      "preconditions": "The attacker must send an AMQP message with field values of type 'F' (table) or 'A' (array) containing recursive nesting. The number of nesting levels required depends on JVM stack size; typical 1MB default stack allows ~10,000-100,000 recursive calls before overflow, depending on per-frame memory.",
+      "recommendation": "Add a depth parameter to readFieldValue(), readTable(), and readArray(): `readFieldValue(DataInputStream in, int depth)`. Check depth at entry: `if (depth >= MAX_DEPTH) throw new MalformedFrameException(\"Nesting too deep\")`. Pass `depth+1` to recursive calls. Set MAX_DEPTH to a reasonable limit (e.g., 10-20). This is a variant of the Billion Laughs DoS mitigation used in XML parsers.",
+      "inference": "The code path exists and is reachable from AMQP message processing. Actual exploitability (the exact depth needed) is not measured in this audit without a test run, but the unbounded recursion pattern itself is certain.",
+      "what_would_settle_it": "A proof-of-concept message with nested tables/arrays at various depths, demonstrating StackOverflowError on the target RabbitMQ Java client version.",
+      "traceability": [
+        "CWE-674",
+        "CWE-776"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists. The code has no maximum recursion depth check, and TruncatedInputStream enforces length bounds on each level, not overall nesting depth."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Table and array contents come from the untrusted AMQP message stream, read at lines 150 and 245."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Java's method-call mechanism does not prevent deep recursion; only stack exhaustion stops it."
+        }
+      ],
+      "limits": "Analysis assumes TruncatedInputStream correctly enforces the length bounds declared at lines 147 and 241. The recursion limit is logical/programmatic; the length limit is stream-based. Both must be present to fully protect against malformed input.",
+      "unaided_label": "unbounded_recursion_array_table"
+    }
+  ],
+  "ruled_out": []
+}

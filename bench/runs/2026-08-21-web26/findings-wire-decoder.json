@@ -1,0 +1,149 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-wire/target (wire-decoder: proto.ValueDecoder, proto.FrameReader, proto.Settings, proto.MalformedFrameException)",
+    "commit": "no VCS metadata in the target; tree digest sha256 fbb0c5bc0dd55f2f1793bcd6a3cec43943193a883e66c1fdc6efd06f2fd07103 (shasum -a 256 of every file, paths sorted), read 2026-08-21",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad — web-and-API specialist, corpus bench-wire (web-api.md, web-api-clientside-logic.md, triage.md, vocabulary.md, findings-artifact.md)",
+    "coverage_declaration": "Read end to end, statically: all four Java sources (121 lines) and README.md. Nothing was compiled, executed or fuzzed — the target is read-only and no network was used, so no allocation was observed failing and no StackOverflowError was produced; every claim below is source-level. The scope contains no caller: nothing in it constructs a ValueDecoder or a FrameReader, opens a socket, or shows the thread and heap settings the process runs under, so reachability of the decoder from a remote peer is argued from the code's own documentation, not observed. Surfaces not covered because they are absent from the scope: encoding/serialisation side, transport and TLS, authentication, framing above readFrame, and any consumer of the decoded Map/List."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Blob length from the wire sizes the allocation, guarded only against the cast wrapping",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/ValueDecoder.java",
+        "line": 23,
+        "component": "proto.ValueDecoder.readBlob"
+      },
+      "evidence": "readBlob reads four bytes from the peer and widens them: `long declared = in.readInt() & 0xFFFFFFFFL;` (line 19). The only test is `if (declared >= Integer.MAX_VALUE) throw new MalformedFrameException(\"blob too large\");` (lines 20-22) — a cast-safety test, not a limit: it rejects exactly one value out of 2^32 and lets every length up to 2,147,483,646 through. `byte[] blob = new byte[(int) declared];` (line 23) then commits up to ~2 GiB of heap, and only `in.readFully(blob)` (line 24) discovers there are no such bytes. Neither `Settings.MAX_FRAME_BYTES` (131,072) nor `Settings.MAX_STRING_BYTES` (65,535) is read anywhere in this method; the sibling `readText` (lines 29-33) shows the codebase's own intended discipline — `if (declared > Settings.MAX_STRING_BYTES) throw ...` before `new byte[declared]` — and readBlob omits it. Reproduction, if the target were runnable: feed the decoder the five bytes `78 7F FF FF FE` (tag 'x' = 0x78, then length 0x7FFFFFFE) via readValue.",
+      "impact": "A peer, or anyone who can inject or tamper with frames on the connection, makes the decoding process commit an arbitrary heap allocation up to ~2 GiB with a five-byte message and no credential. The result is OutOfMemoryError or heavy GC pressure in the JVM that runs the decoder — process-wide, so it also takes down connections and work unrelated to the attacker's own. The bytes never have to exist: the damage is done by the allocation, before readFully can fail. Repeating it is as cheap as reconnecting.",
+      "preconditions": "The DataInputStream handed to the ValueDecoder constructor carries bytes chosen by the remote peer — which is what FrameReader's javadoc (\"Reads one frame off the socket and hands its body to the value decoder\") and Settings' javadoc (\"Limits the peer cannot change\") describe. No authentication step exists anywhere in the scope, so nothing gates the decoder. Default JVM heap; on a heap already smaller than the declared length the allocation fails immediately, which is the same denial of service.",
+      "recommendation": "Bound the length against a value the peer does not set, before the array exists: compare `declared` to `Settings.MAX_FRAME_BYTES` (or to a dedicated MAX_BLOB_BYTES) and to the bytes actually remaining in the frame, and throw MalformedFrameException when it exceeds either — the shape `readText` already uses. Keep the `>= Integer.MAX_VALUE` test as the cast guard it is; it is not a substitute. Better still at root-cause level: give the decoder the frame body it is meant to parse (a byte[] or a bounded stream carrying `remaining()`), so no field length can ever exceed what has already been read, and grow into a ByteArrayOutputStream rather than pre-sizing from a declared count. The same rule then covers every future value type without each one re-deriving it.",
+      "inference": "That the stream reaching ValueDecoder carries peer-controlled bytes. The scope contains no call site: nothing in it constructs a ValueDecoder, and the DataInputStream arrives through the constructor (lines 14-16). The link is read from FrameReader's class javadoc and Settings' \"Limits the peer cannot change\", not from observed wiring. Everything else — untrusted length, absent bound, allocation before read — is read directly in the file.",
+      "traceability": ["CWE-789", "CWE-400", "A04:2025", "ASVS 5.0 V11", "NIST 800-53 SC"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only candidate control is FrameReader.readFrame's `length > Settings.MAX_FRAME_BYTES` test (FrameReader.java:16), and it cannot save this sink for two independent reasons. First, it bounds a different object: it caps the body byte[] that readFrame returns, while ValueDecoder holds its own DataInputStream (ValueDecoder.java:12-16) and no code in scope connects the two. Second, even if the decoder were fed a 131,072-byte body, `new byte[(int) declared]` on line 23 runs before `in.readFully(blob)` on line 24 — the allocation is sized by the declaration, never by the bytes available, so a bound on the bytes available arrives after the array already exists. A control the sink does not consult, in a layer the sink does not pass through, is not this rule."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`declared` is the four bytes returned by `in.readInt()` on line 19, widened by `& 0xFFFFFFFFL`. It is read straight off the peer's stream, passes through no allowlist, and the only test applied to it (line 20) narrows its domain by exactly one value."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The scope names the second principal itself: Settings.java:3 says \"Limits the peer cannot change\" and FrameReader.java:6 says the frame is read \"off the socket\". A peer across a socket is a different trust domain from the process decoding its bytes, which is why the limits exist at all."
+        }
+      ],
+      "limits": "Establishes an unbounded attacker-sized allocation in code, not a crash observed: nothing was compiled or run, so the heap ceiling of the deployment and whether an OutOfMemoryError kills the process or only the decoding thread are unknown. It does not establish that a remote peer reaches this method — no call site ships in the scope (see `inference`). It says nothing about the encoding side, and the severity assumes the decoder runs in a process that does other work; in a single-purpose short-lived process the impact is smaller."
+    },
+    {
+      "id": "F-002",
+      "title": "Mutual recursion between readValue, readMap and readList carries no depth counter",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/ValueDecoder.java",
+        "line": 56,
+        "component": "proto.ValueDecoder.readValue / readMap / readList"
+      },
+      "evidence": "The cycle is closed and unmetered: `readValue` (line 56) dispatches tag 'M' to `readMap` (line 61) and tag 'A' to `readList` (line 62); `readMap` calls `readValue` on line 42 and `readList` calls it on line 51. No signature in the file carries a depth parameter, no field counts nesting, and no constant in Settings.java names a depth. The attacker pays about three bytes per level: the tag byte `41` ('A') plus the two-byte entry count `00 01` from `in.readUnsignedShort()` (line 49) buys one more frame of `readValue` + `readList`. A 131,072-byte frame — the largest FrameReader will accept — therefore encodes on the order of 43,000 nesting levels, and a stream not bounded by FrameReader encodes any depth at all. The per-level cost is the same shape the procedure names as the neighbouring case of the allocation, in the same file.",
+      "impact": "A peer denies service with a small, cheap, unauthenticated message: repeating `41 00 01` until the frame budget runs out drives the decoding thread into StackOverflowError. StackOverflowError is an Error, not the IOException the protocol's own MalformedFrameException (MalformedFrameException.java:5) trains callers to catch, so it escapes the parser's error handling and unwinds the thread — at best killing the connection handler, at worst propagating past a catch that only covers IOException and leaving whatever the thread owned in a half-updated state.",
+      "preconditions": "Same as F-001: the DataInputStream reaching the decoder carries peer-chosen bytes, and no authentication precedes decoding anywhere in the scope. Reaching StackOverflowError requires the thread's stack to be smaller than the nesting the frame budget allows — true for the default JVM thread stack (512 KiB-1 MiB) against ~43,000 levels of two frames each, and more true for any thread created with a smaller stack.",
+      "recommendation": "Thread a depth argument through the recursive entry points — `readValue(int depth)`, `readMap(int depth)`, `readList(int depth)` — increment it at each descent, and throw MalformedFrameException past a configured maximum declared beside the existing limits in Settings (a protocol that needs more than a handful of levels is a protocol that should say so). Add the aggregate bound the depth cap does not give: a running count of values decoded per frame, so 65,535 sibling entries at every level cannot exhaust memory breadth-first either. Keep the public one-argument methods as wrappers that start at depth zero, so no caller can enter the cycle unmetered.",
+      "inference": "The same single link as F-001: that the stream reaching ValueDecoder carries peer-controlled bytes, which the scope documents (FrameReader.java:6, Settings.java:3) but does not wire up in code. The recursion cycle, the absent depth parameter and the per-level byte cost are all read directly in ValueDecoder.java.",
+      "traceability": ["CWE-674", "CWE-400", "A04:2025", "ASVS 5.0 V11", "NIST 800-53 SC"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The candidate control is again Settings.MAX_FRAME_BYTES enforced at FrameReader.java:16. Taken at its most favourable — the decoder fed a body capped at 131,072 bytes — it bounds the depth at roughly 131,072 / 3 = ~43,000 levels, which is far past the default JVM thread stack. A limit that permits tens of thousands of frames of recursion does not bound the recursion, and here it is not even reached: the decoder reads from its own DataInputStream and no code in scope routes the frame body into it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both values that drive the descent come off the wire: the tag byte from `in.readUnsignedByte()` (line 57) selects 'M' or 'A', and the entry counts from `in.readUnsignedShort()` (lines 40 and 49) decide how many children each level has. Neither is constrained by anything the process controls."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Same boundary as F-001, named by the target itself: Settings.java:3 \"Limits the peer cannot change\" and FrameReader.java:6 \"off the socket\". The bytes that choose the nesting depth come from the peer, across the socket."
+        }
+      ],
+      "limits": "Establishes an unmetered recursion cycle and the attacker's per-level cost from source; it does not establish the exact depth at which this JVM overflows, because nothing was compiled or run and the deployment's thread stack size is not in the scope. It does not establish that a remote peer reaches the decoder (see `inference`), nor what a caller does with a StackOverflowError — no caller ships in the scope. Breadth is not covered by this finding beyond the note in the recommendation: 65,535 entries per container is a separate multiplier that was not measured."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Allocation from a wire length in FrameReader.readLabel — a 16-bit length sizes `new byte[length]` (FrameReader.java:25-27) with no check against Settings.MAX_STRING_BYTES",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "Read the method in full. `in.readUnsignedShort()` cannot return more than 65,535, and Settings.MAX_STRING_BYTES is exactly 65,535 — the field width enforces the same ceiling the missing test would, so the allocation is bounded at 64 KiB and the peer cannot push it further (FP-09: it looks like a missing bound and is a bound already made structural). The absent test is redundant, not load-bearing. Bound: this argues the allocation size only; it does not argue that 64 KiB per label is an acceptable budget under a caller that loops on readLabel, and no such caller ships in the scope."
+    },
+    {
+      "class": "Allocation from a wire length in FrameReader.readFrame (FrameReader.java:14-21)",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "The declared length is tested against a bound the peer does not set — `length < 0 || length > Settings.MAX_FRAME_BYTES` on line 16 — and the test throws before `new byte[length]` on line 19. Both lines read and their order checked; the negative case that would make `new byte[]` throw NegativeArraySizeException is rejected on the same line. This is the check F-001 is missing. Bound: the constant is a compile-time 131,072 and cannot be raised by the peer; whether 128 KiB per frame is the right operational budget is a capacity question, not this class."
+    },
+    {
+      "class": "Allocation from a wire length in ValueDecoder.readText (ValueDecoder.java:28-36)",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "`declared > Settings.MAX_STRING_BYTES` on line 30 throws before `new byte[declared]` on line 33, against a constant the peer does not control. The comparison is also structurally redundant (readUnsignedShort caps at the same 65,535), so the sink is bounded twice. Bound: allocation size only; the aggregate of many bounded strings inside one map is covered by the breadth note in F-002."
+    },
+    {
+      "class": "Integer overflow or wrap in a length or offset computation — the third neighbour WEB-26 names (`count * itemSize`, `offset + len`)",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "Searched all four sources for arithmetic on any value read from the stream. There is none: no multiplication, no addition of a declared length to an offset, no cursor. The only conversion is `(int) declared` at ValueDecoder.java:23, and the `>= Integer.MAX_VALUE` test on line 20 does prevent that cast from producing a negative — which is the whole of what that test achieves, and the reason F-001 is about magnitude rather than about wrapping. Bound: the four files in the scope; a codec on the encoding side was not read because none ships here."
+    },
+    {
+      "class": "A declared limit that nothing enforces — Settings.MAX_FRAME_BYTES and Settings.MAX_STRING_BYTES as constants with zero readers",
+      "procedure": "WEB-23",
+      "outcome": "refuted",
+      "where": "Counted the readers of both constants across every file in the scope, minus their declarations. MAX_FRAME_BYTES has one real reader (FrameReader.java:16) and MAX_STRING_BYTES has one (ValueDecoder.java:30), so neither is the zero-reader shape this procedure detects. The gap that does exist — readBlob consulting neither — is a sink with no bound rather than a bound with no sink, and is reported as F-001 instead of being counted twice. Bound: the four files given; a reader in a package outside the scope could only add readers, never remove the two found."
+    },
+    {
+      "class": "Hash-collision denial of service through attacker-chosen HashMap keys (ValueDecoder.readMap, line 39-43)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The keys are attacker-chosen strings, so the input condition holds, but the sink is not dangerous in the form it is reached (FP-03): java.util.HashMap has converted colliding buckets to red-black trees since Java 8, degrading a collision flood to O(log n) rather than O(n), and the entry count per map is capped at 65,535 by `in.readUnsignedShort()` (line 40). Bound: no language level or target JRE is declared anywhere in the scope; on a pre-Java-8 runtime this would need re-testing, and the nesting multiplier (65,535 entries at every level of an unbounded depth) is carried by F-002, not here."
+    },
+    {
+      "class": "Duplicate map keys silently overwritten — `out.put(readText(), readValue())` (ValueDecoder.java:42) keeps the last occurrence with no error",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "The behaviour is real and read directly: two entries with the same key collapse, last wins, and nothing signals it. It becomes a smuggling or parser-differential issue only when a second component parses the same bytes and disagrees about which occurrence counts, or when a security decision is taken on a key an earlier occurrence set. Neither exists in the scope — there is one decoder, no encoder, and no consumer of the returned Map — so no boundary can be named and the class cannot be settled either way. Bound: the four files; settling it needs the peer's encoder and the consumer of the decoded map."
+    },
+    {
+      "class": "Lossy UTF-8 decoding — `new String(bytes, \"utf-8\")` (ValueDecoder.java:35, FrameReader.java:28) replaces malformed sequences with U+FFFD instead of rejecting them",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The charset is named explicitly rather than left to the platform default, which is the defect this construct usually hides. Silent replacement matters when the decoded string then reaches an interpreter that a substituted character can steer — HTML, SQL, a shell, a path — and no such sink exists in the scope: the strings become map keys and return values and nothing else. FP-03 on the form the sink is reached in. Bound: strictly within the scope; a consumer outside it that concatenates these strings into a query or a path would reopen the question, and none ships here."
+    },
+    {
+      "class": "Disclosure through the parser's error messages — MalformedFrameException carries the rejected length (FrameReader.java:17) and the unknown tag (ValueDecoder.java:64)",
+      "procedure": "WEB-22",
+      "outcome": "refuted",
+      "where": "Read both message expressions. Each echoes only a value the peer itself just sent — its own declared length, its own tag byte — and no path, version, internal identifier, key or state of the process. Returning an attacker's input to the attacker grants nothing (FP-07: the data has no security value). Bound: what the messages contain; where they are logged or rendered is a caller's decision and no caller ships in the scope."
+    },
+    {
+      "class": "MalformedFrameException extends IOException (MalformedFrameException.java:5) — a caller catching IOException for transport errors also swallows protocol violations, so a retry loop cannot tell a malformed frame from a dropped connection",
+      "procedure": "ad-hoc",
+      "outcome": "not executed",
+      "where": "The inheritance is read and the ambiguity is real, but whether it costs anything depends entirely on what a caller does in its catch block, and the scope contains no caller. It was not run down further because the artifact that would settle it — the connection loop — is outside the four files given. Recorded so the next reader does not repeat the walk; it is also why F-002 notes that StackOverflowError is not an IOException and escapes this handling entirely."
+    }
+  ]
+}

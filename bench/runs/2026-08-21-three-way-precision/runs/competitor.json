@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unreliable Stream State Detection in Table Parsing",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 148,
+      "severity": "medium",
+      "impact": "The readTable() method at line 148 uses `while(tableIn.available() > 0)` to determine when to stop reading table entries. The available() method is unreliable for stream-based I/O—it may return 0 even when data exists (especially with TruncatedInputStream), potentially causing early termination of parsing. This could result in incomplete table data being silently ignored, leading to protocol desynchronization or data loss.",
+      "evidence": "Line 148: `while(tableIn.available() > 0)` — The available() contract does not guarantee all buffered data is reported; network and wrapped streams may return 0 prematurely. Combined with TruncatedInputStream truncation, this is unreliable termination logic.",
+      "recommendation": "Replace the available() loop condition with a try-catch on EOFException, or use a length-prefixed read (e.g., track bytes read vs. tableLength). DataInputStream.readFully() should be used for bounded reads, and the loop should terminate cleanly when the truncated stream is exhausted."
+    },
+    {
+      "id": "F-002",
+      "title": "Unreliable Stream State Detection in Array Parsing",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 244,
+      "severity": "medium",
+      "impact": "The readArray() method at line 244 uses the same unreliable pattern: `while(arrayIn.available() > 0)`. This exposes the same risk as F-001—incomplete array data may be silently truncated if the stream's available() reports 0 prematurely, potentially corrupting nested structures in AMQP messages.",
+      "evidence": "Line 244: `while(arrayIn.available() > 0)` — Identical pattern to readTable(); subject to the same unreliability of available() on wrapped streams and TruncatedInputStream.",
+      "recommendation": "Replace available() loop with EOF-aware logic. Implement a length-based termination or use a loop that explicitly catches EOFException from readFieldValue() and breaks cleanly, ensuring the entire array is consumed within the declared length boundary."
+    },
+    {
+      "id": "F-003",
+      "title": "Silent Duplicate Key Handling in Table Deserialization",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 151,
+      "severity": "low",
+      "impact": "When duplicate keys appear in a serialized AMQP table, the code silently keeps the first occurrence (line 151: `if(!table.containsKey(name)) table.put(name, value)`). This could mask data corruption, adversarial input manipulation, or protocol violations. An attacker sending duplicate keys might expect both values to be retained or merged, but instead only the first is kept, potentially breaking protocol assumptions in consuming code.",
+      "evidence": "Lines 151–152: The if-guard silently discards duplicate key entries without logging, exception, or signal. No validation that the protocol enforces key uniqueness.",
+      "recommendation": "Either (1) throw a MalformedFrameException on duplicate keys to enforce protocol correctness, (2) log a warning and document the behavior, or (3) if the AMQP spec requires keeping all values, accumulate them in a List<Object> per key or use a multimap."
+    },
+    {
+      "id": "F-004",
+      "title": "Suspicious Timestamp Calculation with Potential Overflow",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 269,
+      "severity": "low",
+      "impact": "The timestamp at line 269 is read as a long and multiplied by 1000 before constructing a Date: `new Date(in.readLong()*1000)`. According to AMQP 0.9.1 spec, timestamps are 64-bit unsigned integers in milliseconds since epoch, not seconds. This multiplication would create dates 1000x in the future, causing incorrect Date values and potential interoperability issues with AMQP servers and clients. Additionally, for very large timestamp values, the multiplication could theoretically overflow (though unlikely for realistic epoch values).",
+      "evidence": "Line 269: `return new Date(in.readLong()*1000);` — Multiplies a long by 1000 without validation. AMQP timestamps are milliseconds, not seconds.",
+      "recommendation": "Remove the multiplication and use `new Date(in.readLong())` directly, or document the AMQP variant if timestamps are in a non-standard format. Add a comment clarifying the time unit assumption. Verify against the AMQP specification version in use (codegen.spec_version=0.9.1 per pom.xml)."
+    },
+    {
+      "id": "F-005",
+      "title": "Missing Bounds Validation on Deserialized Collection Sizes",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 145,
+      "severity": "medium",
+      "impact": "When parsing tables (line 145: `new HashMap<String, Object>()`) and arrays (line 243: `new ArrayList<Object>()`), the code creates unbounded collections based on a length prefix read from untrusted input. While TruncatedInputStream limits total bytes read, it does not prevent an attacker from crafting many small entries (e.g., single-character keys with null values) to exhaust heap memory or trigger excessive GC. No validation of entry count or explicit size hints (e.g., HashMap initial capacity) are provided.",
+      "evidence": "Lines 145, 243: Collections are initialized with default capacity, then populated from a length-bounded stream. No explicit entry-count validation or capacity reservations. An attacker could send tableLength=2GB with thousands of tiny entries to consume memory.",
+      "recommendation": "Validate the approximate number of entries by deriving a reasonable estimate from tableLength (e.g., minimum entry size ~10 bytes). Pre-allocate collections with a capped size hint. Optionally, limit the total number of entries (e.g., MAX_TABLE_ENTRIES=10000) and throw MalformedFrameException if exceeded."
+    },
+    {
+      "id": "F-006",
+      "title": "End-of-Life Groovy Version in Build Pipeline",
+      "file": "pom.xml",
+      "line": 81,
+      "severity": "low",
+      "impact": "The build uses Groovy 2.4.21 (line 81: `<groovy.all.version>2.4.21</groovy.all.version>`), which reached end-of-life in 2015 and has not received security updates since 2016. While this is a test/build-time dependency and not shipped in the final JAR, it poses a supply-chain risk: any Groovy CVEs in the code generation scripts (lines 632–634 use Groovy via groovy-maven-plugin) could be exploited during the build.",
+      "evidence": "Line 81: groovy.all.version=2.4.21 — Groovy 2.4.x is unsupported; current releases are 4.x. The pom.xml references this in generate_amqp_sources.groovy execution.",
+      "recommendation": "Upgrade to Groovy 4.x or the latest stable 3.x version. Review the code generation scripts (src/main/scripts/generate_amqp_sources.groovy) for known Groovy 2.4 CVEs. Ensure the AMQP spec code generation does not require legacy Groovy syntax."
+    },
+    {
+      "id": "F-007",
+      "title": "Older Logback Version in Test Scope",
+      "file": "pom.xml",
+      "line": 64,
+      "severity": "low",
+      "impact": "Logback version 1.2.13 (line 64: `<logback.version>1.2.13</logback.version>`) is from the 1.2 branch, which is older and has received fewer security updates compared to Logback 1.4.x. While in test scope only (line 439: `<scope>test</scope>`), known CVEs in Logback 1.2 could potentially be triggered during test execution, affecting the CI/CD pipeline or local test environments.",
+      "evidence": "Line 64: logback.version=1.2.13 — Branch 1.2 is maintained but older than 1.4.x. Line 439 confirms test-only scope.",
+      "recommendation": "Upgrade to Logback 1.4.x or later (e.g., 1.4.14) to receive the latest security patches. Ensure backward compatibility with the test suite's logging configuration."
+    }
+  ]
+}

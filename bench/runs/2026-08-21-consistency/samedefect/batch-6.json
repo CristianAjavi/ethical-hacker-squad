@@ -1,0 +1,139 @@
+{
+ "list_one": [
+  {
+   "item_id": "L10",
+   "title": "Short strings are decoded with lenient UTF-8 replacement, so invalid byte sequences become silently corrupted table keys",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "Field-table keys and other short strings that are not valid UTF-8 are accepted rather than rejected, with malformed sequences replaced by U+FFFD. Distinct byte sequences therefore collapse onto the same String key, and combined with the first-wins rule of F-005 the later of two colliding keys is discarded without any error. The application ends up with a key it cannot map back to what was on the wire, and cannot distinguish a corrupted header name from a legitimate one.",
+   "evidence": "readShortstr: `return new String(b, \"utf-8\");`. The String(byte[], String) constructor uses CodingErrorAction.REPLACE and has no way to report malformed input; nothing validates b beforehand."
+  },
+  {
+   "item_id": "L09",
+   "title": "Build and test dependencies pinned to end-of-life branches that no longer receive fixes",
+   "location": "pom.xml:64",
+   "impact": "None of these ship in the published jar, so downstream users are not exposed; the risk is to the build and CI hosts and to the project's own supply chain. Any vulnerability found in these branches will never be fixed there, so the only remedy is a major-version migration made under time pressure. The Groovy case is the most relevant: groovy-all runs on every build during generate-sources, so it is code executing on developer and CI machines, not just in tests.",
+   "evidence": "logback.version 1.2.13 (line 64, test scope) - the 1.2.x branch predates the 1.3/1.5 lines and receives no further fixes. jetty.version 9.4.58.v20250814 (line 70, test scope) - Jetty 9.4 is past community end of life. groovy.all.version 2.4.21 (line 81) is supplied to the groovy-maven-plugin execution bound to generate-sources at line 615, so an end-of-life Groovy 2.4 runtime executes on every build. slf4j.version 1.7.36 (line 58) is compile scope and does ship, though the facade itself has no known vulnerability."
+  },
+  {
+   "item_id": "L06",
+   "title": "readTimestamp multiplies an attacker-controlled long by 1000 with no overflow check",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "Any AMQP timestamp above roughly 9.22e15 wraps silently, letting a peer choose the sign and magnitude of the Date the application receives - a far-future timestamp can be delivered as a far-past one. Applications that use the timestamp property for expiry, replay-window or ordering decisions get a value that passes their check when it should have failed it.",
+   "evidence": "`return new Date(in.readLong()*1000);` - a raw 64-bit wire value multiplied in long arithmetic, with no range validation, no overflow detection and no rejection path."
+  },
+  {
+   "item_id": "L01",
+   "title": "readBytes allocates an attacker-controlled 32-bit length before reading any payload (unbounded heap allocation)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88",
+   "impact": "A peer can force a ~2 GiB heap allocation with about nine bytes on the wire, repeatedly, on the connection's I/O thread. The result is OutOfMemoryError or sustained GC thrash in the client JVM - a denial of service of the whole hosting application, not just of the connection. Reachable from a malicious or compromised broker, and from an on-path attacker whenever TLS is not in use, through any longstr method argument, any 'S' or 'x' field value inside a header table, and the longstr content-header properties.",
+   "evidence": "readBytes does `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte[] buffer = new byte[(int)contentLength]; in.readFully(buffer); ... }`. The length comes straight off the wire and the array is allocated BEFORE readFully is attempted, so the allocation happens even when the declared length is far larger than the bytes that could possibly follow - the frame-level size cap never prevents it, it only guarantees the subsequent read fails. Nothing cross-checks contentLength against in.available() or against any configured maximum; the sole guard, `< Integer.MAX_VALUE`, still permits 2147483646 bytes."
+  },
+  {
+   "item_id": "L04",
+   "title": "Malformed input escapes the decoder as an unchecked UnsupportedOperationException instead of MalformedFrameException",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "A peer that declares a length of 2147483647 or more triggers an unchecked exception out of the decode path. Callers that wrap decoding in `catch (IOException)` to fail the channel or connection as a protocol error do not catch it, so it propagates through the I/O loop to a generic uncaught-exception path, if any. Hostile input that is simply a malformed frame therefore produces an inconsistent, harder-to-diagnose failure mode than every other malformed frame, and can leave connection state uncleaned.",
+   "evidence": "readBytes: `} else { throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\"); }`. The only other rejection in this class - the unknown type tag at line 217 - correctly uses MalformedFrameException, which extends IOException."
+  },
+  {
+   "item_id": "L08",
+   "title": "amqp-client forces netty-transport, netty-codec and netty-handler onto every consumer's classpath",
+   "location": "pom.xml:381",
+   "impact": "Netty is a large, network-facing library with a steady CVE cadence. Declaring it compile-scope and non-optional makes it a mandatory transitive dependency of every application that uses this client, including the large majority that never select the Netty frame handler. Those applications inherit every future Netty advisory, must track and override the version themselves, and show up in their own scanners as exposed to vulnerabilities in code they never load. It also risks a version conflict with the Netty an application already uses.",
+   "evidence": "In the dependencies block, io.netty:netty-transport, netty-codec and netty-handler (lines 381-394) are the only pluggable-integration dependencies declared with default compile scope and no <optional>true</optional>. Every other pluggable integration in the same block - metrics-core, micrometer-core, opentelemetry-api and jackson-databind (lines 396-418) - is marked optional. The build's own spotless configuration confirms Netty backs one frame-handler implementation among others (src/main/java/com/rabbitmq/client/impl/NettyFrameHandlerFactory.java)."
+  },
+  {
+   "item_id": "L02",
+   "title": "Field-table and field-array decoding recurses without a depth limit (StackOverflowError from a single frame)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+   "impact": "One small, otherwise well-formed frame drives the decoder into unbounded recursion and kills the connection thread with StackOverflowError. Because that is an Error and not an IOException, it bypasses the MalformedFrameException/IOException handling the frame layer uses to fail a channel or connection cleanly, so it surfaces as an unhandled crash of the I/O loop rather than as a protocol error, and connection state is left uncleaned. Each level additionally allocates two wrapper streams plus a HashMap or ArrayList, making the same input a memory amplifier.",
+   "evidence": "readFieldValue case 'F' (line 181) calls readTable, which loops calling readFieldValue; case 'A' (line 184) calls readArray, which loops calling readFieldValue. Neither path carries a depth counter or any nesting limit. A nested table costs 6 bytes per level on the wire (0x00 short-string name length, 'F', 4-byte table length) and a nested array 5 bytes per level ('A', 4-byte length), so a payload well under the default 128 KiB frame_max encodes more than 20000 levels of nesting - far past the default JVM stack depth."
+  },
+  {
+   "item_id": "L07",
+   "title": "readTable returns an immutable map for an empty table and a mutable one otherwise, so a remote peer decides whether the caller's map is writable",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+   "impact": "The public readTable() has an inconsistent contract that is selected by wire input. Application code that mutates the returned header map - a common pattern when re-publishing a message with an added or stripped header - works in every test where headers are present, then throws UnsupportedOperationException in production the first time a peer sends an empty header table. A peer can trigger that path deliberately, and the exception surfaces inside consumer callbacks where it typically aborts delivery handling.",
+   "evidence": "readTable: `if (tableLength == 0) return Collections.emptyMap();` while the non-empty path returns `new HashMap<String, Object>()`. Both are returned through the same `public final Map<String, Object> readTable()` at line 252, whose signature and Javadoc promise nothing about mutability."
+  },
+  {
+   "item_id": "L05",
+   "title": "Duplicate field names in a table are resolved first-wins and the duplicate is silently discarded (parser differential)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Where the broker, a plugin, or another AMQP implementation resolves a repeated field name last-wins - or rejects the table outright - this client resolves it first-wins and reports nothing. Anyone able to append a second copy of a header can therefore make the client read a different value for that header than the component that made the routing or authorization decision on it. Because the duplicate is dropped with no exception, no counter and no log line, the divergence is invisible to operators.",
+   "evidence": "readTable: `if(!table.containsKey(name)) table.put(name, value);` - second and later occurrences of a name are fully parsed and then thrown away with no signal of any kind."
+  },
+  {
+   "item_id": "L03",
+   "title": "Tables and arrays are decoded by draining available() with no check that the declared length was consumed, so a truncated table is accepted as valid",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+   "impact": "A peer that declares a table length running past the end of the enclosing frame, and places the cut on an entry boundary, gets a partial map returned as if it were the complete, valid header set - no exception, no log line. The receiving application then observes headers the sender never sent, most dangerously with a security-relevant header silently absent, which turns a check written as 'if the header says X, deny' into a pass. The mirror case (a declared length shorter than the bytes actually written) leaves the enclosing stream positioned mid-value, desynchronising the remaining arguments or content-header properties of that frame. Separately, the available()-driven loop makes correctness depend on the underlying stream being fully buffered, and the ValueReader constructor is public and accepts any DataInputStream - including a socket-backed one, where available() can legitimately return 0 mid-table and truncate a perfectly valid table.",
+   "evidence": "readTable: `DataInputStream tableIn = new DataInputStream(new TruncatedInputStream(in, tableLength)); while(tableIn.available() > 0) { ... }`, and readArray at line 244 repeats the identical `while(arrayIn.available() > 0)` pattern. tableLength and length are never compared against the bytes actually remaining, and after the loop nothing asserts that exactly the declared number of bytes was consumed. Truncation only raises EOFException when the cut lands mid-value; when it lands between entries the loop simply ends and returns the partial result."
+  }
+ ],
+ "list_two": [
+  {
+   "item_id": "R09",
+   "title": "Compile-scope logging facade and several test dependencies sit on end-of-life release lines",
+   "location": "pom.xml:58",
+   "impact": "These branches no longer receive fixes, so any future defect found in them has no upgrade path short of a major version bump. slf4j-api is the only one that reaches consumers of the published artifact (compile scope, no `optional` flag); the others affect only the build and test environment.",
+   "evidence": "pom.xml declares `<slf4j.version>1.7.36</slf4j.version>` (line 58, used at line 378 with default compile scope), `<logback.version>1.2.13</logback.version>` (line 64, test scope at line 439) and `<jetty.version>9.4.58.v20250814</jetty.version>` (line 70, test scope at line 457). The 1.7.x slf4j, 1.2.x logback and 9.4.x Jetty lines are all superseded maintenance branches, in contrast with the rest of the manifest, which tracks current releases (netty 4.2.15, jackson 2.21.3, bouncycastle 1.84, junit 5.14.4, mockito 5.23.0). No advisory lookup was performed for this engagement; this is a release-line maintenance judgement, not a claim that a specific vulnerability is present."
+  },
+  {
+   "item_id": "R05",
+   "title": "Duplicate table keys resolve first-wins, creating a parser differential with the broker",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Header smuggling. When a table carries the same field name twice, this client keeps the first occurrence while implementations that build the map by plain assignment keep the last. Any component that inspects or filters a header before the Java consumer sees it can therefore act on a different value than the consumer acts on, which defeats header-based filtering, tracing or authorisation checks.",
+   "evidence": "readTable() lines 151-152: `if(!table.containsKey(name)) table.put(name, value);` \u2014 the second and later values for a repeated name are discarded without any error, and the wire format places no uniqueness constraint on field names."
+  },
+  {
+   "item_id": "R07",
+   "title": "readTable() returns an immutable map for an empty table and a mutable one otherwise",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+   "impact": "The remote peer decides whether the map handed to application code is mutable. A consumer that enriches headers in place (a common pattern when republishing or forwarding) works on every message until a peer sends a zero-length table, at which point it fails with UnsupportedOperationException on a path that was never exercised in testing \u2014 a remotely triggerable crash in application code that the library's own contract gave no warning about.",
+   "evidence": "readTable() line 143: `if (tableLength == 0) return Collections.emptyMap();` while the normal path returns `new HashMap<String, Object>()` (line 145). Collections.emptyMap() is immutable; the HashMap is not. tableLength comes straight off the wire (line 142)."
+  },
+  {
+   "item_id": "R03",
+   "title": "Decoder throws an unchecked UnsupportedOperationException on attacker-controlled input",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "A remote peer chooses which exception type comes out of the frame decoder. A length of 0x7FFFFFFF or above yields a RuntimeException instead of the MalformedFrameException/IOException that every caller of this class is written to expect, so the failure bypasses the protocol-error handling path and can kill a reader or dispatch thread through the generic-Throwable route instead of a clean connection shutdown.",
+   "evidence": "readBytes() line 91-93: `} else { throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\"); }`. UnsupportedOperationException is unchecked, whereas the sibling error path for a bad type code (line 217) correctly throws MalformedFrameException, which is an IOException. Both are triggered purely by bytes off the wire."
+  },
+  {
+   "item_id": "R04",
+   "title": "Table decoding loop is driven by available(), which silently truncates instead of failing",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+   "impact": "Where the underlying stream is not fully buffered, a table or array decodes as a valid, complete value with trailing entries silently dropped, and the stream is left positioned mid-value, desynchronising every subsequent read. Silently losing headers is security-relevant when a header carries authorisation or routing context: the application sees a well-formed message that is missing a field it would have rejected on.",
+   "evidence": "readTable() loops `while(tableIn.available() > 0)` (line 148) and readArray() loops `while(arrayIn.available() > 0)` (line 244). InputStream.available() is defined as the bytes readable without blocking, not the bytes remaining, and returning 0 early is legal. The public constructor `ValueReader(DataInputStream in)` (line 57) accepts any DataInputStream and documents no requirement that it be fully buffered in memory; the declared tableLength (line 142) is used only to build the TruncatedInputStream, never to verify that exactly that many bytes were consumed."
+  },
+  {
+   "item_id": "R08",
+   "title": "Short strings are decoded with lenient UTF-8, so malformed keys collapse instead of being rejected",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "Distinct byte sequences on the wire can decode to the same String key. Combined with the first-wins rule (F-005), the later of two colliding entries is dropped without error, so what the application observes is not a faithful representation of what arrived.",
+   "evidence": "readShortstr() line 70: `return new String(b, \"utf-8\");`. This constructor replaces malformed and unmappable sequences with U+FFFD rather than signalling an error, and the decoded String is then used directly as the map key in readTable() (lines 149-152). The AMQP 0-9-1 grammar specifies shortstr as UTF-8, so invalid input is a protocol violation the decoder currently accepts."
+  },
+  {
+   "item_id": "R02",
+   "title": "Unbounded nesting depth in field-table / field-array decoding leads to StackOverflowError",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+   "impact": "A remote peer crashes the connection's frame-reading thread with a small crafted frame, and the failure mode is an Error rather than a protocol exception, so it escapes the library's IOException-based shutdown path. Unlike F-001 this survives broker re-encoding: a deeply nested header table published by any low-privilege producer is parsed and re-serialised faithfully by the broker and then decoded by every Java consumer that touches the message headers, turning a publish right into a denial of service against other tenants' consumers. Also reachable pre-authentication through the server-properties table of Connection.Start.",
+   "evidence": "readFieldValue() case 'F' calls readTable() (line 181) and case 'A' calls readArray() (line 184); readTable() calls readFieldValue() (line 150) and readArray() calls readFieldValue() (line 245). The cycle has no depth counter, no recursion limit and no cap on total decoded elements. Each nesting level costs 5 bytes on the wire ('A' plus a 4-byte length), so roughly 50 KB of payload buys ~10,000 stack frames \u2014 comfortably inside a default 131072-byte frame-max, and unbounded during the handshake before frame-max is negotiated. Each level also allocates a TruncatedInputStream and a DataInputStream that stay live for the whole descent."
+  },
+  {
+   "item_id": "R01",
+   "title": "readBytes() allocates an attacker-declared length (up to ~2 GiB) before reading any data",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88",
+   "impact": "Remote, pre-authentication memory-exhaustion DoS of the client JVM at essentially zero cost to the attacker. A rogue endpoint on the AMQP port, a compromised broker, or an on-path attacker on a plaintext (amqp://) connection sends ~5 bytes and forces a 2 GiB heap allocation, repeatable per connection. Because the array is allocated before any payload byte is consumed, the attacker never has to send the data it claims to be sending: the amplification factor is ~400,000,000x. Reachable before credentials are exchanged, via the longstr fields of Connection.Start (mechanisms, locales) and Connection.Secure (challenge), which are decoded by this class during the handshake while frame-max is still untuned.",
+   "evidence": "readBytes() does `final long contentLength = unsignedExtend(in.readInt());` (line 86) and then, for any value below Integer.MAX_VALUE, `final byte [] buffer = new byte[(int)contentLength];` (line 88) BEFORE `in.readFully(buffer)` (line 89). The only bound on contentLength is the `< Integer.MAX_VALUE` guard on line 87 \u2014 nothing compares it to the negotiated frame maximum, to a configured ceiling, or to the bytes actually remaining. Wrapping the stream in TruncatedInputStream (lines 146-147, 241-242) limits how much can be READ, not how much is ALLOCATED, so the same trick works for every 'S' (line 163) and 'x' (line 211) field inside a field table or array."
+  },
+  {
+   "item_id": "R06",
+   "title": "readTimestamp() silently overflows when converting seconds to milliseconds",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "A remote peer controls the sign and magnitude of the decoded Date independently of the value it put on the wire. Multiplying a 64-bit attacker-supplied value by 1000 wraps silently, so a very large positive timestamp can decode to a date in the past (and vice versa). Applications that use the AMQP timestamp for expiry, replay windows or ordering can be handed a timestamp that passes their freshness check while the wire value would not have.",
+   "evidence": "readTimestamp() line 269: `return new Date(in.readLong()*1000);`. `in.readLong()` is the raw wire value with no range check, and the multiplication is plain long arithmetic, which wraps rather than throwing for any magnitude above roughly 9.2e15."
+  }
+ ]
+}

@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Unbounded recursion in nested table and array deserialization",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "Stack overflow causing denial of service. A maliciously crafted AMQP message with deeply nested structures (e.g., table containing table containing table... repeated hundreds of times) exhausts the JVM call stack, triggering StackOverflowError and crashing the message handler or entire application.",
+   "evidence": "readFieldValue() at line 158 calls readTable() (line 181) or readArray() (line 184) in switch branches. readTable() at line 139 and readArray() at line 237 both invoke readFieldValue() in a loop (lines 150, 245). This forms an unbounded mutual recursion with no depth counter or limit. A message containing nested tables (type 'F') or arrays (type 'A') can recurse arbitrarily deep."
+  },
+  {
+   "item_id": "F02",
+   "title": "Integer overflow in timestamp deserialization",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "An attacker sending an AMQP message with an extreme timestamp value (e.g., Long.MAX_VALUE) can cause the multiplication to overflow, resulting in a Date object with an incorrect timestamp. This could affect any application logic that depends on correct message timestamps for TTL calculation, message ordering, or validity checks.",
+   "evidence": "Line 269: `return new Date(in.readLong()*1000);` Multiplies a long value read directly from the untrusted network stream by 1000 without overflow checking. When the long value exceeds Long.MAX_VALUE/1000 (~9.22e18), the multiplication overflows, producing incorrect timestamps."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

@@ -1,0 +1,440 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "bench-pipelines/target — repository `pipelines-migration` (billing service CI/CD): .gitlab-ci.yml, Jenkinsfile, azure-pipelines.yml, .circleci/config.yml, ci/runner-config.toml, scripts/thirdparty-lint.sh, scripts/seed-staging.sh, docs/ci-settings-export.md, README.md",
+    "commit": "not a git repository; audited the working tree as delivered, 9 files, read on 2026-08-21",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad — infra-cloud pack (infra-cloud.md selective index, infra-cloud-cicd-exposure.md §4-§6, infra-cloud-cicd-platforms.md §7), triage.md FP-01..FP-10, findings-artifact.md",
+    "coverage_declaration": "Every file in the target was read in full, including docs/ci-settings-export.md, which is treated as exported evidence of controls outside the repository (FP-08). Loaded and applied: §7 INF-19..INF-23 (all five platform files present) and §4 INF-13..INF-16 read for class, then not applied — there is no .github/workflows/ in the target, so the GitHub Actions symbols have no referent here. Not loaded / not applicable, pattern absent: §1 INF-01..INF-06 (no *.tf, *.tfvars, bicep or CFN), §2 INF-07..INF-09 (no Dockerfile, Containerfile or docker-compose; the privileged container declaration that exists lives in a GitLab runner config.toml and is judged under INF-23, its correct home), §3 INF-10..INF-12 (no manifests with kind:), §5 INF-17 (no Terraform state or backend), §6 INF-18 (no cloud account, cluster or live host in scope). Nothing was executed, resolved or fetched: no network, no command run against the target, no platform console accessed — every platform-side fact comes from the export in docs/. What this audit therefore does not establish: the runtime content of the included templates, of the vendored lint bundle, of the npm dependency tree, or of the fixtures SQL; the tag-to-runner assignment held server-side by GitLab; and any GitLab, Jenkins, Azure DevOps or CircleCI setting not present in the 2026-08-14 export."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "A GitLab merge request runs the contributor's own pipeline definition with the unprotected STAGING_DEPLOY_TOKEN attached",
+      "procedure": "INF-19",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": ".gitlab-ci.yml",
+        "line": 28
+      },
+      "evidence": "integration job: `rules: - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'` (line 31); script runs `./scripts/seed-staging.sh` and `curl -sS -H \"PRIVATE-TOKEN: $STAGING_DEPLOY_TOKEN\" \"$STAGING_API/reset\"` (lines 35-36). A merge-request pipeline executes the .gitlab-ci.yml of the source branch, so the job body is authored by whoever opened the MR. docs/ci-settings-export.md: `STAGING_DEPLOY_TOKEN` Protected = no, Masked = yes, scope `*`; `STAGING_API` Protected = no; protected branches are only `main` and `release/*`; 'Merge-request pipelines: enabled for all contributors, including forks.'",
+      "impact": "Anyone who can open a merge request — every project Developer, and per the export every fork contributor — chooses both the code and the pipeline that runs it, and receives STAGING_DEPLOY_TOKEN and STAGING_API in the job environment. Masked only redacts the value in the log; it does not stop the job exfiltrating it. The token grants API access to the staging deployment surface, and the same job already resets staging state.",
+      "preconditions": "Ability to open a merge request against billing/service from a branch that is not `main` or `release/*` — i.e. any Developer, or an outside contributor via a fork under the exported setting.",
+      "recommendation": "Mark STAGING_DEPLOY_TOKEN (and STAGING_API) Protected and scope them to a `staging` environment, so an unprotected ref cannot read them; move the staging reset into a job gated by `when: manual` on a protected environment with required approval, or split it into a downstream pipeline triggered from a protected branch. If outside contributions must be built, run them without any project variable and let the finding move to the runner (see F-05).",
+      "traceability": [
+        "CWE-94",
+        "CWE-829",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-1",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "SLSA Build L2",
+        "NIST 800-53 SA"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable gate stands between an MR and this job. docs/ci-settings-export.md records merge-request pipelines as 'enabled for all contributors, including forks' and documents no manual 'Run pipeline' requirement, no `when: manual`, and no `environment:` with approval anywhere in .gitlab-ci.yml. The job-token allowlist is a control, but it bounds what the job token may reach, not what CI/CD variables the job is handed."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The out-of-repository control was requested and the evidence arrived — docs/ci-settings-export.md, exported by the platform team 2026-08-14 — and it is inculpating rather than exculpating: the Protected column for STAGING_DEPLOY_TOKEN reads 'no' with environment scope `*`. This is an answered rule, not an assumption in either direction."
+        }
+      ],
+      "limits": "Does not establish what STAGING_DEPLOY_TOKEN can do inside the staging environment, nor the blast radius of STAGING_DATABASE_URL, which scripts/seed-staging.sh reads in this same job but which does not appear in the exported variable table at all — its Protected flag is unknown and was deliberately not assumed. The finding stands on STAGING_DEPLOY_TOKEN alone, which the export documents."
+    },
+    {
+      "id": "F-002",
+      "title": "Pull-request title interpolated by Groovy into the shell text of a Jenkins `sh` step",
+      "procedure": "INF-20",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "Jenkinsfile",
+        "line": 12
+      },
+      "evidence": "stage('Announce'): `sh \"echo 'Building change: ${env.CHANGE_TITLE}' >> build/announce.log\"`. The Groovy string is double-quoted, so `${env.CHANGE_TITLE}` is substituted into the script text before the shell ever parses it; the single quotes the author relied on are applied to a string that already contains the contributor's characters. A title containing a single quote closes the quoted section and everything after it is parsed as shell. CHANGE_TITLE is populated only for change-request builds, which is what makes it contributor-authored.",
+      "impact": "The author of a pull request executes arbitrary commands on the `build-linux` agent as the build user, before the pipeline reaches stage('Build and publish'). On that agent this reaches the reused workspace (F-06) and, in the same build, the NPM_TOKEN environment of the credentials block (F-03).",
+      "preconditions": "The multibranch job builds change requests, which the presence of CHANGE_TITLE and CHANGE_BRANCH in the Jenkinsfile establishes; the attacker controls the pull-request title.",
+      "recommendation": "Pass the value through the environment and let the shell expand it as data — the pattern already used one line below: `environment { TITLE = \"${env.CHANGE_TITLE}\" }` with `sh 'echo \"branch=$TITLE\" >> build/announce.log'` (single-quoted Groovy). Never place `${env.*}` or `${params.*}` inside a double-quoted string handed to `sh`/`bat`.",
+      "traceability": [
+        "CWE-78",
+        "CWE-77",
+        "CWE-94",
+        "A03:2025",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "NIST 800-53 SI"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no layer between the title and the shell: Groovy interpolation happens inside Jenkins before the `sh` step is dispatched, so no runtime quoting, escaping or sanitiser sits on the path. The adjacent line 13 shows the compensating form exists in this very file but is not applied to line 12."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "CHANGE_TITLE is the title of the change request, set by whoever opened it — traced backwards it originates outside the organisation's control, unlike the non-controlled fields the procedure names (CI_PIPELINE_ID, CI_PROJECT_PATH, Build.BuildId). It is neither a literal nor allowlist-constrained anywhere before line 12."
+        }
+      ],
+      "limits": "Does not establish which principals can open a change request that this job builds — that is F-09, and it is why F-09 is reported as probable while this injection is confirmed on the file alone."
+    },
+    {
+      "id": "F-003",
+      "title": "The npm publish token is exported into every process of the build, including `npm ci` and a vendored third-party linter",
+      "procedure": "INF-21",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "Jenkinsfile",
+        "line": 19
+      },
+      "evidence": "`withCredentials([string(credentialsId: 'npm-publish-token', variable: 'NPM_TOKEN')]) { sh 'npm ci'; sh './scripts/thirdparty-lint.sh'; sh 'npm run build'; sh 'npm publish --access public' }` (lines 19-24). withCredentials places NPM_TOKEN in the environment of every child process of the block. Of the four steps only the last needs it. `npm ci` executes install lifecycle scripts of the whole dependency tree; scripts/thirdparty-lint.sh is `exec node ./vendor/lint-bundle/cli.js`, whose own header states it is 'Vendored from the upstream linter project; refreshed by hand every few months'.",
+      "impact": "Any dependency install script, the vendored linter bundle, or the build script can read a publish credential for the package registry and exfiltrate it; a single `set -x` in any of them prints it. Per the export the credential is folder-scoped to `billing/`, so what is stolen is usable by, and against, every job in that folder — publishing a malicious version of the package to its consumers.",
+      "preconditions": "Code execution anywhere inside the block — reachable through the dependency tree, through the hand-refreshed vendor bundle, or directly through F-02, which runs earlier in the same build.",
+      "recommendation": "Narrow the block to the single step that needs the credential: run `npm ci`, the linter and the build outside it, and wrap only `npm publish`. Better, replace the long-lived token with a short-lived, audience-bound credential (registry OIDC / trusted publishing), so what any process can read expires and is useless elsewhere.",
+      "traceability": [
+        "CWE-522",
+        "CWE-732",
+        "CWE-269",
+        "A01:2025",
+        "CICD-SEC-2",
+        "CICD-SEC-6",
+        "SSDF PO",
+        "NIST 800-53 AC",
+        "CCM IAM"
+      ],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The out-of-repository fact arrived: docs/ci-settings-export.md states credential `npm-publish-token` is 'stored at the folder scope billing/, usable by the jobs in that folder'. Folder scope is better than controller-root scope and does narrow which jobs may request it, but the procedure's minimal test reads the block, not the credential definition — and the block still hands the value to four steps where one needs it. The exculpating condition requires that nothing else in the pipeline can read it; three other steps can."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defence in depth: the impact reaches the package's consumers. The credential is long-lived (a stored string, not an OIDC exchange), and the processes that can read it are exactly the ones running third-party code — the npm tree and a hand-refreshed vendor bundle with no integrity check. There is no server-side equivalent that would catch its misuse."
+        }
+      ],
+      "limits": "Does not establish that any current dependency or the vendored bundle is actually malicious — the contents of vendor/lint-bundle and of the dependency tree are not in the target. The finding is about which processes can read the secret, which is decided by the block."
+    },
+    {
+      "id": "F-004",
+      "title": "The GitLab pipeline includes its build template from a moving branch pointer in a project the whole engineering group can push to",
+      "procedure": "INF-22",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": ".gitlab-ci.yml",
+        "line": 5
+      },
+      "evidence": "`include: - project: platform/ci-templates / ref: main / file: /jobs/build.yml` (lines 4-6). `main` is a branch — a pointer that moves — not a tag or a commit SHA. docs/ci-settings-export.md: 'platform/ci-templates: maintained by the platform team; the whole engineering group has push access to its default branch.' The second include of the same project (lines 7-9) pins `ref: 8f14e45fceea167a5a36dedd4bea2543f6d1a2b7`, a 40-character SHA, showing the immutable form is available and understood here.",
+      "impact": "Every engineer with push access to the default branch of platform/ci-templates can change what the billing service's build stage executes, on every subsequent pipeline, including the protected-ref pipelines that carry PRODUCTION_DEPLOY_TOKEN and NPM_PUBLISH_TOKEN. No review of billing/service is involved, and the change is invisible in this repository's history. This is the Codecov Bash Uploader shape: the repository is not compromised and every pipeline that resolves the pointer is affected.",
+      "preconditions": "Push access to the default branch of platform/ci-templates, which the export grants to the whole engineering group; or compromise of any account holding it.",
+      "recommendation": "Pin the include to a commit SHA, or to a tag in platform/ci-templates whose tags are protected and cannot be repointed — the same treatment the sast.yml include already receives. Restrict push to that project's default branch to the platform team, and require review there, since it is effectively production build code for every consumer.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SLSA Build L2",
+        "SLSA Build L3",
+        "SSDF PW",
+        "SSDF PS"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary was named and it is crossed. The exculpating reading would be that the included project sits inside the same access-control perimeter and only the same maintainers can push to it; the export says the opposite in one line — push access to that default branch is held by the whole engineering group, a strictly larger principal set than those who can merge into billing/service, whose protected branches are `main` and `release/*`."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: a GitLab `include:` resolving `ref: main` at pipeline creation. It is not a template rendered from a pinned artifact, and the sibling include four lines below proves the SHA form is what pinning looks like in this file."
+        }
+      ],
+      "limits": "Does not establish what /jobs/build.yml currently contains or whether it has been altered — the included project is outside the target and was not fetched."
+    },
+    {
+      "id": "F-005",
+      "title": "The shared GitLab runner is privileged with the host Docker socket mounted and accepts jobs from unprotected refs",
+      "procedure": "INF-23",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": {
+        "path": "ci/runner-config.toml",
+        "line": 4
+      },
+      "evidence": "`[[runners]] name = \"shared-docker-01\"`, `executor = \"docker\"`, `privileged = true` (line 10), `volumes = [\"/var/run/docker.sock:/var/run/docker.sock\", \"/cache\"]` (line 11), with `concurrent = 6` at file scope and no `access_level` key — so it is not `ref_protected` and picks up jobs from any ref. .gitlab-ci.yml sets `default: tags: [linux-docker]`, so every job in the pipeline, including the merge-request-triggered `integration` job of F-01, is dispatched by tag to a docker runner. No job in the pipeline builds an image or uses docker-in-docker: the steps are `npm ci`, `npm test`, `npm run build`, `npm publish` and two shell scripts.",
+      "impact": "`privileged = true` grants the container the host's capabilities and the mounted Docker socket is equivalent to root on the host by design. A contributor who reaches this runner through F-01 gets root on a machine that runs up to six concurrent jobs and keeps a shared `/cache` volume between them — so the compromise persists and reaches the artifacts, caches and secrets of every other job scheduled there, including the tag-triggered publish job carrying NPM_PUBLISH_TOKEN.",
+      "preconditions": "Any job dispatched to this runner. Under F-01 that is any merge request. The privilege itself is unconditional: it is granted to every job the runner accepts.",
+      "recommendation": "Set `privileged = false` and remove the `/var/run/docker.sock` mount — nothing in this pipeline needs either; if image builds are added later, use a rootless builder (BuildKit rootless, kaniko, buildah) instead. Set `access_level = \"ref_protected\"` on this runner too, or retire it in favour of the ephemeral pattern already present in the same file, and drop the shared `/cache` volume between untrusted jobs.",
+      "traceability": [
+        "CWE-250",
+        "CWE-269",
+        "CWE-668",
+        "A01:2025",
+        "CICD-SEC-7",
+        "CICD-SEC-9",
+        "ATT&CK T1610",
+        "NIST 800-53 CM",
+        "CCM IVS"
+      ],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The privilege is not an intended, bounded exposure: `privileged = true` exists to make docker-in-docker work, and no job in .gitlab-ci.yml or in the two scripts builds an image, runs `docker`, or uses a dind service. There is no documented owner or accepted-risk note for it anywhere in the target, and it is granted unconditionally rather than bounded to a job that needs it."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is named: the runner declares no `access_level`, so unlike release-ephemeral-01 it is not limited to protected refs, and the default tag in .gitlab-ci.yml routes the merge-request `integration` job to a docker runner. The contributor who opens a merge request is not the maintainer who owns the host, and the host is shared with up to six concurrent jobs plus a persistent /cache."
+        }
+      ],
+      "limits": "The tag-to-runner mapping is held by the GitLab server, not by this file; the config declares no tags. That the `linux-docker` tag resolves to shared-docker-01 is the reading the names support but was not verified against the platform. The privileged configuration, the socket mount and the missing access_level are established by the file alone and do not depend on it."
+    },
+    {
+      "id": "F-006",
+      "title": "Jenkins builds run on static agents whose workspace is reused between builds",
+      "procedure": "INF-23",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "Jenkinsfile",
+        "line": 2
+      },
+      "evidence": "`agent { label 'build-linux' }`. docs/ci-settings-export.md, Jenkins section: 'Agents: static VMs, label build-linux, workspace reused between builds.' The pipeline runs `npm ci` and `./scripts/thirdparty-lint.sh` from that workspace, and `post { always { archiveArtifacts artifacts: 'build/**' } }` publishes whatever the workspace holds at the end of every build.",
+      "impact": "What one build leaves behind is available to the next: a poisoned `node_modules`, an altered `vendor/lint-bundle`, or a dropped script survives the build that placed it and executes in later builds of every job that shares the label — including the tag/release builds that request the folder-scoped npm publish credential. It converts the one-shot command execution of F-02 into persistence on the CI machine.",
+      "preconditions": "Any code execution during a build on `build-linux` — reachable through F-02, through a dependency install script, or through the vendored linter.",
+      "recommendation": "Make the build environment disposable: run the stages in a container agent or an ephemeral cloud agent (one build per instance), or at minimum wipe the workspace before each build (`options { skipDefaultCheckout() }` with an explicit clean, or the Workspace Cleanup plugin's `cleanWs()` in a `pre`/`post` block) and stop reusing a machine between a change-request build and a release build.",
+      "traceability": [
+        "CWE-250",
+        "CWE-269",
+        "CWE-668",
+        "A01:2025",
+        "CICD-SEC-7",
+        "CICD-SEC-9",
+        "ATT&CK T1610",
+        "NIST 800-53 CM",
+        "CCM IVS"
+      ],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Reuse here is not a declared, bounded design choice with an owner — the export records it as a property of the agents ('static VMs … workspace reused between builds'), with no statement that it is accepted, and nothing in the pipeline bounds what survives: `archiveArtifacts artifacts: 'build/**'` even republishes it."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpating condition requires that only trusted principals can schedule work on the machine. The Jenkinsfile reads CHANGE_TITLE and CHANGE_BRANCH, which exist only for change-request builds, so change-request code runs on the same static agents as the publishing build; the credential is folder-scoped to `billing/`, so those builds are inside its reach. The contributor and the release are not the same principal."
+        }
+      ],
+      "limits": "Does not establish who may open the change requests that land on these agents — see F-09, which is why that one is probable. The reuse property itself comes from the export, not from a live inspection of an agent."
+    },
+    {
+      "id": "F-007",
+      "title": "Container images in the GitLab pipeline and the runner configuration are referenced by moving tags",
+      "procedure": "INF-22",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".gitlab-ci.yml",
+        "line": 16
+      },
+      "evidence": "`default: image: node:20-bookworm` (line 16), and the same moving tag in both runner definitions in ci/runner-config.toml (lines 9 and 20): `image = \"node:20-bookworm\"`. A tag is a mutable pointer in the registry; only a `name@sha256:…` digest is immutable. Of the pipeline's references, the moving ones counted here are three image tags across two files; the immutable one is the SHA-pinned include at .gitlab-ci.yml line 8.",
+      "impact": "What executes the build is decided at job start by whatever the registry serves for that tag. A repointed or compromised upstream tag runs its own code inside every job of this pipeline, with whatever variables that job carries — and the jobs here carry deploy and publish credentials. Nothing in the repository records which image a past build actually ran, so a build cannot be reproduced to prove what happened.",
+      "preconditions": "Control of, or compromise at, the registry side of the `node:20-bookworm` tag, or an upstream rebuild that changes the image contents.",
+      "recommendation": "Pin images by digest (`node:20-bookworm@sha256:…`) in both .gitlab-ci.yml and ci/runner-config.toml, refreshed deliberately, and prefer an internally mirrored copy at a digest so the dependency sits inside the organisation's perimeter.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SLSA Build L2",
+        "SLSA Build L3",
+        "SSDF PW",
+        "SSDF PS"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`node:20-bookworm` is a public upstream image, outside the organisation's access-control perimeter — the exculpating reading (the reference sits with the same maintainers who could push here anyway) does not apply. The second principal is whoever controls the upstream tag."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it appears to be: a repository:tag reference with no digest, in the `image:` position the procedure names. It is not a digest written in tag form and not a locally built image."
+        }
+      ],
+      "limits": "Severity is held at low deliberately: this is an unexercised supply-chain path, not an observed compromise, and Docker Official Images are a comparatively well-governed source. It is reported rather than dropped because the class is real and the same pointer feeds jobs holding credentials — but it does not carry the weight of F-04, where the export names who can move the pointer."
+    },
+    {
+      "id": "F-008",
+      "title": "The CircleCI pipeline resolves its orb and its executor images through version ranges rather than digests",
+      "procedure": "INF-22",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".circleci/config.yml",
+        "line": 4
+      },
+      "evidence": "`orbs: node: circleci/node@5.1` (lines 3-4) — an orb version range resolves to whatever satisfies it at pipeline start, which is not a digest — and `- image: cimg/node:20.11` in both the sdk-test and sdk-publish jobs (lines 9 and 17), a moving tag. The orb supplies the `node/install-packages` step (line 12 and line 20) that both jobs execute, including sdk-publish, which runs `npm publish` with the `sdk-npm-publish` context attached.",
+      "impact": "The step that installs dependencies in the publishing job is fetched at run time from a range, and the container it runs in from a tag. A change on either side executes in a job that holds the npm publish credential of the SDK, and no record in the repository says which version a given build resolved.",
+      "preconditions": "A new orb version published within the `5.1` range, or a repointed `cimg/node:20.11` tag; both are outside the organisation's control.",
+      "recommendation": "Pin the orb to an exact published version (`circleci/node@5.1.0`) so the resolution is deterministic, pin the executor image by digest, and review the pinned versions on a schedule rather than resolving them per build.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SLSA Build L2",
+        "SLSA Build L3",
+        "SSDF PW",
+        "SSDF PS"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`circleci/node` and `cimg/node` are published by CircleCI, not by this organisation; the perimeter argument that would make pinning mere hygiene rather than third-party exposure does not apply. The procedure names this exact construct — `orbs: node: circleci/node@5.1` — as a moving reference."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`@5.1` is a version range, not a two-component exact version and not a digest: it is read as it appears. Certification of the orb by CircleCI speaks to the publisher's identity, not to the immutability of what the range resolves to."
+        }
+      ],
+      "limits": "Low severity for the same reason as F-07: a real class, an unexercised path, and a publisher with a reasonable governance story. It does not establish that any resolved version differs from the intended one."
+    },
+    {
+      "id": "F-009",
+      "title": "Change-request builds on Jenkins may execute a fork's Jenkinsfile with the folder-scoped publish credential in reach",
+      "procedure": "INF-19",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "Jenkinsfile",
+        "line": 1
+      },
+      "evidence": "The pipeline reads `env.CHANGE_TITLE` (line 12) and `env.CHANGE_BRANCH` (line 6), variables Jenkins populates only for change-request builds, so the multibranch job discovers pull requests. A multibranch job reads the Jenkinsfile from the branch being built, so for a fork pull request the pipeline definition is the contributor's. docs/ci-settings-export.md places credential `npm-publish-token` at folder scope `billing/`, 'usable by the jobs in that folder' — a scope defined by folder membership, not by branch trust — and records the agents as static VMs with a reused workspace. The export documents the fork posture for Azure DevOps ('Make secrets available to builds of fork pull requests: off') and for CircleCI ('Pass secrets to builds from forked pull requests: off') but says nothing about the Jenkins branch source.",
+      "impact": "If fork pull requests are discovered with the merge strategy, an outside contributor supplies the Jenkinsfile that runs on a static agent, inside the folder whose credential store holds the npm publish token — a stage they author can request it exactly as the existing stage does. Even without the credential, the code runs on a reused workspace (F-06), and the injection of F-02 needs no fork at all.",
+      "preconditions": "The multibranch or organization folder's branch source has 'Discover pull requests from forks' enabled with a merging strategy, and the folder credential is requestable from the job built for those pull requests.",
+      "recommendation": "Read the branch source configuration and, if fork pull requests are discovered, set the trust policy to 'From users with Admin or Write permission' (never 'Everyone'), and move `npm-publish-token` out of folder scope into a dedicated release job or folder that change-request builds cannot enter. Export the branch-source settings into the quarterly review alongside the Azure and CircleCI fork settings, so this question stops being unanswerable from the evidence provided.",
+      "traceability": [
+        "CWE-94",
+        "CWE-829",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-1",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "SLSA Build L2",
+        "NIST 800-53 SA"
+      ],
+      "inference": "That the branch source discovers pull requests **from forks**, rather than only from branches of the origin repository. Everything else is observed: the CHANGE_* variables prove change-request builds happen, the multibranch model settles that the Jenkinsfile is read from the built branch, and the export settles the credential's folder scope and the agents' persistence. The single unobserved link is the fork discovery strategy, which is a controller-side setting absent from the export.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable gate is evidenced. The Jenkinsfile declares no input step, no milestone and no approval before stage('Announce') or stage('Build and publish'), and the export records no requirement for a maintainer to approve a change-request build. Folder scope is a scoping control, not a gate: it does not ask who authored the branch."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The deciding control lives outside the repository — the multibranch branch source's fork discovery and trust strategy on ci.internal.example — and it did not arrive. docs/ci-settings-export.md covers the Jenkins credential scope, the agents and the built-in node, but not the branch sources, while it does state the equivalent fork setting for Azure DevOps and CircleCI. Per FP-08 the absence of that evidence is UNKNOWN and never HOLDS, which is why this finding is capped at probable rather than reported as confirmed."
+        }
+      ],
+      "limits": "Does not establish that any fork pull request has ever been built, nor that a contributor-authored stage would successfully bind the credential — both depend on the controller configuration that was not exported. It also does not depend on that configuration to be worth fixing: F-02 and F-06 stand on the origin-branch path alone."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Merge-request metadata interpolated into a shell step — GitLab `changelog` job (.gitlab-ci.yml lines 39-44)",
+      "procedure": "INF-20",
+      "outcome": "refuted",
+      "where": "`$CI_COMMIT_TITLE` is carried through the job's `variables:` block into `SUBJECT` and the script references it as `echo \"$SUBJECT\"`, so the runner's shell expands it as data rather than the value being spliced into the script text — the exculpating form the procedure names for GitLab (FP-01 HOLDS). Bound: reasoning over the quoting and expansion layers, with nothing executed."
+    },
+    {
+      "class": "Merge-request metadata interpolated into a shell step — Jenkinsfile line 13, `CHANGE_BRANCH_SAFE`",
+      "procedure": "INF-20",
+      "outcome": "refuted",
+      "where": "`sh 'echo \"branch=$CHANGE_BRANCH_SAFE\" >> build/announce.log'`: the Groovy string is single-quoted, so the shell — not Groovy — expands the variable, and it does so inside double quotes, making the branch name data (FP-01 HOLDS). The `_SAFE` suffix was not taken as evidence; the quoting was read. Bound: reasoning over the two quoting layers, no execution."
+    },
+    {
+      "class": "Pipeline imports its own code from a pointer that can move — the SHA-pinned `sast.yml` include (.gitlab-ci.yml lines 7-9)",
+      "procedure": "INF-22",
+      "outcome": "refuted",
+      "where": "`ref: 8f14e45fceea167a5a36dedd4bea2543f6d1a2b7` is 40 hexadecimal characters, a commit SHA, not a branch or a repointable tag — the immutable reference the procedure's first exculpating bullet names (FP-09 HOLDS). The same enumeration found no `@Library` in the Jenkinsfile, no `resources: repositories:` or `extends:` in azure-pipelines.yml, no `services:`, no `pipe:` and no `curl … | bash` anywhere in the target, so those forms of the class do not appear. Bound: the pointer form was read; what the SHA resolves to was not fetched."
+    },
+    {
+      "class": "Outside contributor reaches a credential — the GitLab `publish` job on `$CI_COMMIT_TAG` (.gitlab-ci.yml lines 46-52)",
+      "procedure": "INF-19",
+      "outcome": "refuted",
+      "where": "The job is gated on any tag, but per docs/ci-settings-export.md `NPM_PUBLISH_TOKEN` is Protected and protected tags are `v*`, so a tag a contributor can create produces a pipeline with no publish credential in it (FP-01 HOLDS). Bound: read from the export's Protected columns, not from a live platform check."
+    },
+    {
+      "class": "Credential scoped so widely that no leak is needed — Azure variable group `windows-signing` (azure-pipelines.yml line 11)",
+      "procedure": "INF-21",
+      "outcome": "refuted",
+      "where": "Per the export the group is 'linked to the Agent pipeline only', the pipeline has `pr: none` and triggers on `main`, and 'Make secrets available to builds of fork pull requests' is off — the credential is scoped to the pipeline that needs it (FP-01 HOLDS). Bound: no check on whether Approvals-and-checks are configured on the variable group, and no view of who holds queue-build permission on that project."
+    },
+    {
+      "class": "Outside contributor can make the pipeline execute their code with secrets attached — Azure Pipelines",
+      "procedure": "INF-19",
+      "outcome": "refuted",
+      "where": "`pr: none` in azure-pipelines.yml (line 5) plus the exported repository setting 'Make secrets available to builds of fork pull requests: off': a fork pull request neither triggers this pipeline nor would receive its secrets (FP-01 HOLDS, FP-08 answered by the 2026-08-14 export). Bound: the export's wording, not a live console check."
+    },
+    {
+      "class": "Outside contributor can make the pipeline execute their code with secrets attached — CircleCI `sdk-publish`",
+      "procedure": "INF-19",
+      "outcome": "refuted",
+      "where": "Per the export the `sdk-npm-publish` context is 'restricted to the release-managers security group; a job requesting it fails for anyone else', 'Pass secrets to builds from forked pull requests' is off, and the workflow filters the job to `branches: only: main` behind a `requires: [sdk-test]` (FP-01 HOLDS). Bound: the export's wording, with no access to the CircleCI console."
+    },
+    {
+      "class": "Runner reached by untrusted code — CircleCI forked pull-request builds of `sdk-test`",
+      "procedure": "INF-23",
+      "outcome": "refuted",
+      "where": "'Build forked pull requests' is on, so untrusted code does run; the finding was followed to the runner as INF-19 requires and cleared there — the jobs use the managed `docker` executor (`cimg/node:20.11`) with no `machine` executor, no `setup_remote_docker` and no self-hosted runner, i.e. an ephemeral instance with no secret attached (FP-05 and FP-06 HOLD). Bound: read from .circleci/config.yml and the export; the executor's isolation was not independently tested."
+    },
+    {
+      "class": "Runner is a persistent, shared or privileged machine — `release-ephemeral-01` (ci/runner-config.toml lines 13-24)",
+      "procedure": "INF-23",
+      "outcome": "refuted",
+      "where": "`executor = \"docker+machine\"` with `IdleCount = 0` and `MaxBuilds = 1` (one job per instance, destroyed afterwards), `privileged = false`, no socket mount, `/cache` only, and `access_level = \"ref_protected\"` so only protected refs can schedule work on it — both exculpating bullets of the procedure hold (FP-05 and FP-06 HOLD). Bound: read from the declared configuration, with no access to the running host."
+    },
+    {
+      "class": "Builds executing on the Jenkins controller",
+      "procedure": "INF-23",
+      "outcome": "refuted",
+      "where": "docs/ci-settings-export.md states 'Builds on the built-in node: disabled (0 executors)', so no stage of the Jenkinsfile runs on ci.internal.example itself (FP-06 HOLDS). Bound: read from the 2026-08-14 export, not from the controller's live configuration."
+    },
+    {
+      "class": "Runner is a persistent, shared or privileged machine — the Azure agent pool",
+      "procedure": "INF-23",
+      "outcome": "refuted",
+      "where": "The export records the pool as Microsoft-hosted (`windows-2022`), matching `pool: vmImage: windows-2022` in azure-pipelines.yml: a hosted, per-job instance rather than a self-hosted agent, with no 'Restrict to authorized pipelines' question to answer (FP-05 HOLDS). Bound: the export and the pipeline file; the hosted pool itself is provider-administered and was not inspected."
+    }
+  ]
+}

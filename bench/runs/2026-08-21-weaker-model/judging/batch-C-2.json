@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Unvalidated UTF-8 string decoding from untrusted wire data",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "An attacker sending malformed UTF-8 sequences in AMQP messages could cause silent data corruption or inconsistent state if the application logic depends on exact string matching. This is low-impact because Java's String class does not execute code from the input and will only produce characters, but semantic attacks are possible if the application trusts field names or routing keys.",
+   "evidence": "The readShortstr() method at line 70 constructs a String from raw bytes using the 'utf-8' charset without validating that the input is well-formed UTF-8. The byte array length is read as a single unsigned byte (line 68), limiting maximum short-string length to 255 bytes. If an AMQP peer sends malformed UTF-8 sequences, the String constructor may accept replacement characters."
+  },
+  {
+   "item_id": "F02",
+   "title": "Unbounded recursive deserialization allows stack exhaustion",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:184",
+   "impact": "An attacker who can send AMQP protocol messages to the client can craft a message with deeply nested tables/arrays that triggers a StackOverflowError, causing the client process to crash. This is a denial-of-service attack that terminates the client connection handler.",
+   "evidence": "The readFieldValue() method (line 158-221) is recursive. It calls readTable() at line 181 for case 'F', and readArray() at line 184 for case 'A'. The readTable() method (lines 139-155) calls readFieldValue() again (line 150). The readArray() method (lines 237-249) also calls readFieldValue() again (line 245). There is no recursion depth limit checked in any of these methods. A malicious AMQP message containing deeply nested tables or arrays (e.g., a table containing an array containing a table containing an array...) will exhaust the Java stack and cause StackOverflowError."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

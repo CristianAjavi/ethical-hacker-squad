@@ -1,5 +1,7 @@
 # Traceability and citation policy
 
+**Why the corpus is in English.** The source material - standard identifiers, CWE names, scanner output, advisory text - is English, and translating the procedures makes them drift away from the IDs they cite. Findings and the report are written in the user's language; identifiers never are.
+
 Two jobs: tell you which identifier a finding maps to, and let the report declare coverage honestly — "session management was exercised, weak cryptography was not".
 
 All facts below were verified against primary sources on **2026-08-04**. Where a version or date could not be confirmed at the source it is marked `not verified`.
@@ -51,7 +53,7 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
-Five packs ship as more than one file (`mobile` and `supply-chain` as three). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+Five packs ship as more than one file (`mobile` and `supply-chain` as three). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
 
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|
@@ -92,7 +94,7 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `A08:2025` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
 | `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-clientside-logic.md` §11 | `INF-06`, `WEB-22` |
 | `A10:2025` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
-| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 / `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `INF-13`..`INF-16`, `SUP-09`..`SUP-12`, `SUP-21`, `SUP-22` |
+| `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 + `infra-cloud-cicd-platforms.md` §7 / `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `INF-13`..`INF-16`, `INF-19`..`INF-23`, `SUP-09`..`SUP-12`, `SUP-21`, `SUP-22` |
 | `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `SUP-09`..`SUP-12`, `SUP-21`..`SUP-23` |
 | `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | `supply-chain.md` §5..§7 + `supply-chain-secrets-malware.md` §8 + `supply-chain-source-lifecycle.md` §10, §11 / part A | `SUP-13`..`SUP-16`, `SUP-21`..`SUP-25`, `REM-*` |
 | `LLM01:2026`, `AML.T0051` | ai-safety | `ai-safety.md` §0, §1 | `AI-01`..`AI-04` |
@@ -130,7 +132,7 @@ Declare these rather than implying they are covered:
 - **`ASVS 5.0 V17` (WebRTC)** — no procedure.
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
 - **Microsoft's cloud security benchmark** — consulted while drafting `PRV-12` and **not** cited: it is not in `docs/sources-allowlist.json` and its licence was not verified. Its control identifiers therefore appear nowhere in the corpus, and cloud-provider-specific control ids are not claimed as coverage.
-- **CI platforms other than GitHub Actions** — `INF-13`..`INF-16` are written against GitHub Actions symbols and file layout. GitLab CI, Jenkins and CircleCI are covered only at the level of the `CICD-SEC-*` classes; declare them as partially covered.
+- **CI platforms other than GitHub Actions** — closed for GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket Pipelines by `INF-19`..`INF-23`, which carry each platform's own symbols. What remains open is narrower and is stated inside those procedures: `INF-19`, `INF-21` and `INF-23` each depend on a setting that lives in the platform rather than in the repository — variable protection and fork-secret exposure, credential scope, runner configuration — so without the exported setting the answer is `UNKNOWN`, not "covered". Platforms with no procedure at all: Tekton, Argo Workflows, Drone, Buildkite, TeamCity.
 - **CLI, desktop and library surfaces** — now covered by `local-app.md` (`LOC-01`..`LOC-15`). What remains uncovered inside that surface: native memory safety, anything needing a debugger or a fuzzer, Windows mechanisms beyond DLL search order and registry protocol handlers (services, COM, scheduled tasks, ACL inheritance), and macOS TCC and entitlement analysis. Declare those as not exercised.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.
 - **`ATT&CK` technique mapping** — used sparingly and only where the technique was verified. Absence of an ATT&CK ID on a finding means it was not verified, not that no technique applies.

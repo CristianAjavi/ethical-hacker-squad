@@ -52,7 +52,14 @@ DECL_LINES = re.compile(r"([\d]{1,3}(?:,\d{3})+)\s+lines")
 # other sentence counting procedures - "37 procedures are converted" - is a
 # different fact, and matching it would make the gate fire on correct text.
 DECL_PROCS = re.compile(r"([\d,]+)\s+numbered\s+procedures")
-DECL_FILES = re.compile(r"(?:over|across|in)\s+([a-z]+)\s+files")
+# Only a NUMBER counts as a declaration. The first version matched any word,
+# so ordinary prose - "the defect was in the files every arm was given" -
+# was read as a claim that the corpus has "the" files and failed the build.
+# A gate that fires on ordinary English teaches its readers to ignore it.
+DECL_FILES = re.compile(
+    r"(?:over|across|in)\s+((?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+    r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"
+    r"(?:-(?:one|two|three|four|five|six|seven|eight|nine))?)\s+files\b")
 DECL_RANGE = re.compile(r"`([A-Z]{2,4})-0*1`\.\.`([A-Z]{2,4})-(\d{2})`")
 PACK_COST = re.compile(r"\*\*Cost:\*\*\s*~([\d,]+)\s*lines")
 MAP_ROW = re.compile(r"^\|\s*`([a-z0-9-]+\.md)`\s*\|[^|]*\|\s*~?([\d,]+)\s*\|")
@@ -65,6 +72,26 @@ EXEMPTION = re.compile(
 TEAM_ROW = re.compile(r"^\|[^|]*\|\s*`(ehs-[a-z-]+)`\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|$", re.M)
 PACK_REF = re.compile(r"`knowledge/([a-z0-9-]+\.md)`")
 COST_TOLERANCE = 10
+
+
+RANGE_TOKEN = re.compile(r"`([A-Z]{2,4})-(\d{2})`\s*\.\.\s*`([A-Z]{2,4})-(\d{2})`")
+SINGLE_TOKEN = re.compile(r"`([A-Z]{2,4})-(\d{2})`")
+
+
+def ids_for_row(line: str) -> set[str]:
+    """Expand what one table row claims: `WEB-01`..`WEB-12` is twelve identifiers,
+    `MOB-13`, `MOB-16`..`MOB-18` is four. Ranges are consumed first so their two
+    endpoints are not also counted as singletons."""
+    out: set[str] = set()
+    work = line
+    for m in RANGE_TOKEN.finditer(line):
+        if m.group(1) != m.group(3):
+            continue
+        out.update(f"{m.group(1)}-{n:02d}" for n in range(int(m.group(2)), int(m.group(4)) + 1))
+        work = work.replace(m.group(0), " " * len(m.group(0)))
+    for m in SINGLE_TOKEN.finditer(work):
+        out.add(f"{m.group(1)}-{int(m.group(2)):02d}")
+    return out
 
 
 class Unmeasured(Exception):
@@ -148,6 +175,7 @@ def main() -> int:
 
     # ---- measure the corpus -------------------------------------------
     per_file_lines: dict[str, int] = {}
+    per_file_ids: dict[str, set[str]] = {}
     per_pack_ids: dict[str, list[tuple[str, int]]] = {}
     ids_by_prefix: dict[str, list[int]] = {}
     total_procs = 0
@@ -165,6 +193,7 @@ def main() -> int:
                 total_procs += 1
                 per_pack_ids.setdefault(pack["pack"], []).append((prefix, number))
                 ids_by_prefix.setdefault(prefix, []).append(number)
+                per_file_ids.setdefault(name, set()).add(f"{prefix}-{number:02d}")
     total_lines = sum(per_file_lines.values())
 
     # ---- 1. numbering --------------------------------------------------
@@ -248,6 +277,54 @@ def main() -> int:
     for name in sorted(set(per_file_lines) - mapped):
         checks += 1
         findings.append(f"{map_file}: `{name}` is a pack file and the loading map does not list it")
+
+    # ---- 4b. table rows that name a pack file --------------------------
+    # A row like `| | \`ai-safety-data-output.md\` | \`AI-12\`..\`AI-22\` | ... |`
+    # is a claim about which procedures live in that file, and it is the claim a
+    # reader trusts first: it is on the front page. Check 3 only looks at ranges
+    # STARTING at 01, so a row for a middle file could drift for four releases
+    # and no gate would notice - which is exactly what happened to three rows of
+    # README.md and to the whole `local-app` pack, missing from that table while
+    # every other check stayed green.
+    for rel in DECLARING_FILES:
+        try:
+            text = current_section(rel, drop_historical(read(root, rel)))
+        except Unmeasured:
+            continue
+        rows_named: set[str] = set()
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line.startswith("|"):
+                continue
+            named = [n for n in per_file_ids if f"`{n}`" in line]
+            if len(named) != 1:
+                continue                      # a row naming two files declares neither
+            name = named[0]
+            rows_named.add(name)
+            declared = ids_for_row(line)
+            if not declared:
+                continue                      # a row may legitimately carry no range
+            checks += 1
+            actual = per_file_ids[name]
+            if declared != actual:
+                missing = sorted(actual - declared)
+                extra = sorted(declared - actual)
+                findings.append(
+                    f"{rel}: the row for `{name}` declares "
+                    + (f"nothing about {missing} " if missing else "")
+                    + (f"identifier(s) {extra} that are not in it " if extra else "")
+                    + "- a reader routes by this table"
+                )
+        # A file that carries such a table carries ALL of them: an absent row is
+        # how a whole pack goes missing from the front page without one number
+        # ever being wrong. A file with no rows of this shape is not judged.
+        if rows_named:
+            for name in sorted(set(per_file_ids) - rows_named):
+                checks += 1
+                findings.append(
+                    f"{rel}: lists pack files by identifier range and has no row for "
+                    f"`{name}`, so that pack file is invisible to a reader of this table"
+                )
 
     # ---- 5. anatomy and identifiers ------------------------------------
     required = [(f["label"], re.compile(f["pattern"], re.M)) for f in packs["required_fields"]]

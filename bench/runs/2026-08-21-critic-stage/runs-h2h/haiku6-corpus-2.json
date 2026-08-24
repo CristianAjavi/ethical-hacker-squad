@@ -1,0 +1,125 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "commit": "audit-target-rabbitmq-java-client",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "haiku6-corpus-2",
+    "coverage": {
+      "inventoried": [
+        "pom.xml",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "read": [
+        "pom.xml",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "C-001: Unbounded memory allocation in readBytes() at line 88",
+        "C-002: Recursive table/array parsing without depth limit at lines 180-185",
+        "C-003: Integer overflow check in readUnsignedInt() at lines 227-233"
+      ],
+      "reported": [
+        "C-001",
+        "C-002"
+      ],
+      "dropped": [
+        {
+          "candidate": "C-003",
+          "resolution": "refuted",
+          "control_at": "ValueReader.java:232-233",
+          "reason": "readUnsignedInt() uses long variables for bit operations. Each byte is 0-255, maximum value is 0xFFFFFFFF. No overflow possible."
+        }
+      ]
+    },
+    "coverage_declaration": "Full scope: Maven pom.xml (dependency versions verified), single Java source file (ValueReader.java) representing AMQP protocol parser. No integration tests, no runtime environment, no secondary source files examined. Analysis limited to static code review of this parser component. Library behavior depends on calling application to enforce frame size and nesting limits.",
+    "authorization": "Audit mode - read-only analysis only"
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation in protocol message parsing",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:83-95",
+      "evidence": "Method readBytes() allocates a byte array with size read directly from untrusted protocol input. Line 88: `byte [] buffer = new byte[(int)contentLength];` where contentLength is read from DataInputStream at line 86 and can be up to Integer.MAX_VALUE-1 (2,147,483,646 bytes = ~2 GB).",
+      "impact": "Attacker sending a crafted AMQP message with a large byte-string field can cause out-of-memory condition, crashing the JVM and denying service to the application using this library.",
+      "preconditions": "Application must receive AMQP messages from attacker-controlled source (untrusted server or network). The attacker must be able to craft AMQP frames with byte-string (type 'S') fields containing a large length value.",
+      "recommendation": "Implement a configurable maximum size limit for byte arrays and strings. Reject any message field exceeding this limit. Suggested: add a MAX_BYTE_ARRAY_SIZE constant (e.g., 100 MB) and check: if (contentLength > MAX_BYTE_ARRAY_SIZE) throw new MalformedFrameException(\"Byte array too large\").",
+      "verification": "not executed",
+      "inference": "Attacker can control the byte-length field in AMQP protocol frames",
+      "what_would_settle_it": "1) AMQP protocol specification limits on frame/field sizes; 2) Evidence that calling applications enforce frame size limits before passing data to ValueReader; 3) Proof that TruncatedInputStream or another layer prevents large allocations",
+      "unaided_label": "C-001",
+      "traceability": [
+        "CWE-400: Uncontrolled Resource Consumption",
+        "CWE-789: Memory Exhaustion"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The byte-length value is read directly from untrusted protocol stream (DataInputStream) at line 86 with no prior validation or allowlist."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed: untrusted AMQP protocol data from network becomes memory allocation decision inside the JVM."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The AMQP protocol specification might define limits on frame/field sizes, but no evidence of such limits was found in the repository or codebase."
+        }
+      ],
+      "limits": "Analysis limited to static code review. No runtime testing performed. Actual exploitability depends on: 1) Whether AMQP protocol enforces frame size limits; 2) Whether applications using this library set memory constraints; 3) Whether a higher-level framing layer splits large messages."
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursion in table and array parsing",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158-221",
+      "evidence": "Method readFieldValue() recursively calls itself indirectly through readTable() and readArray(). Case 'F' (lines 180-181) calls readTable() which calls readFieldValue() for each table entry. Case 'A' (lines 183-184) calls readArray() which calls readFieldValue() for each array element. No nesting depth limit or recursion check is implemented. A table containing a table containing a table... (arbitrarily deep) will recurse without bounds.",
+      "impact": "Attacker can cause denial of service by sending an AMQP message with a deeply nested table or array structure. This triggers unbounded recursion leading to StackOverflowError (crash) or memory exhaustion if the nesting is combined with large data at each level.",
+      "preconditions": "Same as F-001: attacker can send crafted AMQP messages. Specifically, attacker must be able to create nested table ('F') or array ('A') field types.",
+      "recommendation": "Implement a maximum recursion depth check. Add a depth counter parameter to readFieldValue() and throw MalformedFrameException if depth exceeds maximum (e.g., 50). Example: `if (depth > MAX_DEPTH) throw new MalformedFrameException(\"Maximum nesting depth exceeded\");`",
+      "verification": "not executed",
+      "inference": "Attacker can craft AMQP messages with arbitrarily deep table/array nesting",
+      "what_would_settle_it": "1) AMQP protocol specification limits on nesting depth; 2) Evidence that applications enforce nesting limits before parsing; 3) Proof that typical AMQP messages never exceed a certain nesting depth",
+      "unaided_label": "C-002",
+      "traceability": [
+        "CWE-674: Uncontrolled Recursion",
+        "CWE-400: Uncontrolled Resource Consumption"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The table/array nesting is determined by the type bytes in the untrusted protocol stream, which an attacker can control."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed: untrusted protocol structure determines recursion depth in the parser."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The AMQP specification might define nesting limits, but no evidence was found in the repository."
+        }
+      ],
+      "limits": "No runtime testing. Actual exploitability depends on: 1) Whether AMQP protocol defines nesting limits; 2) Whether applications set JVM stack size limits; 3) Whether typical AMQP messages have any practical nesting limits."
+    }
+  ],
+  "ruled_out": {
+    "Integer overflow in readUnsignedInt()": "Refuted. readUnsignedInt() correctly reads an unsigned 32-bit integer using long variables. Maximum value is 0xFFFFFFFF. No overflow possible. See ValueReader.java:224-234."
+  }
+}

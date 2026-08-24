@@ -1,0 +1,43 @@
+{
+  "matches": [
+    {
+      "left": "L05",
+      "right": "R01",
+      "why": "Same line, same mechanism: readTimestamp does new Date(in.readLong()*1000) with no range check, so a peer-chosen seconds value wraps silently and yields an arbitrary Date. Both frame the impact as freshness/expiry/replay decisions on a fabricated time."
+    },
+    {
+      "left": "L02",
+      "right": "R02",
+      "why": "Identical defect: readFieldValue -> readTable/readArray -> readFieldValue recurses with no depth counter (dispatch at lines 181/184, recursion at 150/245). Both compute ~5-6 wire bytes per level, note the 128 KiB frame-max still encodes ~25k levels, and land on StackOverflowError on the frame thread."
+    },
+    {
+      "left": "L07",
+      "right": "R03",
+      "why": "Same allocation defect in readBytes: unsignedExtend(in.readInt()) sizes new byte[contentLength] before readFully, so ~5-8 wire bytes trigger a ~2 GiB heap request. Same evidence snippet, same reachability (longstr 'S' line 163, byte-array 'x' line 211, pre-auth connection.start server-properties)."
+    },
+    {
+      "left": "L03",
+      "right": "R07",
+      "why": "Both are about the exception TYPE, not the allocation: the over-long-length path in readBytes throws unchecked UnsupportedOperationException instead of MalformedFrameException/IOException, so callers' protocol-error handling misses a purely remote-triggered condition. Both cite the same throw and contrast it with the MalformedFrameException used elsewhere in the same method family."
+    },
+    {
+      "left": "L04",
+      "right": "R06",
+      "why": "Same framing defect: readTable/readArray loop on available() (lines 148/244) and never assert that exactly tableLength/length bytes were consumed, so truncated or overstated containers decode silently into a partial map. Both add the same caveat about the public constructor over a socket-backed stream and about TruncatedInputStream being out of scope."
+    },
+    {
+      "left": "L08",
+      "right": "R04",
+      "why": "Primary mechanism of L08, and its title and lead evidence, is `if(!table.containsKey(name)) table.put(name, value)` resolving duplicate field-table keys first-wins with no error - exactly R04. Both argue the same exploitability: other implementations resolve duplicates differently, so a prepended duplicate lets the attacker choose which value the Java side sees (header smuggling)."
+    }
+  ],
+  "unmatched_left": [
+    "L01",
+    "L06",
+    "L09"
+  ],
+  "unmatched_right": [
+    "R05"
+  ],
+  "hardest_call": "L08 vs R04/R05. L08 is a two-mechanism write-up: first-wins duplicate keys AND lenient UTF-8 decoding in readShortstr, which list two splits into R04 and R05. Since each item matches at most once, I bound L08 to R04 because that is what its title leads with, what its first evidence line shows, and what its impact argument is built on; the charset paragraph is the secondary 'compounds it' clause. R05 stands alone as its own defect anyway - the exploitable property differs (distinct byte sequences collapsing to one String via U+FFFD replacement, affecting queue/exchange/routing-key comparisons, not just table keys), so it is not the same defect as duplicate-key resolution even though both are described as header shadowing. Also worth noting: L01 (no cap on element/entry COUNT, memory amplification per object) has no counterpart in list two - R03 covers only the single 2 GiB byte[] allocation and R02 only the recursion, and neither is about the unbounded ArrayList/HashMap element count. L06 (empty table returns immutable Collections.emptyMap() so the remote peer picks the map type) and L09 (build-time codegen over un-pinned, un-checksummed inputs plus EOL build deps) have no counterpart at all."
+}

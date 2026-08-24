@@ -1,0 +1,67 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "lemur/destinations/views.py",
+      "line": 36,
+      "title": "Destination read endpoints require only authentication, and return stored plugin credentials",
+      "impact": "Any account that can obtain a session, explicitly including the lowest non-admin role, can enumerate every configured destination and read its plugin option values in cleartext, including the SFTP password and RSA private-key passphrase for a user that defaults to root. That yields working login credentials for every host the service deploys certificates and private keys to, without touching an admin-gated endpoint.",
+      "evidence": "Authorization is per-method: views.py:102 (post), 254 (put) and 348 (delete) carry @admin_permission.require(http_exception=403); views.py:36-37 (DestinationsList.get), 198-199 (Destinations.get) and 360-361 (CertificateDestinations.get) carry only @validate_schema under the class-level AuthenticatedResource. The read payload is unredacted: DestinationOutputSchema declares options = fields.List(fields.Dict()) (schemas.py:28) and the @post_dump fill_object hook copies it into data['plugin']['pluginOptions'] and expands nested export-plugin values (schemas.py:33-36); nothing on that path is load_only or allow-listed, and the endpoint docstrings show each option echoed with its 'value' (views.py:62-69). The values are secrets: the bundled SFTP plugin declares 'password' (plugin.py:62-68) and 'privateKeyPass' (plugin.py:76-82) as plain str options, defaults 'user' to root (plugin.py:55-61), and its module docstring states 'Passwords are not encrypted and stored as a plain text' (plugin.py:13).",
+      "severity": "HIGH (mantis_risk_score 6.4; Impact 5 x Likelihood 3 capped, Exposure 1.0, static-confirmation x0.8; VALID / VIABLE)"
+    },
+    {
+      "id": "M-002",
+      "file": "lemur/plugins/lemur_sftp/plugin.py",
+      "line": 151,
+      "title": "Path traversal via certificate Common Name in SFTP destination path and uploaded filenames",
+      "impact": "A certificate requester chooses where on the remote host the delivery lands and what the file is called. Combined with the recursive mkdir, write and chmod 0o644 primitives, this permits creating directories and overwriting files anywhere the SFTP user can reach (default user root), including another tenant's certificate and key files under a sibling destinationPath, and making existing files world-readable. File content is limited to certificate/key material, which is why it is rated Impact 4 rather than clear RCE.",
+      "evidence": "cn = common_name(parse_certificate(body)) (plugin.py:149) is used unvalidated twice: dst_path_cn = dst_path + '/' + cn (plugin.py:151) and as the filename stem files = {cn + '.key': ..., cn + '.pem': ...} (plugin.py:155, and 164 for the Apache chain). Both reach sftp.open(path.join(dst_path, filename), 'w') (plugin.py:269) and sftp.chmod(..., 0o644) (plugin.py:281). os.path.join drops its prefix when a later component is absolute, so a CN starting with '/' bypasses destinationPath entirely; '../' walks upward. upload_file does not require the target to exist: it splits the path and sftp.mkdir-walks each missing level (plugin.py:233-261). The session runs as the 'user' option, declared default 'root' (plugin.py:55-61).",
+      "severity": "MEDIUM (mantis_risk_score 5.6; Impact 4 x Likelihood 3 capped, Exposure 1.0, static-confirmation x0.8; PROVISIONALLY_VALID / VIABLE - open question: whether the issuing CA accepts a CN containing path separators, unresolvable inside the authorized subset)"
+    },
+    {
+      "id": "M-003",
+      "file": "lemur/plugins/lemur_sftp/plugin.py",
+      "line": 287,
+      "title": "Swallowed exceptions in SFTP upload and delete report failure as success",
+      "impact": "A certificate rotation is recorded as delivered while the remote host keeps the previous material, so the service's state disagrees with reality for the asset it exists to manage: an expired certificate keeps serving, or one rotated after a key compromise is never replaced. An attacker able to disrupt writes on the destination host holds a stale certificate in place with no alarm; ACME token cleanup fails just as quietly.",
+      "evidence": "In upload_file the re-raise at plugin.py:297 is nested inside if hasattr(e, 'errors') (plugin.py:294), so every exception lacking that attribute (OSError/IOError from sftp.open, socket timeouts, SSHException) exits the function normally after uploading nothing; delete_file's except Exception (plugin.py:219-224) never re-raises at all. The success path also returns None, so the caller cannot distinguish the two. The adjacent narrow handlers (plugin.py:285-286, 217-218) do re-raise, showing propagation was the intended contract for failures.",
+      "severity": "MEDIUM (mantis_risk_score 3.84; Impact 3 x Likelihood 3 capped, Exposure 0.8, static-confirmation x0.8; PROVISIONALLY_VALID / VIABLE)"
+    },
+    {
+      "id": "M-004",
+      "file": "lemur/plugins/lemur_sftp/plugin.py",
+      "line": 63,
+      "title": "SFTP destination password and private key passphrase stored in cleartext",
+      "impact": "Anyone who can read the database, a backup or a dump recovers working credentials for hosts that receive certificates and private keys, with no key material to break first, and frequently as root since the user option defaults to root. Read with M-001, which exposes the same blob over HTTP, the prerequisite drops from datastore access to any authenticated session.",
+      "evidence": "'password' (plugin.py:62-68) and 'privateKeyPass' (plugin.py:76-82) are declared as ordinary type 'str' options, indistinguishable from host or destinationPath, and the module docstring states the consequence at plugin.py:13: 'Passwords are not encrypted and stored as a plain text.' Those values live in the Destination.options blob that DestinationOutputSchema serialises verbatim (schemas.py:28); no encryption wrapper appears between the declaration and its use at plugin.py:104.",
+      "severity": "MEDIUM (mantis_risk_score 3.2; Impact 2 under the HIGH-privileges cap x Likelihood 3 capped, Exposure 0.8, static-confirmation x0.8; VALID as an intrinsic flaw under review rule 8 / VIABLE)"
+    },
+    {
+      "id": "M-005",
+      "file": "lemur/destinations/schemas.py",
+      "line": 33,
+      "title": "Unguarded nested key access in the DestinationOutputSchema post_dump hook",
+      "impact": "One stored destination row with an unexpected option shape makes GET /destinations raise for every caller, not just for a reader of that row, until the row is repaired in the database. The operator UI depends on that collection.",
+      "evidence": "fill_object (schemas.py:30-37) runs on the response path of every destination read and indexes stored JSON with no guards: line 33 assumes both 'plugin' and 'options' are present; line 34 assumes options is iterable (a NULL options column dumps as None); line 35 assumes each element is a mapping with a string 'type' ('export-plugin' in option['type'] raises TypeError for a non-string, KeyError when absent); line 36 assumes any export-plugin option has a dict 'value' containing 'plugin_options'. The hook runs per item on the list endpoint, so the failure is collection-wide.",
+      "severity": "LOW (mantis_risk_score 2.24; Impact 2 under the HIGH-privileges cap x Likelihood 3 capped, Exposure 1.0, availability-tier x0.8, CONDITIONAL_VIABLE x0.7, static-confirmation x0.8; PROVISIONALLY_VALID - reported in the packet's Low Priority appendix)"
+    },
+    {
+      "id": "M-006",
+      "file": "lemur/destinations/views.py",
+      "line": 434,
+      "title": "DestinationsStats.get returns unschematized output and forwards an unvalidated metric argument",
+      "impact": "Unresolved. At minimum an unfiltered response body from an endpoint any authenticated user can reach; at most an attacker-influenced value reaching query construction in the service layer.",
+      "evidence": "views.py:434-438 is the only resource method in the module with no @validate_schema, so whatever service.stats returns is serialised unfiltered, and it carries no admin_permission. It builds a query-string reqparse argument 'metric' (views.py:435) and splats it into service.stats(**args) (views.py:437). The sink, lemur.destinations.service.stats, is not part of the authorized subset, so review rule 13 cannot be completed in the direction that matters.",
+      "severity": "NEEDS_RESEARCH (unscored - mantis-calibrate drops NEEDS_RESEARCH; listed in the packet's re-research section, not marked FALSE_POSITIVE)"
+    },
+    {
+      "id": "M-007",
+      "file": "lemur/destinations/views.py",
+      "line": 360,
+      "title": "CertificateDestinations.get declares a single-object output schema for a paginated payload",
+      "impact": "Unresolved. Either a benign redundancy or a broken endpoint whose response path reaches the fill_object hook with a payload lacking both keys it indexes, which is M-005's crash by another route.",
+      "evidence": "views.py:360 decorates the handler with destination_output_schema, the singular instance (schemas.py:46), while its body calls the paginated service.render(args) (views.py:424) - the same call the sibling DestinationsList.get pairs with destinations_output_schema, the many=True instance (schemas.py:45, views.py:36). Which behaviour results depends entirely on lemur.common.schema.validate_schema, which is not part of the authorized subset.",
+      "severity": "NEEDS_RESEARCH (unscored - mantis-calibrate drops NEEDS_RESEARCH; listed in the packet's re-research section, not marked FALSE_POSITIVE)"
+    }
+  ]
+}

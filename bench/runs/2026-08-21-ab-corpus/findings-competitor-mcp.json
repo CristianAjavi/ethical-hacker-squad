@@ -1,0 +1,141 @@
+{
+ "schema": "ehs.findings/v1-adapted",
+ "arm": "competitor",
+ "case": "mcp",
+ "source": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/mantis/mcp/out/findings-index.json",
+ "note": "status is not their word; see adapt-competitor-findings.py for why every reported finding is carried through as reported",
+ "findings": [
+  {
+   "id": "M-001",
+   "status": "confirmed",
+   "title": "exportSpace lets the caller choose the API host, proxy and headers for requests that carry the server's Contentful management token",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+    "line": 99
+   },
+   "impact": "Disclosure of the long-lived Contentful Management API token to an attacker-chosen host. A single tool call setting `host` (or `proxy`) to attacker infrastructure causes the server to present the operator's CMA token to that host. Per register.ts:20-28 that one token is the ambient credential for every tool family the server registers, so its disclosure is a full read/write compromise of every space the token covers \u2014 and it outlives the MCP session entirely. The same primitive also gives ordinary SSRF (reaching endpoints only the server can route to) and, via `headers`, caller control of the header set on authenticated requests.",
+   "evidence": "ExportSpaceToolParams exposes the transport configuration of a credentialed API client as ordinary tool parameters: `host` (line 99, the file's own description reads 'Management API host'), `hostDelivery` (100), `proxy` (101), `rawProxy` (102-105, 'Pass raw proxy config directly to Axios') and `headers` (106-109). Each is a bare `z.string()` / `z.record(z.string())` with no `.url()`, no `.regex()`, no `.refine()` and no allow-list; `z.record` constrains header VALUES only, so header NAMES are unconstrained too. In the tool body the server's own credential is read at lines 126-127 (`createClientConfig(config).accessToken`) and placed in the SAME options object as those caller-supplied fields: `const exportOptions = { ...args, managementToken, ... } as any` (134-140). The spread on line 135 comes FIRST and lines 137-139 re-derive only `environmentId`, `exportDir` and `contentFile` \u2014 `host`, `hostDelivery`, `proxy`, `rawProxy` and `headers` are never re-derived, so the caller's values reach `contentfulExport.default(exportOptions)` at line 148 verbatim. The operator's own configured host is not consulted: `config.host` (populated from `CONTENTFUL_HOST` at env.ts:9-13 and passed at register.ts:22) is never read anywhere in this file \u2014 line 127 takes `accessToken` and discards the rest. The `as any` cast on line 140 is what allows this wholesale, unvalidated option pass-through to compile. Aggravating: `deliveryToken` (95-98) accepts a SECOND credential as a tool argument, so a CDA token also transits the tool-call channel and can be paired with the caller's `hostDelivery`. Under MCP the values in `args` are chosen by the model, whose instructions can be steered by any untrusted content the agent has ingested, so every one of these is attacker-choosable.",
+   "their_severity": "HIGH"
+  },
+  {
+   "id": "M-002",
+   "status": "confirmed",
+   "title": "importSpace lets the caller choose the API host, proxy and headers for requests that carry the server's Contentful management token",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/importSpace.ts",
+    "line": 69
+   },
+   "impact": "Disclosure of the Contentful Management API token to an attacker-chosen host, exactly as in the export tool, plus exfiltration to that host of whatever the caller supplied in `content` (14-19) or loaded via `contentFile` (10-13). Because this is the write-side job, an attacker-chosen `host` additionally allows the operation to be pointed at a look-alike endpoint so the operator believes a migration succeeded when nothing was written to the real space. The `proxy` string is documented to carry inline credentials, giving a second exfiltration and credential-logging channel.",
+   "evidence": "The identical defect in the write-side job, reported separately because it is a separate file with a separate fix. ImportSpaceToolParams exposes `host` (line 69, 'Management API host'), `proxy` (70-73, whose own description documents that it accepts `user:pass@host:port`), `rawProxy` (74-77) and `headers` (83-86). None is validated. The tool reads the server credential at lines 103-104 and builds `const importOptions = { ...args, managementToken, environmentId } as any` (111-115); only `environmentId` is re-derived, so `host`, `proxy`, `rawProxy` and `headers` pass through the spread on line 112 untouched into `contentfulImport.default(importOptions)` at line 119. `config.host` is never read. `headers` here is `z.record(z.any())` (line 84) where the sibling export tool uses `z.record(z.string())` (exportSpace.ts:107) \u2014 the two files, written for the same purpose, disagree about the type, which is itself evidence that the schema was never acting as a security control here. The header NAME space is unconstrained in both.",
+   "their_severity": "HIGH"
+  },
+  {
+   "id": "M-003",
+   "status": "confirmed",
+   "title": "exportSpace writes a full space dump \u2014 roles and webhook definitions included \u2014 to an entirely caller-controlled filesystem path with no base-directory confinement",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+    "line": 138
+   },
+   "impact": "Arbitrary file creation and overwrite on the server host, with the process's own filesystem privileges. Two harms. Integrity: any file the process can write can be clobbered by the dump, including files in the working directory the server itself reads at start-up (env.ts:3 sources `.env` from that same directory), and with `downloadAssets: true` the written bytes are asset content rather than a fixed JSON shape. Confidentiality: because roles and webhook definitions are in the default artifact, writing it to a world-readable or attacker-readable location discloses the space's security configuration, not merely its content \u2014 the two categories most useful for pivoting.",
+   "evidence": "The destination of the dump is chosen by the caller and never confined. `exportDir` (schema 14-19) and `contentFile` (25-28) are free strings resolved at lines 138-139 as `args.exportDir || process.cwd()` and ``args.contentFile || `contentful-export-${args.spaceId}.json` `` \u2014 the caller's value always wins; the tool supplies only the DEFAULT, not an override. There is no `path.resolve` plus prefix check, no rejection of `..` segments, no rejection of absolute paths, and no `basename()` anywhere in the file. Line 150 then calls `path.join(exportOptions.exportDir, exportOptions.contentFile)`, which NORMALISES traversal rather than rejecting it, and returns the resulting path as a success value (158) \u2014 so the tool itself computes and discloses the traversed destination. `saveFile` defaults to `true` (20-24), so a bare call already writes. Two further caller-controlled write paths sit in the same schema: `errorLogFile` (110), which the 134-140 block never touches at all. Three amplifiers: (a) the default filename on line 139 interpolates `args.spaceId`, itself caller-supplied and unsanitised, so even the default path is caller-steerable; (b) `downloadAssets` (85-89) makes the job write fetched asset BINARIES into the same caller-chosen directory, widening the primitive from 'one JSON of fixed shape' toward planting attacker-chosen file content; (c) every `skip*` flag defaults to false (39-68) and `contentOnly` defaults to false (74-78), so the artifact is the maximal snapshot of the space \u2014 the success response counts `tags`, `webhooks`, `roles` and `editorInterfaces` at lines 163-166, which is in-tree confirmation that the permission model and the webhook configuration are in the dump.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-004",
+   "status": "confirmed",
+   "title": "Both migration tools discard the operator-configured ENVIRONMENT_ID and fail open to the production 'master' environment",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/importSpace.ts",
+    "line": 114
+   },
+   "impact": "Operations the operator scoped to a sandbox execute against the production `master` environment. For importSpace this is destructive and immediate: `skipContentUpdates` and `skipAssetUpdates` default to false, so existing entries and assets are overwritten in place, and `skipContentPublishing` defaults to false, so the result is published straight to the delivery API. For exportSpace it means production content \u2014 including roles and webhook definitions \u2014 is dumped when a staging dump was intended. No attacker is required for this to fire; it fires on omission, which is also the cheapest possible thing for an injected instruction to arrange.",
+   "evidence": "The operator declares the environment once: `ENVIRONMENT_ID` is validated and defaulted to 'master' in env.ts (16-20), threaded into the tools config as `environmentId: env.data.ENVIRONMENT_ID` (register.ts:24), and declared on the contract at types.ts:12. Neither job tool ever reads `config.environmentId`. In both files `config` is touched exactly once and only `.accessToken` is taken from the result (exportSpace.ts:126-127, importSpace.ts:103-104). Instead each tool re-derives the environment from the caller with a HARD-CODED literal fallback: `environmentId: args.environmentId || 'master'` (exportSpace.ts:137, repeated in the response at 157; importSpace.ts:114, repeated at 123). The fallback does not fall back to the operator's value \u2014 it substitutes a literal. So an operator who deliberately pins the deployment to a non-production environment gets no pinning at all: the moment a tool call OMITS `environmentId`, the job targets `master`. The failure is silent and fails OPEN, toward production. The `|| 'master'` guard is itself evidence the author expected the argument to be absent.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-005",
+   "status": "confirmed",
+   "title": "Operator-declared SPACE_ID is never enforced: the migration tools take the target space from tool arguments and act with one org-wide token",
+   "location": {
+    "path": "packages/mcp-server/src/tools/register.ts",
+    "line": 23
+   },
+   "impact": "Any caller who can reach the tools acts against every space the CMA token covers, not the configured one \u2014 a confused deputy. Concretely: bulk export of a space the operator never intended to expose, with roles and webhook definitions included by default; and, through importSpace whose write defaults overwrite and publish, destructive writes into any other space in the organisation. An attacker who reaches the tools via injected content in one space can pivot to every other space the token can see. The operator's `SPACE_ID` creates a false expectation of containment that no code path delivers.",
+   "evidence": "register.ts:20-28 builds ONE `ContentfulMcpTools` instance from the environment and passes the operator's scope into it \u2014 `spaceId: env.data.SPACE_ID` (23), `environmentId` (24), `organizationId` (25), `appId` (26). That single instance backs all twelve standard collections (31-42) plus the job tools (74); there is no read-only client, no scoped token, no per-call credential and no re-derivation of a narrower client anywhere in the file, so one long-lived CMA token is the ambient authority for the entire tool surface. In the two job tools the declared scope is then discarded: only `.accessToken` is read (exportSpace.ts:126-127, importSpace.ts:103-104), and the target space comes from the caller (`args.spaceId`, used at exportSpace.ts:139 and 156, importSpace.ts:122). The options objects contain no space override, so `spaceId` reaches the runner exactly as supplied. `types.ts:9` makes `spaceId` optional on the contract, which is why the compiler never flags the omission. A related in-tree gap at the same registration site: `tool.annotations` is forwarded at lines 68, 88 and 104 but never inspected, so the destructive/read-only hints those annotations carry are transported metadata rather than an enforced policy.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-006",
+   "status": "confirmed",
+   "title": "Every write-safety toggle in importSpace defaults to the destructive setting: overwrite existing entries and assets, rewrite the content model, and auto-publish",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/importSpace.ts",
+    "line": 38
+   },
+   "impact": "One tool call with attacker-chosen `content` is a live-site defacement primitive, not merely 'can write data': existing published entries and assets are replaced in place and the result goes straight to the delivery API with no draft or review stage. Because `skipContentModel` is false, the same call rewrites content types \u2014 a field removed or retyped in the payload is a schema mutation applied across every entry of that type, which is the destructive and hardest-to-reverse outcome. Combined with the ENVIRONMENT_ID finding, the target of all this is `master` whenever the caller omits `environmentId`.",
+   "evidence": "The five toggles a caller would use to make an import safe all default to the permissive value: `contentModelOnly` false (line 23) so the import is not limited to types; `skipContentModel` false (28) and `skipLocales` false (33) so content types and locales are written; `skipContentUpdates` false (38) so EXISTING entries are updated in place; `skipAssetUpdates` false (53) so EXISTING assets are overwritten; and `skipContentPublishing` false (43) so everything created is published immediately. The payload itself is unconstrained: `content` is `z.record(z.any())` (14-16) while its own description on lines 17-19 asserts it 'must match expected structure' \u2014 a guarantee the validator does not apply. All of it flows through the spread at line 112 to the runner at line 119. There is no dry-run mode, no backup step, no confirmation, and no code path in the file that hardens any default.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-007",
+   "status": "confirmed",
+   "title": "The `config` parameter is an out-of-band options channel that can override what the tool just set, in both migration tools",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+    "line": 115
+   },
+   "impact": "One string argument pulls an entire option set out of an arbitrary local JSON file. Proven consequences: an arbitrary local-JSON-file read by the server process, and total loss of auditability \u2014 nothing in these files can tell a reviewer which options actually took effect for a given call. Probable consequence, dependent on the runner's merge precedence: options the tool believed it had fixed \u2014 plausibly `host`, `proxy`, `spaceId`, `environmentId`, even `managementToken` \u2014 can be reintroduced from the file, which would defeat any fix applied only to the declared schema fields. Combined with the failure path that returns raw runner error text to the caller (exportSpace.ts:170, importSpace.ts:135), probing paths also distinguishes 'missing' from 'permission denied' from 'not JSON', giving a filesystem-enumeration oracle.",
+   "evidence": "Both tools expose `config: z.string().optional()` \u2014 described in-tree as 'Path to a JSON config file with all options' (exportSpace.ts:115-118) and 'Path to config JSON file (merged with CLI args)' (importSpace.ts:92-95). The path is unvalidated and unconfined, survives the spread (exportSpace.ts:135, importSpace.ts:112), is never re-derived by the lines that follow, and reaches the job runner. The tools' careful post-spread assignments \u2014 `managementToken`, `environmentId`, `exportDir`, `contentFile` (exportSpace.ts:136-139; importSpace.ts:113-114) \u2014 are authoritative only against `args`; they are set BEFORE the runner merges the file, so they do not necessarily outrank it. Note also the shadowing hazard: `args.config` (a caller-supplied path string) and the closure variable `config` (the operator's `ContentfulConfig`, used at exportSpace.ts:126 / importSpace.ts:103) are one identifier apart inside the same function, which is exactly how a fix gets applied to the wrong one.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-008",
+   "status": "confirmed",
+   "title": "importSpace reads caller-chosen local files and reports the underlying failure text back to the caller",
+   "location": {
+    "path": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/importSpace.ts",
+    "line": 10
+   },
+   "impact": "The server process is made to open files of the attacker's choosing (`contentFile`, `assetsDirectory`) and to write to a path of the attacker's choosing (`errorLogFile`). The read side is at minimum a file-existence and file-shape oracle: the differing error text for a missing file versus a malformed-JSON file is handed back to the caller by line 135, letting an attacker enumerate the server's filesystem one call at a time. At most, a local JSON file whose structure the runner accepts is uploaded into a Contentful space, turning a local read into remote exfiltration of host data.",
+   "evidence": "`contentFile` ('Path to JSON file containing the content to import', 10-13), `assetsDirectory` ('Path to directory containing exported asset files', 55-58) and `errorLogFile` ('Path to error log file', 87) are free caller-supplied paths that pass through the `{ ...args }` spread (line 112) into the job runner at line 119. No confinement, no allow-list, no rejection of absolute paths or `..` segments. The failure path at lines 133-137 then re-throws `Failed to import space: ${error.message}` \u2014 the runner's own error text, unredacted and untruncated, returned to the caller.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-009",
+   "status": "confirmed",
+   "title": "The 'disabled by default' posture on the migration jobs is lifted by a tool the untrusted caller can invoke, so it is not an authorization boundary",
+   "location": {
+    "path": "packages/mcp-server/src/tools/register.ts",
+    "line": 93
+   },
+   "impact": "The mitigating assumption that the two highest-privilege tools in the surface are 'off by default' does not hold against the untrusted party. An attacker who can influence tool calls spends one on the handler and then reaches exportSpace and importSpace, and with them the credential-exfiltration, arbitrary-write and cross-space primitives reported separately. The control buys one extra tool call, not a privilege boundary. Because registration owns no lifecycle, a migration that ran earlier plausibly leaves importSpace armed for later, unrelated conversations in the same process.",
+   "evidence": "The file's header comment (lines 10-12) states a security posture: the param-collection, export and import tools 'are disabled by default' and 'the migration handler controls their enable/disable state'. The code implements exactly that \u2014 each of the three workflow tools is registered and immediately disabled (81-95, `registeredTool.disable()` on line 93) \u2014 and then hands the live handles to the migration handler at line 106. But the handler itself is registered at lines 99-107 with NO `.disable()` call, so the switch that lifts the posture is an ordinary, callable tool reached over the same MCP channel by the same caller. The party the posture needs to hold against under MCP is precisely that caller. Furthermore `disable()` appears exactly once in this file, inside the registration map: there is no re-disable, no completion hook, no timeout and no further reference to `registeredWorkflowTools` after line 106, so nothing HERE bounds how long the enabled state persists. Finally, the gating lives in the `mcp-server` package while `createExportSpaceTool`/`createImportSpaceTool` are exported from `mcp-tools`, so any other consumer of that library gets the tools with no gating at all.",
+   "their_severity": "MEDIUM"
+  },
+  {
+   "id": "M-010",
+   "status": "confirmed",
+   "title": "dotenv loads a .env from the process working directory at import time, letting an untrusted workspace supply configuration the operator never set",
+   "location": {
+    "path": "packages/mcp-server/src/config/env.ts",
+    "line": 3
+   },
+   "impact": "An MCP server is normally spawned by a client whose working directory is the project the user has open. If that directory is untrusted \u2014 a cloned repository, a shared workspace, a downloaded sample \u2014 a `.env` file sitting in it supplies configuration to a process holding the operator's CMA token. Setting `CONTENTFUL_HOST` points that token's traffic at an attacker host for every tool that honours the config-level host; setting `SPACE_ID`/`ENVIRONMENT_ID` silently redirects which space the agent operates on; setting `TEST_TYPE=unit` disables the `process.exit(1)` fail-fast on line 28. The attacker needs only to get a file into a directory the victim opens, which is a far lower bar than controlling the server's environment.",
+   "evidence": "Line 3 calls `dotenv.config({ quiet: true })` at module top level, so merely importing this module \u2014 which register.ts:3 does \u2014 mutates `process.env` from a `.env` file resolved relative to the PROCESS WORKING DIRECTORY. Line 24 then reads that mutated `process.env`, and register.ts:20-28 builds the entire tools config from the result, including `host` (22), `spaceId` (23) and `environmentId` (24). `quiet: true` suppresses dotenv's own load notice, so the operator gets no signal that a file was found or which one. dotenv does not override variables already present in `process.env` \u2014 but that only protects variables the operator actually exported, and in a minimal MCP configuration only `CONTENTFUL_MANAGEMENT_ACCESS_TOKEN` is required (6-8); `CONTENTFUL_HOST`, `SPACE_ID` and `ENVIRONMENT_ID` are all optional (9-21) and are exactly the slots a stray `.env` fills. `TEST_TYPE`, read directly at line 26, is not in the schema at all and is therefore always fillable this way.",
+   "their_severity": "LOW"
+  },
+  {
+   "id": "M-011",
+   "status": "confirmed",
+   "title": "Empty-string environment values silently defeat every declared default, and the required token has no minimum length",
+   "location": {
+    "path": "packages/mcp-server/src/config/env.ts",
+    "line": 9
+   },
+   "impact": "A blank or accidentally-cleared token turns a designed start-up abort into a server that registers the full tool surface and fails only at call time with opaque upstream errors \u2014 the operator loses the fail-fast the code appears to promise. `host: ''` and `environmentId: ''` propagate to register.ts:22-24 as legitimate-looking strings whose downstream interpretation is not knowable from this tree. Empty values are not exotic: `.env` files, CI templates and container manifests produce them constantly (`SPACE_ID=` placeholder lines, an unset shell substitution, a configMap key with a blank value).",
+   "evidence": "`CONTENTFUL_HOST` (9-13) and `ENVIRONMENT_ID` (16-20) are `z.string().optional().default(...)`. A zod default fires only when the value is `undefined`; a variable that is PRESENT BUT EMPTY arrives from `process.env` (line 24) as `''`, which satisfies bare `z.string()`, so the declared defaults 'api.contentful.com' and 'master' are never applied. `CONTENTFUL_MANAGEMENT_ACCESS_TOKEN` (6-8) is likewise `z.string()` with no `.min(1)`, so `CONTENTFUL_MANAGEMENT_ACCESS_TOKEN=` makes `env.success` true, the `process.exit(1)` on line 28 never runs, the guard at register.ts:15 passes, and register.ts:21 hands an empty token to every tool collection. Because `.default()` widens the output type to a non-optional `string`, TypeScript actively tells a reader at register.ts:22/24 that these values are present and defaulted when they may be empty.",
+   "their_severity": "LOW"
+  }
+ ]
+}

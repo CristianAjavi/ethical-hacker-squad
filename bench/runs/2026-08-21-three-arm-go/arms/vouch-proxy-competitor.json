@@ -1,0 +1,103 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "pkg/cookie/cookie.go",
+      "line": 130,
+      "title": "Unauthenticated process kill: a cookie name selects the allocation size at make([]string, numParts), reaching Go's unrecoverable fatal out-of-memory",
+      "impact": "Unauthenticated remote termination of the SSO gateway process from one ~40-byte Cookie header; every application behind it fails closed until restart, and the request is repeatable",
+      "evidence": "numParts = strconv.Atoi(xyArray[1]) at :126, parsed from the attacker-authored cookie name (:123-124), is passed unbounded to make([]string, numParts) at :130. Atoi errors only above MaxInt64 and Go's makeslice guard only panics (recoverably) above ~1.7e13 elements, so the band in between - e.g. _1of1000000000000, 16 TB - reaches mallocgc, which throws 'fatal error: out of memory'. A runtime throw is not a panic: net/http's per-connection recover() does not catch it.",
+      "severity": "MEDIUM (5.6) - uncapped 7.0/HIGH; held under HIGH only by the static-confirmation cap for an engagement with no authorized reproduction"
+    },
+    {
+      "id": "M-002",
+      "file": "pkg/cookie/cookie.go",
+      "line": 141,
+      "title": "No completeness or consistency check on the cookie part set: missing, duplicate and orphaned parts are silently joined and returned as a valid token",
+      "impact": "A truncated or spliced session token is returned with a nil error. With no attacker at all, a user whose token changes part count is served a corrupted token or a panic, and re-authenticating does not clear it",
+      "evidence": "make([]string, numParts) zero-fills at :130 and :136 writes only the indices that arrive, so a hole is indistinguishable from an empty part when :141 joins the slice; the only guard, :142, tests the joined result and so fires only when everything is missing. :136 is a plain assignment, so a repeated index is last-write-wins. setCookie names parts '<Name>_%dof%d' at :76 and never removes parts named for a previous, differently sized token: a 3->2 shrink yields NEW1+NEW2+OLD3 with a nil error; a 2->3 growth panics at :136.",
+      "severity": "MEDIUM (4.8)"
+    },
+    {
+      "id": "M-003",
+      "file": "pkg/cookie/cookie.go",
+      "line": 114,
+      "title": "A stale bare <Name> cookie unconditionally overrides the current multipart session, so authorization runs on a superseded token",
+      "impact": "Authorization decided on the previous token until its own MaxAge expires - revocation at the identity provider is not honoured and re-authentication does not fix it; and anyone able to set one cookie on the registrable domain deterministically overrides a victim's session. Also returns (\"\", nil) for an empty cookie",
+      "evidence": "setCookie picks between two mutually exclusive cookie shapes at :70 - parts only above 4000 bytes (:74-87), bare cookie only at or below (:89-98) - and neither branch invalidates the other. Cookie() then returns the bare cookie's value at :114-115 the instant it is seen; the return sits inside the loop at :113, so it wins from any header position and discards parts already accumulated. The same statement has no empty-value test, while the multipart path rejects empty at :142.",
+      "severity": "MEDIUM (4.8)"
+    },
+    {
+      "id": "M-004",
+      "file": "pkg/cookie/cookie.go",
+      "line": 126,
+      "title": "Unauthenticated panic: xyArray[1] is read without a length check when a cookie name lacks the 'of' separator",
+      "impact": "Unauthenticated remote panic on the pre-authentication hot path; a cookie planted from any sibling host under the registrable domain makes every one of a victim's requests fail persistently",
+      "evidence": "strings.Split(xOFy, \"of\") at :124 returns exactly one element when the separator is absent, and :126 indexes xyArray[1] unconditionally. The only gate is HasPrefix(cookie.Name, Name+\"_\") at :118, which 'VouchCookie_x' satisfies - as does an unrelated co-hosted cookie named '<Name>_Session', so the panic needs no attacker.",
+      "severity": "MEDIUM (4.0)"
+    },
+    {
+      "id": "M-005",
+      "file": "pkg/cookie/cookie.go",
+      "line": 136,
+      "title": "numParts is latched from the first cookie only, so cookieParts[i-1] panics even when every individual part name is self-consistent",
+      "impact": "Unauthenticated remote panic; same per-victim lockout amplification, and it is also where the no-attacker stale-part growth case lands",
+      "evidence": "i = strconv.Atoi(xyArray[0]) at :133 is used as cookieParts[i-1] at :136 with no range test. i=0 gives index -1; Atoi accepts a leading '-'; and i > numParts overruns because numParts is latched once in the numParts == -1 branch at :125-130, so '_1of2' followed by '_3of9' - two internally consistent names - overruns a 2-element slice.",
+      "severity": "MEDIUM (4.0)"
+    },
+    {
+      "id": "M-006",
+      "file": "pkg/cookie/cookie.go",
+      "line": 121,
+      "title": "Session token written to the log sink at debug level",
+      "impact": "Live replayable bearer credentials reach the log-pipeline audience - aggregation tooling, on-call, backups, third-party log services",
+      "evidence": "log.Debugw(\"cookie\", ..., \"cookieValue\", cookie.Value) at :119-122 fires for every multipart part on an inbound request, and log.Debugw(\"combined cookie\", \"cookieValue\", combinedCookieStr) at :146-148 logs the fully reassembled token. A sweep of the file's other log calls (:52, :72, :129, :159, :164, :192) confirms these are the only two receiving a cookie value. Nothing truncates, hashes or redacts.",
+      "severity": "LOW (2.7) - the LOW is a statement about the non-default debug log level, not about the consequence"
+    },
+    {
+      "id": "M-007",
+      "file": "pkg/cookie/cookie.go",
+      "line": 165,
+      "title": "ClearCookie omits SameSite, so the deletion cookie can be rejected in the deployments that need SameSite=None",
+      "impact": "Logout leaves a live bearer token in the browser; for a stateless token-in-cookie gateway the cookie deletion is the whole of logout",
+      "evidence": "setCookie sets SameSite at :62, :85 and :97; the deletion cookie at :165-174 has no SameSite field, so it takes SameSite(0) and Go omits the attribute, which browsers treat as Lax. Attribute-by-attribute diff shows only two differences, SameSite and Expires-for-MaxAge; the latter is harmless because deletion keys on name/domain/path. Failure is confined to a cross-site logout response under sameSite=none.",
+      "severity": "LOW (2.2)"
+    },
+    {
+      "id": "M-008",
+      "file": "pkg/cookie/cookie.go",
+      "line": 162,
+      "title": "ClearCookie writes no deletion at all, and cannot report it, when the logout request carries no matching cookie",
+      "impact": "An apparently successful logout deletes nothing and the session survives",
+      "evidence": "Every Set-Cookie ClearCookie can emit is written from inside 'for _, cookie := range cookies' (:162) over the cookies the request carried (:154), gated on :163; with no match the loop body never runs, and the function has no return value (:153) with which to say so. A correct implementation can emit the deletion unconditionally for the configured name/domain/path.",
+      "severity": "LOW (2.0) - force-downgraded by the vague-code-paths rule, since the consequence depends on a logout handler outside the subset"
+    },
+    {
+      "id": "M-009",
+      "file": "pkg/cookie/cookie.go",
+      "line": 73,
+      "title": "Split cookie parts exceed the size budget because the _XofY name suffix is not accounted for",
+      "impact": "Each emitted part is 4005 bytes (4007 above ten parts, 4009 above a hundred) against a 4000-byte budget, consuming the deliberate margin below the 4096-byte browser limit",
+      "evidence": ":64 and :66 measure the cookie with the BASE name, :73 chunks to maxCookieSize-emptyCookieSize, and :76 then renames each part with a '_%dof%d' suffix that was never subtracted. The 4096 limit is never reached (it would need ~94 digits of part index), so this is a budget overrun, not an exploitable one.",
+      "severity": "LOW (2.0)"
+    },
+    {
+      "id": "M-010",
+      "file": "pkg/cookie/cookie.go",
+      "line": 206,
+      "title": "splitCookie scans backwards with no lower bound, and its chunking loop can fail to advance",
+      "impact": "Index-out-of-range panic, or an infinite loop growing a slice until memory is exhausted, in the cookie-writing path",
+      "evidence": "The backward walk at :206 has no r > l or r >= 0 floor, so a run of continuation bytes reaching offset 0 drives longString[r] to index -1. The loop header at :205 cannot advance when maxLen <= 0; review also established it cannot advance when maxLen > 0 and a run of at least maxLen continuation bytes follows a rune start, since r walks back to exactly l. The slice at :209 is NOT a panic site. Reachability from request input is unproven: maxLen comes from :73 and its only request-influenced input is domains.Matches(r.Host) at :47, a package absent from the subset.",
+      "severity": "LOW (1.8) - PROVISIONALLY_VALID; not marked NON_VIABLE, because reachability is undetermined rather than disproven"
+    },
+    {
+      "id": "M-011",
+      "file": "pkg/cookie/cookie.go",
+      "line": 163,
+      "title": "ClearCookie deletes any cookie merely prefixed by the configured name",
+      "impact": "Logging out of the gateway also deletes co-hosted applications' cookies whose names begin with the configured string",
+      "evidence": "HasPrefix(cookie.Name, cfg.Cfg.Cookie.Name) at :163 uses the bare name, where the read path at :117-118 uses Name+\"_\"; setCookie writes with Domain set to the shared parent domain (:47-51). The mirror of this defect on the read side is what lets an innocent co-hosted cookie reach the unchecked index at :126.",
+      "severity": "LOW (1.3)"
+    }
+  ]
+}

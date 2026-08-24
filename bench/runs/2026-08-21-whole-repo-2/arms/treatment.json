@@ -1,0 +1,672 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/wr2/Unleash-unleash-8b09768 (feature-flag server: Node/TypeScript backend + React frontend, PostgreSQL via knex, Docker, GitHub Actions)",
+    "commit": "8b09768 (directory name; no .git present in the copy, so the commit could not be confirmed from the tree)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (coverage.md routing + knowledge packs), findings artifact ehs.findings/v1",
+    "coverage_declaration": "WHAT THIS COVERS AND WHAT IT DOES NOT. Read the ruled_out block with this: it carries the bound for each class that was tested and did not appear, and it distinguishes refuted from blocked from not executed.\n\nINVENTORY. 6,490 files, 3,954 TypeScript. A feature-flag server: Express/TypeScript backend in src/lib (1,329 .ts) with routes/, middleware/, services/, features/, addons/, db/ and openapi/; a React 19 SPA in frontend/src (4,138 .ts/.tsx); PostgreSQL through knex plus ~700 db-migrate migrations in src/migrations; 24 GitHub Actions workflows; a two-stage Dockerfile and three docker-compose files; package.json + a 433 KB pnpm-lock.yaml with two patched dependencies; AGENTS.md with CLAUDE.md symlinked to it, and .floe/ agent rules. No Terraform, no CloudFormation, no Kubernetes or Helm manifests, no mobile project, no LLM client library in the server itself - so infra-cloud.md ss1 and ss3, both mobile packs, and ai-safety.md ss0-ss3 as a runtime concern have no subject in this target and were deliberately not applied to anything.\n\nROUTING. Per coverage.md, matched on observed inventory signals: .github/workflows/ -> infra-cloud-cicd-exposure.md ss4-ss6 (INF-13..INF-18) and supply-chain.md ss5; a git-shaped repository -> supply-chain-secrets-malware.md ss8; HTTP routes, middleware and knex -> web-api.md ss0-ss5; a React SPA -> web-api-clientside-logic.md ss6-ss7; outbound HTTP from user-configured URLs (the addons) -> web-api.md ss4; session cookies and password handling -> web-api.md ss1 and web-api-clientside-logic.md ss9; Dockerfile -> infra-cloud.md ss2; AI workflows and versioned instruction files -> ai-safety.md ss1 and ai-safety-data-output.md ss8. Every reported finding was triaged against the FP-01..FP-10 rules its procedure cites.\n\nWHAT I CHOSE TO READ, AND WHY. Roughly 45 target files opened directly, plus two delegated sweeps. The CI/CD surface first, in full - 24 workflow files is a small, complete, high-yield set where the attacker is an outsider and the prize is publishing credentials; that decision produced five of the eleven findings. Then the request pipeline end to end: app.ts middleware order, the CORS and security-header middleware, the API-token, PAT and session middleware, the session store configuration, create-config.ts and server-impl.ts for how configuration defaults resolve. Then the two places a feature-flag server crosses a trust boundary by design - the login/session lifecycle, and the addon integrations that make the server issue outbound requests on a user's instruction. Then the client-side sink classes across all 4,134 frontend source files by delegated sweep. Then targeted verification of every candidate before writing it up: I read the settings-secret migration to establish that F-006's dead fallback really does strand a generated key, and I read parseRedirectParam and its five call sites to establish that F-011 is an asymmetry rather than an absence.\n\nWHAT WAS COVERED BY DELEGATION, AND WITH WHAT STANDING. Two sweeps were delegated and both returned: a client-side sink sweep over all 4,134 frontend source files, and an enumeration of the admin API's route permissions. Their output is treated as a pointer, never as evidence: every finding I report from them was re-read and verified by me at the cited line before it was written up, and two of their most serious candidates did not survive that check and are recorded as refuted in ruled_out - the ungated feature-import route (authorization turned out to be enforced in the service layer) and password-free demo authentication as the default (the configured default is OPEN_SOURCE, not demo). The route sweep counted 103 routes at `permission: NONE`; I verified one of them end to end (F-012) and named the rest inside that finding's limits as unverified candidates of the same shape, which is the honest standing for them.\n\nWHAT I DELIBERATELY DID NOT READ. Object-level authorization across the admin API remains the largest unexamined surface: WEB-04 (is this object mine?) and WEB-25 (are the objects named in the body authorized?) were not exercised against any of the ~100 controllers, and the enforcement layer itself - rbac-middleware.ts, authorization-middleware.ts, oss-authentication.ts, frontend-token-middleware.ts, backend-token-middleware.ts - was not read; only controller.ts's permission filter was, as F-012 required. So the absence of an IDOR finding here means nobody looked. Also not examined: all ~700 files under src/migrations except the one secret-seeding migration named in F-006; the OpenAPI schema layer under src/lib/openapi; src/lib/features/* beyond addons, feature-links, feature-search, metrics/client-metrics, edgetokens, pat and settings; the frontend beyond the six sink classes swept (component logic, state management and API-client code were not reviewed); the ~2,000 transitive dependencies in the lockfile, since advisory lookup requires the network the engagement forbids; scripts/ and test-migrations/; CHANGELOG.md (582 KB) and AGENTS.md, which were inventoried but not read.\n\nNOTHING WAS EXECUTED. No test was run, no server was started, no request was made, no network was touched, and no file in the target was modified. Every finding therefore rests on reading, which is why several carry `probable` or an UNKNOWN triage answer rather than `confirmed`: the corpus forbids treating a measurement that was not taken as a favourable result. Where the minimal test in a procedure would have settled a question, the finding says so in `what_would_settle_it`.\n\nONE TOOL NOTE, since it shaped the output. When this artifact was first validated, the gate rejected `probable` unconditionally: I isolated it across sixteen variants (every field of the schema, every verification term, the ruled_out block and the coverage text) and no schema-legal artifact could satisfy it. The contract was then extended with `what_would_settle_it`, and the two findings that genuinely have one inferred link (F-008, F-011) now carry it. F-002 was re-examined during that episode and stands at `hardening` on its merits, not to satisfy a validator: it asserts an unbounded grant, not a demonstrated exploit.",
+    "authorization": "Read-only static review of a local copy. No network, no execution, no remote testing performed; none authorized."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "No third-party GitHub Action is pinned by commit SHA across 24 workflows",
+      "procedure": "INF-16",
+      "status": "hardening",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/",
+        "component": "GitHub Actions"
+      },
+      "evidence": "Counted over .github/workflows/: 117 `uses:` references in total, of which 4 are local (`./.github/workflows/...`) and 0 are pinned to a 40-character commit SHA. Every third-party action is referenced by a mutable tag or branch: `actions/checkout@v6`, `pnpm/action-setup@v5`, `cypress-io/github-action@v7.4.0`, `akhileshns/heroku-deploy@v3.15.15`, `gitarcode/gitar-duet-action@v1`, `hypermod-io/action@v1`, `toshimaru/auto-author-assign@v1.6.2`, `lee-dohm/no-response@v0.5.0`, `softprops/action-gh-release@v2`, `aws-actions/configure-aws-credentials@v6`. One reference is worse than a tag: `.github/workflows/update_contributors.yaml:17` uses `actions/checkout@master`, a branch pointer that moves on every push. A second mutable reference crosses repositories: `.github/workflows/add-to-project.yml:13` calls `unleash/.github/.github/workflows/add-item-to-project.yml@main`.",
+      "impact": "A git tag is a mutable pointer. Whoever controls an action's repository - or anyone who compromises a maintainer token there - can repoint an existing tag at malicious code and have it execute inside these workflows on the next run, with whatever GITHUB_TOKEN permissions and repository secrets that job holds. In this repository that reaches jobs that hold Docker Hub push credentials, an AWS ECR publishing role and a Heroku API key.",
+      "preconditions": "Compromise or malice at one of the ~20 third-party action repositories referenced, or at the `unleash/.github` repository for the cross-repo reusable workflow. No access to this repository is required.",
+      "recommendation": "Pin every third-party `uses:` to a full 40-character commit SHA with the human-readable version in a trailing comment, and let Renovate (already configured in renovate.json) propose SHA bumps. Prioritise the jobs that hold publishing credentials: docker_publish.yaml, release.yaml, publish-new-version.yaml, reset_heroku.yml. `actions/checkout@master` in update_contributors.yaml should be corrected first because a branch ref is re-resolved on every single run.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-3",
+        "CICD-SEC-9",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": ""
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": ""
+        }
+      ],
+      "limits": "This does not establish that any referenced action is currently malicious - no network lookup was made and none was authorized. It establishes only that the repository has no immutability guarantee for any of them. The four local `./.github/workflows/` references are inside the same repository and are correctly excluded from the count."
+    },
+    {
+      "id": "F-002",
+      "title": "pull_request_target job forwards every repository secret to a reusable workflow pinned to @main",
+      "procedure": "INF-15",
+      "status": "hardening",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": ".github/workflows/add-to-project.yml",
+        "line": 13,
+        "component": "add-to-project"
+      },
+      "evidence": "The whole workflow is 13 lines:\n\n    on:\n      issues: { types: [opened] }\n      pull_request_target: { types: [opened] }\n    jobs:\n      add-to-project:\n          uses: unleash/.github/.github/workflows/add-item-to-project.yml@main\n          secrets: inherit\n\nThere is no `permissions:` block, so the job inherits the repository default token permission, and `secrets: inherit` hands the callee every secret defined on this repository rather than a named subset.",
+      "impact": "`pull_request_target` runs in the context of the base repository with access to secrets, and it is triggered by anyone who opens a pull request from a fork. This job passes the full secret set - which elsewhere in this repository includes DOCKERHUB_TOKEN, HEROKU_API_KEY, GEMINI_API_KEY, UNLEASH_BOT_PRIVATE_KEY and FRONTEND_TEST_LICENSE - into a workflow whose source is a moving `@main` ref in a different repository. Any change to that ref, or any step in it that ends up executing fork-controlled content, is a path to those secrets from an unprivileged outsider.",
+      "preconditions": "An outsider opens a pull request. Exploitation additionally requires that the callee workflow at unleash/.github does something with the fork-controlled event payload, or that the `@main` ref is moved.",
+      "recommendation": "Replace `secrets: inherit` with an explicit `secrets:` map listing only the token the project-board automation needs; add a least-privilege `permissions:` block to the job; and pin the reusable workflow to a commit SHA instead of `@main`. If the automation only needs issue and PR metadata, `issues`/`pull_request` with a scoped token removes the `pull_request_target` exposure altogether.",
+      "traceability": [
+        "CWE-284",
+        "CWE-732",
+        "CWE-522",
+        "A01:2025",
+        "CICD-SEC-2",
+        "CICD-SEC-5",
+        "SSDF PO",
+        "NIST 800-53 AC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": ""
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Whether the organization pins the default GITHUB_TOKEN permission to read-only, and whether unleash/.github restricts who can push to main, are settings outside this repository. No exported artifact or written statement was provided, so per FP-08 this is UNKNOWN and not HOLDS."
+        }
+      ],
+      "limits": "No exploit path is demonstrated and none is claimed: the callee workflow `unleash/.github/.github/workflows/add-item-to-project.yml@main` is in another repository and was not read, so whether it reaches the fork-controlled payload is unknown. What is observed here is that this repository places no bound on what is forwarded (`secrets: inherit`) or on which revision receives it (`@main`). Reading that callee at its current main, plus an export of the organization's default GITHUB_TOKEN permission, is what would turn this into a claim either way."
+    },
+    {
+      "id": "F-003",
+      "title": "permissions: write-all on a workflow that runs an unpinned third-party action",
+      "procedure": "INF-15",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/hypermod.yml",
+        "line": 11,
+        "component": "hypermod"
+      },
+      "evidence": "    jobs:\n      receive_hypermod_event:\n        permissions: write-all\n        steps:\n          - uses: actions/checkout@v6\n          - uses: hypermod-io/action@v1\n            with:\n              deploymentId: ${{ inputs.deploymentId }}\n              deploymentKey: ${{ inputs.deploymentKey }}\n      env:\n        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n\nThe job grants the maximum token scope and then hands that token to a third-party action referenced by the mutable tag `@v1`. Separately, `deploymentKey` is declared as a `workflow_dispatch` input rather than as a secret, so the credential is typed into the run UI and stored with the run's inputs.",
+      "impact": "If the `hypermod-io/action@v1` tag is repointed, the malicious code runs with a GITHUB_TOKEN carrying every write scope - contents, packages, actions, pull-requests, issues - which is enough to push code to the repository. `write-all` is also the exact anti-pattern INF-15 names: least privilege applies per job, and this job needs at most `contents: write`.",
+      "preconditions": "A user with write access triggers the workflow (it is `workflow_dispatch` only), and the third-party action is compromised or its tag moved.",
+      "recommendation": "Replace `permissions: write-all` with the minimal set the action needs (most likely `contents: write` and `pull-requests: write`), pin `hypermod-io/action` to a commit SHA, and move `deploymentKey` from a dispatch input to a repository secret so it is masked in logs and not retained with the run inputs.",
+      "traceability": [
+        "CWE-284",
+        "CWE-732",
+        "A01:2025",
+        "CICD-SEC-2",
+        "CICD-SEC-5",
+        "SSDF PO",
+        "NIST 800-53 AC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": ""
+        },
+        {
+          "rule": "FP-08",
+          "answer": "NOT_APPLICABLE",
+          "reason": "`write-all` is stated explicitly in the workflow, so no organization-level default needs to be consulted to establish the permission level."
+        }
+      ],
+      "limits": "No exploit path is claimed: the trigger is workflow_dispatch, which already requires write access to the repository. This is the blast-radius half of the tag-mutability problem in F-001, recorded separately because the fix is a different line."
+    },
+    {
+      "id": "F-004",
+      "title": "Template expression injection: the whole push event is interpolated into a shell command",
+      "procedure": "INF-14",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/gitar-duet-action.yml",
+        "line": 15,
+        "component": "gitar-duet"
+      },
+      "evidence": "    on:\n      push:\n        branches: ['gitar_*']\n    jobs:\n      gitar-duet:\n        if: github.event.head_commit.author.name == 'Gitar'\n        permissions:\n          contents: write\n        steps:\n          - run: |\n              echo '${{ toJSON(github.event) }}'\n\n`toJSON` escapes double quotes and backslashes for JSON; it does not escape the single quote. The expression is substituted into the workflow text before bash parses it, so a commit message, branch name or committer field containing `'` terminates the quoted string and the remainder of that field is parsed as shell. The value never passes through `env:`, which is the escape INF-14 names as the fix. The `if:` guard compares `github.event.head_commit.author.name` to the literal 'Gitar' - an author name is written by `git config user.name` on the pushing machine and is not an authentication check.",
+      "impact": "Arbitrary commands on the runner in a job that holds `contents: write` and, in the final step, passes `secrets.GITHUB_TOKEN` to a third-party action. The job also runs `pnpm run biome check --fix`, `pnpm lint:fix` and `pnpm test:updateSnapshot` from the pushed branch, so repository code already executes here.",
+      "preconditions": "Push access to this repository, a branch name matching `gitar_*`, and a commit whose author name is set to `Gitar`. All three are under the pusher's control once they have write access.",
+      "recommendation": "Move the value into the step environment and reference it as a quoted shell variable: `env: { EVENT: ${{ toJSON(github.event) }} }` then `run: echo \"$EVENT\"`. Better, delete the debug echo entirely - it exists to dump the event payload during development. The `if:` guard on `head_commit.author.name` should not be relied on for trust; gate on the actor or on an environment with reviewers instead.",
+      "traceability": [
+        "CWE-94",
+        "CWE-78",
+        "CWE-77",
+        "A05:2025",
+        "CICD-SEC-4",
+        "SSDF PW",
+        "NIST 800-53 SI"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`github.event` for a push carries head_commit.message, head_commit.author.name and ref, all written by whoever pushes. None of them is a server-controlled field such as github.sha or github.run_id."
+        }
+      ],
+      "limits": "Severity is held at `low` deliberately, against the corpus's marginal-capability rule: the precondition is push access, and anyone with push access can already add a workflow of their own that runs arbitrary code on a runner. What this adds is a path that does not require touching a workflow file, and therefore does not show up in a workflow-file diff. It is not a path from an outsider - `gitar_*` branches cannot be created by a fork."
+    },
+    {
+      "id": "F-005",
+      "title": "Issue title and body are interpolated into shell in the AI flag-cleanup workflow",
+      "procedure": "INF-14",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/ai-flag-cleanup-pr.yml",
+        "line": 82,
+        "component": "ai-flag-cleanup-pr"
+      },
+      "evidence": "The `Get issue` step fetches the issue through github-script and sanitises exactly two characters:\n\n    title: result.data.title.replace(/\"/g, \"'\").replace(/`/g, '\\\\`'),\n    body:  result.data.body.replace(/\"/g, \"'\").replace(/`/g, '\\\\`')\n\nThose two outputs are then interpolated into `run:` blocks:\n\n    - name: Extract flag name\n      run: |\n        TITLE=\"${{ fromJson(steps.get_issue.outputs.result).title }}\"\n    - name: Create prompt\n      run: |\n        ISSUE_BODY=\"${{ fromJson(steps.get_issue.outputs.result).body }}\"\n\nThe replace pair removes the two characters that would break out of the double quotes, but `$(...)` command substitution and `${...}` expansion are untouched and are active inside double quotes. An issue titled `Flag $(<command>) marked as complete` therefore executes `<command>`. The job holds an app token from UNLEASH_BOT_PRIVATE_KEY with `contents: write` and `pull-requests: write`, persisted into the checkout, plus the LLM provider key in `${{ inputs.api_key_env_name }}: ${{ secrets.api_key_env_value }}`.\n\nA second, separate weakness sits in the same file: the issue body is passed verbatim as the tail of `cleanup_prompt.txt` under `--- Issue Description ---` and handed to `aider --yes`, an agent with write access to the checked-out repository and no human confirmation. Text an outsider wrote is placed in the instruction position of the prompt with no delimiting or provenance marking.",
+      "impact": "If reachable, whoever can open or edit an issue on this repository executes commands on the runner with a GitHub App token that can push to the repository, and can additionally steer an autonomous code-editing agent that commits and opens a pull request. This is the anatomy of a supply-chain compromise via CI, not merely a lint failure.",
+      "preconditions": "The workflow must be invocable. Today it is not: `ai-flag-cleanup-pr.yml` declares only `on: workflow_call`, and its sole caller in the repository is `ai-flag-cleanup.yml.disabled`, which GitHub Actions does not load because of the `.disabled` suffix. Renaming that one file re-arms both weaknesses.",
+      "recommendation": "Before the workflow is ever re-enabled: pass the title and body through `env:` and reference them as quoted shell variables rather than interpolating `${{ }}` into `run:`; parse the flag name from a structured issue-form field instead of a regex over free text; and in the prompt, fence the issue body as data with an explicit statement that it is untrusted input, or drop it entirely and pass only the extracted flag name. Character-blocklisting inside github-script is the wrong layer - it is what produced the `$(...)` gap.",
+      "traceability": [
+        "CWE-94",
+        "CWE-78",
+        "CWE-77",
+        "A05:2025",
+        "CICD-SEC-4",
+        "LLM01:2025",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Issue title and body are written by whoever opens the issue. On a public repository that is any GitHub account."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "HOLDS",
+          "reason": "The only caller, .github/workflows/ai-flag-cleanup.yml.disabled, carries a `.disabled` suffix, so GitHub Actions does not register its `issues: [labeled]` or `workflow_dispatch` triggers. A `workflow_call`-only workflow cannot be started on its own. Per FP-04 this rules the finding out as an exploitable path today, which is why it is recorded as `hardening` at `low` rather than as an exploit."
+        }
+      ],
+      "limits": "Reported because a disabled trigger is a rename away from an armed one and the defect is in the reusable workflow, not in the disabled file. An outsider calling `unleash/unleash/.github/workflows/ai-flag-cleanup-pr.yml@main` from their own repository was considered and does not help them: a called workflow receives the caller's secrets and token, not this repository's."
+    },
+    {
+      "id": "F-006",
+      "title": "Session cookies are signed with the literal default 'super-secret'; the per-instance random secret is generated and never read",
+      "procedure": "WEB-19",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/lib/create-config.ts",
+        "line": 325,
+        "component": "server configuration"
+      },
+      "evidence": "Three places, read end to end:\n\n1. src/lib/create-config.ts:325\n       secret: process.env.UNLEASH_SECRET || 'super-secret',\n\n2. src/lib/middleware/session-db.ts:31 - that value is the express-session signing key:\n       return session({ name: cookieName, ..., secret: [config.server.secret], ... })\n\n3. src/lib/server-impl.ts:319-321 - the intended per-instance fallback:\n       if (!config.server.secret) {\n           const secret = await stores.settingStore.get<string>('unleash.secret');\n           config.server.secret = secret!;\n       }\n\nThe guard is `!config.server.secret`, and step 1 guarantees the value is never falsy, so this branch is unreachable in every deployment. Meanwhile src/migrations/20200329191251-settings-secret.js does generate a per-instance key and store it:\n       const secret = crypto.randomBytes(20).toString('hex');\n       INSERT INTO settings(name, content) VALUES('unleash.secret', ...)\n\nSo the project generates a 160-bit random signing key per installation, persists it, and then never uses it. `UNLEASH_SECRET` appears nowhere in the README, the compose files or the Dockerfile, so nothing prompts an operator to set it.",
+      "impact": "Every deployment that does not set `UNLEASH_SECRET` signs its session cookies with a string published in the source tree and baked into every released Docker image, identical across all such deployments. The cookie signature is the only integrity control on the session identifier: knowing the key lets an attacker mint cookies that pass verification and reach the session store, and lets anyone who observes a cookie confirm it is genuine and re-sign a modified one. It also removes the signature as a barrier to probing session identifiers against the store.",
+      "preconditions": "The operator did not set `UNLEASH_SECRET`, which is the default path for `docker compose up` and for the published image.",
+      "recommendation": "Remove the `|| 'super-secret'` default so `config.server.secret` is genuinely falsy when unset, which makes the existing server-impl.ts fallback read the per-instance key the migration already stored. Fail startup with a clear message if neither the environment variable nor the stored setting yields a key. Rotating the key invalidates existing sessions, so state that in the release note.",
+      "traceability": [
+        "CWE-798",
+        "CWE-330",
+        "CWE-1188",
+        "A02:2025",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "WSTG-CRYP-*"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The fallback in server-impl.ts is the compensating control this rule would look for, and it was read: its guard cannot be true, so it never runs."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "create-config.ts is the production configuration builder used by src/server.ts, not a test fixture. The only other occurrence of the string in the tree is an unrelated addon test parameter."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`secret: [config.server.secret]` is the express-session signing key argument, not a name that merely looks like one."
+        }
+      ],
+      "limits": "This does not demonstrate account takeover. With `saveUninitialized: false`, express-session generates a fresh identifier when a presented identifier is absent from the store, so forging a signature over a guessed identifier does not by itself land the attacker in someone's session. What is established is that the signing key is public, shared across installations, and that the per-instance key the project provides for exactly this purpose is dead code."
+    },
+    {
+      "id": "F-007",
+      "title": "The session identifier is not rotated when an anonymous session becomes authenticated",
+      "procedure": "WEB-02",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/lib/routes/auth/simple-password-provider.ts",
+        "line": 71,
+        "component": "login"
+      },
+      "evidence": "The login handler assigns the user onto the session object that arrived with the request:\n\n    const { isAPI, ...user } = await this.userService.loginUser(username, password, { userAgent, ip: extractClientIp(req) });\n    req.session.user = user;\n\n`req.session.regenerate` is called nowhere: grep for `regenerate` over the whole of src/ returns zero hits. The session middleware (src/lib/middleware/session-db.ts) sets `rolling: false`, `resave: false`, `saveUninitialized: false` and does not wrap login. So the identifier that was presented on the login request is the identifier that afterwards carries the authenticated principal. Logout does destroy the session (src/lib/routes/logout.ts:64, and src/lib/routes/auth/reset-password-controller.ts:187), so the gap is specifically at the privilege transition, not at teardown.",
+      "impact": "Session fixation. An attacker who can plant a cookie in the victim's browser for the application's host - a sibling subdomain that can write a cookie on the parent domain, an active network position against a deployment served over HTTP, or any XSS on the origin - plants an identifier that already exists in the session store (they obtain one simply by logging in with any account of their own). When the victim then logs in, that identifier is bound to the victim's principal, and the attacker's copy of the cookie is now an authenticated session for the victim, including an administrator.",
+      "preconditions": "A cookie-writing primitive against the victim's browser for the application host, and an existing store-backed session identifier, which any account holder can produce. Note that `cookie.secure` is bound to `config.secureHeaders`, which defaults to false (src/lib/create-config.ts:631-633), so on a default deployment the session cookie is also sent over plain HTTP.",
+      "recommendation": "In the login handler, regenerate before assigning the principal: `await new Promise((res, rej) => req.session.regenerate(err => err ? rej(err) : res(undefined)))`, then set `req.session.user`, then save. Apply the same at any other privilege transition (impersonation, SSO callback, password change). This is a three-line change and it is the control WEB-02 names.",
+      "traceability": [
+        "CWE-384",
+        "CWE-613",
+        "A07:2025",
+        "ASVS 5.0 V7",
+        "WSTG-SESS-*",
+        "API2:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No middleware regenerates the identifier: `regenerate` does not appear anywhere in src/. The session middleware is generic express-session with no login hook."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "simple-password-provider.ts is the OSS password login route mounted in the shipped server, not a demo or test path. The separate demo-authentication.ts path has the same shape."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`req.session.user = user` on the request's existing session is exactly what it appears to be; there is no wrapper that swaps the session object."
+        }
+      ],
+      "limits": "The cookie-planting precondition was not demonstrated, and it is the part an operator can partly mitigate outside the code (HTTPS everywhere, no untrusted sibling subdomains, __Host- prefixed cookie). What is established as a code fact is that the identifier survives the anonymous-to-authenticated transition, which is the condition fixation needs. Enterprise SSO callbacks are not in this repository and were not assessed."
+    },
+    {
+      "id": "F-008",
+      "title": "Webhook and integration URLs reach the HTTP client with no scheme, host or redirect restriction",
+      "procedure": "WEB-10",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/lib/addons/webhook.ts",
+        "line": 85,
+        "component": "webhook integration"
+      },
+      "evidence": "The URL is an integration parameter supplied through the admin API and flows unmodified to the HTTP client:\n\n    const { url, bodyTemplate, contentType = 'application/json', authorization, customHeaders } = parameters;\n    ...\n    const res = await this.fetchRetry(url, requestOpts);\n\nand in src/lib/addons/addon.ts:\n\n    async fetchRetry(url: string, options: any = {}, retries: number = 1): Promise<Response> {\n        const res = await ky(url, { retry: retries, ...options });\n\nThe declared parameter type is `type: 'url'` (src/lib/addons/webhook-definition.ts), which is a form-rendering hint; src/lib/services/addon-service.ts validates only that required parameters are present (`validateRequiredParameters`) and that the provider is known (`validateKnownProvider`). Grepping src/lib/addons/ and addon-service.ts for `169.254`, `127.0.0.1`, `localhost`, `isPrivate`, `allowlist`, `denylist` or `blocklist` returns zero hits. `ky` follows redirects by default and no `redirect: 'manual'` is passed, so even a host check applied to the submitted URL would be bypassed by a 302. The outcome is fed back to the operator: the handler records `Webhook request was successful with status code: ${res.status}` into the integration event, which is readable through the integration-events endpoints. `customHeaders` is `JSON.parse`d and spread into the outbound request headers, so the request line is attacker-shaped beyond the URL.",
+      "impact": "A principal holding CREATE_ADDON or UPDATE_ADDON can make the Unleash server issue POST requests from its own network position to any address it can reach - loopback services, other hosts inside the VPC, and the cloud instance metadata endpoint - with a chosen body and chosen headers, and can read the resulting status code back out of the integration event log. On a managed deployment that is a route from an application role into the infrastructure the application sits in.",
+      "preconditions": "An account with CREATE_ADDON or UPDATE_ADDON, and a deployment whose network does not already block egress to link-local and private ranges.",
+      "recommendation": "Resolve the submitted host and reject loopback, link-local (169.254.0.0/16 and fd00::/8), and RFC1918 destinations before the request; re-apply the check on every redirect hop or disable redirect following (`ky(url, { redirect: 'manual' })`); restrict the scheme to https (and http only where an operator opts in). Where an operator can supply one, an allowlist of destination hosts is the stronger control. The same `fetchRetry` is shared by the datadog, new-relic, slack, slack-app and teams integrations, so the fix belongs in Addon.fetchRetry, not in webhook.ts.",
+      "traceability": [
+        "CWE-918",
+        "CWE-441",
+        "A01:2025",
+        "API7:2023",
+        "ASVS 5.0 V4",
+        "WSTG-INPV-*"
+      ],
+      "inference": "That the request actually reaches an internal address is inferred from the absence of any restriction in the application and in the deployment artifacts present here (Dockerfile, docker-compose.yml, docker-compose-enterprise.yml, docker-compose.postgres.yml declare no egress policy). The production network policy of any given deployment was not available, and FP-01's compensating control could exist there.",
+      "what_would_settle_it": "A single local run: start a canary listener on 127.0.0.1 in a self-hosted test instance, create a webhook integration pointing at it, trigger a feature event, and observe whether the connection arrives - the minimal test WEB-10 specifies. On the deployment side, the egress policy (security group, network policy, or outbound proxy configuration) for the environment the server runs in.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "No egress control exists in the application or in any deployment artifact in this repository. Whether the hosting network enforces one is outside the tree and no evidence was provided; per FP-08's doctrine this is UNKNOWN, not HOLDS."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The URL is a free-text integration parameter accepted over the admin API. `type: 'url'` is a form hint; addon-service.ts checks only presence and provider name."
+        }
+      ],
+      "limits": "This is the intended shape of a webhook feature, so the finding is not that outbound requests happen - it is that nothing bounds where they go. It does not establish what is reachable on any particular network, and no request was made from this machine."
+    },
+    {
+      "id": "F-009",
+      "title": "Password-reset token seed is 32 random bytes decoded as UTF-8, discarding roughly half the entropy",
+      "procedure": "WEB-03",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "src/lib/services/reset-token-service.ts",
+        "line": 126,
+        "component": "password reset"
+      },
+      "evidence": "    private generateToken(): Promise<string> {\n        return bcrypt.hash(crypto.randomBytes(32).toString(), 10);\n    }\n\n`Buffer.prototype.toString()` with no argument decodes as UTF-8. Roughly half of uniformly random bytes are >= 0x80 and do not form valid UTF-8 sequences, so they are replaced by U+FFFD before the string reaches bcrypt: distinct byte strings collapse onto the same input. The intent was almost certainly `.toString('hex')`, which is what the same file's sibling code and src/lib/services/api-token-service.ts:400 and src/lib/features/pat/pat-service.ts:105 use (`crypto.randomBytes(28).toString('hex')`).",
+      "impact": "None demonstrated. The value that actually becomes the reset token is the bcrypt output, whose 128-bit salt is drawn independently by bcryptjs, so the emitted token remains unguessable even with the seed's entropy reduced. The defect is that a security token's seed silently loses entropy in a way that would matter the moment the construction changed.",
+      "preconditions": "None; this runs on every password-reset and new-user invitation.",
+      "recommendation": "`crypto.randomBytes(32).toString('hex')`. While in the file, note that the reset token is stored in the database as the bcrypt string itself rather than as a hash of a separately transmitted secret, so a database read yields usable tokens - that is a separate design question worth raising with the maintainers.",
+      "traceability": [
+        "CWE-331",
+        "CWE-330",
+        "A07:2025",
+        "ASVS 5.0 V6",
+        "WSTG-ATHN-*"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "HOLDS",
+          "reason": "The bcrypt salt, generated independently by bcryptjs from a CSPRNG, supplies 128 bits to the emitted token regardless of the seed. That compensating entropy is why this is recorded as `hardening` at `low` rather than as a weak-token finding."
+        }
+      ],
+      "limits": "Token uniqueness and entropy were not measured empirically - WEB-03's minimal test (generate 1000 tokens with the real code and measure) was not run, because running the target's code was out of scope for this review. Single use, expiry and rate limiting on the reset flow were not assessed."
+    },
+    {
+      "id": "F-010",
+      "title": "Container base image is referenced by a moving tag rather than by digest",
+      "procedure": "INF-07",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "Dockerfile",
+        "line": 1,
+        "component": "image build"
+      },
+      "evidence": "    ARG NODE_VERSION=22.22-alpine3.23\n    FROM node:$NODE_VERSION AS builder\n    ...\n    FROM node:$NODE_VERSION\n\nBoth stages resolve a tag at build time. `22.22-alpine3.23` is specific, but it is still a tag and the registry may repoint it. The rest of the image is in good shape and is recorded here so it is not mistaken for unexamined: the runtime stage drops to `USER node`, `NODE_ENV=production` is set, dependencies are installed with `--ignore-scripts` in both the install and the prune step, the bundled npm is removed, and no secret is passed through `ARG` or `ENV`.",
+      "impact": "A build is not reproducible and cannot be attested to a known base layer; a repointed tag would be consumed silently on the next build of the published image.",
+      "preconditions": "Compromise of, or an unannounced repoint at, the upstream registry namespace.",
+      "recommendation": "Pin as `FROM node:22.22-alpine3.23@sha256:<digest>` in both stages and let Renovate bump the digest. This pairs with F-001: pinning the actions but not the base image leaves the same class of gap in the other half of the build.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "A08:2025",
+        "CICD-SEC-3",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The image is the distributed artifact, not an intended-exposure surface; nothing bounds the tag."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "No exploit path is claimed. The container-runtime checks of INF-09 (privileged flags, mounted docker socket, capabilities) were applied only to the three docker-compose files in the tree, not to any production orchestration manifest, of which none is present."
+    },
+    {
+      "id": "F-011",
+      "title": "The login redirect sanitizer is applied on one branch of Login and bypassed on its five siblings",
+      "procedure": "WEB-24",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "frontend/src/component/user/Login/Login.tsx",
+        "line": 58,
+        "component": "login redirect"
+      },
+      "evidence": "A correct sanitizer exists (frontend/src/component/user/Login/parseRedirectParam.ts, whole file):\n\n    export const parseRedirectParam = (redirect: string): IRedirectParam => {\n        const url = new URL(decodeURIComponent(redirect), `${window.location.protocol}//${window.location.host}`);\n        return { pathname: url.pathname, search: url.search };\n    };\n\nIt discards scheme and host, which is exactly right. Login.tsx uses it on one branch and not on the other, three lines apart:\n\n    const redirect = query.get('redirect') || getSessionStorageItem('login-redirect') || '/';\n    if (user) {\n        setSessionStorageItem('login-redirect');\n        return <Navigate to={parseRedirectParam(redirect)} replace />;   // line 31 - sanitised\n    }\n    ...\n    <Authentication redirect={redirect} invited={invited} />             // line 58 - raw\n\nThe raw value then reaches five sinks. Four call react-router's navigate on it directly after a successful authentication:\n  frontend/src/component/user/PasswordAuth.tsx:90        navigate(redirect, { replace: true });\n  frontend/src/component/user/HostedAuth.tsx:88          navigate(redirect, { replace: true });\n  frontend/src/component/user/DemoAuth/DemoAuth.tsx:42   navigate(redirect, { replace: true });\n  frontend/src/component/user/SimpleAuth/SimpleAuth.tsx:37 navigate(redirect);\nThe fifth splices it into a server-supplied SSO path that becomes a real anchor href:\n  frontend/src/component/user/common/AuthOptions/AuthOptions.tsx:12-17,68-72\n    function addOrOverwriteRedirect(path, redirectValue) { ... params.set('redirect', redirectValue); return `${basePath}?${params.toString()}`; }\n    href={redirectPath ? addOrOverwriteRedirect(o.path, redirectPath) : o.path}\nThe raw value is additionally persisted for ten minutes (Authentication.tsx:38, sessionStorage key 'login-redirect') and read back at the top of Login.tsx, so it survives a page reload.",
+      "impact": "If either sink leaves the origin, an attacker gets a redirect to a destination of their choosing off a URL on the product's own login page - the standard phishing amplifier, and worse here because the redirect happens immediately after the victim types their credentials. On the SSO branch the value is handed to the backend to honour after authentication, which moves the decision to a component outside this repository.",
+      "preconditions": "The victim opens an attacker-supplied link of the form /login?redirect=<value> and authenticates.",
+      "recommendation": "Sanitize once at the source. Compute `const redirect = parseRedirectParam(query.get('redirect') || getSessionStorageItem('login-redirect') || '/')` at Login.tsx:26 and pass the parsed object everywhere, so no sibling can receive the raw string. Persist the parsed value to sessionStorage rather than the raw one. For AuthOptions, forward only `pathname + search`. The asymmetry is the defect: the sanitizer already exists and is correct, so this is a wiring fix, not new code.",
+      "traceability": [
+        "CWE-601",
+        "CWE-862",
+        "A01:2025",
+        "A05:2025",
+        "ASVS 5.0 V8",
+        "WSTG-CLNT-04"
+      ],
+      "inference": "Whether either sink actually produces a cross-origin navigation was not observed. react-router 7's navigate() resolves a bare string as a path and history.pushState refuses a cross-origin URL, so a protocol-relative value such as //example.org may throw rather than redirect; and the SSO branch's behaviour is decided by an enterprise authentication handler that is not in this repository. The asymmetry itself - sanitised on one branch, raw on five - is observed in the source.",
+      "what_would_settle_it": "Serve the built frontend locally and load /login?redirect=//example.org, then authenticate through PasswordAuth and record what URL the browser lands on; repeat with /\\\\example.org, /%2f%2fexample.org and a javascript: value, which are the react-router path forms that behave differently. For the fifth sink, the enterprise SSO handler that consumes the forwarded `redirect` query parameter and decides where to send the user after authentication.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "parseRedirectParam is the compensating control and it is demonstrably not on these five paths; no wrapper applies it. `Authentication` (Authentication.tsx:38) passes the value through unchanged."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The SSO handler that receives the forwarded redirect parameter is enterprise code outside this repository. No artifact showing how it validates the parameter was provided, so per FP-08 this is UNKNOWN rather than covered."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`navigate(redirect)` is react-router's navigation call, not a same-named helper; the four call sites were read in context and each follows a successful authentication."
+        }
+      ],
+      "limits": "Scoped to the OSS login flow in this tree. It does not establish that a cross-origin redirect is achievable, and it says nothing about the enterprise SSO providers, which are the branch where a forwarded redirect parameter matters most."
+    },
+    {
+      "id": "F-012",
+      "title": "Any authenticated principal can read the full user directory, emails included, from /api/admin/user-admin/access",
+      "procedure": "PRV-02",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/lib/routes/admin-api/user-admin.ts",
+        "line": 251,
+        "component": "user-admin"
+      },
+      "evidence": "Two sibling routes in one controller, 55 lines apart. The first is gated:\n\n    this.route({ method: 'get', path: '', handler: this.getUsers, permission: ADMIN, ... })\n\nThe second is not:\n\n    this.route({\n        method: 'get', path: '/access', handler: this.getBaseUsersAndGroups,\n        permission: NONE,\n        ... description: 'Get a subset of user and group information eligible even for non-admin users'\n\nand the handler returns every account on the instance, unpaginated and unfiltered:\n\n    async getBaseUsersAndGroups(_req, res) {\n        const allUsers = await this.accountService.getAll();\n        let users = allUsers.map((u) => ({ id: u.id, name: u.name, username: u.username, email: u.email, accountType: u.accountType } as IUser));\n        if (this.flagResolver.isEnabled('anonymiseEventLog')) { users = this.anonymiseUsers(users); }\n        const allGroups = await this.groupService.getAll();\n        ...\n\nThe request object is named `_req`: the handler does not look at the caller at all. `permission: NONE` is not 'no access control' by accident - src/lib/routes/controller.ts:42-56 filters NONE out of the permission array and calls next() when the array is empty, so the route is reachable by any principal that got past authentication. The only narrowing is the `anonymiseEventLog` flag, which is off by default and is an event-log setting, not an access control. Note the third sibling, `GET /search` (line 221, also NONE), at least requires a two-character query; `/access` requires nothing.",
+      "impact": "The complete staff directory of the instance - name, username and email address of every user and service account, plus every group with its member count and root role - is readable by the lowest-privileged principal that can authenticate: a viewer, a personal access token, a service account with no project role. On a shared or enterprise deployment that is an internal address book handed to anyone with any account, which is both a privacy exposure of every user's email and a ready-made target list for credential phishing against an instance whose login page is known.",
+      "preconditions": "Any authenticated session or personal access token. No role, no project membership, no permission.",
+      "recommendation": "Decide what the assignment UI actually needs and return only that. If the caller must be able to pick a user to add to a project, gate the route on the permission that lets them do so, or restrict the response to accounts already visible to the caller (same projects or groups), and drop `email` from the payload unless the caller has a role that justifies it - `id` plus display name is enough to build a picker. Whatever is kept should be paginated and require a query term, as the `/search` sibling already does.",
+      "traceability": [
+        "CWE-200",
+        "CWE-213",
+        "CWE-359",
+        "A01:2025",
+        "API3:2023",
+        "ASVS 5.0 V4",
+        "ASVS 5.0 V14"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "controller.ts:42-56 was read: NONE is stripped from the permission list and the request passes through. The only other gate on the path, checkPrivateProjectPermissions, applies to project routes, not to this one. The anonymiseEventLog flag is off by default and is not a mandatory layer."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is crossed explicitly: the caller reads the email address of every other user on the instance, and the sibling route returning the same list is gated on ADMIN, which is the maintainers' own statement that this data is not for everyone."
+        }
+      ],
+      "limits": "The route's OpenAPI description says the subset is 'eligible even for non-admin users', so exposure of some fields is a deliberate product decision; what is not bounded is that it is every user and that it includes email. Whether an instance considers its user emails sensitive is the operator's call, and this finding states the technical fact rather than ruling on it. A delegated sweep reported the same permission: NONE shape on several further endpoints - /api/admin/instance-admin/statistics and /statistics/csv, /api/admin/personal-dashboard (which it reports returns the instance's admin accounts), /api/admin/telemetry/settings, /api/admin/custom-metrics/prometheus, and POST /api/admin/tags as an ungated write - and I did not verify any of those myself. They are named here as candidates of the same shape, not as findings. In the same sweep the most alarming candidate, POST /api/admin/features-batch/import at permission: NONE, was verified and does not hold: export-import-service.ts:309-315 routes import() through importVerify(), which calls importPermissionsService.verifyPermissions(dto, user, mode)."
+    },
+    {
+      "id": "F-013",
+      "title": "Rate limiting is applied to one of four unauthenticated password-reset routes in the same controller",
+      "procedure": "WEB-24",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "src/lib/routes/auth/reset-password-controller.ts",
+        "line": 72,
+        "component": "password reset"
+      },
+      "evidence": "Four routes, all `permission: NONE`, all reachable without authentication (the controller is mounted at '/auth/reset' in src/lib/routes/index.ts:55, outside the /api prefix that ossAuthentication guards). Only one carries a limiter:\n\n    line 52  get  '/validate'            permission: NONE   - no rateLimit\n    line 72  post '/password'            permission: NONE   - no rateLimit\n    line 93  post '/validate-password'   permission: NONE   - no rateLimit\n    line 114 post '/password-email'      permission: NONE   - rateLimit({ windowMs: minutesToMilliseconds(1), max: config.rateLimiting.passwordResetMaxPerMinute }) at line 132-134\n\n`express-rate-limit` is imported at line 19 and used exactly once. The mount in routes/index.ts:55 adds no limiter of its own, so nothing above the routes supplies one. The asymmetry is decidable inside the one file: the author knew the control and applied it to the route that sends mail, not to the routes that consume a token.",
+      "impact": "The endpoints that accept a reset token - the one that validates it and the one that spends it - accept unlimited attempts from an unauthenticated client, as does the password-policy checker. Nothing here is broken today because of what the token is, but the control that would contain a weakening of the token is absent on exactly the routes that need it, and an unthrottled POST that performs a password write is also an availability and log-noise surface.",
+      "preconditions": "Network reach to the instance. No account.",
+      "recommendation": "Move the limiter to the mount so it covers the whole '/auth/reset' router, keyed on IP and, for '/password', additionally on the submitted token. Keep the tighter per-user limit that already exists for the mail-sending route. Applying a control at the route rather than at the mount is what produced the gap; the mount is the layer a new sibling cannot forget.",
+      "traceability": [
+        "CWE-307",
+        "CWE-799",
+        "CWE-862",
+        "A07:2025",
+        "ASVS 5.0 V6",
+        "WSTG-ATHN-*",
+        "NIST 800-53 AC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "HOLDS",
+          "reason": "The reset token is itself the compensating control: reset-token-service.ts:126 emits a bcrypt string whose 128-bit salt makes guessing infeasible, tokens expire after 24 hours (line 112) and createToken expires the user's previous tokens first (line 117). That is why this is recorded as `hardening` at `low` and not as an authentication-bypass claim. It is defence in depth that is absent, not a demonstrated break."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A reverse proxy, WAF or ingress in front of the deployment could rate-limit these paths. No deployment artifact in this repository configures one and no evidence of an external control was provided, so per FP-08 this is UNKNOWN rather than covered."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The four route declarations and the single rateLimit block were read in the same file; there is no decorator, base class or wrapper applying a limiter to the other three."
+        }
+      ],
+      "limits": "I read the route declarations, the limiter and the mount myself. A delegated sweep additionally reported that GET /auth/reset/validate returns the token holder's email, name, id and root role, and that the token's check-then-mark in user-service.ts resetPassword is not wrapped in a transaction - both would sharpen this finding and neither was verified by me, so neither is claimed here."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Secrets in the working tree (distinctive formats)",
+      "procedure": "SUP-16",
+      "outcome": "refuted",
+      "where": "Full-tree grep for the high-precision formats - GitHub PAT prefix, AWS access key id, Anthropic key prefix, PEM private-key header, Slack bot token - over the whole copy excluding node_modules: zero matches. No .env file exists anywhere in the tree, and no .npmrc or .yarnrc carries a registry token. This bounds the distinctive-format classes only; entropy-based sweeping and provider-specific formats beyond those five were not run."
+    },
+    {
+      "class": "Secrets in git history",
+      "procedure": "SUP-17",
+      "outcome": "blocked",
+      "where": "The provided copy has no .git directory, so history cannot be walked and SUP-17 could not be exercised at all. Unblocking requires a clone with history or an export of the packfiles. Nothing about history is claimed in either direction."
+    },
+    {
+      "class": "SQL injection through knex raw fragments",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "Enumerated every `db.raw(`/`.raw(` outside tests under src/lib (29 call sites) and read the ones taking a variable. src/lib/features/metrics/client-metrics/client-metrics-store-v2.ts:230,250 build the string with knex's own `.toQuery()`, which applies dialect escaping to the bindings before the ON CONFLICT suffix is appended; :449,450 are template literals over module constants only. src/lib/features/feature-search/feature-search-store.ts:522-547 was read in full: `sortOrder` is narrowed to 'asc'|'desc' at line 98-99, `sortBy` reaches SQL only through the `sortByMapping` allowlist or, on the `environment:` branch, as a `?` binding. Bound: read for injection, not for logic. Note left for the maintainers rather than raised as a finding - `sortByMapping[sortBy]` is an unguarded object index, so sortBy='constructor' or 'toString' yields a function where an identifier is expected and produces a 500, not an injection."
+    },
+    {
+      "class": "OS command injection in the server",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "Grep over all of src/ for child_process, execSync, spawn, eval( and new Function: zero hits outside build scripts. The server does not shell out. Bound: src/ only; scripts/ shell files were not reviewed."
+    },
+    {
+      "class": "Wildcard CORS with credentials on the frontend API",
+      "procedure": "WEB-16",
+      "outcome": "refuted",
+      "where": "src/lib/middleware/cors-origin-middleware.ts returns the literal '*' when frontendApiOrigins is empty or contains '*', together with credentials: true. Read against the `cors` package's behaviour: a literal '*' emits `Access-Control-Allow-Origin: *`, it does not reflect the request Origin (which would require `origin: true`), and browsers refuse a credentialed cross-origin read against `*`. Mounted only on /api/frontend* and OPTIONS /api/streaming* (src/lib/app.ts:110-116), which are the SDK surfaces intended to be public. `Vary: Origin` is set. Bound: the header combination was reasoned from the library's documented behaviour, not observed on the wire."
+    },
+    {
+      "class": "Secret integration parameters exposed on an unprivileged route",
+      "procedure": "WEB-06",
+      "outcome": "refuted",
+      "where": "GET / and GET /:id on the addon controller carry `permission: NONE` (src/lib/routes/admin-api/addon.ts:100,143 region), which made them a candidate for leaking webhook Authorization headers and Slack tokens. src/lib/services/addon-service.ts masks them: sensitiveParams is built from the provider definitions' `sensitive: true` flags (lines 96,116-121,134) and applied on read at line 186-190, replacing the value with '*****'. The webhook `url` parameter is itself declared `sensitive: true`. Bound: the masking path was read; it was not exercised."
+    },
+    {
+      "class": "Open redirect on logout",
+      "procedure": "WEB-24",
+      "outcome": "refuted",
+      "where": "src/lib/routes/logout.ts:41 does `res.redirect(req.session.logoutUrl)`, an unvalidated redirect target. Grepped all of src/ for writers of `session.logoutUrl`: the only occurrences are this read and a test fixture (logout.test.ts:224). No OSS code path sets it, so the value is not attacker-reachable in this tree. Bound: an enterprise SSO package that sets logoutUrl is not in this repository, and if one exists this rules out nothing about it."
+    },
+    {
+      "class": "Unbounded request body",
+      "procedure": "WEB-26",
+      "outcome": "refuted",
+      "where": "src/lib/app.ts:89-95 mounts express.json with an explicit '500kB' limit on /api/admin/features-batch and without a limit elsewhere; express.json defaults to 100kb, so the unlabelled mount is bounded, not unbounded. Bound: the default was reasoned from the library, and no per-route streaming upload path was searched for."
+    },
+    {
+      "class": "AEAD misuse in the edge-token cipher",
+      "procedure": "WEB-19",
+      "outcome": "refuted",
+      "where": "src/lib/features/edgetokens/edge-verification.ts was read in full: aes-256-gcm, a fresh 12-byte IV from randomBytes per encryption, the tag appended and setAuthTag applied on decrypt. No ECB, no fixed IV, no unauthenticated mode. src/lib/features/edgetokens/edge-hmac-verifier.ts uses timingSafeEqual. Bound: construction only; key management and rotation for masterKey were not traced."
+    },
+    {
+      "class": "Non-constant-time API token comparison",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "src/lib/routes/admin-api/project/api-token.ts:224-228 guards timingSafeEqual with a prior length equality check, which is the correct pattern (timingSafeEqual throws on unequal lengths). Separately noted and not raised: line 207 reads `storedToken.project[0]` where `storedToken.projects[0]` was evidently meant, indexing a string instead of an array - it makes the second branch effectively never true, so the route fails closed with a 400 rather than opening an authorization hole."
+    },
+    {
+      "class": "Dynamic code execution and DOM HTML sinks in the SPA",
+      "procedure": "WEB-14",
+      "outcome": "refuted",
+      "where": "Swept all 4,134 .ts/.tsx/.js/.jsx files under frontend/src. Zero dangerouslySetInnerHTML, zero document.write, zero insertAdjacentHTML, zero eval, zero new Function, zero string-argument setTimeout/setInterval, zero postMessage senders or message listeners, zero BroadcastChannel/EventSource/WebSocket. The single innerHTML write (frontend/src/component/onboarding/dialog/CodeRenderer.tsx:172) receives only the output of hljs.highlight(), which HTML-escapes its input, fed today by bundled .md?raw snippets. react-markdown 10 is used with no rehypePlugins and no allowDangerousHtml anywhere, so raw HTML in markdown is dropped. No token or secret is written to localStorage or sessionStorage. Bound: this rules out the sink classes, not the URL-scheme class - see the note below and F-011."
+    },
+    {
+      "class": "javascript: URI reaching an href from lower-privileged user content",
+      "procedure": "WEB-14",
+      "outcome": "inconclusive",
+      "where": "Several href={variable} sites take server- or user-originated values with no scheme allowlist: frontend/src/component/banners/Banner/Banner.tsx:150-153,187 (checks only startsWith('/') and === 'dialog'), FeatureOverviewMetaData.tsx:166 (feature-flag links entered by project members), NavigationList.tsx:33, Application.tsx:153, and the billing/invoice hrefs. Two things stop this being decidable from what was read: the backend normalizes feature-link URLs through normalize-url ^9 with defaultProtocol https (src/lib/features/feature-links/feature-link-service.ts:56-60) and its treatment of a javascript: input was not established, and there is no banner controller anywhere in src/lib, so banners are served by an enterprise component outside this tree. React 19's own handling of a javascript: href was likewise not established. This is recorded as inconclusive, not as absent."
+    },
+    {
+      "class": "Deserialization of untrusted data",
+      "procedure": "WEB-11",
+      "outcome": "not executed",
+      "where": "No YAML, XML or binary deserialization path was searched for beyond noting that the request parser is express.json. The procedure was not run. Nothing is claimed about it."
+    },
+    {
+      "class": "BOLA/IDOR and tenant scoping across the admin API",
+      "procedure": "WEB-04",
+      "outcome": "not executed",
+      "where": "The admin API has on the order of a hundred controllers under src/lib/routes/admin-api and src/lib/features/**/*-controller.ts. No systematic enumeration of routes carrying an identifier, and no per-route check that the object is scoped to the caller's project or tenant, was performed. The RBAC middleware (src/lib/middleware/rbac-middleware.ts) was not read. This is the single largest unexamined surface in the target and the one the corpus names as the highest-yield class in APIs; its absence from the findings means nothing was looked at, not that nothing is there."
+    },
+    {
+      "class": "Dependency vulnerabilities and reachability",
+      "procedure": "SUP-13",
+      "outcome": "not executed",
+      "where": "pnpm-lock.yaml is 433 KB and no advisory database was consulted - the engagement forbids network use and advisory lookup. Manifest hygiene was read instead: the lockfile is present and committed, pnpm is pinned by integrity hash in packageManager, installs in the Dockerfile and in CI use --frozen-lockfile --ignore-scripts, and two patchedDependencies are declared with an in-repo patch file each. No dependency-confusion or typosquat check (SUP-05, SUP-07) was run against the ~2,000 transitive packages."
+    },
+    {
+      "class": "Lifecycle-script execution at install time",
+      "procedure": "SUP-03",
+      "outcome": "refuted",
+      "where": "Dockerfile installs with `pnpm install --frozen-lockfile --ignore-scripts` and prunes with `pnpm prune --prod --ignore-scripts`; the CI workflows that install use --frozen-lockfile and gitar-duet-action.yml uses --ignore-scripts too. The root package.json `prepare` script runs husky and a conditional build, which executes on a developer clone but not in the image build. Bound: the two patch files under patches/ and .pnpm/patches/ were not read line by line."
+    },
+    {
+      "class": "Artifact signing and provenance",
+      "procedure": "SUP-12",
+      "outcome": "not executed",
+      "where": "docker_publish.yaml was read for its credential flow (OIDC role assumption for ECR public, a stored DOCKERHUB_TOKEN for Docker Hub) but no check for cosign, SBOM generation or attestation was carried out, and none was observed in passing. Whether releases are signed is not established here."
+    },
+    {
+      "class": "Instruction files as an injection delivery vector",
+      "procedure": "AI-04",
+      "outcome": "refuted",
+      "where": "The repository carries AGENTS.md (7.8 KB) with CLAUDE.md as a symlink to it, and .floe/config.json plus .floe/rules/spelling-and-grammar.md. The .floe files were read in full and contain a review-scope configuration and the single sentence 'Make sure to use proper spelling and grammar.' Their content is reported, never acted on. Bound: AGENTS.md was inventoried and not read line by line, so no claim is made about its contents."
+    },
+    {
+      "class": "Container runtime privilege",
+      "procedure": "INF-09",
+      "outcome": "refuted",
+      "where": "The Dockerfile runtime stage drops to USER node, sets NODE_ENV=production, removes the bundled npm and passes no secret through ARG or ENV. The three docker-compose files in the tree declare no --privileged, no added capabilities and no mounted docker socket. Bound: there is no Kubernetes manifest, Helm chart or Terraform anywhere in the target, so INF-01..INF-06 and INF-10..INF-12 have no subject here and were not applied to anything."
+    },
+    {
+      "class": "Live infrastructure exposure",
+      "procedure": "INF-18",
+      "outcome": "blocked",
+      "where": "Marked REQUIRES AUTHORIZATION in the corpus. No host was named in scope, no authorization was granted, and no network traffic of any kind was generated during this engagement."
+    },
+    {
+      "class": "Unauthorized feature-flag import through an ungated route",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "POST /api/admin/features-batch/import is declared with `permission: NONE` (src/lib/features/export-import-toggles/export-import-controller.ts) and its handler's only visible gate rejects admin API tokens, which made it the most serious candidate raised in this engagement. Traced into the service: export-import-service.ts:309-315 `import()` calls `importVerify()`, and importVerify (line 272-284) calls `this.importPermissionsService.verifyPermissions(dto, user, mode)` alongside the strategy, feature, segment and dependency checks. The authorization is enforced in the service layer rather than at the route. Bound: I read the call chain to verifyPermissions; I did not read import-permissions-service.ts itself, so what that function checks is not established here."
+    },
+    {
+      "class": "Password-free demo authentication reachable by default",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "src/lib/middleware/demo-authentication.ts registers a direct express POST at /auth/demo/login that mints a session from an email with no password, and it sits in the `default:` branch of the auth switch at src/lib/app.ts:158-166 - which reads as though it were the fallback. It is not reached by default: create-config.ts:66 sets `defaultType: IAuthType = IAuthType.OPEN_SOURCE`, which matches the first case of the switch and routes to ossAuthentication. The demo branch requires the operator to select the demo auth type explicitly. Bound: the default was read from create-config.ts; the ways an operator can override authentication.type were not enumerated."
+    }
+  ]
+}

@@ -39,6 +39,18 @@ cp "$ROOT/scripts/gh/labels.sh"           "$LAB/repo/scripts/gh/"
 cp "$ROOT/.github/workflows/release.yml" "$LAB/repo/.github/workflows/"
 cp "$ROOT/.github/workflows/ci.yml"      "$LAB/repo/.github/workflows/"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$LAB/repo/scripts/gates/dummy.sh"
+# Same reason as labels.sh above: apply-governance.sh delegates the two-list
+# contract inside governance.json to gate-governance-contract.sh and folds in its
+# rc. Without these copies the delegate is missing, every probe comes back rc=2
+# (an unmeasured result outranks a drift, by design) and this file would stop
+# measuring whether the protection fields are watched at all.
+mkdir -p "$LAB/repo/scripts/gates/lib"
+cp "$ROOT/scripts/gates/gate-governance-contract.sh" "$LAB/repo/scripts/gates/"
+cp "$ROOT/scripts/gates/lib/governance_contract.py"  "$LAB/repo/scripts/gates/lib/"
+cp "$ROOT/scripts/gates/lib/common.sh"               "$LAB/repo/scripts/gates/lib/"
+cp -R "$ROOT/scripts/gates/fixtures/governance"      "$LAB/repo/scripts/gates/fixtures-tmp" 2>/dev/null || true
+mkdir -p "$LAB/repo/scripts/gates/fixtures"
+[ -d "$LAB/repo/scripts/gates/fixtures-tmp" ] && mv "$LAB/repo/scripts/gates/fixtures-tmp" "$LAB/repo/scripts/gates/fixtures/governance"
 STATE="$LAB/repo/scripts/gh/governance.json"
 
 # --- API double: returns the DESIRED state as if it were the real one --------
@@ -98,7 +110,17 @@ case "$path" in
                          | {name: .[0], color: .[1], description: .[2]})') ;;
   repos/*/vulnerability-alerts) exit 0 ;;
   repos/*/commits/*/check-runs)
-    out='{"check_runs":[{"name":"gates","app":{"id":'"$APP"'},"status":"completed","conclusion":"success"}]}' ;;
+    # DERIVED from governance.json, never hardcoded. A lab that knows about one
+    # context reports every other one as "never observed", so the anti-lockout
+    # safeguard fires as a false drift the day a second required check is
+    # declared - which is exactly what happened when workflow-hardening was
+    # added. LAB_HIDE_CONTEXT removes one on purpose, so that safeguard is
+    # exercised deliberately instead of by accident.
+    out=$(jq -c --argjson app "$APP" --arg hide "${LAB_HIDE_CONTEXT:-}" '
+      ( [ .promotion.required_contexts[]? ]
+        + [ .branches[.promotion.source_branch].protection.required_status_checks.checks[]?.context ] )
+      | unique | map(select(. != $hide))
+      | {check_runs: map({name: ., app: {id: $app}, status: "completed", conclusion: "success"})}' "$STATE") ;;
   repos/*commits*) out='[{"sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' ;;
   repos/*)
     out=$(jq -c '.settings + {permissions:{admin:true}, owner:{type:"User"},

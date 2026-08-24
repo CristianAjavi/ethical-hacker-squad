@@ -1,0 +1,110 @@
+{
+ "matches": [
+  {
+   "defect_id": "P-22",
+   "finding_ids": [
+    "R60"
+   ],
+   "why": "P-22 is build_prompt (answer.py 11-13): retrieved docs f-string-concatenated into the same flat string as SYSTEM and the question, with no boundary and no provenance. R60 is the only finding that names that function and that concatenation. Rejected near-misses, all pointing at the SAFE build_prompt_marked (16-24) and complaining about something else: R40 and R78 and R62 concede the origin/trust tags are there and instead fault the absence of content sanitization/filtering of d['text'] - a different control; R61 faults forged origin/trust metadata values (spoofing), not missing delimitation; R80 faults unescaped '</document>' letting a ticket body close the tag - a tag-escaping bug in the delimited version, i.e. the opposite premise from 'no delimitation'; R34 is a whole-system 'lethal trifecta' architecture claim anchored at line 7 whose mechanism is the combination of three legs, not this interpolation; R47 quotes line 13 only as the downstream harm path while asserting its defect in memory.py's ingest_ticket_marked.",
+   "quote": "The `joined` variable contains the raw document text with no boundaries or markup separating it from the instructions."
+  },
+  {
+   "defect_id": "P-23",
+   "finding_ids": [
+    "R08",
+    "R13",
+    "R17",
+    "R27",
+    "R32",
+    "R48",
+    "R51",
+    "R56",
+    "R57",
+    "R65",
+    "R70",
+    "R75",
+    "R77"
+   ],
+   "why": "All 13 state the P-23 mechanism: run_tool takes account_id (and the tool choice) out of the model's decision dict and acts on it, with the session parameter never consulted - several explicitly contrast it with run_tool_scoped, which binds to session['authenticated_account_id']. Line numbers vary (19, 27, 29, 30, 35, 36, 37) but all resolve to the same dispatcher. R17 covers only the lookup arm and R57/R65 only the refund arm; both arms are the same defect. Rejected near-misses in the same function: R05 faults the absence of privilege degradation after untrusted content is ingested (tool set never shrinks) - a missing mitigation, not model-supplied identity; R10 and R66 fault account_id as an unsanitized string that could carry SQL/NoSQL injection into a backend - an input-validation defect; R12 and R09 fault the unbounded/negative refund amount (business-rule validation); R79 faults missing type/KeyError handling inside the SAFE run_tool_scoped; R28 faults the allowlist in summarize_and_render.",
+   "quote": "The function does not check whether `session[\"authenticated_account_id\"]` matches `decision[\"account_id\"]`"
+  },
+  {
+   "defect_id": "P-24",
+   "finding_ids": [
+    "R01",
+    "R02",
+    "R06",
+    "R31",
+    "R39",
+    "R42",
+    "R43",
+    "R45",
+    "R76"
+   ],
+   "why": "All nine fault the single write in remember_from_reply - data.setdefault('notes', []).append(reply) - taking free-text model output into the persistent store with no schema or filter. R31 and R39 are kept although they attach weaker consequences (unbounded growth, JSON corruption) to that same write: the code fault they name is 'unfiltered LLM output persisted', which is P-24 with the severity understated, not a second code fault. Rejected near-misses on the same file and often the same line: R58 (non-atomic read-modify-write race, a concurrency fault), R07 and R21 (json.loads on a corrupt or oversized store crashing the reader - a read-path fault), R26 (symlink/TOCTOU on the store path), R50, R83, R53 and R69 (file mode, encryption and shared-location exposure of the store), R55 and R81 (no per-customer isolation or account context in the store - a multi-tenancy fault), R73 (remember_preference does not validate the VALUE, and that is the safe closed-schema variant).",
+   "quote": "Function `remember_from_reply` appends the model's output directly to persistent memory without filtering or validation"
+  },
+  {
+   "defect_id": "P-25",
+   "finding_ids": [
+    "R16",
+    "R22",
+    "R24",
+    "R29",
+    "R30",
+    "R35",
+    "R36",
+    "R41",
+    "R49",
+    "R54",
+    "R63",
+    "R74"
+   ],
+   "why": "All twelve name summarize_and_run passing model_output into subprocess.run(..., shell=True) with no parsing, allowlist or sandbox. Line numbers drift (32, 42, 48, 54, 58) but every one quotes the same call. Rejected near-misses at the same coordinates: R71 cites the same line yet its stated fault is text=True decoding of binary/null-byte output and the returned stdout being unsanitized - a decoding/output-handling claim, not shell execution of model output; R28 is filed at line 48 but describes summarize_and_render's op allowlist being too narrow a check - the neighbouring safe function, a validation-completeness fault.",
+   "quote": "The function `summarize_and_run` executes the model's raw output as a shell command"
+  },
+  {
+   "defect_id": "P-26",
+   "finding_ids": [
+    "R04",
+    "R11",
+    "R15",
+    "R19",
+    "R23",
+    "R25",
+    "R38",
+    "R44",
+    "R46",
+    "R64",
+    "R67",
+    "R72"
+   ],
+   "why": "All twelve report the literal sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a sitting in the billing server's env block instead of a reference to a secret manager. Reported line varies (3, 4, 6) because the file is tiny; the value is on line 6. Rejected near-misses in the same file: R59 and R52 mention the key only as loot for a compromised package - their stated fault is the unpinned '@latest' install, so they belong to P-27; R52 additionally raises the '${DOCS_TOKEN}' substitution, which is the correct pattern, not the defect.",
+   "quote": "MCP configuration file contains plaintext credential: `\"BILLING_API_KEY\": \"sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a\"`"
+  },
+  {
+   "defect_id": "P-27",
+   "finding_ids": [
+    "R20",
+    "R52",
+    "R59",
+    "R68"
+   ],
+   "why": "All four fault args ['-y', '@acme/billing-mcp@latest']: a moving tag resolved by npx at every start, with -y suppressing any prompt, so a registry compromise or a hijacked publish executes on the next launch. R59 and R52 also mention the hardcoded key, but as the consequence a malicious server would exfiltrate - their stated mechanism is the unpinned install, so they are assigned here and not to P-26. R59 files it at line 4 (the command) rather than line 5 (the args), a location slip, not a different defect.",
+   "quote": "The `-y` flag accepts installation without confirmation, and `@latest` pulls the most recent version from the registry at each startup."
+  },
+  {
+   "defect_id": "P-28",
+   "finding_ids": [
+    "R03",
+    "R14",
+    "R18",
+    "R33",
+    "R37",
+    "R82"
+   ],
+   "why": "R82 states P-28 exactly and contrasts it with the marked variant. R14, R33 and R37 all anchor on ingest_ticket's index.add_texts([ticket['body']]) at line 28 and describe customer text entering the retrieval store with nothing recording trust or origin, so it comes back indistinguishable from vetted knowledge. R03 and R18 are kept for the same ingestion with weaker or broader framing (no content validation; size/encoding limits and DoS), which understates the severity of the same admission rather than naming a second code fault. Rejected near-miss: R47 is filed at line 35, INSIDE ingest_ticket_marked, and its argument is that the origin/trust metadata is present but nobody proves retrieval filters on it - the premise is the opposite of P-28's missing metadata, so it is a different claim about the safe variant.",
+   "quote": "The `ingest_ticket` function indexes a ticket with `index.add_texts([ticket[\"body\"]])`, with no metadata about the origin or trust level."
+  }
+ ]
+}

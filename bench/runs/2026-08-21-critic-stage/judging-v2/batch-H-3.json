@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Unbounded memory allocation via readBytes length prefix",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+   "impact": "An attacker sending a single AMQP frame with a large length-prefixed field (e.g., 2GB) forces the JVM to allocate contiguous memory, causing denial of service through heap exhaustion. The application will throw OutOfMemoryError and may crash.",
+   "evidence": "Lines 86-94: The readBytes() method reads a 32-bit unsigned integer from the stream as contentLength, then allocates a byte array of size (int)contentLength. The check `if(contentLength < Integer.MAX_VALUE)` permits allocation of up to Integer.MAX_VALUE-1 bytes (approximately 2GB). This allocation is triggered whenever tables or long strings with large size fields are parsed: lines 103 (readLongstr), 147 (readTable), 241 (readArray)."
+  },
+  {
+   "item_id": "F02",
+   "title": "Stack exhaustion via unbounded recursion in field value parsing",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "An attacker sending a frame with deeply nested AMQP table or array structures (e.g., a table containing a table containing a table, repeated N levels deep) will cause a StackOverflowError, crashing the consumer application.",
+   "evidence": "The readFieldValue() method (lines 158-221) is called recursively: case 'F' (line 181) calls readTable() which calls readFieldValue() again; case 'A' (line 184) calls readArray() which calls readFieldValue() again. No recursion depth limit is enforced in the code. A deeply nested table-of-tables or array-of-arrays can exhaust the call stack."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

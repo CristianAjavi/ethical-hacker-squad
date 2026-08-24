@@ -1,0 +1,92 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "SQL Injection via ORDER BY Parameter",
+    "file": "routes/invoices.js",
+    "line": 24,
+    "severity": "critical",
+    "impact": "An attacker can inject arbitrary SQL commands through the order parameter, allowing unauthorized data read/modification and potential database compromise.",
+    "evidence": "const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); — The order variable from req.query.order is directly interpolated into the SQL string without parameterization. Parameterized queries protect values ($1) but not structural elements like ORDER BY columns.",
+    "recommendation": "Use a whitelist of allowed columns (like the SORTABLE pattern in /payments) and validate order against it: const INVOICE_SORTS = { created_at: true, due_at: true }; if (!INVOICE_SORTS[order]) order = 'created_at';"
+  },
+  {
+    "id": "F-002",
+    "title": "Broken Object-Level Authorization (IDOR) on /invoices/:id",
+    "file": "routes/invoices.js",
+    "line": 8,
+    "severity": "critical",
+    "impact": "Any authenticated user can read any invoice by guessing its ID, exposing sensitive billing and financial data of other customers.",
+    "evidence": "const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); — No WHERE clause checks req.user.id. Compare /receipts/:id on line 14-18 which correctly includes 'AND owner_id = $2' with [req.params.id, req.user.id].",
+    "recommendation": "Add authorization check: const invoice = await db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]); followed by 404 if no rows returned."
+  },
+  {
+    "id": "F-003",
+    "title": "Server-Side Request Forgery (SSRF) in /branding/preview",
+    "file": "routes/invoices.js",
+    "line": 38,
+    "severity": "high",
+    "impact": "Attackers can fetch arbitrary URLs, enabling port scanning of internal networks, metadata endpoint access (AWS/GCP credentials), internal API discovery, and potential RCE via confused deputy attacks.",
+    "evidence": "const image = await fetchLogo(req.body.logoUrl); calls lib/remote.js:5 async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); } — No URL validation. Accepts any scheme/hostname. The { redirect: 'follow' } option exacerbates the risk by following redirects to internal IPs.",
+    "recommendation": "Implement allowlist for logoUrl domain: parse the URL, check parsed.hostname against ALLOWED set (lib/remote.js:2). Reject non-http(s) schemes. Set { redirect: 'error' } to prevent redirect-based bypass."
+  },
+  {
+    "id": "F-004",
+    "title": "Cross-Site Scripting (XSS) in invoiceNote Function",
+    "file": "lib/render.js",
+    "line": 5,
+    "severity": "high",
+    "impact": "If invoice notes are user-editable and rendered in HTML context, attackers can inject JavaScript to steal session tokens, deface content, or redirect users to phishing sites.",
+    "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } — The note parameter is directly interpolated without HTML escaping. Contrast with customerName() on line 10 which correctly uses escapeHtml(name).",
+    "recommendation": "Apply escapeHtml to the note parameter: return `<div class=\"note\">${escapeHtml(note)}</div>`;. If rich HTML is required, use a whitelist-based HTML sanitizer like sanitize-html."
+  },
+  {
+    "id": "F-005",
+    "title": "JWT Token Accepted Without Cryptographic Verification",
+    "file": "lib/auth.js",
+    "line": 6,
+    "severity": "critical",
+    "impact": "Attackers can forge arbitrary JWT tokens with any claims (id, role, tenant) without possessing the signing key, completely bypassing authentication and authorization.",
+    "evidence": "function currentUser(req) { const claims = jwt.decode(bearer); return { id: claims && claims.sub, role: claims && claims.role }; } — Uses jwt.decode() which only decodes the token payload without verifying the signature. An attacker can create a valid-looking JWT with arbitrary claims.",
+    "recommendation": "Use jwt.verify(bearer, SECRET_KEY) instead of jwt.decode(). Store the SECRET_KEY securely (environment variable, not hardcoded). Handle verification errors by returning null claims and rejecting the request in middleware."
+  },
+  {
+    "id": "F-006",
+    "title": "Missing Authorization Middleware on All Endpoints",
+    "file": "routes/invoices.js",
+    "line": 7,
+    "severity": "high",
+    "impact": "Endpoints rely on req.user being set by middleware, but there is no visible middleware enforcing authentication. If currentUser() fails silently (returns { id: undefined }), requests proceed unauthenticated.",
+    "evidence": "Routes use req.user.id without verifying it exists. No Express middleware visible that calls currentUser() and rejects requests if !claims. If a request arrives without Authorization header, jwt.decode(undefined) returns null and claims.sub is undefined.",
+    "recommendation": "Add explicit authorization middleware before route handlers: router.use((req, res, next) => { req.user = currentUser(req); if (!req.user.id) return res.status(401).json({error: 'Unauthorized'}); next(); });"
+  },
+  {
+    "id": "F-007",
+    "title": "Inconsistent Authorization Logic in /payments Sort",
+    "file": "routes/invoices.js",
+    "line": 32,
+    "severity": "medium",
+    "impact": "While the whitelist pattern prevents SQL injection, the direct string interpolation is fragile and could be bypassed if the whitelist is modified without updating the parameterization.",
+    "evidence": "const column = SORTABLE[req.query.sort] || SORTABLE.date; const rows = await db.query(`SELECT * FROM payments WHERE owner_id = $1 ORDER BY ${column}`, [req.user.id]); — Same anti-pattern as /invoices, even though a whitelist exists.",
+    "recommendation": "Use parameterized ORDER BY via application logic or a database-agnostic query builder. If raw SQL is required, document the whitelist clearly and add a test ensuring only whitelisted values are ever interpolated."
+  },
+  {
+    "id": "F-008",
+    "title": "node-fetch Version 2.7.0 May Have Known CVEs",
+    "file": "package.json",
+    "line": 9,
+    "severity": "medium",
+    "impact": "Older versions of node-fetch may contain known security vulnerabilities related to HTTP header injection, DNS rebinding, or request smuggling.",
+    "evidence": "\"node-fetch\": \"2.7.0\" in dependencies. This is an older major version (2.x) of node-fetch. Node.js 18+ has built-in fetch; pinning to 2.x may pull in unpatched vulnerabilities.",
+    "recommendation": "Run npm audit to identify specific CVEs. Consider upgrading to node-fetch 3.x or using native fetch (Node 18+). If staying on 2.x, apply all security patches and validate against npm advisory database."
+  },
+  {
+    "id": "F-009",
+    "title": "Unused/Unreachable tagRequest Function with Session Reference",
+    "file": "lib/auth.js",
+    "line": 11,
+    "severity": "low",
+    "impact": "References req.session.user which is never initialized, suggesting incomplete refactoring. May cause runtime errors if called.",
+    "evidence": "function tagRequest(req, metrics) { ... metrics.increment('requests', { tenant: claims && claims.tenant }); return req.session.user; } — req.session is undefined (no session middleware visible), and the function is exported but not used in the codebase.",
+    "recommendation": "Remove the function if unused, or clarify its purpose and initialize req.session properly. If session tracking is intended, integrate Express session middleware and document the tagRequest contract."
+  }
+]}
