@@ -60,6 +60,13 @@ case "$LAB_MODE:$path" in
   shallow:repos/*/branches/main)  emit '{"name":"main","protected":true}' ;;
   *:repos/*/branches/main)        emit '{"name":"main","protected":true}' ;;
   noprot:repos/*/branches/main/protection)  exit 1 ;;
+  # What a token that may not read this endpoint actually gets: an ERROR OBJECT
+  # on stdout AND a non-zero exit. Parsed without checking either, every field
+  # comes back at its default and the branch looks protected by nothing. This is
+  # the case that made the tool report DRIFT against a healthy main.
+  errbody:repos/*/branches/main/protection)
+    emit '{"message":"Resource not accessible by integration","status":"403"}'; exit 1 ;;
+  errbody:repos/*/branches/main) emit '{"name":"main","protected":true}' ;;
   shallow:repos/*/branches/main/protection) exit 1 ;;
   match:repos/*/branches/main/protection)
     emit '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":15368}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
@@ -91,6 +98,7 @@ res "NO protection at all -> rc 1"                 noprot   1 "is NOT protected 
 # block is unreadable without admin. Protected-at-all is confirmed; matching the
 # declaration is not, and the tool must not round that up to a pass.
 res "protected but the block is unreadable -> rc 2" shallow  2 "cannot read the protection block"
+res "an error body is not an empty protection -> rc 2" errbody 2 "cannot read the protection block"
 res "the branch does not exist -> rc 2"            absent   2 "does not exist yet"
 res "a check not pinned to the app -> rc 1"        unpinned 1 "contexts"
 

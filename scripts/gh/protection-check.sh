@@ -105,8 +105,20 @@ declared() {  # <branch>
         pr:        (.required_pull_request_reviews != null) }' "$STATE"
 }
 
-live() {  # <branch>  -> json, or empty when the branch has no protection
-  gh api "repos/$REPO/branches/$1/protection" 2>/dev/null | jq -c '
+# Returns the normalised protection block, or NOTHING. The exit status of `gh`
+# is checked before the body is parsed, and the body is then required to look
+# like a protection block. Neither guard is decorative: with a token that may
+# not read this endpoint, `gh` prints an ERROR OBJECT on stdout and exits
+# non-zero, and piping that straight into jq yields every field at its default -
+# an empty context list, every boolean false. That is indistinguishable from a
+# branch protected by nothing, and it made this tool report DRIFT against a
+# `main` that was correctly protected, on its first real run in a workflow.
+# Crying wolf is the one failure this check cannot afford.
+live() {  # <branch>  -> json, or empty when it could not be read
+  local raw
+  raw="$(gh api "repos/$REPO/branches/$1/protection" 2>/dev/null)" || return 0
+  printf '%s' "$raw" | jq -e 'has("required_status_checks") or has("enforce_admins") or has("required_pull_request_reviews")' >/dev/null 2>&1 || return 0
+  printf '%s' "$raw" | jq -c '
     { contexts:  ([ (.required_status_checks.checks // [])[] | "\(.context)@\(.app_id)" ] | sort),
       strict:    (.required_status_checks.strict // false),
       linear:    (.required_linear_history.enabled // false),
