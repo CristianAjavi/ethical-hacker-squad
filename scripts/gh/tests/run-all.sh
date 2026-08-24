@@ -101,6 +101,8 @@ for f in "$SP"/test-*.sh "$SP"/test-*.py; do
   - $(basename "$f")" ;;
   esac
 done
+suite "battery-detects: a battery that proves nothing" \
+  bash "$SP/test-battery-detects.sh"
 
 echo ""
 echo "==============================================================="

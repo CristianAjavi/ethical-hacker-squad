@@ -68,7 +68,16 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# `pwd -P`, not `pwd`. The repository scan below walks $ROOT and excludes
+# "$SELF_DIR/fixtures/*" by prefix, and $ROOT comes from `git rev-parse
+# --show-toplevel`, which always answers with the PHYSICAL path. A logical
+# $SELF_DIR makes those two strings disagree the moment the checkout is reached
+# through a symlink - macOS $TMPDIR and /tmp both are - the exclusion matches
+# nothing, the gate scans its own fixtures, and the one deliberately
+# unmeasurable fixture turns the whole gate into "COULD NOT MEASURE". Measured:
+# the same commit gave rc=2 through /var/folders/... and rc=0 through
+# /private/var/folders/...
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 FAILURES=0
 N_CHECKED=0
@@ -119,6 +128,10 @@ elif ROOT=$(git -C "$SELF_DIR" rev-parse --show-toplevel 2>/dev/null); then
 else
   ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 fi
+# Same normalisation on the other side of the comparison: EHS_REPO_ROOT can be
+# handed in logically, and the exclusion is a string prefix, not a path test.
+ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P)" || unmeasurable \
+  "I cannot enter the root I was given: there is nothing to scan"
 [ -d "$ROOT/agents" ] || unmeasurable \
   "I cannot find agents/ under '$ROOT' (wrong cwd? this is not the plugin repo)"
 info "root: $ROOT"

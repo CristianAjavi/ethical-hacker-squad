@@ -303,6 +303,39 @@ prints every file it touched that way.
 `gate-tree-delta.sh` is skipped **by name and printed as skipped**: over a combined merge
 its delta is the sum of every branch's growth, a number nobody will ever ship, because pull
 requests land one at a time and the base moves under each.
+### `battery-detects.sh` — does the proof prove anything?
+
+`gate-negative-proof.sh` requires every gate to carry a negative proof, and says out loud
+that whether the proof is any **good** is a person's judgement. That gap is not
+theoretical. Swept with the simplest universal mutation there is — replace the gate with
+`exit 0` — **fourteen of fifteen batteries went red and one stayed green**: its three cases
+all asserted `rc=0`, which a gate that approves everything satisfies. It would have caught
+the defect it was written for and not the gate going hollow, which is strictly worse.
+
+```bash
+scripts/gh/battery-detects.sh                       # every sibling battery
+scripts/gh/battery-detects.sh --only gate-tree-delta.sh
+scripts/gh/battery-detects.sh --list
+```
+
+Each battery runs **twice**: unmutated, where it must be green, and mutated, where it must
+not. The control run is not optional — without it a battery that is red for an unrelated
+reason would be scored as *detects*, and the tool would hand out credit for a failure it
+did not cause. A battery red on its own gate is reported as `COULD NOT MEASURE`, never as a
+pass.
+
+Gates whose self-test is **inline** cannot be measured this way — replacing the gate
+removes the test with it — and they are named in the output rather than quietly left out.
+
+It lives in `scripts/gh/` and **not** in `scripts/gates/` on purpose: `run-all.sh`
+discovers by position, not by extension, so a file there would run in every `gates` job and
+inside the release verify job. Running every battery twice costs minutes, not seconds, and
+paying that on pull requests that touch no gate is how a check gets switched off.
+
+A hand-written mutant bank only ever proves what its author thought to break. This is the
+instrument that does not share the author's blind spot, and it earned that description the
+day it was written: it found a hollow battery that a hand-written bank had already signed
+off, in the same session, by the same author.
 
 ---
 
