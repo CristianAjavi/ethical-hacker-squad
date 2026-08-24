@@ -47,7 +47,33 @@ check() {  # <label> <path to a repo root>
   fi
 }
 
+# Before asking whether the verdict is STABLE across paths, ask whether the gate
+# still detects anything at all. Three cases that all assert rc=0 are satisfied
+# by a gate that returns 0 unconditionally, and a battery that a hollow gate
+# passes proves nothing about the gate it names. Measured: the first version of
+# this file did exactly that - every other battery in this directory fails when
+# its gate is replaced by `exit 0`, and this one stayed green.
+detects() {
+  local rc=0 d="$TMP/detect"
+  mkdir -p "$d/agents" "$d/docs" "$d/skills/ethical-hacker-squad/references"
+  # The gate declines to measure a tree with no agents/ and no vocabulary.md -
+  # the reach-proof rule names verdict terms and needs something to check them
+  # against - so the throwaway root carries both, and one planted offender.
+  cp "$ROOT/agents/ehs-verifier.md" "$d/agents/"
+  cp "$ROOT/skills/ethical-hacker-squad/references/vocabulary.md" "$d/skills/ethical-hacker-squad/references/"
+  cp "$ROOT/scripts/gates/fixtures/negative-evidence/bad/01-absence-inference.md" "$d/docs/planted.md"
+  EHS_REPO_ROOT="$d" bash "$GATE" >"$TMP/detect.txt" 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    printf 'ok       %-46s rc=1\n' "it still detects a planted offender"; pass=$((pass+1))
+  else
+    printf 'FAILED   %-46s rc=%s (wanted 1)\n' "it still detects a planted offender" "$rc"
+    printf '         a gate that answers 0 to everything would pass every other case here\n'
+    fail=$((fail+1))
+  fi
+}
+
 echo "=== self-test: gate-negative-evidence.sh reached by different paths ==="
+detects
 
 # The control: the physical path, which always worked.
 check "the repository by its physical path" "$ROOT"
