@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "SQL Injection in /invoices sort parameter",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "high",
+      "impact": "Attacker can execute arbitrary SQL queries by injecting malicious ORDER BY clauses, potentially reading all invoice data across all users or exfiltrating sensitive information.",
+      "evidence": "Line 24: ORDER BY clause uses template string interpolation: `ORDER BY ${order}` where order comes from req.query.order without validation. Parameter is taken directly from user input. Contrast with /payments endpoint (lines 29-31) which correctly uses a whitelist.",
+      "recommendation": "Implement column whitelist validation: const ALLOWED_COLUMNS = ['created_at', 'amount', 'status']; const order = ALLOWED_COLUMNS.includes(req.query.order) ? req.query.order : 'created_at';"
+    },
+    {
+      "id": "F-002",
+      "title": "Insecure Direct Object Reference (IDOR) in /invoices/:id",
+      "file": "routes/invoices.js",
+      "line": 8,
+      "severity": "high",
+      "impact": "Any authenticated user can retrieve any invoice by ID without authorization checks. An attacker can access invoices belonging to other users, leaking sensitive billing and customer information.",
+      "evidence": "Line 8: `SELECT * FROM invoices WHERE id = $1` only filters by invoice ID, missing owner_id check. Compare with /receipts/:id endpoint (line 15) which correctly includes `AND owner_id = $2` with `[req.params.id, req.user.id]`. The handler has no authorization logic.",
+      "recommendation": "Add ownership verification: const invoice = await db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]); Also verify req.user exists before use."
+    },
+    {
+      "id": "F-003",
+      "title": "JWT Signature Verification Bypass",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "critical",
+      "impact": "Authentication is completely bypassed. An attacker can forge any JWT token with arbitrary claims (sub, role, tenant) and be accepted as any user. All authorization depends on this flawed token validation.",
+      "evidence": "Line 6: `const claims = jwt.decode(bearer);` uses jwt.decode() which only decodes without signature verification. Should use jwt.verify(bearer, secret) to validate the signature. Line 12 has the same issue. The decode() function trusts any token structure.",
+      "recommendation": "Replace jwt.decode() with jwt.verify(bearer, process.env.JWT_SECRET, { algorithms: ['HS256'] }) and configure a secure shared secret or public key for asymmetric verification. Add error handling for invalid tokens."
+    },
+    {
+      "id": "F-004",
+      "title": "Cross-Site Scripting (XSS) in invoiceNote function",
+      "file": "lib/render.js",
+      "line": 5,
+      "severity": "high",
+      "impact": "Stored or Reflected XSS vulnerability. An attacker can inject malicious JavaScript that executes in other users' browsers when viewing invoice notes, enabling session hijacking, credential theft, or malware distribution.",
+      "evidence": "Line 5: `return '<div class=\"note\">${note}</div>';` inserts user input directly into HTML without escaping. The note parameter comes from user input and is rendered as HTML. Contrast with customerName() function (line 10) which correctly uses escapeHtml(name).",
+      "recommendation": "Use escapeHtml() for untrusted content: return `<div class=\"note\">${escapeHtml(note)}</div>;` Or use a template engine with auto-escaping. Validate on input that note is a string and within length limits."
+    },
+    {
+      "id": "F-005",
+      "title": "Server-Side Request Forgery (SSRF) in fetchLogo",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "high",
+      "impact": "An attacker can abuse the /branding/preview endpoint to fetch arbitrary internal URLs, private metadata services (AWS IMDSv2), or internal APIs. Can be used for information disclosure or internal service exploitation.",
+      "evidence": "Line 6: fetchLogo(url) accepts any URL and performs `fetch(url, { redirect: 'follow' })` without validation. The url parameter comes directly from req.body.logoUrl. redirect: 'follow' allows bypassing some protections. Unlike fetchAsset() which has an ALLOWED set (line 2), fetchLogo has no restrictions.",
+      "recommendation": "Implement URL validation: (1) Use URL parsing to ensure http/https only; (2) Implement a whitelist of allowed domains; (3) Disable redirects or limit to same-host; (4) Add IP blocklist to prevent private ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 169.254.0.0/16); (5) Set request timeout to 5s."
+    },
+    {
+      "id": "F-006",
+      "title": "Missing Authentication Middleware on Protected Routes",
+      "file": "routes/invoices.js",
+      "line": 7,
+      "severity": "high",
+      "impact": "Routes that should require authentication (all endpoints in this file) reference req.user but no authentication middleware is applied. If req.user is undefined, authorization checks silently fail and all data may be exposed.",
+      "evidence": "Lines 7-39: Routes reference req.user.id (lines 16, 24, 32) and req.body without any authentication middleware. The auth.js file defines currentUser() but it is never called or used as middleware. Routes are not protected with a middleware chain like app.use(authenticate).",
+      "recommendation": "Create and apply authentication middleware: function authenticate(req, res, next) { const user = currentUser(req); if (!user || !user.id) return res.status(401).json({error: 'Unauthorized'}); req.user = user; next(); } Apply to all routes: app.use(authenticate) or use router.use(authenticate) in invoices.js. Also verify JWT signature (see F-003)."
+    },
+    {
+      "id": "F-007",
+      "title": "Unauthenticated Access to /branding/preview Endpoint",
+      "file": "routes/invoices.js",
+      "line": 37,
+      "severity": "medium",
+      "impact": "Any unauthenticated attacker can trigger arbitrary resource fetches through the /branding/preview endpoint. This can be exploited for denial of service (resource exhaustion), internal SSRF probing, or to bypass rate limits on downstream services.",
+      "evidence": "Lines 37-40: The POST /branding/preview route handler has no authentication middleware and directly calls fetchLogo(req.body.logoUrl). Combined with SSRF vulnerability in fetchLogo (F-005), an unauthenticated attacker can exploit both issues. Compare with other endpoints which reference req.user.id and should only be accessible to authenticated users.",
+      "recommendation": "Apply authentication middleware to this endpoint: router.post('/branding/preview', authenticate, async (req, res) => {...}). Alternatively, enforce authentication at the router level using router.use(authenticate) before this route definition. Also implement rate limiting to prevent abuse."
+    }
+  ]
+}

@@ -1,0 +1,229 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern4/destinations/target — lemur/destinations/schemas.py, lemur/destinations/views.py, lemur/plugins/lemur_sftp/plugin.py",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (extern4 snapshot) — web-api + local-app packs, manual specialist run",
+    "coverage_declaration": "Exercised: the three delivered files, read end to end. Routing per coverage.md: HTTP resources and marshmallow schemas -> web-api.md §0-§5 (WEB-04..WEB-12) and web-api-clientside-logic.md §7-§9, §11 (WEB-15, WEB-16, WEB-19, WEB-22); the plugin writes files and sets modes on a remote host -> local-app.md §0, §4 (LOC-08) for the permission half; privacy-abuse.md §1 (PRV-02) consulted for the serializer-over-exposure shape. NOT exercised, because the code is outside the delivered tree: lemur.destinations.service (render/get/create/update/delete/stats), the Destination model and how plugin option values are persisted, lemur.auth (AuthenticatedResource, admin_permission and the session/token mechanism behind them), lemur.common.schema.validate_schema, lemur.common.defaults.common_name, lemur.common.utils (paginated_parser, check_validation, parse_certificate), lemur.plugins.bases.DestinationPlugin.get_option, the frontend, deployment configuration, and dependency versions (paramiko, marshmallow, flask-restful). No code was executed, no instance was deployed and no network request was made: this is a static reading. Classes with no reachable surface in these files and therefore not looked for: SQL/ORM injection, deserialization, SSRF, XSS, GraphQL, WebSocket, rate limiting, session lifecycle. Every claim that leaves these three files is marked as an inference in the finding that makes it."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Destination plugin option values, including the SFTP password and private-key passphrase, are serialized to every authenticated user",
+      "procedure": "WEB-06",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/destinations/schemas.py",
+        "line": 28,
+        "component": "DestinationOutputSchema.options / fill_object, consumed by DestinationsList.get, Destinations.get and CertificateDestinations.get"
+      },
+      "evidence": "schemas.py:22-37 — DestinationOutputSchema declares `options = fields.List(fields.Dict())` with no field allowlist and no redaction, and the @post_dump hook `fill_object` copies the whole list into the response: `data[\"plugin\"][\"pluginOptions\"] = data[\"options\"]` (line 33), then for any option whose type contains \"export-plugin\" it promotes the nested plugin's own options too: `option[\"value\"][\"pluginOptions\"] = option[\"value\"][\"plugin_options\"]` (line 36). The dicts carry the stored `value` of each option — the module's own documented responses show it: views.py:60-87 and 221-246 return `\"options\": [{\"name\": \"accountNumber\", ..., \"value\": \"[REDACTED:secret]\"}]`. Which values those are is fixed by the plugin: lemur_sftp/plugin.py:40-98 declares `host`, `port`, `user`, `password` (lines 62-68), `privateKeyPath`, `privateKeyPass` (lines 76-82) and `destinationPath` as one flat option list with type `str`, and the module docstring states at line 13 that \"Passwords are not encrypted and stored as a plain text\"; plugin.py:104-106 reads those same stored values back with `self.get_option(\"password\", options)`. The three routes that emit this schema carry no role gate: `DestinationsList.get` (views.py:36-37), `Destinations.get` (views.py:198-199) and `CertificateDestinations.get` (views.py:360-361) are decorated only with `@validate_schema(None, ...)` on an `AuthenticatedResource`, while every write verb on the same resources — post (views.py:101-102), put (views.py:253-254), delete (views.py:348) — additionally carries `@admin_permission.require(http_exception=403)`. The asymmetry is in one file: writing a destination is an admin action, reading its credentials is not.",
+      "impact": "Any principal holding a valid Lemur session — including the lowest-privileged read-only user, which is the population that legitimately calls /certificates/<id>/destinations — can issue GET /destinations and receive the cleartext credentials an administrator configured for every destination: for the SFTP plugin the host, port, user, password and private-key passphrase. The boundary crossed is non-admin user -> administrator-held credentials for a third system. Those credentials grant write access to the certificate directory of every web server the organisation deploys to (default destinationPath /etc/nginx/certs), which is certificate replacement, and therefore impersonation of the sites served from that host. The same response shape leaks the option values of any other destination plugin configured in the instance, and via the export-plugin branch at schemas.py:36 the nested export plugin's option values as well.",
+      "preconditions": "One authenticated account of any role in the Lemur instance, and at least one destination configured with a credential-bearing plugin.",
+      "recommendation": "Two changes, and the second is the root cause. (1) In DestinationOutputSchema, stop dumping raw option values: replace `fields.List(fields.Dict())` with an explicit serializer that emits option name, type and help text and omits or masks `value` for any option the plugin marks sensitive, and drop the promotion of nested export-plugin options at schemas.py:36; add a test that fails when a new undeclared key appears in the dumped option dict. (2) Give the plugin option contract a sensitive flag — e.g. a distinct type such as `password`/`secret` rather than `str` for `password` and `privateKeyPass` in lemur_sftp/plugin.py:62-82 — so serialization, logging and storage can all distinguish a credential from a hostname instead of each layer guessing; encrypt those values at rest, which the module docstring at plugin.py:13 says today they are not. Separately, decide deliberately whether the read routes need `admin_permission` too: if non-admins must keep listing destinations to attach certificates, they need a projection without option values, not the admin gate.",
+      "inference": "That `lemur.destinations.service.render` / `service.get` hand the schema the stored plugin option values unredacted — i.e. that the `options` key the schema dumps is the same structure `SFTPDestinationPlugin.get_option` later reads the password out of. The service module and the Destination model are outside the delivered scope. What is observed inside scope: the schema dumps whatever `options` contains, the plugin's stored options contain the password, and the endpoint's own documented example responses carry `options[].value`. If the service layer already strips or masks values, this finding does not hold.",
+      "traceability": ["CWE-200", "CWE-522", "CWE-862", "WSTG-ATHZ-*", "ASVS 5.0 V8", "ASVS 5.0 V14", "A01:2025", "API3:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer stands between the stored options and the response. The only decorator on the three read routes is `@validate_schema(None, destination_output_schema)` (views.py:36, 198, 360), which is the serializer wrapper that produces the leak, not an access control; `admin_permission` is applied on the same file to post/put/delete only (views.py:101-102, 253-254, 348), so the project's own gate demonstrably exists and is absent here."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Two principals are named in the code itself: the administrator who alone may create or update a destination (views.py:101-102, 253-254) and the ordinary authenticated user who may read it (views.py:36-37, 360-361). The credential belongs to the first and is served to the second."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The option set being dumped includes `password` (plugin.py:62-68) and `privateKeyPass` (plugin.py:76-82) — authentication material for a remote host, stored in plain text per the module docstring at plugin.py:13."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A control outside the delivered files could redact option values — a service-layer projection, a column-level encryption in the Destination model, or a deployment that restricts the routes at a proxy. No such artifact was provided and none of the three files references one, so per FP-08 this is UNKNOWN and not HOLDS. It is the reason this finding is capped at probable."
+        }
+      ],
+      "limits": "Does not establish which roles exist in the deployed instance, nor that a non-admin session can actually reach these routes: `AuthenticatedResource` is defined in lemur.auth, outside scope. Does not establish that option values are stored unencrypted at rest beyond the module docstring's own statement. Says nothing about the other destination plugins shipped by the project, which were not delivered — the shape applies to any of them that declares a credential option."
+    },
+    {
+      "id": "F-002",
+      "title": "SFTP destination writes the certificate private key world-readable (mode 0644) on the destination host",
+      "procedure": "LOC-08",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/plugins/lemur_sftp/plugin.py",
+        "line": 281,
+        "component": "SFTPDestinationPlugin.upload_file"
+      },
+      "evidence": "plugin.py:155 builds the upload set with the private key as an ordinary member: `files = {cn + \".key\": private_key, cn + \".pem\": body}`. plugin.py:264-281 then iterates that dict and, after writing each file, applies one unconditional mode to every entry: `sftp.chmod(path.join(dst_path, filename), 0o644)` (line 281), preceded by the comment `# most likely the upload user isn't the webuser, -rw-r--r--` (line 280). No branch distinguishes the `.key` entry from the `.pem` entry, and the plugin also creates the containing directories itself, recursively, with a bare `sftp.mkdir(remote_path)` (plugin.py:258) that passes no mode and therefore takes the remote umask default. The 0o600 that appears at plugin.py:277 is not a protection: it is the permission-denied retry path, and line 281 relaxes the file to 0644 immediately afterwards.",
+      "impact": "Every local account and every process on the destination host — backup agents, log shippers, an unrelated compromised service account, any interactive user — can read the private key of every certificate Lemur deploys there. The boundary crossed is local-user to local-user on the destination host, from a principal with no entitlement to the key to the key itself. Possession of the key permits impersonation of the certificate's subject and decryption of captured sessions that did not use forward secrecy, and it survives the compromise being cleaned up until the certificate is revoked and reissued. The certificate body at `.pem` is public information; the `.key` entry is not, and both receive the same mode.",
+      "preconditions": "A destination of type sftp-destination configured and at least one certificate deployed through it, plus any non-root local foothold on the destination host. No Lemur credential is needed.",
+      "recommendation": "Set the mode per file rather than per loop: keep 0644 for `.pem` and `.ca.bundle.pem`, and write the `.key` entry with 0600, or 0640 with an explicit group when the web server genuinely must read it — the comment at plugin.py:280 shows the web server is the intended reader, and a group is how that intent is expressed without granting the world. Create the destination directory with an explicit restrictive mode instead of the bare `sftp.mkdir` at plugin.py:258, since the plugin creates the path it then writes into. Set the mode before the content is written, or write to a temporary name and rename, so the key is never briefly readable at the wrong mode. The same treatment applies to the retry path at plugin.py:271-279.",
+      "traceability": ["CWE-732", "CWE-276", "CWE-668", "ASVS 5.0 V14", "A02:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no layer that cannot be skipped: the plugin creates the directory tree itself with `sftp.mkdir(remote_path)` and no mode (plugin.py:249-261), so a restrictive parent directory is not established by this code. An operator who happens to have pre-created /etc/nginx/certs as 0700 is exactly the control that a caller may forget, which FP-01 says does not qualify."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure is intended in part — the comment at plugin.py:280 states the upload user is probably not the web user, so the readable mode is deliberate — but nothing bounds it. FP-05 requires naming what bounds the exposure; 0644 grants read to every principal on the host, whereas the stated intent (one reader, the web server) is served by 0640 with a group. The intended part covers the certificate, not the key."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "local-app.md §0 requires naming the crossing: the second principal is any local account on the destination host other than the SFTP upload user and the web server — the crossing is local-user to local-user, on a host that by construction serves public traffic."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The file receiving 0644 is `cn + \".key\"`, whose content is the `private_key` argument of `upload()` (plugin.py:145, 155). That is authentication material, not public content."
+        }
+      ],
+      "limits": "Establishes the mode the code sets, not the mode a given file ends up with after a remote-side ACL, an SELinux policy or an overriding automation — none of which is visible from the delivered tree. Does not establish that a private key is always present: `upload()` writes whatever `private_key` holds, and a deployment that passes None would fail earlier for an unrelated reason. Says nothing about the confidentiality of the key in transit, which paramiko's SSH channel covers, nor about the other destination plugins, which were not delivered."
+    },
+    {
+      "id": "F-003",
+      "title": "Certificate common name is concatenated into the remote SFTP path and filename with no separator check",
+      "procedure": "WEB-12",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/plugins/lemur_sftp/plugin.py",
+        "line": 151,
+        "component": "SFTPDestinationPlugin.upload -> upload_file"
+      },
+      "evidence": "plugin.py:149-155 takes the common name straight out of the certificate and concatenates it into both the directory and the filenames, with no normalisation and no rejection of separators: `cn = common_name(parse_certificate(body))`, `dst_path_cn = dst_path + \"/\" + cn`, `files = {cn + \".key\": private_key, cn + \".pem\": body}`. `dst_path_cn` is then handed to `upload_file` (plugin.py:166), which splits the path into segments and creates each one on the remote host with `sftp.mkdir` (plugin.py:234-261) before writing with `sftp.open(path.join(dst_path, filename), \"w\")` (plugin.py:269). A `cn` such as `[REDACTED:payload]` containing `../` therefore walks the destination path upward, and `path.join` offers no protection because it joins rather than confines. The contrast is inside the same file: the ACME paths do defend themselves — `upload_acme_token` and `delete_acme_token` reduce the caller's path to a basename with `_, filename = path.split(token_path)` (plugin.py:175, 186) before joining. Amplifying the write: when the target exists and is not writable, plugin.py:271-279 catches PermissionError, chmods the existing file to 0o600 and overwrites it, so a write-protected file at the traversed location does not stop the operation.",
+      "impact": "An actor who controls the common name of a certificate that is deployed to an SFTP destination controls the directory and the stem of two files written on the destination host, with the extensions fixed to `.key` and `.pem`, plus the recursive creation of any directory on the path. That permits overwriting another site's deployed certificate or key on the same host — a denial of service on that site, or its replacement by a certificate whose key the actor holds — and dropping key and certificate material into directories that were never meant to receive it, all of it left world-readable by F-002. The boundary crossed is certificate requester to the deployment target's filesystem.",
+      "preconditions": "The ability to get a certificate with a chosen common name into a Lemur destination flow — issuance, or import of an externally produced certificate — and a configured sftp-destination through which it is deployed.",
+      "recommendation": "Confine the path instead of trusting the name: reduce the common name to a basename and reject or replace any value containing a path separator, `..`, a leading dot, a null byte or a non-hostname character before it is used, and assert that the resolved destination is still inside the configured destinationPath. A per-certificate directory named from a server-generated identifier removes the class entirely. Independently, the PermissionError retry at plugin.py:271-279 should not chmod and overwrite a file the upload user was refused: log and fail, so an unexpected collision is visible rather than silently resolved in the writer's favour.",
+      "inference": "That a common name reaching this plugin can contain a path separator — i.e. that no upstream validator constrains the CN to a hostname before the certificate is stored and deployed. That validation, if it exists, lives in lemur's certificate schemas and validators, which are outside the delivered scope. Everything else in the chain is observed: the concatenation, the recursive mkdir, the unconfined join and the write.",
+      "traceability": ["CWE-22", "CWE-23", "CWE-73", "WSTG-INPV-*", "ASVS 5.0 V5", "A01:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control would be a CN validator applied on issuance and on import, before the certificate reaches a destination. No such validator is present in the delivered files and the modules that would hold one were not provided; per FP-08's doctrine, absence of the artifact is UNKNOWN, not HOLDS. This is what caps the finding at probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The value's origin is traced to `common_name(parse_certificate(body))` (plugin.py:149) — an attribute of the certificate rather than a constant or an allowlisted enum — but whether an attacker can choose it depends on Lemur's issuance and import paths, which are out of scope. It is not a literal, so it is not ruled out here."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is dangerous in the form it is reached: `sftp.mkdir` creates directories along the assembled path (plugin.py:258) and `sftp.open(..., \"w\")` writes the file (plugin.py:269), with `os.path.join` joining rather than confining and no realpath check anywhere in the function."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it looks like: plain string concatenation into a filesystem path, and the same file demonstrates the author knew the defence — the ACME entry points reduce their input to a basename with `path.split` (plugin.py:175, 186) while `upload` does not."
+        }
+      ],
+      "limits": "Does not establish that a hostile common name is reachable in a deployed Lemur — that is the named inference. Does not establish the effect of the extension constraint: both written names end in `.key` or `.pem`, which bounds what an overwrite can achieve on most hosts. No traversal was executed against any host; the reading is static. Whether the SFTP user's own permissions on the destination host limit how far the traversal reaches is a property of the deployment and was not measured."
+    },
+    {
+      "id": "F-004",
+      "title": "Failed certificate upload and deletion are swallowed, so the caller is told the deployment succeeded",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/plugins/lemur_sftp/plugin.py",
+        "line": 287,
+        "component": "SFTPDestinationPlugin.upload_file and delete_file exception handlers"
+      },
+      "evidence": "plugin.py:287-298 catches every remaining exception, logs it, closes the session, and then re-raises only inside a conditional: `if hasattr(e, 'errors'):` ... `raise Exception('Couldn\\'t upload file to {}, ...')`. An exception without an `errors` attribute — an OSError from `sftp.open`, an IOError from `f.write`, or a PermissionError whose errno is not 13 and therefore falls past the retry branch at plugin.py:271-279 — leaves the handler normally, so `upload_file` returns as if it had written the files. `delete_file` has the same shape with no conditional re-raise at all (plugin.py:219-224): log, close, return. Neither function returns a status the caller could inspect, so `upload` (plugin.py:145-166) and `delete_acme_token` (plugin.py:183-191) cannot distinguish a completed deployment from a failed one. The two exception types that are propagated faithfully — AuthenticationException and NoValidConnectionsError, re-raised at plugin.py:286 — are exactly the connection-time failures, which is what makes the write-time gap easy to miss.",
+      "impact": "No attacker capability is claimed and no exploit path is asserted. The consequence is that the system's core guarantee fails silently: a certificate rotation that does not land on the destination host is recorded as done, so an expired, revoked or compromised certificate keeps being served while the operator's evidence says it was replaced. It also removes the signal an operator would use to notice that something is interfering with writes on the destination — including the overwrite behaviour described in F-003, whose failures land in this same handler.",
+      "preconditions": "Any write-time failure on the destination host: a full filesystem, a read-only mount, a directory the SFTP user cannot create, or a permission error whose errno is not 13.",
+      "recommendation": "Make failure propagate. Re-raise unconditionally in both handlers rather than only when the exception carries an `errors` attribute, or return an explicit success value that the caller checks, so that a partial or failed upload surfaces to the destination flow instead of being logged and forgotten. Keep the log line; it is the diagnostic, not the control. The same applies to the silently ignored `sftp.mkdir` failure at plugin.py:259-261, which logs at debug level and continues into a write that cannot succeed.",
+      "traceability": ["CWE-390", "CWE-703", "CWE-754", "ASVS 5.0 V16", "A09:2025"],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the plugin's production path, not debug or test scaffolding: `upload_file` is the single writer used by both the destination upload (plugin.py:166) and the ACME token flow (plugin.py:180)."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No second principal is asserted. The finding is filed as hardening precisely because no attacker crossing is being claimed — the defect is that a failure is not surfaced, not that someone gains a capability."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-10 downgrades a defence-in-depth layer that is absent but not load-bearing. Here the swallowed failure is the product's primary operation — placing certificate material on the destination host — so the reader does need it written down at low rather than informational, even though nothing is exploitable."
+        }
+      ],
+      "limits": "Does not establish what the calling destination flow does with the return value, since lemur.destinations.service and the plugin base are outside scope — a caller that independently verifies the remote file would close this. Does not claim any attacker can force the failing condition. No behaviour was executed; the reading is of the control flow in the delivered file."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "SSH host key verification bypass / man-in-the-middle on the destination connection",
+      "procedure": "WEB-19",
+      "outcome": "refuted",
+      "where": "plugin.py:115-116. The comment reads `# allow connection to the new unknown host`, which is the AutoAddPolicy idiom and invites the finding, but the code below it sets `ssh.set_missing_host_key_policy(paramiko.RejectPolicy())` — unknown host keys are refused. The comment is stale, not the code. Bound: the policy object is what was read; the known_hosts source paramiko loads by default was not inspected."
+    },
+    {
+      "class": "Credential disclosure through logs (CWE-532)",
+      "procedure": "WEB-22",
+      "outcome": "refuted",
+      "where": "All logging in the delivered plugin was read: plugin.py:110-112 emits `Connecting to {user}@{host}:{port}`, line 120 emits the literal string `Using password` without the value, line 123 `Using RSA private key`, and the exception handlers at lines 138, 141, 220 and 288 format the exception class and message. No password, passphrase, key body or certificate key is passed to the logger, despite the module docstring at plugin.py:15 advertising detailed debug logging. Bound: the three delivered files only; the logging configuration and whether request bodies are logged elsewhere in Lemur were not in scope."
+    },
+    {
+      "class": "Path traversal through the ACME HTTP-01 token path",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "plugin.py:169-191. Both `upload_acme_token` and `delete_acme_token` discard the caller's directory component with `_, filename = path.split(token_path)` before joining it to the configured destinationPath, so a separator in the token path cannot escape. This is the defence that plugin.py:151 lacks, which is why F-003 stands."
+    },
+    {
+      "class": "Mass assignment on destination creation and update (input side of WEB-06)",
+      "procedure": "WEB-06",
+      "outcome": "refuted",
+      "where": "schemas.py:14-19 declares DestinationInputSchema with an explicit field list, and views.py:185-190 and 340-346 pass four named values to the service — label, plugin slug, plugin options and description. The client-supplied `id` field is accepted by the schema and never forwarded. Bound: what the service does with `plugin_options` was not read."
+    },
+    {
+      "class": "OS command injection",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "No shell or subprocess sink exists anywhere in the three delivered files: no os.system, subprocess, popen or exec call. File operations go through paramiko's SFTP client, which is a protocol client, not a shell."
+    },
+    {
+      "class": "SQL / ORM injection",
+      "procedure": "WEB-07",
+      "outcome": "not executed",
+      "where": "No query is constructed in the delivered files. Every data access is delegated to lemur.destinations.service (views.py:99, 185, 251, 340, 350, 437), which was not provided. The class is unmeasured here rather than absent, and `service.render(args)` receiving the parsed pagination arguments — including the `filter` query parameter documented at views.py:92 — is where it would be settled."
+    },
+    {
+      "class": "Function-level authorization on the aggregate stats endpoint",
+      "procedure": "WEB-05",
+      "outcome": "inconclusive",
+      "where": "views.py:427-438. `DestinationsStats.get` carries neither `admin_permission` nor an output schema, and forwards `metric` from the query string into `service.stats(**args)`. The parser declares exactly one argument, so no unexpected keyword can be injected, and the response is a count. Whether `metric` selects a column or reaches a query, and whether aggregate counts are sensitive here, is decided in the service module, which is out of scope."
+    },
+    {
+      "class": "Unanchored validation regex on the port option (input validation on plugin options)",
+      "procedure": "WEB-18",
+      "outcome": "refuted",
+      "where": "plugin.py:52. The port regex `^(6553[0-5]|655[0-2][0-9]\\d|65[0-4](\\d){2}|6[0-4](\\d){3}|[1-5](\\d){4}|[1-9](\\d){0,3})` has a start anchor and no end anchor, so a value such as a valid port followed by trailing characters matches the prefix. Traced to the sink anyway: the option is declared `\"type\": \"int\"` (plugin.py:50) and its only consumer is paramiko's `port` argument at plugin.py:121 and 127, which is not a shell or a path. No capability follows from the loose anchor, and the option is admin-set. Bound: `check_validation` lives in lemur.common.utils, which was not delivered, so how the regex is applied was not read."
+    },
+    {
+      "class": "CSRF on the state-changing destination routes",
+      "procedure": "WEB-15",
+      "outcome": "not executed",
+      "where": "Deciding this requires knowing whether AuthenticatedResource authorizes from an Authorization header or from an ambient cookie; lemur.auth was not delivered. No cookie configuration, CSRF middleware or exemption appears in the three files. What would settle it: the definition of AuthenticatedResource and the Flask session configuration."
+    }
+  ]
+}

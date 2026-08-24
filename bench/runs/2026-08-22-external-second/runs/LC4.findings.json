@@ -1,0 +1,202 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/lemur",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (manual single-agent audit)",
+    "coverage_declaration": "ehs-web-api procedures WEB-01, WEB-04, WEB-05, WEB-06, WEB-07, WEB-09, WEB-10, WEB-24 exercised. ehs-supply-chain sections 1-4 examined (dependencies). Client-side surfaces not examined (WEB-13..WEB-22 web-api-clientside-logic.md) - webapp appears server-rendered with minimal client code. File deserialization (WEB-11) not found in scope. GraphQL/WebSocket (WEB-20/WEB-21) not present. Local-app surfaces present (manage.py CLI) but not audited in this engagement.",
+    "coverage": {
+      "inventoried": [
+        "Flask HTTP routes (lemur/*/views.py)",
+        "JWT and API key authentication (lemur/auth/service.py)",
+        "Role-based access control (lemur/auth/permissions.py, authz decorators)",
+        "SQLAlchemy ORM queries (lemur/database.py)",
+        "Certificate management API endpoints",
+        "Certificate verification with subprocess (lemur/certificates/verify.py)",
+        "Configuration loading via exec() (lemur/factory.py)",
+        "CORS configuration (lemur/factory.py)",
+        "Python dependencies (requirements.txt)"
+      ],
+      "read": [
+        "Flask HTTP routes (lemur/*/views.py)",
+        "JWT and API key authentication (lemur/auth/service.py, lemur/auth/views.py)",
+        "Role-based access control (lemur/auth/permissions.py)",
+        "SQLAlchemy ORM queries and database.py utilities",
+        "Certificate API endpoints (lemur/certificates/views.py)",
+        "Certificate verification (lemur/certificates/verify.py)",
+        "Configuration loading (lemur/factory.py)",
+        "CORS setup (lemur/factory.py)",
+        "Dependencies (requirements.txt analyzed)"
+      ],
+      "not_read": [
+        "Frontend JavaScript and templates",
+        "Third-party plugin implementations in detail (lemur/plugins/)",
+        "Integration tests",
+        "CLI tools (manage.py CLI commands)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "CONFIG_EXEC_RISK",
+        "JWT_LEGACY_TOKEN_FORMAT",
+        "API_KEY_PERMANENT_TTL",
+        "FILTER_INPUT_INDEXERROR",
+        "CORS_WILDCARD_DEFAULT",
+        "MISSING_AUTHORIZATION_GATE_CERTIFICATE_UPLOAD",
+        "OBJECT_SCOPING_REPLACES_FIELD"
+      ],
+      "reported": [
+        "CONFIG_EXEC_RISK",
+        "FILTER_INPUT_INDEXERROR",
+        "MISSING_AUTHORIZATION_GATE_CERTIFICATE_UPLOAD"
+      ],
+      "dropped": [
+        {
+          "label": "JWT_LEGACY_TOKEN_FORMAT",
+          "resolution": "refuted",
+          "reason": "Non-RFC-compliant integer sub claim is backward-compatibility measure, properly guarded. New tokens use RFC-compliant string sub. Legacy support does not bypass signature verification.",
+          "control_at": "lemur/auth/service.py:98-100"
+        },
+        {
+          "label": "API_KEY_PERMANENT_TTL",
+          "resolution": "refuted",
+          "reason": "Permanent TTL is design choice for service accounts. Revocation is enforced on every request via access_key.revoked flag check.",
+          "control_at": "lemur/auth/service.py:150-153"
+        },
+        {
+          "label": "CORS_WILDCARD_DEFAULT",
+          "resolution": "out_of_scope",
+          "reason": "CORS disabled by default. Wildcard is only applied if admin explicitly enables. This is configuration-level control, belongs in hardening checklist not code findings."
+        },
+        {
+          "label": "OBJECT_SCOPING_REPLACES_FIELD",
+          "resolution": "refuted",
+          "reason": "Certificate relationships guarded by permission checks in view layer before service call.",
+          "control_at": "lemur/auth/views.py (authorization checks before update_list)"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unsafe exec() in configuration file loading allows arbitrary code execution",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/factory.py",
+        "line": 104
+      },
+      "evidence": "exec() loads Python configuration without validation: exec(compile(config_file.read(), file_path, 'exec'), d.__dict__). Config sources: (1) CLI arg, (2) LEMUR_CONF env var, (3) ~/.lemur/lemur.conf.py, (4) default.conf.py.",
+      "impact": "Complete system compromise via arbitrary code execution if attacker controls config source.",
+      "preconditions": "Attacker must control one of: LEMUR_CONF env var, ~/.lemur/lemur.conf.py file, or app initialization CLI arguments in container/shared environment.",
+      "recommendation": "Replace exec() with importlib.import_module() or restrict config to trusted directory with strict permissions (0600). Validate file path against whitelist.",
+      "verification": "(1) Create malicious config in ~/.lemur/lemur.conf.py, verify it executes. (2) Check deployment docs for LEMUR_CONF usage. (3) Review container build for untrusted path sources.",
+      "traceability": ["CWE-95 (Improper Neutralization of Directives in Dynamically Evaluated Code)", "CWE-94 (Improper Control of Generation of Code)", "A03:2021 Injection"],
+      "triage": [
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Environment-dependent - is LEMUR_CONF from untrusted source?"},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-05", "answer": "UNKNOWN", "reason": "Config loading happens before auth initialization"},
+        {"rule": "FP-07", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-08", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-09", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-10", "answer": "UNKNOWN", "reason": "Depends on deployment environment"}
+      ],
+      "limits": "Probable not confirmed because: (1) Config file origin is environment-dependent, (2) Default fallback to built-in default.conf.py is safer. Requires demonstration of path control in production environment.",
+      "what_would_settle_it": "Evidence of: (1) LEMUR_CONF set from untrusted source in CI/CD, (2) ~/.lemur/ world-writable in production, (3) Proof-of-concept malicious config execution",
+      "unaided_label": "CONFIG_EXEC_RISK"
+    },
+    {
+      "id": "F-002",
+      "title": "Missing input validation on filter parameter causes IndexError",
+      "procedure": "WEB-09",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 146
+      },
+      "evidence": "Code splits filter without validation: common_name = args['filter'].split(';')[1]. No try/catch. If format is invalid (missing semicolon), raises IndexError. Test: GET /certificates/valid?filter=test returns 500.",
+      "impact": "Denial of Service on certificate lookup endpoint. Error leaks internal details aiding reconnaissance.",
+      "preconditions": "Must be authenticated (endpoint requires @AuthenticatedResource login).",
+      "recommendation": "Validate format before split: parts = args['filter'].split(';'); if len(parts) < 2: return {'message': 'Invalid filter format'}, 400; common_name = parts[1]",
+      "verification": "(1) Authenticated user sends GET /certificates/valid?filter=nosemicolon, expects 400 not 500. (2) Handler gracefully rejects malformed input without exception.",
+      "traceability": ["CWE-20 (Improper Input Validation)", "CWE-129 (Improper Validation of Array Index)", "A03:2021 Injection"],
+      "triage": [
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-03", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-05", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-07", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-08", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-09", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-10", "answer": "DOES_NOT_HOLD"}
+      ],
+      "limits": "Severity medium: requires authentication, affects only one endpoint, no data breach.",
+      "unaided_label": "FILTER_INPUT_INDEXERROR"
+    },
+    {
+      "id": "F-003",
+      "title": "Certificate upload endpoint lacks authorization gate present in creation endpoint",
+      "procedure": "WEB-24",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/certificates/views.py",
+        "line": 200
+      },
+      "evidence": "Two endpoints create Certificates with asymmetric authorization:\n\nCertificatesList (POST /certificates): checks AuthorityPermission(data['authority'].id, roles).can()\n\nCertificatesUpload (POST /certificates/upload): no AuthorityPermission check, calls service.upload(**data) directly\n\nBoth endpoints process 'authority' parameter; upload bypasses permission check.",
+      "impact": "BFLA - Authenticated user can upload certificates to authorities they lack permission for, bypassing authority-level access controls.",
+      "preconditions": "Attacker must be authenticated. Upload endpoint must be reachable.",
+      "recommendation": "Replicate AuthorityPermission check from CertificatesList.post() into CertificatesUpload.post(): if data.get('authority'): authority_permission = AuthorityPermission(data['authority'].id, roles); if not authority_permission.can(): return {message: '...'}, 403",
+      "verification": "(1) User A (Authority 1 permission) sends upload for Authority 2 - should get 403. (2) Integration test verifies upload and create enforce same authority check. (3) Diff the two handlers' authorization logic - should be identical.",
+      "traceability": ["CWE-862 (Missing Authorization)", "CWE-863 (Incorrect Authorization)", "A01:2025 (Broken Access Control)", "WSTG-ATHZ-02"],
+      "triage": [
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "service.upload() may have hidden auth check - need code review"},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-05", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-06", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-07", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-08", "answer": "DOES_NOT_HOLD", "reason": "This IS the FP-08 case - sibling gate asymmetry"},
+        {"rule": "FP-09", "answer": "DOES_NOT_HOLD"},
+        {"rule": "FP-10", "answer": "DOES_NOT_HOLD"}
+      ],
+      "limits": "Assumes upload endpoint is reachable by regular users. If service.upload() enforces authorization internally, this could drop to hardening.",
+      "what_would_settle_it": "Code review of lemur/certificates/service.py upload() method confirming it DOES apply authority permission check (then refute) OR DOES NOT (confirming finding).",
+      "unaided_label": "MISSING_AUTHORIZATION_GATE_CERTIFICATE_UPLOAD"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "SQL Injection via ORM misuse",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "SQLAlchemy ORM used throughout with parameterized queries (filter_by, filter(), in_() methods). No string concatenation in SQL queries. Safe ORM patterns in database.py."
+    },
+    {
+      "class": "JWT algorithm confusion (HS256 vs RS256)",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "Token verification enforces algorithm allowlist from config. Signature validation is mandatory. No 'none' algorithm accepted. Multiple secrets supported with strict verification."
+    },
+    {
+      "class": "SSRF via Certificate verification",
+      "procedure": "WEB-10",
+      "outcome": "verified",
+      "where": "lemur/certificates/verify.py implements _validate_revocation_url() which validates against private/loopback addresses and optional allowlist. OCSP and CRL verification properly validate URLs before requests."
+    },
+    {
+      "class": "XXE / XML External Entity attacks",
+      "procedure": "WEB-11",
+      "outcome": "not executed",
+      "where": "No XML parsing detected in examined scope. YAML/JSON use safe libraries."
+    }
+  ]
+}

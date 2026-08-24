@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Uncontrolled memory allocation from wire protocol input",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+   "impact": "An attacker who can send AMQP messages (rogue server, MITM, or compromised broker) can cause denial of service by sending messages with extremely large size parameters. This will cause OutOfMemoryError when the client attempts to allocate huge byte arrays or read massive amounts of data into memory, crashing the application.",
+   "evidence": "readBytes method at line 86: `final long contentLength = unsignedExtend(in.readInt());` reads untrusted 32-bit length. Line 88 allocates: `new byte[(int)contentLength]` without size validation beyond Integer.MAX_VALUE check (2.1 GB). Similar pattern in readArray (line 240) and readTable (line 142) which read 32-bit length parameters and use them to create TruncatedInputStream."
+  },
+  {
+   "item_id": "F02",
+   "title": "Stack overflow from uncontrolled recursion in deserialization",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "An attacker can craft AMQP messages with deeply nested tables or arrays. When the client deserializes such a message, the stack will overflow, causing StackOverflowError and immediate application crash. This is a denial of service vulnerability.",
+   "evidence": "readFieldValue method (lines 158-221) recursively calls itself through readTable (line 181) and readArray (line 184). The cases for 'F' (table) and 'A' (array) dispatch to readTable and readArray respectively, which call readFieldValue in a loop. readTable at line 150 calls readFieldValue, and readArray at line 245 calls readFieldValue. No recursion depth counter or limit is present. Stack depth is unbounded based on message nesting level."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

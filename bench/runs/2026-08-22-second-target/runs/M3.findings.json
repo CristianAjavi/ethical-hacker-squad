@@ -1,0 +1,62 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "SQL Injection via Unsanitized ORDER BY Parameter",
+    "file": "routes/invoices.js",
+    "line": 24,
+    "severity": "CRITICAL",
+    "impact": "SQL injection allows attackers to read/modify/delete arbitrary database records via the sort parameter in the /invoices endpoint",
+    "evidence": "const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); where order = req.query.order || 'created_at' and no validation exists",
+    "recommendation": "Replace dynamic query construction with a whitelist of allowed columns: const ALLOWED = {'created_at': 'created_at', 'amount': 'amount'}; const column = ALLOWED[req.query.order] || 'created_at';"
+  },
+  {
+    "id": "F-002",
+    "title": "Cross-Site Scripting (XSS) via Unescaped HTML in Invoice Notes",
+    "file": "lib/render.js",
+    "line": 4,
+    "severity": "HIGH",
+    "impact": "Stored XSS vulnerability allowing attackers to inject arbitrary JavaScript into invoice notes viewed by other users",
+    "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } - uses note directly without HTML escaping",
+    "recommendation": "Apply HTML escaping: return `<div class=\"note\">${escapeHtml(note)}</div>;` (escapeHtml is already imported in this module)"
+  },
+  {
+    "id": "F-003",
+    "title": "Indirect Object Reference (IDOR) in Invoice Detail Endpoint",
+    "file": "routes/invoices.js",
+    "line": 8,
+    "severity": "HIGH",
+    "impact": "Unauthorized access to invoices: users can read invoices belonging to other customers by guessing or enumerating invoice IDs",
+    "evidence": "router.get('/invoices/:id', ...) executes SELECT * FROM invoices WHERE id = $1 without checking owner_id, while the /receipts/:id endpoint on line 13 correctly includes AND owner_id = $2",
+    "recommendation": "Add owner_id check to WHERE clause: 'SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]. Note: this assumes req.user.id is available from authenticated context."
+  },
+  {
+    "id": "F-004",
+    "title": "JWT Token Verification Bypass",
+    "file": "lib/auth.js",
+    "line": 6,
+    "severity": "HIGH",
+    "impact": "Authentication bypass: attackers can forge JWT tokens without a valid signature as jwt.decode() does not verify the token signature",
+    "evidence": "const claims = jwt.decode(bearer); - uses jwt.decode() which only parses the token without verifying the signature against a secret key",
+    "recommendation": "Use jwt.verify() instead: const claims = jwt.verify(bearer, process.env.JWT_SECRET || 'secret'); and wrap in try/catch for invalid tokens"
+  },
+  {
+    "id": "F-005",
+    "title": "Server-Side Request Forgery (SSRF) via Redirect in fetchLogo",
+    "file": "lib/remote.js",
+    "line": 6,
+    "severity": "MEDIUM",
+    "impact": "An attacker-controlled logoUrl can redirect to internal services (localhost, internal IPs) or sensitive endpoints, leading to SSRF attacks",
+    "evidence": "const response = await fetch(url, { redirect: 'follow' }); - allows the server to follow redirects to any destination including internal services",
+    "recommendation": "Set redirect: 'error' to reject redirects: const response = await fetch(url, { redirect: 'error' }); or validate the final URL is still on assets.example.com"
+  },
+  {
+    "id": "F-006",
+    "title": "Undefined Return Value in tagRequest Function",
+    "file": "lib/auth.js",
+    "line": 14,
+    "severity": "MEDIUM",
+    "impact": "Function returns undefined instead of the tagged request object, breaking metric tagging and returning wrong data to callers",
+    "evidence": "function tagRequest(req, metrics) { ... return req.session.user; } where req.session.user is never set by any prior code (req.session is never initialized)",
+    "recommendation": "Return the claims object or the user info: return { id: claims.sub, role: claims.role }; or remove this function if unused"
+  }
+]}

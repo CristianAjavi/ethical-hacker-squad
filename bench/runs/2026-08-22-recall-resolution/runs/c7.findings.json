@@ -1,0 +1,178 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target",
+    "commit": "HEAD",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad",
+    "coverage": {
+      "inventoried": [
+        "config/mcp.json",
+        "agent/answer.py",
+        "agent/memory.py",
+        "README.md"
+      ],
+      "read": [
+        "config/mcp.json",
+        "agent/answer.py",
+        "agent/memory.py",
+        "README.md"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "hardcoded_api_key_in_mcp_config",
+        "command_injection_via_shell_true",
+        "improper_tool_authorization",
+        "memory_poisoning_via_model_output",
+        "trifecta_data_tools_outbound"
+      ],
+      "reported": [
+        "hardcoded_api_key_in_mcp_config",
+        "command_injection_via_shell_true",
+        "improper_tool_authorization",
+        "memory_poisoning_via_model_output",
+        "tool_authorization_missing_account_scoping"
+      ],
+      "dropped": [
+        {
+          "label": "trifecta_data_tools_outbound",
+          "resolution": "merged",
+          "merged_into": "F-001"
+        }
+      ]
+    },
+    "coverage_declaration": "Full inventory read: config/mcp.json, agent/answer.py, agent/memory.py, and README.md. Procedures loaded and consulted: AI-01 (trifecta), AI-05 (tool authorization), AI-13 (memory poisoning), AI-15 (model output to executable sink), SUP-18 (secrets in configuration). No remote endpoints tested per authorization constraints. No database or external API access attempted.",
+    "authorization": "None (local analysis only)"
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API key in MCP configuration file",
+      "procedure": "SUP-18",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "config/mcp.json:6",
+      "evidence": "The billing MCP server configuration contains a hardcoded API key in plaintext: `BILLING_API_KEY: \"sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a\"`",
+      "impact": "An attacker with read access to the configuration file or version control history obtains a credential with full API access to the billing system. This enables account compromise, unauthorized transactions, data exfiltration, or denial of service.",
+      "preconditions": "Access to the configuration file (e.g., repository checkout, filesystem access, or version control history).",
+      "recommendation": "Move all secrets to a secrets manager (HashiCorp Vault, AWS Secrets Manager, or equivalent). Reference the secret by name only in the configuration file. Rotate the exposed key immediately.",
+      "verification": "Confirm the configuration file contains only secret references (e.g., `${BILLING_API_KEY}` or `${env.BILLING_API_KEY}`) and the actual key value is removed from all branches and tags in the repository history.",
+      "traceability": "CWE-798 · CWE-321 · A02:2021 · A09:2025 · CICD-SEC-6 · SUP-18",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces rotation or limitation of the exposed key."
+        },
+        "FP-09": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The API key is exactly what it appears to be: a hardcoded credential in plaintext."
+        }
+      },
+      "limits": "Does not establish whether the key has been revoked or whether it has been used to access production data.",
+      "unaided_label": "hardcoded_api_key_in_mcp_config"
+    },
+    {
+      "id": "F-002",
+      "title": "Command injection: model output passed to shell with shell=True",
+      "procedure": "AI-15",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "agent/answer.py:48",
+      "evidence": "Function `summarize_and_run` executes model-generated output directly as a shell command: `subprocess.run(model_output, shell=True, capture_output=True, text=True)`. The function accepts a string parameter and passes it to the shell interpreter without validation.",
+      "impact": "An attacker who can influence the model's output (via prompt injection, retrieval poisoning, or by crafting the customer question) can execute arbitrary shell commands with the privileges of the application process. This may compromise the host, exfiltrate data, or pivot to other systems.",
+      "preconditions": "The model output reaches the `summarize_and_run` function. The function must be called with untrusted input from the model.",
+      "recommendation": "Never pass model output to `shell=True`. Either (1) avoid shell execution entirely and use subprocess with `shell=False` and a list of arguments, or (2) implement a strictly validated command whitelist that accepts only known-safe operations and validates all parameters against a schema.",
+      "verification": "Scan the codebase for all calls to `summarize_and_run`. Confirm that the function is either removed or that no code path reaches it with model output. If retained, verify that a strict allowlist is enforced and test with a canary injection (e.g., `; echo CANARY`) confirming it is rejected.",
+      "traceability": "CWE-78 · CWE-94 · A05:2025 · LLM10:2026 · AI-15",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control prevents model output from reaching the sink or validates it before execution."
+        },
+        "FP-03": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`shell=True` is inherently dangerous; the sink interprets shell syntax and executes arbitrary commands."
+        }
+      },
+      "limits": "Does not establish whether `summarize_and_run` is actually called in the production flow, or whether there are upstream filters on the model output.",
+      "unaided_label": "command_injection_via_shell_true"
+    },
+    {
+      "id": "F-003",
+      "title": "Tool authorization: model decides account_id for refund operations",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "agent/answer.py:29-30",
+      "evidence": "The `run_tool` function dispatches tool calls by extracting parameters from the model's decision dictionary without authorization checks: `if decision[\"tool\"] == \"refund\": return issue_refund(decision[\"account_id\"], decision[\"amount\"])`. The `account_id` and `amount` are taken directly from the model and passed to the backend function.",
+      "impact": "The model can authorize a refund to any account for any amount by controlling its output. An attacker who can inject text into the model's context (via prompt injection, poisoned retrieval, or untrusted customer input) can craft a prompt that causes the model to issue refunds to attacker-controlled accounts, resulting in financial fraud and loss.",
+      "preconditions": "The model output is used to decide refund parameters, and the model is exposed to untrusted content (customer tickets, web-retrieved documents, or other ingestion sources).",
+      "recommendation": "Implement object-level authorization at the tool dispatcher. Extract the authenticated user's account_id from the session context (not from the model output), and pass it to the tool function. The function should refund only the caller's own account or accounts explicitly allowed by role-based access control. A scoped variant (`run_tool_scoped`) exists in the codebase; apply it universally.",
+      "verification": "Confirm that the dispatcher always passes `session[\"authenticated_account_id\"]` (not `decision[\"account_id\"]`) to the tool function. Ensure no code path uses the unscoped `run_tool` for sensitive operations. Write a test that verifies a refund request targeting a different account is rejected at the authorization layer.",
+      "traceability": "CWE-284 · CWE-639 · A01:2025 · LLM02:2026 · ASI02 · AI-05",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces object-level authorization in the dispatcher or in the tool function itself."
+        }
+      },
+      "limits": "Does not establish whether the model can be reliably controlled to produce refund decisions, or whether there are rate limits or approval gates downstream.",
+      "unaided_label": "improper_tool_authorization"
+    },
+    {
+      "id": "F-004",
+      "title": "Memory poisoning: model output appended to persistent memory without schema validation",
+      "procedure": "AI-13",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "agent/memory.py:10-14",
+      "evidence": "Function `remember_from_reply` appends the model's output directly to persistent memory without filtering or validation: `data.setdefault(\"notes\", []).append(reply)`. The function accepts any string and persists it to the JSON file at `/var/lib/acme/agent-memory.json`, making it available to future sessions.",
+      "impact": "An attacker who can influence the model's output (via prompt injection or by poisoning the retrieval index) can inject instructions into the memory, which will be re-exposed to the model in future sessions. Injected instructions persist across sessions and may cause the model to leak sensitive information, perform unauthorized actions, or continue exfiltrating data long after the original injection point.",
+      "preconditions": "The function is called with model output, and the stored notes are later retrieved and passed back to the model in future conversations.",
+      "recommendation": "Do not persist free-text model output. Instead, persist only extracted, validated fields from a closed schema (e.g., `{\"preferred_language\": \"en\", \"timezone\": \"UTC\"}`) using the existing `remember_preference` function. If you must store session notes, extract only the user's own statements (not the model's) and tag them with origin, timestamp, and source attribution.",
+      "verification": "Remove the `remember_from_reply` function or restrict it to persisting only schema-validated, non-executable fields. Verify that no code path appends untrusted text directly to any persistent store. Test that injected instructions in the model output are not reflected back in future sessions.",
+      "traceability": "CWE-349 · LLM01:2026 · LLM05:2026 · AML.T0051.001 · AI-13",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No schema validation or filter exists on the input to the memory write function."
+        }
+      },
+      "limits": "Does not establish whether the memory is actually re-exposed to the model in future sessions, or only used for analytics or logging.",
+      "unaided_label": "memory_poisoning_via_model_output"
+    },
+    {
+      "id": "F-005",
+      "title": "Tool authorization: model decides account_id for lookup operations",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "agent/answer.py:31-32",
+      "evidence": "The `run_tool` dispatcher allows the model to specify an arbitrary account_id for the lookup tool: `if decision[\"tool\"] == \"lookup\": return lookup(decision[\"account_id\"])`. The `lookup` function returns account information for any account_id without verifying the caller's authorization.",
+      "impact": "The model can retrieve account information for any customer, enabling cross-account information disclosure and privacy violations. Combined with the trifecta (untrusted ingestion + tools + outbound channel), an attacker can extract all customer accounts' data by injecting text into a ticket or retrieval source and having the model compile and exfiltrate the results.",
+      "preconditions": "The model is exposed to untrusted customer content, and the lookup function is called with the model-chosen account_id.",
+      "recommendation": "Apply object-level authorization: implement the same fix as F-003. Pass only the authenticated user's account_id to the lookup function via `session[\"authenticated_account_id\"]`. The `run_tool_scoped` function already implements this correctly; use it instead of `run_tool`.",
+      "verification": "Confirm that lookup always receives `session[\"authenticated_account_id\"]` and rejects lookups of other accounts. Write a test that verifies an unauthorized lookup request fails at the authorization layer before reaching the backend.",
+      "traceability": "CWE-284 · A01:2025 · LLM02:2026 · ASI02 · AI-05",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No authorization check exists in the lookup function or its dispatcher to prevent cross-account access."
+        }
+      },
+      "limits": "Does not establish whether the lookup function is actually called in the production flow or whether there are rate limits on enumeration.",
+      "unaided_label": "tool_authorization_missing_account_scoping"
+    }
+  ],
+  "ruled_out": {
+    "description": "No surfaces ruled out. All inventoried components were analyzed."
+  }
+}

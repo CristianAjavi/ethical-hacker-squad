@@ -1,0 +1,84 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Critical: JWT Token Not Verified",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "critical",
+      "impact": "Authentication bypass: attacker can forge any JWT by crafting a token with arbitrary sub, role, and tenant claims. All authorization checks rely on these unverified claims.",
+      "evidence": "jwt.decode() at line 6 and line 12 parses the JWT but does NOT validate the cryptographic signature. The jsonwebtoken library requires jwt.verify() with a secret key to validate authenticity. Using jwt.decode() alone trusts the client's claims entirely.",
+      "recommendation": "Replace jwt.decode() with jwt.verify(bearer, SECRET_KEY) in currentUser() and tagRequest(). Store the JWT secret securely in environment variables. Validate token expiration (exp claim) and issuer (iss claim) if applicable."
+    },
+    {
+      "id": "F-002",
+      "title": "Critical: SQL Injection in /invoices Sorting",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "critical",
+      "impact": "Full SQL injection: attacker can inject arbitrary SQL via the 'order' query parameter. This enables data exfiltration, authentication bypass via UPDATE/DELETE, and potential remote code execution depending on database configuration.",
+      "evidence": "Line 23 reads req.query.order with a safe default, but line 24 directly interpolates it into the SQL query: `ORDER BY ${order}`. Attacker input like '1; DROP TABLE invoices; --' will execute arbitrary SQL. The /payments endpoint (lines 29-32) correctly uses an allowlist pattern with a SORTABLE object, proving the codebase knows the secure pattern but inconsistently applies it.",
+      "recommendation": "Replace the ORDER BY clause with parameterized input validation. Use the SORTABLE allowlist pattern from /payments. If dynamic column names are needed, maintain an explicit allowlist of permitted columns and validate input against it before building the query string."
+    },
+    {
+      "id": "F-003",
+      "title": "High: Missing Authorization on /invoices/:id (IDOR)",
+      "file": "routes/invoices.js",
+      "line": 8,
+      "severity": "high",
+      "impact": "Insecure Direct Object Reference (IDOR): attacker can retrieve any invoice by guessing or incrementing the ID. No ownership check means data disclosure for all invoices in the system, not just the attacker's own.",
+      "evidence": "Line 8 queries 'SELECT * FROM invoices WHERE id = $1' with only the invoice ID, no owner_id check. Compare line 15 in the /receipts endpoint which correctly includes 'AND owner_id = $2' to verify ownership. The inconsistency shows the missing check is a flaw, not by design.",
+      "recommendation": "Add an ownership check to the /invoices/:id query: 'WHERE id = $1 AND owner_id = $2' with [req.params.id, req.user.id]. Alternatively, load the invoice and check ownership in application code before returning it to ensure req.user.id is set and valid."
+    },
+    {
+      "id": "F-004",
+      "title": "High: Stored XSS via Unescaped invoiceNote Function",
+      "file": "lib/render.js",
+      "line": 5,
+      "severity": "high",
+      "impact": "Stored XSS: attacker can inject JavaScript into invoice notes. If notes are stored in the database and rendered to other users, the payload executes in their browser context, enabling session hijacking, credential theft, and malware distribution.",
+      "evidence": "Line 5 returns `<div class=\"note\">${note}</div>` without HTML escaping. The parameter 'note' comes from user input and is directly interpolated. The same file correctly escapes customer names on line 10 using escapeHtml(name), demonstrating the function exists and is available. The inconsistency shows invoiceNote() is missing the critical escaping step.",
+      "recommendation": "Wrap the 'note' parameter with escapeHtml() on line 5: `<div class=\"note\">${escapeHtml(note)}</div>`. This escapes HTML metacharacters (&, <, >, \") to prevent injection. Verify that all user-controlled data rendered as HTML uses escapeHtml()."
+    },
+    {
+      "id": "F-005",
+      "title": "High: Server-Side Request Forgery (SSRF) in fetchLogo",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "high",
+      "impact": "SSRF: attacker can force the server to fetch from arbitrary URLs. This enables reconnaissance of internal networks (internal IPs, Kubernetes services), metadata endpoints (cloud provider credentials), and exfiltration to attacker-controlled servers.",
+      "evidence": "Line 6 calls fetch(url) on the URL from req.body.logoUrl with no validation. The fetchAsset() function (lines 11-16) correctly implements hostname validation using an allowlist, but fetchLogo() has no such restriction. The two functions show inconsistent security levels for similar operations.",
+      "recommendation": "Add URL validation to fetchLogo(). Either (1) implement the same allowlist pattern as fetchAsset() and validate the hostname before fetch, or (2) parse the URL and only allow HTTPS to whitelisted domains. Prevent access to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1)."
+    },
+    {
+      "id": "F-006",
+      "title": "Medium: Redirect-Based SSRF Bypass",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "medium",
+      "impact": "Hostname allowlist bypass: even with fetchAsset() ALLOWED whitelist, an attacker controlling a whitelisted server (e.g., assets.example.com) can redirect to internal URLs, bypassing the allowlist check that happens before the redirect.",
+      "evidence": "Line 6 in fetchLogo() uses { redirect: 'follow' }, which allows HTTP redirects. The hostname check on line 13 in fetchAsset() occurs BEFORE the fetch and redirect. A URL pointing to 'assets.example.com' that redirects to 'localhost:6379' would pass the whitelist but fetch internal services.",
+      "recommendation": "Set { redirect: 'error' } to disable automatic redirects and validate the final URL. Alternatively, follow redirects and validate each hop's hostname against the allowlist. For sensitive operations, reject any redirect and treat it as an error."
+    },
+    {
+      "id": "F-007",
+      "title": "Low: Unhandled Promise Rejection / Missing Error Handling",
+      "file": "routes/invoices.js",
+      "line": 38,
+      "severity": "low",
+      "impact": "Information disclosure: unhandled exceptions in async route handlers can leak stack traces and internal details in error responses, aiding reconnaissance.",
+      "evidence": "Line 38 calls await fetchLogo(req.body.logoUrl) without a try-catch block. If fetchLogo() throws (network error, invalid URL, timeout), the error bubbles up to Express's default error handler and may expose sensitive details depending on the app's error-handling configuration.",
+      "recommendation": "Wrap the fetchLogo call in try-catch to handle errors gracefully: catch exceptions and return a 400/422 error with a generic message. Log the underlying error securely (without exposing to client) for debugging."
+    },
+    {
+      "id": "F-008",
+      "title": "Low: Undefined Reference in tagRequest Function",
+      "file": "lib/auth.js",
+      "line": 14,
+      "severity": "low",
+      "impact": "Logic error: metrics tagging fails silently, making monitoring and audit logs unreliable.",
+      "evidence": "Line 14 returns req.session.user, but req.session is never initialized in the visible codebase. Express's session middleware is not configured, so req.session is undefined. The function was likely intended to return the currentUser result instead.",
+      "recommendation": "Replace 'return req.session.user' with 'return { id: claims && claims.sub, role: claims && claims.role }' or call currentUser(req). Ensure session middleware is configured if req.session is needed elsewhere."
+    }
+  ]
+}

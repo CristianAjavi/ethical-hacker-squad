@@ -1,0 +1,124 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "haiku-corpus-3",
+    "coverage_declaration": "Exercised: ValueReader.java protocol deserialization logic (timestamps, byte arrays, field values). Supply-chain analysis of pom.xml dependencies. Not exercised: integration with AMQP frame parsing layer, compensating controls at higher layers, runtime memory limits in RabbitMQ broker configuration, AMQP specification compliance verification.",
+    "coverage": {
+      "inventoried": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "pom.xml"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "pom.xml"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "timestamp_overflow_line_269",
+        "memory_exhaustion_dos_line_87",
+        "silent_duplicate_key_handling",
+        "bigdecimal_scale_overflow"
+      ],
+      "reported": [
+        "timestamp_overflow_line_269",
+        "memory_exhaustion_dos_line_87"
+      ],
+      "dropped": [
+        {
+          "label": "silent_duplicate_key_handling",
+          "reason": "This is intentional AMQP protocol behavior per the AMQP specification to preserve first value when duplicate keys are encountered."
+        },
+        {
+          "label": "bigdecimal_scale_overflow",
+          "reason": "BigDecimal constructor handles arbitrary scale values correctly, no buffer overflow or memory exhaustion issue demonstrated."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Potential integer overflow in timestamp conversion",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269
+      },
+      "evidence": "Line 269: `return new Date(in.readLong()*1000);` multiplies an untrusted network-supplied long value by 1000 without overflow checking. If the input long value is close to Long.MAX_VALUE/1000 (approximately 9.22e15), the multiplication will overflow and produce a negative date.",
+      "impact": "A malformed AMQP frame with a timestamp value close to Long.MAX_VALUE will cause silent integer overflow, resulting in a Date object with an incorrect (negative) timestamp. This could cause unexpected behavior in code relying on timestamp ordering or comparisons.",
+      "preconditions": "An attacker must be able to send crafted AMQP frames with timestamp values in the field range [9.22e15, Long.MAX_VALUE].",
+      "recommendation": "Add overflow detection before multiplication: either check if the value is within safe bounds, use `Math.multiplyExact()` to throw on overflow, or validate that the timestamp is within acceptable ranges.",
+      "verification": "not executed",
+      "inference": "The overflow occurs silently due to Java's wrapping semantics for long arithmetic. The inference is that this could cause data corruption in timestamp-sensitive operations, but we have not verified whether callers validate timestamps post-deserialization.",
+      "what_would_settle_it": "Code review of callers of `readTimestamp()` to determine whether they perform range validation; a test case that attempts to deserialize a timestamp near Long.MAX_VALUE and verifies it produces an exception or correct behavior.",
+      "unaided_label": "timestamp_overflow_line_269",
+      "traceability": [
+        "CWE-190"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The long value is read directly from untrusted network input via `in.readLong()` with no prior bounds checking."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink (Date constructor) is not protected by type narrowing or safe arithmetic; multiplication happens before Date construction."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "It is unclear whether the impact reaches the user, as callers may validate timestamps after deserialization. This would require evidence of downstream validation."
+        }
+      ],
+      "limits": "This finding assumes the timestamp is attacker-controlled via AMQP frames. If timestamps are validated before reaching user-visible output, the impact may be contained."
+    },
+    {
+      "id": "F-002",
+      "title": "Denial of service via unbounded byte array allocation",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 87
+      },
+      "evidence": "Lines 86-90: The method reads a 32-bit unsigned integer from the network and uses it to allocate a byte array. The code `if(contentLength < Integer.MAX_VALUE)` allows allocation of up to Integer.MAX_VALUE - 1 bytes (approximately 2 GB). An attacker sending a frame with contentLength near 2 GB will exhaust available heap memory, causing OutOfMemoryError and denial of service.",
+      "impact": "A remote attacker can craft an AMQP frame with a large contentLength value to consume all available heap memory, causing the Java process to crash or become unresponsive. This is a direct denial of service attack.",
+      "preconditions": "The attacker must be able to send AMQP frames to the RabbitMQ client. No authentication is required if the connection is not yet authenticated when frames are parsed.",
+      "recommendation": "Implement a strict limit on the maximum allowed size for byte arrays and tables, independent of the protocol specification. For example, fail fast with a `MalformedFrameException` if contentLength exceeds a configured threshold (e.g., 128 MB). This limit should be configurable and documented.",
+      "verification": "not executed",
+      "inference": "We infer that the code allows allocation of very large byte arrays based on the static check and the lack of a runtime memory limit. The inference is that this is exploitable, but we have not measured the actual behavior under memory pressure.",
+      "what_would_settle_it": "A runtime test that attempts to send an AMQP frame with contentLength = Integer.MAX_VALUE - 1 and measures memory consumption; evidence of a maximum-frame-size limit in the AMQP specification or RabbitMQ configuration that constrains this.",
+      "unaided_label": "memory_exhaustion_dos_line_87",
+      "traceability": [
+        "CWE-400",
+        "CWE-770"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The contentLength is read directly from untrusted network input via `in.readInt()` with no prior bounds checking."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "There may be a compensating control at a higher layer that limits the size of AMQP frames before they reach this code. This would require evidence of such a control."
+        }
+      ],
+      "limits": "This assumes the attacker can send arbitrarily large contentLength values. If the underlying transport layer (TCP/TLS) enforces a maximum frame size smaller than Integer.MAX_VALUE, the impact may be reduced."
+    }
+  ],
+  "ruled_out": []
+}

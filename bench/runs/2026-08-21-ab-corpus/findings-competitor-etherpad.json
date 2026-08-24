@@ -1,0 +1,105 @@
+{
+ "schema": "ehs.findings/v1-adapted",
+ "arm": "competitor",
+ "case": "etherpad",
+ "source": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/mantis/etherpad/out/findings-index.json",
+ "note": "status is not their word; see adapt-competitor-findings.py for why every reported finding is carried through as reported",
+ "findings": [
+  {
+   "id": "M-001",
+   "status": "confirmed",
+   "title": "getPublicSettings() ships the git commit SHA to every browser regardless of `exposeVersion`",
+   "location": {
+    "path": "src/node/utils/Settings.ts",
+    "line": 867
+   },
+   "impact": "Any unauthenticated visitor who can load a pad page learns the exact commit the server is running, even on an instance whose operator deliberately left `exposeVersion` at its documented-safe `false`. That turns vulnerability targeting from probing into lookup: an attacker matches the SHA against public history and knows precisely which fixes are and are not present before sending a single exploit attempt, and can fingerprint the instance across deployments and behind proxies.",
+   "evidence": "getPublicSettings() at :865-878 is an object literal whose members include `gitVersion: settings.gitVersion` (:867) with no branch on exposeVersion anywhere in the function, while `exposeVersion: settings.exposeVersion` sits two lines below at :869; exposeVersion defaults to false at :814 under the comment 'Do not enable on production machines'. settings.gitVersion is set eagerly at :879 from getGitCommit(). The same payload carries randomVersionString, which :1393-1396 derives as createHash('sha256').update(`${pkgVersion}|${settings.gitVersion||''}`).digest('hex').slice(0,8).",
+   "their_severity": "MEDIUM (Mantis risk score 4.0/10)"
+  },
+  {
+   "id": "M-002",
+   "status": "confirmed",
+   "title": "reloadSettings() unconditionally overwrites the operator's `logconfig`, discarding every non-console log appender",
+   "location": {
+    "path": "src/node/utils/Settings.ts",
+    "line": 1245
+   },
+   "impact": "Every deployment that configures durable or off-host logging through `logconfig` runs with console-only log4js output instead, without any error. Where stdout is not itself captured and retained (bare `node`/`nohup` starts, or a container whose stdout is dropped), the security and audit record the operator believed they had configured does not exist: authentication failures, admin actions and error traces are written nowhere durable and cannot be reviewed after an incident. Where stdout is captured, retention, filtering and forwarding policy silently revert to the platform default.",
+   "evidence": "logconfig is a declared setting (type at :281, default null at :719, documented at :716-718 as 'log4js appender configuration') and is accepted by storeSettings() at :956. reloadSettings() then executes `settings.logconfig = defaultLogConfig(...)` at :1245-1248 with no enclosing conditional and passes the result to initLogging at :1251. defaultLogConfig at :56-61 declares exactly one appender: {console: {type: 'console'}}. loglevel and logLayoutType on lines :1246-1247 ARE read and honoured.",
+   "their_severity": "MEDIUM (Mantis risk score 3.2/10)"
+  },
+  {
+   "id": "M-003",
+   "status": "confirmed",
+   "title": "reloadSettings writes the generated session key to SESSIONKEY.txt with default file permissions",
+   "location": {
+    "path": "src/node/utils/Settings.ts",
+    "line": 1324
+   },
+   "impact": "Any unprivileged local account on the host \u2014 a co-tenant on shared hosting, a sidecar or init container sharing the volume, a backup or log-shipping agent, a compromised low-privilege service, or anyone who ends up with a copy of the install directory \u2014 can read the cookie-signing key with a single `cat`. With it they can mint or tamper with signed session cookies for the instance and impersonate arbitrary users, without ever touching the Etherpad process or its account. The exposure is silent and persists for the life of the file, because the same file is reloaded on every boot.\n\nThe cookie-signing key is left readable to every local account, and the unvalidated read-back means a local user who can write the file also chooses the key at the next restart.",
+   "evidence": "`fs.writeFileSync(sessionkeyFilename, settings.sessionKey, 'utf8')` at :1324 passes no mode option, so the file is created 0o666 & ~umask (0644 under the usual umask). The content is the cookie-signing secret generated at :1323 by randomString(32); the path from :1312 is `absolutePaths.makeAbsolute(argv.sessionkey || './SESSIONKEY.txt')`, inside the install directory. Reached only when the guard at :1320 holds, i.e. when keyRotationEnabled (:1319) is falsy. The read-back at :1315 accepts the file contents unvalidated.",
+   "their_severity": "MEDIUM (Mantis risk score 3.14/10)"
+  },
+  {
+   "id": "M-004",
+   "status": "confirmed",
+   "title": "emitOpenTag appends the author-derived span class into a class attribute without escaping",
+   "location": {
+    "path": "src/node/utils/ExportHtml.ts",
+    "line": 176
+   },
+   "impact": "Arbitrary HTML, including a <script> element or an event-handler attribute, is embedded in the downloaded export and runs when the recipient opens the file. The exported document is designed to be circulated, so the code executes in a context belonging to someone other than the pad contributor and outside the application's access control - frequently a file:// origin. This is the same data source as the :95 finding but a different sink, so fixing the CSS rule alone leaves this one open.\n\nIf any author id can contain a double quote, the author-coloured HTML export contains attacker-chosen attributes on a span, giving script execution in the browser of whoever opens the exported document.",
+   "evidence": "emitOpenTag writes the tag as three raw appends with no encoder between them: :175 `assem.append('<span class=\"')`, :176 `assem.append(spanClass)`, :177 `assem.append('\">')`. spanClass is returned by getSpanClassFor at :152 as `stripDotFromAuthorID(property)`, and stripDotFromAuthorID at :79 is `id.replace(/\\./g, '_')` \u2014 it substitutes dots only, so a double quote survives. The same file escapes an attribute correctly at :285 with Security.escapeHTMLAttribute, so the encoder exists and is simply not applied here.",
+   "their_severity": "LOW (Mantis risk score 2.0/10)"
+  },
+  {
+   "id": "M-005",
+   "status": "confirmed",
+   "title": "Author-derived CSS class name concatenated unescaped into the exported <style> block in getHTMLFromAtext",
+   "location": {
+    "path": "src/node/utils/ExportHtml.ts",
+    "line": 95
+   },
+   "impact": "An author identifier carrying markup is written verbatim into the standalone HTML document that a user downloads and opens. Because the payload escapes the <style> element, it becomes live markup - script, event handlers, remote references - in the exported document's context: an origin outside the pad's access-control perimeter, commonly file://, and typically opened by the person the document was forwarded to rather than by the pad's contributors. Even without a full script payload, an injected rule can rewrite the whole exported document's appearance.",
+   "evidence": "The <style> block is opened at :82 and closed at :109, and :95 appends into it by raw concatenation: `` css += `.${propName} {background-color: ${authorColors[attr[1]]}}\\n` ``. propName is built at :91 as `` `author${stripDotFromAuthorID(attr[1])}` `` from the pad attribute pool entries enumerated at :84-89, and stripDotFromAuthorID (:79) replaces '.' only \u2014 so '<', '>', '{', '}' and the literal '</style>' survive. The css string becomes pieces[0] at :295 and is emitted verbatim by `pieces.join('')` at :512. The pool enters the module at :47, `const apool = pad.apool();`.",
+   "their_severity": "LOW (Mantis risk score 2.0/10)"
+  },
+  {
+   "id": "M-006",
+   "status": "confirmed",
+   "title": "`updates.requireSignature` defaults to false and reloadSettings() never couples it to `updates.tier`",
+   "location": {
+    "path": "src/node/utils/Settings.ts",
+    "line": 567
+   },
+   "impact": "An operator who turns on automatic updates \u2014 the one action the setting exists for \u2014 gets unauthenticated code installation: the instance accepts whatever the configured source serves, with no cryptographic binding to the project's release keys. Anyone who can compromise the update source or interpose on the fetch (a hijacked repository or account, a poisoned mirror or registry, a tampered network path) reaches remote code execution on the server at update time, unattended and unnoticed. A misspelled or unexpected `updates.tier` value is likewise passed straight through to the updater instead of being rejected at boot.",
+   "evidence": "`requireSignature: false` at :567, with the field documented at :344-345 as 'When true, refuse updates whose tag is not signed by a trusted key'. A grep for requireSignature over the module returns only that declaration and that default \u2014 reloadSettings() (:1169-1399) validates ipLogging, privacyBanner.dismissal, padOptions, skinName, socketTransportProtocols, cookie.prefix and soffice, and never reads updates.* at all, so nothing couples signature enforcement to updates.tier (default 'notify' at :551).",
+   "their_severity": "LOW (Mantis risk score 2.0/10)"
+  },
+  {
+   "id": "M-007",
+   "status": "confirmed",
+   "title": "Vacuous lookahead guard in getHTMLFromAtext reads textLines[i+1] and attribLines[i+1] one element past the end",
+   "location": {
+    "path": "src/node/utils/ExportHtml.ts",
+    "line": 333
+   },
+   "impact": "Pads ending inside a nested list drive the list-closing logic from a synthesised lookahead line, producing malformed nesting in the exported HTML, and risk an unhandled TypeError in the export request depending on how the out-of-scope _analyzeLine handles undefined arguments.\n\nEvery export of a pad whose last line carries a list attribute performs an out-of-range array read and calls `_analyzeLine` with `undefined` arguments. Depending on how the out-of-scope `_analyzeLine` handles that input the result is either (a) silently wrong list-closing logic on the last line of every list-terminated pad, because the `!nextLine` branches at :437/:451 can never run, or (b) an unhandled rejection that fails the export request. Any pad contributor can create the triggering condition by ending a pad with a bullet. No confidentiality or integrity consequence is demonstrable from the code in scope; this is a robustness/availability defect.\n\nA latent null dereference in the export path that turns into an unhandled rejection - a failed export response - as soon as the off-by-one at :333 is fixed. It is a trap for the fix, which is why it is worth recording separately: correcting :333 alone converts a silent wrong-output bug into a crash. No confidentiality or integrity consequence; robustness/availability only.\n\nA pad whose last line opens a nested list can make the HTML export of that pad fail with an unhandled exception instead of returning a document, for every subsequent request for that pad's export until the content changes. This is a per-request availability defect in a low-criticality subsystem - the pad itself keeps serving and editing - not a compromise of confidentiality or integrity.",
+   "evidence": "The loop header at :314 is `for (let i = 0; i < textLines.length; i++)` and the lookahead guard at :333 is `if (i < textLines.length)` \u2014 the identical predicate, so it is true on every iteration and guards nothing. On the last iteration :334 runs `nextLine = _analyzeLine(textLines[i + 1], attribLines[i + 1], apool)` with both subscripts undefined. `let nextLine = null` at :329 is therefore dead, and the null-guards at :437 (`if (nextLine &&`) and :451 (`if ((!nextLine ||`) can never fire; :382 dereferences nextLine with no guard at all.",
+   "their_severity": "LOW (Mantis risk score 2.0/10)"
+  },
+  {
+   "id": "M-008",
+   "status": "confirmed",
+   "title": "openLists filter in getHTMLFromAtext uses && where the removal predicate requires ||, discarding unrelated open lists",
+   "location": {
+    "path": "src/node/utils/ExportHtml.ts",
+    "line": 466
+   },
+   "impact": "The one piece of state that prevents duplicate `<ol>`/`<ul>` scaffolding is unreliable: closing any list level silently forgets sibling lists of the same type at other levels. The observable outcome is structurally wrong nesting in the exported document for pads that mix nesting depths and list types - duplicated or unbalanced list elements - not injection. Correctness/robustness only.",
+   "evidence": "`openLists = openLists.filter((el) => el.level !== diff && el.type !== line.listTypeName)` at :466. filter KEEPS entries satisfying the predicate, so an entry is REMOVED whenever `el.level === diff || el.type === line.listTypeName`. The matching lookup at :340-341 finds an entry by level AND type, showing the intent was to remove only the entry matching both. openLists is declared at :310 and mutated only at :352 and :466.",
+   "their_severity": "LOW (Mantis risk score 2.0/10)"
+  }
+ ]
+}

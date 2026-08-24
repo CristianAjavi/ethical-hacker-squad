@@ -1,0 +1,136 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (Haiku audit, manual review)",
+    "coverage_declaration": "Scope limited to ValueReader.java (single file AMQP wire protocol parser) and pom.xml dependency manifest. Full arithmetic, input validation, and deserialization semantics reviewed. Not covered: related classes (TruncatedInputStream, LongStringHelper), test suites, the broader RabbitMQ client implementation, network transport layer (Netty), authentication/TLS, and producer/consumer layers. Dependencies were inventoried but not analyzed for vulnerabilities (supply-chain procedures not run). The findings reflect a single-file code review focused on parsing logic and arithmetic operations.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven manifest)",
+        "ValueReader.java (AMQP deserialization logic)",
+        "Dependencies: Netty 4.2.15, SLF4J 1.7.36, Jackson 2.21.3"
+      ],
+      "read": [
+        "ValueReader.java: full review for deserialization, arithmetic, and buffer allocation",
+        "pom.xml: dependency versions and build configuration"
+      ],
+      "not_read": [
+        "TruncatedInputStream.java (wrapper used by ValueReader, not in target scope)",
+        "LongStringHelper.java (utility used by ValueReader, not in target scope)",
+        "Test suites and integration tests (scope is library code only)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Integer overflow in timestamp multiplication (line 269)",
+        "OutOfMemoryError from large buffer allocation (line 86-94)",
+        "Untrusted AMQP protocol data deserialization (lines 139-221)",
+        "Silent discard of duplicate table keys (line 151-152)"
+      ],
+      "reported": [
+        "Integer overflow in timestamp multiplication (line 269)",
+        "OutOfMemoryError from large buffer allocation (line 86-94)"
+      ],
+      "dropped": [
+        {
+          "label": "Untrusted AMQP protocol data deserialization (lines 139-221)",
+          "reason": "This is protocol parsing of a domain-specific format (AMQP), not deserialization of arbitrary object classes or code execution. The pattern differs from CWE-502 (Java deserialization gadget chains). It is a hardening improvement, not a confirmed vulnerability."
+        },
+        {
+          "label": "Silent discard of duplicate table keys (line 151-152)",
+          "reason": "Duplicate key handling via containsKey() check is a data structure choice, not a security vulnerability. It silently uses first value, which may be intentional for table parsing semantics. Would require protocol specification review to determine if this is a defect."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Integer overflow in timestamp multiplication",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269
+      },
+      "evidence": "Line 269: `return new Date(in.readLong()*1000);` multiplies a long by 1000 without overflow checking",
+      "impact": "Multiplying a long timestamp by 1000 can overflow the range when the input value is close to Long.MAX_VALUE, resulting in Date objects with incorrect or negative timestamps",
+      "preconditions": "AMQP message contains a timestamp value within (Long.MAX_VALUE / 1000, Long.MAX_VALUE]",
+      "recommendation": "Use checked multiplication or BigDecimal to detect overflow, or validate that the input timestamp is within safe bounds before multiplication",
+      "what_would_settle_it": "Evidence that the timestamp value is checked before multiplication, or confirmation that AMQP protocol bounds prevent such large values",
+      "inference": "Assuming the AMQP protocol allows arbitrary 64-bit timestamp values",
+      "traceability": ["CWE-190"],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The timestamp value origin from the wire protocol is not constrained by the code; AMQP specification validation is external to this class"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The Java long multiplication is not safe against overflow"
+        }
+      ],
+      "limits": "This finding does not establish whether AMQP protocol limits prevent such large values from appearing in practice",
+      "unaided_label": "Integer overflow in timestamp multiplication (line 269)"
+    },
+    {
+      "id": "F-002",
+      "title": "Potential OutOfMemoryError from large buffer allocation",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 88
+      },
+      "evidence": "Line 86-94: check `if(contentLength < Integer.MAX_VALUE)` permits allocation of arrays up to Integer.MAX_VALUE bytes, line 88: `final byte [] buffer = new byte[(int)contentLength];`",
+      "impact": "A malformed or hostile AMQP message declaring a content length near Integer.MAX_VALUE (~2GB) causes OutOfMemoryError, denying service to the client",
+      "preconditions": "AMQP message is received with a declared length >= (available heap - overhead)",
+      "recommendation": "Impose a maximum buffer size limit smaller than Integer.MAX_VALUE, enforce it before allocation, and handle overflow gracefully",
+      "what_would_settle_it": "Configuration showing a strict maximum size limit enforced at the protocol level or connection setup, or evidence that AMQP has negotiated frame size limits",
+      "inference": "Assuming no connection-level frame size negotiation or limit is enforced externally",
+      "traceability": ["CWE-400"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Whether AMQP frame size limits are negotiated at connection setup is not visible in this code"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The contentLength value comes directly from the wire protocol without server-side bounds"
+        }
+      ],
+      "limits": "Does not determine whether the AMQP handshake enforces frame size limits that would prevent this scenario",
+      "unaided_label": "OutOfMemoryError from large buffer allocation (line 86-94)"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Object deserialization gadget chain (CWE-502)",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "ValueReader.java uses safe domain-specific deserialization, not Java Object serialization. AMQP wire format is parsed into Map/List/primitives, not reconstructed object instances with arbitrary class types. No gadget chain surface exists."
+    },
+    {
+      "class": "Code injection through template or expression language (CWE-1336)",
+      "procedure": "WEB-09",
+      "outcome": "refuted",
+      "where": "ValueReader contains no template engines, expression parsers, or dynamic code evaluation. Data is parsed into static Java types only."
+    },
+    {
+      "class": "SQL or NoSQL injection (CWE-89, CWE-943)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "ValueReader is a wire protocol parser with no database access, query construction, or data-store interaction. No injection surface exists."
+    }
+  ]
+}
