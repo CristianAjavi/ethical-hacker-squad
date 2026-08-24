@@ -8,9 +8,11 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
 
-**Seventeen blinded measurements — sixteen against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
+**Eighteen blinded measurements — against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
 
-Two results are larger than the comparison. Against a competing product (`google/mantis`) on precision at weak scale, **it is more precise than this corpus** — 53% of its claims refuted against our 62%, exactly as our own pre-registration predicted, because it ships an explicit critic stage we do not. And across three arms, fifteen runs and 71 claims, **not one arm produced a single true finding beyond the two the ground truth already named.** Everything else was refuted by two independent adversarial verifiers. Detection, on this evidence, is the model's rather than any product's.
+Two results are larger than the comparison. Across three arms, fifteen runs and 71 claims on one target, **not one arm produced a single true finding beyond the two the ground truth already named** — everything else was refuted by two independent adversarial verifiers. On **whole repositories with no pointer** — the task this corpus is actually built for, and the last dimension where a lead had not been ruled out — it now is. Re-run on a checkout verified to sit at the pre-fix commit, [three arms found the advisory 3/3 each](bench/runs/2026-08-22-unaided-verified/): with the corpus, with the corpus minus one rule, and **with no corpus at all**, the unaided arm reporting the most findings of the three. **Whole-repository detection of this advisory is the model's, and the corpus adds nothing to it.** The round that would have said otherwise [was retracted](bench/runs/2026-08-22-routing-at-N/): its targets were cloned at the default branch, so both arms audited code the defects had already been removed from, and the "shared blind spot" it reported was the arms correctly declining to report an already-bounded function. What stands is that **detection is the model's rather than any product's** — and that no product here publishes a whole-repository number at all, four of five publishing none.
+
+*(An earlier version of this paragraph said `google/mantis` is more precise than this corpus, from 53% against 62%. That comparison was superseded: at a matched claim count it is 21% against 53%. The superseded number is named here rather than deleted.)*
 
 What *is* measured, and is narrower than "finds more":
 
@@ -20,11 +22,32 @@ What *is* measured, and is narrower than "finds more":
 
 Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
 
-One dimension **is** measured in this project's favour, and it is not capability. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+**Two dimensions are measured in this project's favour. The capability one is not a lead on any axis — it is that this corpus is the only arm that is never the outlier.**
+
+Two targets, **four arms**, six runs each, every claim judged blind by two independent adversarial passes and a separate defect-matching judge. Bands fixed before the numbers: 10 points of precision, 0.5 defects of recall.
+
+| | precision band | recall band |
+|---|---|---|
+| `google/mantis` | **outside** on the AI-agent target (19 pts) | inside on both |
+| `Tencent/AI-Infra-Guard` | inside on both | **outside** on the HTTP API (0.83) |
+| `0xSteph/pentest-ai-agents` | **outside** on the HTTP API (16.3 pts) | inside |
+| **this corpus** | **inside on both** | **inside on both** |
+
+**This corpus leads nothing.** On the [HTTP API](bench/runs/2026-08-22-third-competitor/) two arms out-recall it (5.00 against its 4.83) and `AI-Infra-Guard` out-precisions it, refuting **nothing** against its one claim. On the [AI-agent target](bench/runs/2026-08-22-second-competitor/) it is level with `AI-Infra-Guard` and ahead of `mantis`. **Each of the field's three comparable products falls outside a band somewhere; this corpus falls outside none.** That is an absence of outliers, not a win, and it is deliberately weaker than the sentence it replaces.
+
+**Of the six products surveyed, three are comparable and all three have now been run.** `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
+
+**Read every recall figure as a band, never a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped**. That is the instrument's resolution, measured rather than assumed.
+
+Still **one model scale**, both targets authored here, and every competitor run at its floor: read-only, offline, and in one case below the model its own definition asks for.
+
+The second dimension is not capability at all.
+
+ Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,207 lines of corpus across eight role packs, with 163 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,238 lines of corpus across eight role packs, with 164 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -70,7 +93,7 @@ Eight packs, one per role. Five of them are stored as **more than one file** (`m
 | local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |
 | privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
 | remediation | `remediation.md` | `REM-01`..`REM-07` | minimum root-cause patching, regression tests that must fail without the patch, authorization limits, ordering |
-| verification | `remediation-verification.md` | `VER-01`..`VER-08` | adversarial posture, negative checks, honest classification |
+| verification | `remediation-verification.md` | `VER-01`..`VER-09` | adversarial posture, negative checks, honest classification |
 
 Navigation is progressive: `SKILL.md` is a router, `coverage.md` maps detected technology to roles and to the exact file and sections that hold them, and each specialist loads only its own pack — and only the sections its inventory justifies. Loading everything is a bug, not thoroughness.
 

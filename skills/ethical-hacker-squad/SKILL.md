@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,207 lines across eighteen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,238 lines across eighteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
@@ -104,7 +104,13 @@ In `harden` mode, order changes by risk and start with small high-value fixes. P
 
 The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both. It runs relevant tests, available static analysis and negative checks, then records what was checked, what was not, and why.
 
-### 8. Deliver the report
+### 8. Attack the list before it ships, blind to its own prose
+
+Every `confirmed` and `probable` finding goes to `ehs-verifier` under `VER-09`, in a fresh context that receives **the assertion and its location and not the finder's narrative**. Survivors ship; casualties go to `ruled_out` naming the line that killed them.
+
+The blindness is the whole mechanism, and it is measured. A version that handed the critic the entire finding cut ground-truth recall from 4/6 to 3/6 while posting the best precision in the bench — it was killing true defects. Blind to the prose, on the same target and model: **6/6 recall, nothing refuted by two adversarial passes.**
+
+### 9. Deliver the report
 
 Consolidate duplicates and separate confirmed findings, probable risks pending validation, hardening improvements, and tests not run for authorization or environment reasons. Declare coverage honestly using `references/traceability.md`: name the standard families you actually exercised and the ones you did not.
 

@@ -31,6 +31,9 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
+| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
+| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 

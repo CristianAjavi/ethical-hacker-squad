@@ -1,0 +1,139 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/vouch-proxy",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad v1.0",
+    "coverage": {
+      "inventoried": [
+        "Go HTTP server with OAuth/OIDC authentication",
+        "JWT token generation and validation",
+        "Cookie and session management",
+        "Login flow with open redirect protection",
+        "Dependencies in go.mod"
+      ],
+      "read": [
+        "Go HTTP server with OAuth/OIDC authentication",
+        "JWT token generation and validation",
+        "Cookie and session management",
+        "Login flow with open redirect protection"
+      ],
+      "not_read": [
+        "Dependencies in go.mod (tool limitations)"
+      ]
+    },
+    "coverage_declaration": "Audit examined: HTTP handlers (login, logout, auth, validate), JWT/OAuth/OIDC flow, cookie security settings, configuration defaults, URL validation logic. Not examined: dependency vulnerability scanning (requires external tools), remote OAuth provider testing, TLS configuration audit.",
+    "unaided_pass": {
+      "candidates": [
+        "Missing SameSite cookie attribute by default",
+        "Potential CSRF in OAuth flow",
+        "Information disclosure through error messages"
+      ],
+      "reported": [
+        "Missing SameSite cookie attribute by default"
+      ],
+      "dropped": [
+        {
+          "label": "Potential CSRF in OAuth flow",
+          "resolution": "refuted",
+          "reason": "State parameter is properly validated before being used. Code at handlers/auth.go lines 66-70 validates that the state from the query parameter matches the session state before processing.",
+          "control_at": "handlers/auth.go:67"
+        },
+        {
+          "label": "Information disclosure through error messages",
+          "resolution": "merged",
+          "merged_into": "F-001"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Missing SameSite cookie attribute in default configuration",
+      "procedure": "WEB-02",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".defaults.yml",
+        "line": 40
+      },
+      "evidence": "Line 40 of .defaults.yml shows sameSite is commented out. When not configured, pkg/cookie/cookie.go line 183 defaults to http.SameSite(0), which sends no SameSite attribute to the browser.",
+      "impact": "Without an explicit SameSite attribute, cookies are vulnerable to Cross-Site Request Forgery (CSRF) attacks. While modern browsers (Chrome 80+, Firefox 69+) default to 'Lax' mode when SameSite is missing, older browsers and clients do not enforce this protection. A malicious website could trigger requests that include the VouchCookie.",
+      "preconditions": "User is authenticated with VouchCookie set. User visits a malicious website that attempts to make a cross-site request to vouch-proxy (e.g., to the /validate endpoint or other sensitive endpoints).",
+      "recommendation": "Set a default value for the sameSite cookie attribute in .defaults.yml. Use 'lax' or 'strict' depending on use case. Example: Change line 40 from '# sameSite:' to 'sameSite: lax'",
+      "verification": "After setting sameSite in configuration, verify that the Set-Cookie response header includes 'SameSite=Lax' or 'SameSite=Strict' by examining HTTP responses from the /login endpoint.",
+      "traceability": [
+        "CWE-352",
+        "OWASP A01:2021",
+        "OWASP A04:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces CSRF protection at a higher layer"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The SameSite value is controlled by configuration, not attacker-controlled, but the default configuration is missing this security setting"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Cookies without SameSite attribute are vulnerable by design in older browsers"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The lack of SameSite attribute is in the shipped default configuration"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Authentication cookies have high security value"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external control documented that sets SameSite by default"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defense-in-depth issue; it's a primary protection that should be in place"
+        }
+      ],
+      "limits": "This finding addresses the default configuration only. The application can still be configured securely by setting sameSite in the configuration file. The actual exploitability depends on browser version and specific deployment configuration."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "JWT expiration validation bypass",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "golang-jwt/jwt v5.3.1 used with RegisteredClaims, which validates expiration by default. No SkipClaimsValidation flag is used in ParseTokenString (pkg/jwtmanager/jwtmanager.go line 150-157)."
+    },
+    {
+      "class": "Open redirect vulnerability",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "getValidRequestedURL (handlers/login.go lines 199-246) validates requested URLs against configured domains and checks for dangerous prefixes (line 115: badStrings array with https://, http://, data:, etc.)"
+    },
+    {
+      "class": "OAuth state parameter tampering",
+      "procedure": "WEB-01",
+      "outcome": "refuted",
+      "where": "State parameter is securely generated (handlers/login.go line 290: securerandom.URLBase64InBytes) and validated on auth callback (handlers/auth.go line 67: session.Values[\"state\"] != queryState)"
+    },
+    {
+      "class": "Cookie values exposed in headers by default",
+      "procedure": "WEB-02",
+      "outcome": "refuted",
+      "where": "PAccessToken and PIdToken are only exposed if explicitly configured via accesstoken/idtoken headers, which are commented out by default in .defaults.yml lines 57-58"
+    }
+  ]
+}

@@ -34,7 +34,13 @@ Read this one before the perfect scores below it. The benches measure that the c
 
 The pre-registration predicted the opposite and named what would refute it. The corpus arm spent roughly twice the budget (95k-111k tokens against 48k-66k) to produce a fifth of the output, and two of its three artifacts failed the coverage invariant on the very files the run had just read. **A context tax, not a transfer of expertise** — and the last untested hypothesis for the corpus's value, tested and dead.
 
-**A second change was made and did NOT work, and the validator is what caught it.** Making a dismissal expensive — `refuted` must name the line of the control — was pre-registered, and its prediction (D1 back to 2/3, total ≥4/6) came out exactly right. It supports nothing: **all three runs failed validation because not one wrote the new field.** The rule was in the schema, the validator, `team.md` and all seven subagents, and the reviewer declined it; one run refuted D1 again with the same bad argument. A confirmed prediction whose intervention never ran is noise, and without the machine check it would have shipped as a second win. **A rule that only a validator enforces is a rule the reviewer can decline** — the loading rule changed what the reviewer does *first* and moved the number; the dismissal rule changed what it writes *last* and did not.
+**And then it was fixed, by reading the competitor instead of guessing.** The diagnosis behind the failed attempt — that `mantis` must have a critic calibrated to let things live — was wrong: its stage is *harsher* than ours. What it does differently is judge the claim and the code only, **discarding the finder's prose as potentially hallucinated**. With the critic blind to the prose, on the same target, model and instruments: **ground-truth recall 6/6 and nothing refuted by two adversarial passes**, against v1's 3/6 and 33%. First change in this sequence to pass its pre-registered test on both metrics, and it shipped only after passing.
+
+**Then it was compared at comparable N, because 6 claims against 17 is not a comparison** — this bench refused that arithmetic and ran six more times instead. Pooled over nine runs: **19 claims, 21% refuted by both passes, recall 14/18**, against the competitor's 17 claims and 53%. All three pre-registered criteria hold, and **on precision at weak scale this corpus is ahead of the strongest published competitor** — one dimension, one scale, one target.
+
+Three asymmetries travel with it, declared before the number was known: our 19 claims come from nine runs against their 17 from three; our 19 collapse into **three** distinct assertions against their nine, so our deduplication is markedly worse and inflates our own denominator; and the critic and the grader are the same kind of instrument for both arms. That round also **corrected its own predecessor**: v2's headline 6/6 recall over three runs is 14/18 over nine.
+
+**The failed attempt, kept because it is the reason the passing one is trustworthy.** Making a dismissal expensive — `refuted` must name the line of the control — was pre-registered, and its prediction (D1 back to 2/3, total ≥4/6) came out exactly right. It supports nothing: **all three runs failed validation because not one wrote the new field.** The rule was in the schema, the validator, `team.md` and all seven subagents, and the reviewer declined it; one run refuted D1 again with the same bad argument. A confirmed prediction whose intervention never ran is noise, and without the machine check it would have shipped as a second win. **A rule that only a validator enforces is a rule the reviewer can decline** — the loading rule changed what the reviewer does *first* and moved the number; the dismissal rule changed what it writes *last* and did not.
 
 **The first fix, though, worked.** A loading rule — *read the target before you read this corpus, and stop loading before the code stops fitting* — took the corpus arm from **2/6 to 4/6**, with D2 going from zero of three runs to three of three. Nothing else changed and the unaided arm was not re-run. It is still one defect behind 5/6, which is inside this bench's resolution: the rule moved the weak-model result from **measurably harmful to indistinguishable**, not to good. And D1 fell from 2/3 to 1/3, with two runs *actively ruling it out* — a reviewer on a short budget produces confident refutations, which is worse than silence and is the next thing to measure.
 
@@ -58,6 +64,118 @@ The pre-registration predicted the opposite and named what would refute it. The 
 
 The competitor's own filtering is not clean either: its 17 claims cover about 9 distinct assertions, and two duplicate pairs **contradict each other on the facts** — one says the `*1000` at line 269 is a thousand-fold bug, the other says the same line is unchecked arithmetic with no attacker gain. A `dedupe` stage ran.
 
+## External code: one detection in twenty-four runs, and it does not replicate
+
+Two published advisories, two real repositories, three products, four runs each — [`vouch-proxy`](runs/2026-08-22-external-competitive/) and [`Netflix/lemur`](runs/2026-08-22-external-second/), both at checkouts verified to sit before the fix.
+
+| | `vouch-proxy` (Go, 144 files) | `Netflix/lemur` (Python, 575 files) |
+|---|---|---|
+| this corpus | 1 / 4 | **0 / 4** |
+| `Tencent/AI-Infra-Guard` | 0 / 4 | 0 / 4 |
+| `google/mantis` | 0 / 4 | 0 / 4 |
+
+**One detection in twenty-four measured runs, and the round designed to reproduce it did not.** The `vouch-proxy` result was parked under exactly that condition and is now parked permanently. **Nothing in this bench supports a claim that any of these products finds published advisories in unfamiliar code without a pointer** — this project included, and that is the honest state of external validity here.
+
+**Both misses are one link short, not lost.** On `vouch-proxy` `mantis` reached the advisory's exact function and named an out-of-bounds access instead of the unbounded allocation. On `lemur` this corpus reached the advisory's exact endpoint and named the missing authorization gate — a precondition of the chain — without ever reaching the revoke step that makes it exploitable. Across 56 claims from three products on `lemur`, **one mentions revocation at all**.
+
+**`AI-Infra-Guard` produced zero claims in four runs on `lemur`**, concluding "SAFE FOR DEPLOYMENT". Reported with its reason, because the bare number misrepresents it: its taxonomy asks *is this code malicious*, and it answers correctly — `lemur` has no backdoor. The defect is authorization wired wrongly, which is not the question that pipeline was built to ask. **A tool answering its own question is not a tool failing**, and one of these three arms was not built for this test.
+
+## Reading the two dimensions jointly — an observation, not a result
+
+The bands treat precision and recall separately. Reading them **together** asks a different question: does any arm beat another on **both** at once? That is arithmetic over numbers already published, not a new metric — but **it was not pre-registered**, so it is offered as an observation and labelled as one.
+
+| target | this corpus dominates | dominated by |
+|---|---|---|
+| `rag-agent` (AI-agent surface) | `AI-Infra-Guard` **and** `google/mantis` | — |
+| `express-invoices` (HTTP API) | — | — |
+
+**No arm has ever dominated this corpus on either target.** And immediately the qualification that removes most of the weight from that sentence:
+
+- **The dominance over `AI-Infra-Guard` on `rag-agent` is one refuted claim and 0.17 of recall.** This bench has *measured* that the same artifacts under a different blind judge move recall by up to **0.33, with the sign of the difference flipping**. That margin is below the instrument's own resolution and **is not a durable ordering**.
+- **The dominance over `mantis` on the same target is 19 points of precision**, which is outside that resolution and does survive as a real difference.
+- On `express-invoices` there is no dominance in either direction involving this corpus, and `mantis` dominates `pentest-ai-agents`.
+
+So the durable version is smaller than the table: **on one target this corpus is measurably ahead of one competitor on both dimensions at once; nowhere has any arm been ahead of it on both.** That is still not "best" — it is an absence of anyone clearly better, on two targets at one model scale, against three of the four comparable products in this field.
+
+## Four arms: the field's three comparable products each fall outside a band
+
+[2026-08-22, third competitor](runs/2026-08-22-third-competitor/) — `0xSteph/pentest-ai-agents` @ `e5d7aa0`, six runs, **all 134 claims from four arms re-pooled and re-judged from scratch**, inter-pass agreement 99%.
+
+| Arm | claims | refuted by both | recall |
+|---|---|---|---|
+| `AI-Infra-Guard` | 25 | **0 (0%)** | **4.17 / 5** |
+| this corpus | 30 | 1 (3%) | 4.83 / 5 |
+| `google/mantis` | 36 | 3 (8%) | **5.00 / 5** |
+| `pentest-ai-agents` | 43 | **7 (16%)** | **5.00 / 5** |
+
+**The prediction is refuted** — precision spread 16.3 points, well outside the 10-point band, with the new arm as the outlier — **and the half of it that bet against this project holds**: `AI-Infra-Guard` refutes nothing at all and is the more precise arm. **This corpus leads nothing here.** Two arms out-recall it, one out-precisions it, and it remains the only arm inside every band on both targets.
+
+**Half the "three never run" caveat was a category error.** `msoedov/agentic_security` has **zero** source-audit language: it is a jailbreak fuzzer against a live endpoint, so a number for it would measure what it never claimed to do and would flatter this project by construction. Scored **not applicable**. `vxcontrol/pentagi` needs live infrastructure. **Three of the four comparable products are now measured.**
+
+Declared before the run: the new arm's own `code-auditor` asks for `model: sonnet` and was run at `haiku-4-5` to match the scale — a handicap against its written intent, and its floor rather than its ceiling.
+
+## A second target: each competitor falls outside a band, this corpus does not
+
+[2026-08-22, second target](runs/2026-08-22-second-target/) — `express-invoices`, an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. The same three arms, six runs each, 85 claims in one blinded batch, inter-pass agreement 98%.
+
+| Arm | claims | refuted by both | recall |
+|---|---|---|---|
+| this corpus | 30 | **1 (3%)** | 4.83 / 5 |
+| `AI-Infra-Guard` | 25 | **0 (0%)** | **4.17 / 5** |
+| `google/mantis` | 36 | 3 (8%) | **5.00 / 5** |
+
+**Precision held its band (8.3 points of spread); recall did not (0.83).** `AI-Infra-Guard` is the cleanest arm here at 0%. Across both targets: `mantis` falls outside the precision band on one, `AI-Infra-Guard` outside the recall band on the other, **and this corpus falls outside neither on either**. That is not a lead on any axis — `mantis` out-recalls it here and `AI-Infra-Guard` ties its precision on both — it is a claim about never being the outlier, and it is the strongest thing two targets will carry.
+
+Two readings the first target could not produce. **`AI-Infra-Guard`'s advantage was domain-bound**: level on its own ground, last on recall off it, still refuting nothing — the conservative arm on both targets, which is the most reproducible finding in either round. **`mantis`'s 19-point deficit was target-specific**: 8 points here, and it found every planted defect in every one of its six runs.
+
+**One correction, and it cost this project its 0%.** A corpus run was published as *not measured* on the strength of a seven-minute stale artifact; it had not died, it was slow, and it finished with six findings. All eighteen runs were re-pooled and re-judged: the corpus arm goes from 0% to **3%**, because **the excluded run held the only corpus claim either target has ever had refuted** — a false positive fired at the one endpoint that *does* scope by owner. The error had been flattering this project. The bench had a rule for *a dead run is not a zero* and no criterion at all for telling **dead** from **slow**.
+
+## A second competitor, and the ranking dissolves
+
+[2026-08-22, second competitor](runs/2026-08-22-second-competitor/) — `Tencent/AI-Infra-Guard` @ `4908db1`, the only product in this field that publishes its own detection quality, on its home ground. All 114 claims from three arms re-pooled and **re-judged from scratch**, so no number is carried over. Inter-pass agreement 96%.
+
+| Arm | claims | refuted by both passes | recall | union |
+|---|---|---|---|---|
+| this corpus | 36 | **0 (0%)** | 4.67 / 7 | **7 / 7** |
+| `AI-Infra-Guard` | **31** | 1 (3%) | 4.50 / 7 | 6 / 7 |
+| `google/mantis` | 47 | 9 (19%) | 4.50 / 7 | 6 / 7 |
+
+**The corpus arm's 0% reproduced under a fresh verifier pair** — that was pre-registered to be reported ahead of any comparison, and it did not move. **`AI-Infra-Guard` is far cleaner than `mantis` and indistinguishable from this corpus**: 3% against 0% is one claim out of 31, where the refutation criterion needed ten points. This project is **level with the best measurable competitor, ahead of the other one** — not ahead of the field, and three of six surveyed products have still never been run.
+
+**The lasting result is about the instrument, not the table.** The same twelve artifacts, scored by two different blind judges, moved by up to 0.33 of a defect **and the difference flipped sign**: judge one put this corpus behind `mantis`, judge two put it ahead. That is the same 0.33 that withdrew the claim earlier the same night. **A recall comparison at this N does not order the arms; it only says whether they sit inside one band** — which is why the band was declared before the numbers existed, and why every recall figure here must be read that way.
+
+One profile difference is worth more than the ranking: `AI-Infra-Guard` produced **the fewest claims of any arm** at the same recall and near-identical precision. The specialist is the most economical of the three.
+
+## The capability claim, withdrawn and then restored on evidence
+
+[2026-08-22, recall resolution](runs/2026-08-22-recall-resolution/) — six NEW runs per arm, the pilot's three excluded because their numbers were known when the band was written.
+
+| | claims | refuted by both passes | recall mean | union over its runs |
+|---|---|---|---|---|
+| this corpus | 36 | **0 (0%)** | 4.50 / 7 | **7 / 7** |
+| `google/mantis` | 47 | 8 (17%) | 4.83 / 7 | 6 / 7 |
+
+**Both pre-registered criteria hold**: precision 17 points where 10 was required, recall 0.33 below inside a band of 0.5 declared in advance. Inter-pass agreement 88%.
+
+**The clearest thing this round produced is not the verdict, it is why three runs could not reach one.** On three runs the defect coverage was corpus 6/7 against competitor 7/7. On six it is 7/7 against 6/7. Same arms, same target, same instrument — the comparison flipped with nothing changed but the run count, which is what a one-defect margin is worth.
+
+It also carries two facts against the tidy version. One competitor run skipped that product's own filtering stages and is reported both in and out, and excluding it moves both numbers **in this project's favour**, which is why it is stated. And the bench case's own hardened twin turned out **not to be safe** — found by an arm under audit, recorded in the answer key rather than in the case's own README, which is copied into the target, and it changes how a whole family of claims must be scored.
+
+## The precision claim was replicated, and it did not clear its own criteria
+
+[2026-08-22, precision replication](runs/2026-08-22-precision-replication/) — a second target, `rag-agent`, **7 planted defects and 6 decoys** rather than `wire-decoder`'s 2, picked by a rule written before it was applied.
+
+| | claims | refuted by both passes | recall | claims per defect |
+|---|---|---|---|---|
+| this corpus | 16 | **1 (6%)** | 4.33 / 7 | 2.2 |
+| `google/mantis` | 23 | 7 (30%) | **4.67 / 7** | 2.0 |
+
+**The precision half came back stronger than the original** — 24 points where the pre-registration required 10. **The recall criterion was not met**, and the pre-registration said either failure drops the claim, so the claim is withdrawn from the top-level `README.md`.
+
+The margin is one defect in one of three runs, inside the resolution below, and the criterion had no noise band — an absolute threshold on a 7-item scale. **Both are recorded in the round; neither was used to keep the claim.** What would settle it is named there: more than three runs per arm.
+
+It also corrects a caveat this bench had been carrying: **our deduplication is not worse than the competitor's** — 2.2 claims per defect against 2.0, where the earlier round reported a large gap against us.
+
 ## The one dimension where this project does lead, and it is not capability
 
 [2026-08-21, field transparency](runs/2026-08-21-field-transparency/) — six products, a six-question rubric fixed before any of them was opened, every `yes` needing a URL or a path.
@@ -67,6 +185,36 @@ The competitor's own filtering is not clean either: its 17 claims cover about 9 
 The prediction was refutable and held. And the most useful thing in it is a **correction to this repository's own competitive analysis**, which claimed no competitor publishes detection quality: `AI-Infra-Guard` does, with F1, precision, recall and FPR on a named benchmark. That document now says so.
 
 **Read this next to everything above it.** It is a claim about what a buyer can *check*, not about what anyone finds. On capability this corpus leads on none of eighteen measurements, and `google/mantis` is measurably ahead of it on precision.
+
+## Whole repositories: the round that claimed this is RETRACTED
+
+[2026-08-22, routing at N](runs/2026-08-22-routing-at-N/) — the thinnest evidence in this bench was also the one holding up its strongest conclusion. The dimension the corpus is *built* for, deciding what to read in a repository nobody reads whole, had three advisories of evidence. It now has six.
+
+| | corpus | unaided |
+|---|---|---|
+| earlier rounds | 0/3 | 1/3 |
+| 2026-08-22, rule-picked Go targets | 0/3 | 0/3 |
+| **total** | **0 / 6** | **1 / 6** |
+
+> **Retracted.** The 2026-08-22 targets were cloned at the default branch, which is **after** each fix commit, so both arms audited code the defects had already been removed from. 0/3 against absent defects measures nothing, and the conclusion drawn from it is withdrawn. Whole-repository evidence is back to the earlier rounds alone: **0/3 with the corpus, 1/3 without**, three advisories, which is too thin to conclude anything and is exactly what the retracted round set out to fix. It is re-run properly in `runs/2026-08-22-exhaust-the-file-2/`.
+>
+> It was caught by an arm applying this corpus's own rule that a refutation must cite the line of the control: it named the bound that makes the defect impossible. A silent non-finding would have shipped as a result.
+
+**The "missed by nine lines" reading is withdrawn with the round.** It said both arms reached `req_resp_decoder.go`, reported a real defect at line 945, and never mentioned `sliceMapToSlice` nine lines away. On a patched tree `sliceMapToSlice` carried its bound, so **not reporting it was correct**. There was no blind spot. A procedure was written to fix it anyway, and measured to have no effect: [2026-08-22, exhaust the file](runs/2026-08-22-exhaust-the-file-2/).
+
+**Re-run on the verified pre-fix commit, all three arms find it 3/3** — [2026-08-22, unaided on the verified tree](runs/2026-08-22-unaided-verified/):
+
+| arm | corpus | found | findings per run |
+|---|---|---|---|
+| treatment | full, plus the "exhaust the file" rule | 3/3 | 14, 14, 14 |
+| control | full, that rule removed | 3/3 | 10, 9, 13 |
+| **unaided** | **none at all** | **3/3** | 17, 15, 10 |
+
+Nine runs, blind, against a judge that rejected the same-file decoys in every batch and separated the nearest one on mechanism in its own words. **Whole-repository detection of this advisory is the model's, and the corpus adds nothing to it.** That dimension — deciding what to read in a repository nobody reads whole — is what this corpus is built for, and it was the last one where a lead had not been ruled out. The unaided arm also reported the most findings of any arm.
+
+One advisory, one repository, three arms not run simultaneously. It does not restore the retracted round.
+
+**No product in this field should claim whole-repository detection without publishing a number**, and four of five publish none.
 
 ## The number that governs every other number in this file
 
@@ -176,7 +324,29 @@ Step 3 before step 4 on purpose: a malformed artifact scored anyway would report
 
 **Step 2's capital letters are paid for.** Eleven blinded runs in this bench's history have been killed mid-flight — the host sleeping, a stream watchdog giving up — and the ones that died between finishing the analysis and writing the file produced nothing at all, while the ones that had already written a partial artifact lost only the polish. An analysis nobody can read scores zero, and it scores zero in a way that looks like a low recall rather than like a lost run. Tell the auditor to write first and save often, in the prompt, every time.
 
-## The seven rules that came out of being wrong
+## `undecidable` versus `refuted` — the rule the verifiers were already using
+
+Checked in [2026-08-22, undecidable rule](runs/2026-08-22-undecidable-rule/) after the two looked inconsistent. They were not.
+
+1. **refuted** — the claim locates its defect **inside** the target and the code there contradicts it, or it describes something with **no attacker and no impact**.
+2. **undecidable** — the claim's defect is the **absence** of code that, if it exists, lives **outside** the target. Nothing inside settles it.
+3. **Documented behaviour of a named dependency is not "outside".** It is general knowledge, so a claim contradicted by it is refuted — otherwise every claim about a library is unfalsifiable.
+
+A claim may **argue** from outside the target while **locating** its defect inside it; the rule looks at where the defect is said to be.
+
+An independent classifier, blind to the existing verdicts and to which claim was whose, reproduced **125 of 132** both-pass verdicts. **It is a description, not a mechanism** — 125 of 132 says the verifiers were drawing this line, not that one could be replaced by it. Its seven divergences all belong to competitors and all move in their favour, which is the evidence that it was not written to win.
+
+## A comparison this bench must never publish, and why
+
+There is an obvious-looking dimension where this project would win outright: **does a product's output let a reader tell *not looked at* from *looked at and clean*?** This corpus's artifact carries a coverage declaration that must resolve every surface it inventories. The competitor artifacts in these rounds are flat lists.
+
+**That comparison is rigged, and it is rigged by this bench.** Every competitor prompt in `runs/*/prompts/` specifies the deliverable shape — `{"findings": [{"id", "title", "file", "line", "severity", "impact", "evidence", "recommendation"}]}` — because a common shape is what makes the claims poolable and blindable at all. So a competitor's artifact has no coverage declaration **because this bench told it not to have one**, not because the product cannot produce one.
+
+Measuring it anyway would produce a real number, a favourable one, and a false conclusion. It is written down here so that nobody — including whoever reads this next — reaches for it as the dimension that finally settles the question.
+
+**What a fair version would need**: every arm emitting its own native report format, and a reader test over those, with the pooling and blinding rebuilt to survive four different shapes. That is a different bench, not a further round of this one.
+
+## The nine rules that came out of being wrong
 
 None of these was designed. Each one is what a retraction or a near-miss cost, and several are enforced by `gate-bench-integrity.sh` rather than by good intentions.
 
@@ -186,7 +356,10 @@ None of these was designed. Each one is what a retraction or a near-miss cost, a
 4. **A dead run is not a zero.** A run whose agent died is *not measured*, and its partial output is preserved unscored. This rule was first applied when it cost us and has since been applied when it favoured us.
 5. **Never report precision without recall.** An arm that reports nothing is never refuted. A drop in refuted claims that arrives with a drop in ground-truth recall is suppression, and gets that word.
 6. **Two passes, or it is not an instrument.** A single blind judge disagreed with a second one on the two verdicts that decided a case, and a published result had to be withdrawn. Inter-pass agreement is reported as the resolution of the instrument, and no difference smaller than it is reportable.
+8. **Verify the defect is in the checkout before any arm runs.** A whole-repository round was published and retracted the same night: the targets were cloned at the default branch, which is *after* each fix, so both arms audited code the defects had been removed from and 0/3 was reported as detection. The case file recorded the pre-fix `parent` commit and it was ignored. `scripts/bench/verify-target-checkout.py` now refuses a case whose checkout is not at its parent, or whose files carry a marker the fix introduces — five negative cases, including the exact mistake. **It was caught only because one arm named the control that made the defect impossible; a silent non-finding looks identical to a miss, and a bench cannot depend on luck.**
+
 7. **Check the artifact before you believe the number.** A pre-registered prediction landed exactly on target while *all three runs failed validation* — the intervention had never been applied. Only the machine-checked contract caught it.
+9. **A prediction met by a result whose cause is absent is not a confirmation — run the control.** A procedure was written from a diagnosed blind spot, pre-registered at ≥1 of 3, and scored 3 of 3. Removing the procedure and changing nothing else also scored 3 of 3. The prediction was met and the explanation was false. Worse, the blind spot itself was an artefact of rule 8: the round that diagnosed it had audited patched code, so the "miss" was correct behaviour. **A change ships as an improvement only against an arm that lacks it**, and one that cannot be shown to do anything is discarded *before* it ships rather than kept for being reasonable. This one never reached a commit; `VER-09` v1 did, and had to be pulled back out after it cost a true defect per run.
 
 ## What the numbers are worth
 

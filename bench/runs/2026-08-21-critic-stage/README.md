@@ -1,4 +1,15 @@
-# Run 2026-08-21 — the critic stage bought the best precision in this directory by deleting true findings
+# Run 2026-08-21 — the critic stage: v1 deleted true findings, v2 blind to prose fixed it
+
+> # The head-to-head claim below did NOT clear its replication
+>
+> The 21%-against-53% result at the bottom of this page was replicated on a second target — `rag-agent`, 7 planted defects instead of this target's 2 — in `../2026-08-22-precision-replication/`. **The precision half came back stronger: 6% against 30%, a 24-point gap.** The same pre-registration also required ground-truth recall at or above the competitor's, and **it came in below**, 4.33 of 7 against 4.67, so the replication is recorded as not clearing its own criteria and **the claim was withdrawn from the top-level `README.md`.**
+>
+> The margin is one defect in one of three runs, inside this bench's resolution, and the criterion had no noise band. Both facts are in that round, and neither was used to keep the claim.
+>
+> **One caveat on this page is corrected there rather than carried forward**: the statement that this corpus's claims deduplicate far worse than the competitor's does not transfer — on the second target it is 2.2 claims per defect against 2.0.
+>
+> Nothing below is edited.
+
 
 `PREREGISTRATION.md` was committed before any run. It predicted the refuted proportion would fall **and** ground-truth recall would hold at 4/6, and it named the failure mode by name: *a drop in refuted claims that arrives with a drop in ground-truth recall is suppression, not precision, and will be reported as such.*
 
@@ -27,6 +38,8 @@ Giving that reviewer a dedicated stage whose stated job is to kill claims did no
 
 The competitor's advantage is therefore **not** "has a critic stage". It is having one calibrated so that failing to kill something is the default outcome. Copying the box without the calibration reproduces the box and not the result.
 
+> **That last sentence was written from the score, not from their text, and it is wrong.** Reading their stage afterwards showed it is *harsher* than v1, not gentler. The real mechanism is below, in the v2 section. This paragraph is left standing because being wrong in public is the point of writing the reasoning down.
+
 ## What the verifiers found in our own claims, unprompted
 
 Both passes killed the same two, and they are ours:
@@ -38,13 +51,69 @@ So the arm both over-generalised the one real mechanism onto two places it does 
 
 ## What was done about it
 
-**The automatic invocation is reverted.** A change that fails its own pre-registered measurement does not stay in the shipping path, and this one costs a true defect per run at weak scale.
+**The automatic invocation was reverted.** A change that fails its own pre-registered measurement does not stay in the shipping path, and this one cost a true defect per run at weak scale. *(It is wired again now — but only as v2, and only after v2 passed. See below.)*
 
-`VER-09` stays written, with this measurement inside the procedure itself so the cost is the first thing a reader meets, and it is invoked deliberately rather than by default. That is not dead configuration: it is a documented tool with a measured price, for the case where a reader's triage cost genuinely outweighs recall — and this bench has never measured a case where it does.
+`VER-09` v1 was then removed from the shipped corpus altogether: a procedure the corpus does not want a reviewer to run is not doctrine, it is a bench result.
 
-The next hypothesis, unmeasured and stated as such: **a kill must cost what a claim costs** — the critic must name the line where the bound is enforced on the path to the sink, and failing to find it must leave the finding standing. That was tried once as an artifact field and the reviewer simply declined to write it. Making it the *direction of the default* rather than a field to fill is the untested variant.
+The hypothesis written here at the time — *a kill must cost what a claim costs*, the critic naming the line where the bound is enforced — **was not the one that worked.** It had already been tried as an artifact field and the reviewer declined to write it. What worked was changing what the critic is allowed to *see*.
 
-## Caveats
+## v2 — the critic, blind to the finder's prose
+
+`RETEST-PREREGISTRATION.md` was committed before these runs and after **reading** the competitor's stage instead of inferring it from its score. That reading disproved the diagnosis written above: `google/mantis`'s review stage is **harsher** than v1, not gentler — it instructs the reviewer to assume every finding is a false positive and disprove it. What it does that v1 did not is in the same paragraph: it judges **the claim and the code only, explicitly discarding the finder's prose reasoning as potentially hallucinated.**
+
+v1 handed the critic the whole finding, narrative included. A reviewer short of budget, given a confident rationale, either believes it or finds a flaw in the *prose* and reports the finding dead. Neither is an assessment of the code. v2 gives it the assertion and its location and nothing else.
+
+| | claims | refuted by both passes | ground-truth recall |
+|---|---|---|---|
+| no critic stage | 26 | 62% | 4 / 6 |
+| **v1** — critic sees the whole finding | 6 | 33% | **3 / 6** |
+| **v2** — critic blind to the prose | 6 | **0%** | **6 / 6** |
+| competitor `google/mantis` | 17 | 53% | — |
+| unaided, no method | 28 | 68% | 4 / 6 |
+
+**Both halves of the prediction hold: recall at or above 4/6, refuted proportion below 62%.** It is the first change in this sequence to pass its pre-registered test on both metrics, and the only reason it could be published is that the test demanded both — v1 posted better precision than the competitor and was suppression.
+
+**v1 against v2 is the clean comparison**: same target, same model, same run prompt, same instruments, same six claims. The only variable is whether the critic sees the prose. 3/6 → 6/6 and 33% → 0%.
+
+### What this does not establish
+
+- **Six claims cannot carry a proportion** against 17, 26 or 28. What is comparable is recall on identical slots, and v1-versus-v2 at equal N.
+- The arm now reports **exactly the two ground-truth defects and nothing else**. On a target with only two known defects, this bench cannot tell a perfectly-calibrated critic from one that would also kill a true third finding. That needs a target with more ground truth, and it has not been run.
+- Both verifiers, while refuting nothing, recorded **real errors inside the surviving claims**: one cites lines 147 and 241 as allocation sites when neither allocates anything proportional to the declared length, one says "client or server" for a client-side class, one overstates a thread-level crash as an application crash. Claims that survive attack can still be sloppy, and precision does not measure that.
+- One target, one weak model, three runs.
+
+### What shipped
+
+`VER-09` is in the corpus, wired as step 8 of the leader workflow, **after** it passed — not before. v1 shipped first and had to be reverted; that order is not repeated. The idea of where a critic should be blind came from reading `google/mantis` at its pinned commit; no text of theirs is in this repository.
+
+## Head to head at comparable N — and the 6/6 was a small-N artefact
+
+`HEADTOHEAD-PREREGISTRATION.md` refused to compare 6 claims against 17 and said the fix was more runs, not an argument. Six more v2 runs bring the pool to **19 claims from nine runs**, against the competitor's 17 from three.
+
+| | runs | claims | refuted by both passes | ground-truth recall | inter-pass agreement |
+|---|---|---|---|---|---|
+| **v2, critic blind to prose** | 9 | 19 | **4 (21%)** | **14 / 18 (78%)** | 19/19 |
+| competitor `google/mantis` | 3 | 17 | 9 (53%) | — | 16/17 |
+
+All three pre-registered criteria hold: pooled N ≥ 15, refuted below 53%, recall at or above 4 of every 6 slots.
+
+**And the first thing to say is that this round corrects the previous one.** v2's headline was **6/6 recall over three runs**. Over nine it is **14/18**. The 6/6 was not false, it was small — one run refuted the allocation outright, claiming the code "bounds byte array allocation to `Integer.MAX_VALUE`", which is the cast guard mistaken for a limit again. The pooled figure supersedes the headline, and the only reason the correction happened is that raising N was pre-registered **before** the 6/6 existed.
+
+### Three asymmetries, declared before the number was known
+
+1. **Nineteen claims from nine runs against seventeen from three.** The claim counts were matched, as pre-registered; the run counts were not. Pooling nine short runs is not the same act as pooling three long ones.
+2. **Our nineteen claims are three distinct assertions.** Seven restatements of the allocation, seven of the recursion, four of the timestamp. The competitor's seventeen cover about nine. **Our deduplication is markedly worse than theirs** — and the previous round criticised theirs. This inflates our denominator, so the comparison as computed flatters us.
+3. **The critic and the grader are the same kind of instrument** — adversarial refutation against code — for both arms. The number measures how well a product filters its own bad claims, not truth.
+
+**On the second point, the direction is worth checking rather than assuming.** Deduplicated, ours is 3 assertions with 1 refuted (33%); theirs is about 9 with roughly 7 refuted (~78%). The gap widens rather than closes. That view is **not pre-registered** and is offered as an observation, not a result.
+
+### What this licenses, and it is bounded by the pre-registration
+
+**On precision, at weak scale, at comparable claim count, against the strongest published competitor in this field, this corpus is ahead.** One dimension, one scale, one target, one competitor.
+
+It does not touch the eighteen capability measurements where this corpus leads on nothing. It does not make it better at finding defects — recall here is 78%, and the competitor was never measured for recall at this N. And the whole result rests on a critic stage that was measured harmful two rounds ago and only works because of where it is made blind.
+
+## Caveats on v1
 
 - **Six claims cannot carry a proportion.** 33% against 17, 26 and 28 claims is not a like-for-like comparison, and the count is the result rather than the denominator. Recall, at 3/6 against 4/6 on identical slots, **is** comparable.
 - One target, one weak model, three runs.

