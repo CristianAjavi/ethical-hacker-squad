@@ -34,6 +34,7 @@ fi
 
 FAILED=""
 UNMEASURED=""
+INVOKED=""
 suite() {
   # The title is saved BEFORE the shift. It used to be read after it, so every
   # red suite was reported as "- bash" or "- python3": the summary named the
@@ -44,6 +45,16 @@ suite() {
   echo "# $title"
   echo "###############################################################"
   shift
+  # ACCOUNTING. Each suite records the file it ran, and the end of this script
+  # checks that every `test-*` in this directory was recorded. The titles below
+  # are worth keeping - they are what the summary names when something goes red -
+  # but a hand-written list is how a suite ends up existing and running nowhere,
+  # which this repository has now found twice: two self-test batteries reachable
+  # only from a maintainer's laptop, and eleven mutation cases that stopped
+  # executing without a word.
+  for _a in "$@"; do
+    case "$_a" in */test-*) INVOKED="$INVOKED $(basename "$_a")" ;; esac
+  done
   rc=0
   "$@" || rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -74,11 +85,33 @@ suite "apply-governance.sh against a simulated API (rc=0 is reachable)" \
   bash "$SP/test-governance-rc0.sh"
 suite "NEGATIVE: no declared protection field is left unwatched" \
   bash "$SP/test-governance-drift.sh"
+suite "merge-preview: the combination CI never judges" \
+  bash "$SP/test-merge-preview.sh"
 suite "battery-detects: a battery that proves nothing" \
   bash "$SP/test-battery-detects.sh"
 
+# The net, computed HERE and not where the last suite happened to be when it was
+# written: a `suite` line added below that point would be invoked and still
+# counted as never invoked. Measured - merging two branches that each add a
+# suite put one of them after the loop, and the net reported a file that runs.
+NOT_INVOKED=""
+for f in "$SP"/test-*.sh "$SP"/test-*.py; do
+  [ -e "$f" ] || continue
+  case " $INVOKED " in
+    *" $(basename "$f") "*) ;;
+    *) NOT_INVOKED="$NOT_INVOKED
+  - $(basename "$f")" ;;
+  esac
+done
+
 echo ""
 echo "==============================================================="
+if [ -n "$NOT_INVOKED" ]; then
+  echo "SUITES THAT EXIST AND NOBODY RUNS:$NOT_INVOKED"
+  echo "A suite that runs nowhere is not a test. Add it above, or delete it."
+  UNMEASURED="$UNMEASURED
+  - (files present and never invoked)"
+fi
 if [ -n "$UNMEASURED" ]; then
   echo "SUITES THAT COULD NOT MEASURE (rc=2, not the same as green):$UNMEASURED"
 fi
