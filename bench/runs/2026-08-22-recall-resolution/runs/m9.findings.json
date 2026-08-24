@@ -1,0 +1,104 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Remote Code Execution via Shell Injection",
+      "file": "agent/answer.py",
+      "line": 32,
+      "severity": "CRITICAL",
+      "impact": "Arbitrary command execution on the host system with the privileges of the agent process",
+      "evidence": "The function `summarize_and_run()` executes model output directly as a shell command without any validation: `subprocess.run(model_output, shell=True, capture_output=True, text=True)`. An attacker who can influence model output (via prompt injection in tickets, jailbreak, or model behavior change) can execute arbitrary shell commands. The function is exported and can be called with any string input.",
+      "recommendation": "Remove this function entirely if shell execution is not required. If it is required, parse the model output into a structured command format and use a whitelist of allowed commands. Never pass untrusted strings to shell=True. Example: Use shlex.split() and a list-based command invocation, or parse JSON output instead of raw strings."
+    },
+    {
+      "id": "F-002",
+      "title": "Hardcoded API Secret in Configuration File",
+      "file": "config/mcp.json",
+      "line": 4,
+      "severity": "CRITICAL",
+      "impact": "Compromise of the Acme Billing service. An attacker with the API key can make billing API calls on behalf of the agent, potentially issuing refunds, modifying accounts, or accessing sensitive billing data.",
+      "evidence": "The billing MCP server configuration contains a hardcoded secret token: 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a'. This is visible in the JSON config file and would be exposed if the config file is committed to version control, included in container images, or accessed by an attacker with file system access.",
+      "recommendation": "1. Immediately rotate the exposed API key. 2. Store API keys in environment variables (like the DOCS_TOKEN example). 3. Use a secrets management system (e.g., HashiCorp Vault, AWS Secrets Manager). 4. Add config files to .gitignore and use .env files for local development. 5. Audit all services that may have had access to this compromised key."
+    },
+    {
+      "id": "F-003",
+      "title": "Authorization Bypass: Unrestricted Tool Access",
+      "file": "agent/answer.py",
+      "line": 19,
+      "severity": "HIGH",
+      "impact": "The model can issue refunds or lookup customer accounts without user authorization or consent. An attacker who can influence model behavior can perform unauthorized financial transactions or access sensitive customer information.",
+      "evidence": "The `run_tool()` function (lines 19-26) directly executes tools specified by the model output: 'refund', 'lookup'. The model output includes account_id and amount directly. While a `run_tool_scoped()` function exists that restricts refunds, the unrestricted `run_tool()` function is the default and allows: 1) refunding arbitrary amounts to arbitrary accounts, 2) looking up any account. There is no indication that the caller is the account owner or authorized to perform these actions. The code does not validate that the tool request is intentional by the user.",
+      "recommendation": "1. Require explicit user confirmation for any financial operation. 2. Always use account_scoped authorization (only allow operations on the authenticated user's account). 3. Parse tool decisions from structured model output, not free-form text. 4. Log all tool invocations with user identity and timestamp. 5. Rate limit tool execution to detect abuse. 6. Remove the unrestricted `run_tool()` function if possible."
+    },
+    {
+      "id": "F-004",
+      "title": "Arbitrary Memory Mutation via Model Output",
+      "file": "agent/memory.py",
+      "line": 10,
+      "severity": "HIGH",
+      "impact": "The model can inject arbitrary data into persistent memory, potentially causing data corruption, cache poisoning, or injection attacks in downstream consumers of the memory store.",
+      "evidence": "The `remember_from_reply()` function accepts the raw model output (reply) and appends it directly to the 'notes' array in the JSON store without any validation or sanitization: `data.setdefault('notes', []).append(reply)`. If the model is jailbroken or influenced by prompt injection, it can store malicious data such as: 1) JSON/format string payloads that break parsing, 2) Oversized strings that cause DoS, 3) Data designed to influence future model behavior when the notes are retrieved. The notes are stored indefinitely with no TTL or size limits.",
+      "recommendation": "1. Validate model output before storing (size limits, schema validation). 2. Implement size limits and quotas on the notes array. 3. Add TTL/expiration to notes like preferences. 4. Use a more robust serialization format or database (e.g., SQLite, PostgreSQL) instead of raw JSON. 5. Log all memory mutations with timestamp and content hash. 6. Consider whether the model should be able to modify memory at all (principle of least privilege)."
+    },
+    {
+      "id": "F-005",
+      "title": "Untrusted Document Injection in RAG Pipeline",
+      "file": "agent/memory.py",
+      "line": 25,
+      "severity": "MEDIUM",
+      "impact": "Customer-supplied ticket bodies are indexed without validation. An attacker could craft malicious tickets containing prompt injection payloads that influence the model's behavior when retrieved during RAG augmentation.",
+      "evidence": "The `ingest_ticket()` and `ingest_ticket_marked()` functions accept ticket dictionaries and add their body to the vector retrieval index without any content validation. The `ingest_ticket_marked()` function does mark them as 'untrusted' metadata, but there is no evidence that this metadata is used to filter or deprioritize them in the retrieval stage. Customer tickets are added directly to the index that the model uses for context. An attacker could submit a ticket containing: 1) Prompt injection sequences designed to make the model ignore safety guidelines, 2) False information designed to manipulate the model's responses, 3) Sequences exploiting known LLM vulnerabilities (e.g., divergence attacks).",
+      "recommendation": "1. Validate ticket content before indexing (length limits, content filtering). 2. Use the 'untrusted' metadata to filter or downrank untrusted documents in retrieval. 3. Implement prompt injection detection in ticket processing. 4. Consider limiting the influence of untrusted documents on model output. 5. Log all tickets added to the index with content hash and timestamp. 6. Regularly audit indexed tickets for suspicious content."
+    },
+    {
+      "id": "F-006",
+      "title": "Insecure Preference Validation",
+      "file": "agent/memory.py",
+      "line": 16,
+      "severity": "MEDIUM",
+      "impact": "While preference keys are whitelisted, the values are not validated. Untrusted values could cause issues if they are later used in contexts where they are interpreted (e.g., format strings, regex patterns, SQL queries, or command execution).",
+      "evidence": "The `remember_preference()` function validates the key against ALLOWED_KEYS but does not validate the value parameter. The value is stored directly: `data.setdefault('preferences', {})[key] = {'value': value, 'ttl_days': 90}`. If this value is later used in an unsafe context, it could be exploited. Additionally, the function is designed to be called with model-supplied values, making it an attack vector for model-influenced preferences.",
+      "recommendation": "1. Validate preference values against expected types and lengths (e.g., 'timezone' must be in pytz.all_timezones). 2. Use a whitelist of allowed values for each preference. 3. Consider whether the model should be able to set preferences at all. 4. If preferences are used in other contexts (templates, queries), ensure they are properly escaped. 5. Log preference changes with timestamp and old/new values."
+    },
+    {
+      "id": "F-007",
+      "title": "Supply Chain Risk: NPM Package Version Pinning with 'latest'",
+      "file": "config/mcp.json",
+      "line": 3,
+      "severity": "MEDIUM",
+      "impact": "An attacker who compromises the NPM registry or the @acme/billing-mcp package could inject malicious code that would be automatically downloaded and executed. This could lead to arbitrary code execution on the host system.",
+      "evidence": "The billing MCP server is configured to use '@acme/billing-mcp@latest', which means every invocation of `npx` could fetch a different version. If an attacker publishes a malicious version with a higher version number, it would be automatically used. This is a supply chain attack vector similar to the SolarWinds breach or npm package hijacking attacks.",
+      "recommendation": "1. Pin to a specific version: '@acme/billing-mcp@1.2.3' (replace with actual version). 2. Regularly audit and update pinned versions. 3. Use a lock file (package-lock.json, pnpm-lock.yaml) to ensure reproducible builds. 4. Consider using npm ci instead of npm install in production. 5. Monitor NPM package security advisories. 6. Use private NPM registry if possible. 7. Implement package signature verification if available."
+    },
+    {
+      "id": "F-008",
+      "title": "Insecure File Permissions on Shared Memory Store",
+      "file": "agent/memory.py",
+      "line": 7,
+      "severity": "MEDIUM",
+      "impact": "The memory store at /var/lib/acme/agent-memory.json may be readable/writable by other users on the system, exposing customer preferences and notes or allowing other processes to manipulate the agent's memory.",
+      "evidence": "The memory store is created at a fixed path with default file permissions. Python's Path.write_text() creates files with default umask permissions (typically 0o644 for files). If the directory /var/lib/acme/ has world-readable permissions, other users on the system could: 1) Read all stored preferences and notes, including sensitive customer information, 2) Modify the memory store to inject malicious data, 3) Cause DoS by corrupting the JSON file. Additionally, there is no validation that the directory exists or has appropriate permissions.",
+      "recommendation": "1. Create /var/lib/acme/ with restrictive permissions (0o700). 2. Set file permissions explicitly when writing: use open() with mode 0o600 or os.chmod(). 3. Consider using a database (SQLite, PostgreSQL) instead of a shared JSON file. 4. Use file locking to prevent concurrent writes. 5. Run the agent with a dedicated unprivileged user account. 6. Audit directory permissions regularly."
+    },
+    {
+      "id": "F-009",
+      "title": "Unvalidated JSON Parsing in Memory Store",
+      "file": "agent/memory.py",
+      "line": 10,
+      "severity": "LOW",
+      "impact": "If the memory store JSON file is corrupted or malformed, json.loads() will raise an exception, potentially causing the agent to crash or fail silently. This could be exploited for DoS.",
+      "evidence": "The code reads the memory store with `json.loads(STORE.read_text())` without error handling. If an attacker can write to the memory store (see F-008), they could corrupt it with invalid JSON, causing the agent to crash when it attempts to read the store on the next invocation. Additionally, there is no validation that the JSON structure matches the expected schema.",
+      "recommendation": "1. Add try-except handling for json.JSONDecodeError. 2. Validate the JSON structure against an expected schema (e.g., using jsonschema). 3. Implement atomic writes with a temporary file and rename (prevent partial writes). 4. Add backup/recovery of the last known-good state. 5. Log JSON parsing errors with details."
+    },
+    {
+      "id": "F-010",
+      "title": "Lack of Input Validation on Account IDs",
+      "file": "agent/answer.py",
+      "line": 19,
+      "severity": "MEDIUM",
+      "impact": "The account_id parameter from model output is not validated before being used in tool calls. This could allow injection attacks if the account_id is later used in database queries, API calls, or other contexts.",
+      "evidence": "The `run_tool()` function extracts account_id directly from model output and passes it to lookup() and issue_refund() without any validation. The functions issue_refund() and lookup() accept the account_id parameter directly and may use it in SQL queries or API calls. If account_id is not properly parameterized or escaped in the backend, this could be exploited for SQL injection or parameter tampering.",
+      "recommendation": "1. Validate account_id format (must match expected pattern, e.g., alphanumeric only). 2. Use parameterized queries/API calls (avoid string concatenation). 3. Log all account lookups and refunds with account_id for audit. 4. Consider using UUID format for account IDs. 5. Implement rate limiting per account to detect abuse."
+    }
+  ]
+}

@@ -1,0 +1,287 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 86,
+      "title": "Peer-declared 32-bit length allocates up to 2 GiB in readBytes before any payload byte is read",
+      "impact": "A peer able to place ~5 bytes into any header table forces a multi-hundred-megabyte to 2 GiB heap allocation per field on the client's decode thread, with no proportional cost to itself. Per the threat model that peer is actor A1 (hostile or MITM'd broker, EXTERNAL, no credentials on the client) or A3 (frame injection on an unencrypted link); actor A2 (a publisher whose headers a benign broker relays verbatim) reaches the same code with only publish rights and no broker compromise. The realistic outcome is OutOfMemoryError on the connection thread; because the JVM heap is process-wide, that degrades or kills unrelated work in the same process, not just message consumption. A declared length at the top of the accepted range additionally trips HotSpot's 'Requested array size exceeds VM limit' immediately, independent of configured heap size. Availability only \u2014 this class holds no secret and makes no authorization decision, so no confidentiality or auth claim is made. Rated HIGH, not CRITICAL, per the threat model's STANDARD availability tier for this component.",
+      "evidence": "`readBytes` (declared at :83) reads a 32-bit length prefix from the peer and widens it with `unsignedExtend` at :86, giving a value in [0, 4294967295]. The ONLY test applied to that value is `contentLength < Integer.MAX_VALUE` at :87. That test is a type-range guard, not a resource limit: its function is to keep the `(int)` cast at :88 from truncating. Every value in [0, 2147483646] passes it and is handed straight to `new byte[(int)contentLength]` at :88.",
+      "severity": "HIGH",
+      "_mantis": {
+        "uuid": "c2305d2f-ca7e-42e0-8de5-dcc20ca1d3ff",
+        "cwe": "CWE-789",
+        "signature": "33eca5118d186145",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "HIGH",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:89",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:103",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:108",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:163",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:211"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-002",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 92,
+      "title": "readBytes answers a peer-declared length with an unchecked UnsupportedOperationException, bypassing the MalformedFrameException error channel",
+      "impact": "Five unauthenticated bytes on the decode path force the decoder off its declared error contract. Instead of the MalformedFrameException the class raises for every other rejected input (:217), the peer gets an unchecked UnsupportedOperationException out of methods that declare only IOException. Any handler written to the declared contract is bypassed, so hostile input reaches whatever generic or absent handling sits above -- at best an equivalent shutdown, at worst a decode thread that dies without running the connection's error and shutdown notification path, stalling consumers with no exception surfaced to the application. Availability tier is STANDARD and the exact caller behaviour is UNKNOWN in this scope, which bounds this at MEDIUM.",
+      "evidence": "readBytes reads a 32-bit length from the peer at :86 and sign-extends it safely via unsignedExtend (:45), then branches at :87. The rejection branch throws UnsupportedOperationException at :92 -- a java.lang.RuntimeException. The method is declared 'throws IOException' (:84), as are readLongstr (:101), readFieldValue (:159) and the public readLongstr (:109). The class's designed channel for hostile input is MalformedFrameException, an IOException, which the default arm of the type switch throws at :217 for an unrecognised tag. So the same class rejects two kinds of bad input on two different channels: unknown tag -> checked IOException (:217), over-long declared length -> unchecked RuntimeException (:92). A caller written to the declared contract, catch (IOException e), handles the first and does not handle the second.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "7ac64bca-cd0f-4fd8-8b7a-f7221140ad0f",
+        "cwe": "CWE-248",
+        "signature": "2da0aeec69aa7678",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:84",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:103",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:163",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:211",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:159",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:217",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:45"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-003",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 70,
+      "title": "Silent header-table key collapse: malformed UTF-8 is replaced with U+FFFD and the resulting duplicate key is dropped without error",
+      "impact": "Integrity of the decoded header table. An attacker who can place a header on the wire ahead of a legitimate one can suppress the legitimate value while the application still sees a well-formed Map with the expected key present -- the application cannot distinguish a faithfully decoded table from a collapsed one. Conversely, distinct headers the sender believed were separate silently become one. Any per-header logic (routing, filtering, de-duplication, audit logging of headers) operates on a table that differs from what was actually transmitted.",
+      "evidence": "readShortstr (ValueReader.java:65-71) decodes an arbitrary attacker-supplied byte string with `new String(b, \"utf-8\")`. That constructor does NOT reject malformed input: java.lang.String's charset-name constructor is specified to replace every unmappable/ill-formed byte sequence with the replacement character U+FFFD rather than throwing. Two DIFFERENT wire-level key byte strings therefore decode to the SAME Java String whenever their ill-formed portions both collapse to U+FFFD (e.g. the single bytes 0xFF and 0xFE both decode to \"\\uFFFD\").",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "91e7930c-b31f-4c2b-a0b6-1e421958ca7e",
+        "cwe": "CWE-172",
+        "signature": "8fa086d2156fe60a",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-004",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 148,
+      "title": "Container decoding loops terminate on InputStream.available(), which is a buffering hint and not an end-of-container predicate",
+      "impact": "If (b) holds: silent truncation of a decoded table or array, followed by stream desynchronisation -- the decoder resumes parsing type tags and length prefixes from the middle of attacker-supplied data, so the attacker chooses how the remainder of the frame is interpreted. If (a) holds there is no impact. The finding is therefore routed for research rather than asserted.",
+      "evidence": "readTable (:148) and readArray (:244) both drive their decode loop with `while(<stream>.available() > 0)`. available() is specified only as an estimate of the bytes that can be read WITHOUT BLOCKING; it is explicitly not a count of remaining bytes in a logical container. Its value therefore depends entirely on the concrete stream implementation underneath.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "a0eb9d42-d0b5-4591-b598-8904dfa44cc5",
+        "cwe": "CWE-1284",
+        "signature": "a78fb685a5edc1e0",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:244"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-005",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 184,
+      "title": "Unbounded mutual recursion between readFieldValue and readArray/readTable turns five peer bytes into two stack frames",
+      "impact": "A peer that can put bytes on the decode path drives the decoder to arbitrary recursion depth at 5 bytes per level. Once the thread's stack is exhausted the decode fails with StackOverflowError, an unchecked java.lang.Error that escapes methods declared 'throws IOException' and is not caught by the connection's IOException handler. The expected outcomes are loss of the connection's decode thread without the orderly shutdown path the IOException channel would have triggered, or -- if a broad catch(Throwable) exists upstream -- resumption on a stream whose parse offset is no longer known. Availability of the client's message consumption is the asset; per the threat model this asset is STANDARD tier and recoverable by reconnect, which is why this is not rated higher. Whether the byte budget N is large enough in a given deployment is UNKNOWN in this scope (no caller, no frame-size ceiling observable), and that uncertainty -- not the presence of the recursion -- is the reason for MEDIUM rather than HIGH.",
+      "evidence": "readFieldValue's type switch dispatches on a single peer-supplied byte (:161) and two of its arms re-enter the decoder: case 'F' calls readTable (:181) and case 'A' calls readArray (:184). readTable's loop body calls readFieldValue again (:150) and readArray's loop body calls readFieldValue again (:245). The cycle readFieldValue(:158) -> readArray(:237) -> readFieldValue(:245) -> readArray(:237) is therefore closed and has no depth parameter, no depth counter, and no ceiling anywhere on the path. Nothing in the file limits it.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "aa587a58-218d-450b-9471-2eb69fcd1073",
+        "cwe": "CWE-674",
+        "signature": "4054d0eeaa5c2a27",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:184",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:161",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:237",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:245",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:240",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:150",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:149",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:244",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:159"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-006",
+      "file": "pom.xml",
+      "line": 136,
+      "title": "Build profile auto-activated by an out-of-tree marker file redirects the code-generation input compiled into the shipped jar",
+      "impact": "An actor with write access to the directory two levels above the checkout -- on a typical hosted CI runner the shared workspace root, writable by any earlier workflow step, any third-party action, or any restored cache in the same job -- flips the build to read its code-generation input from a directory that actor also controls, silently and on every subsequent build. The generated Java is compiled into a widely consumed AMQP client library, and under the `release` / `snapshots` profiles the resulting artifact is then GPG-signed at `package` (`pom.xml:282`, `pom.xml:330`) and published, so the tampering is laundered into an authentically signed release. The blast radius is every downstream consumer of the jar. No release-engineer action beyond running an ordinary build is required, and the activation leaves no explicit signal in the build invocation.",
+      "evidence": "The `in-umbrella` profile (`pom.xml:128-142`) has no explicit opt-in. Its only activation condition is the existence of a file two directory levels ABOVE the project: `<exists>../../UMBRELLA.md</exists>` (`pom.xml:136`). When that file exists, the profile overrides `deps.dir` from its in-project default `${basedir}/deps` (`pom.xml:110`) to `${basedir}/..` (`pom.xml:140`) -- the parent of the checkout, i.e. outside the reviewed tree. `codegen.dir` is derived from it as `${deps.dir}/rabbitmq_codegen` (`pom.xml:111`), so the entire code-generation input directory relocates outside the project with no `-P` flag, no prompt and no distinguishing log line.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "b0cc803d-d178-4a70-9661-3fd987d4a5fc",
+        "cwe": "CWE-426",
+        "signature": "a9cc727ea02c3252",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "pom.xml:136",
+          "pom.xml:133",
+          "pom.xml:140",
+          "pom.xml:110",
+          "pom.xml:111",
+          "pom.xml:614",
+          "pom.xml:621",
+          "pom.xml:623",
+          "pom.xml:626",
+          "pom.xml:629",
+          "pom.xml:633",
+          "pom.xml:647",
+          "pom.xml:653",
+          "pom.xml:116",
+          "pom.xml:162",
+          "pom.xml:208",
+          "pom.xml:217"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-007",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 142,
+      "title": "Table and array declared extents are never bounded or reconciled with the enclosing stream",
+      "impact": "Integrity of the decoded object graph \u2014 the threat model's second high-value asset. A peer that controls one nested `'F'` or `'A'` field can over-declare its extent so that sibling entries of the enclosing table are absorbed into it and never surface to the application. Where some of those siblings originate with a trusted party rather than the attacker \u2014 broker- or plugin-inserted headers, reachable by threat-model actor A2, a publisher with only publish rights whose headers a benign broker relays \u2014 that is silent suppression of trusted metadata rather than mere self-corruption of the attacker's own fields. In the early-termination direction the enclosing stream is left misaligned and subsequent decoding proceeds from a wrong offset. Neither direction raises an error: the methods return normally and the mismatch becomes application truth. No memory-exhaustion claim is made here. Rated MEDIUM because the concrete integrity gain depends on a decoding context that cannot be verified in this scope (no caller, no TruncatedInputStream); privileges are rated LOW because a fully hostile peer (A1) already controls every byte and gains nothing from swallowing its own siblings, so the meaningful vector is the partially-trusted A2 case.",
+      "evidence": "`readTable` (:139) and `readArray` (:237) each turn a peer-declared 32-bit length directly into the extent of a nested sub-stream, and neither bounds that length nor reconciles it with reality afterwards.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "fd91e8e5-ffb3-431d-98fa-1a7a5355b63b",
+        "cwe": "CWE-130",
+        "signature": "36c0d5a0a0c0cc61",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:146",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:154",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:240",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:241",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:244",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:248"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-008",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 143,
+      "title": "readTable returns an immutable empty map or a mutable HashMap depending on a peer-supplied length, so the peer chooses the returned object's contract",
+      "impact": "A peer decides, per table and with four bytes at :142, whether the caller receives a mutable or an immutable collection through a single declared return type. A caller that enriches or normalises decoded headers -- adding a default, stamping a received-at value, removing an internal key -- works for every non-empty table and throws an unchecked UnsupportedOperationException the first time a peer sends a zero-length table, on a path a catch (IOException e) will not intercept. The related 'V' nullability facet (:214) lets a peer make a header read as absent to get()-based checks while still occupying its key and shadowing a later duplicate (:151). Both are integrity-of-the-decoded-object-graph issues against a STANDARD-tier asset, and both require caller behaviour that is UNKNOWN in this scope, so this is rated LOW.",
+      "evidence": "readTable has two returns with different contracts and the peer picks between them with four bytes. The fast path at :143 returns Collections.emptyMap(), which is immutable and whose put/remove throw UnsupportedOperationException. The normal path builds a HashMap at :145 and returns it at :154, fully mutable. The selector is the peer-supplied 32-bit tableLength read at :142: declare 0 and the caller receives an immutable map, declare anything else and it receives a mutable one. Both are typed Map<String, Object>, so nothing at the call site distinguishes them at compile time, and a table that is merely empty in practice (a non-zero length whose content the loop at :148 never populates) still returns the mutable HashMap -- so the two shapes are not even distinguishable by 'is it empty'. The sibling container is consistent by contrast: readArray always returns a mutable ArrayList (:243, :248) whether empty or not, which is what marks the readTable split as accidental rather than designed.",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "3fa92794-f8a9-4084-a6a8-c29c51f2606f",
+        "cwe": "CWE-1076",
+        "signature": "f2f74a2c5ab9fd64",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "LOW",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:145",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:154",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:214",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:152",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:248",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:255"
+        ],
+        "sanity_triage_applied": null
+      }
+    },
+    {
+      "id": "M-009",
+      "file": "pom.xml",
+      "line": 124,
+      "title": "GPG release signing selects the signing key by a 32-bit short key ID",
+      "impact": "An actor who can place a secret key in the keyring used for releases -- a compromised release workstation, a shared or injected `GPG_HOME` on a build agent, or a keyring restored from a poisoned CI cache -- can make the build sign with a key of their choosing without editing the pom, because the manifest identifies the key only by a 32-bit value they can collide at will. Artifacts then carry a signature that the project's own manifest considers correct, while chaining to a key the project does not control; downstream verifiers who trust the short ID (as the pom implicitly does) accept it. The prerequisite is high -- write access to the signing keyring on the release host, which already implies substantial compromise -- which bounds this well below the code-injection path, but the pom-side defect is real and independently fixable.",
+      "evidence": "The release signing key is chosen by the property `<gpg.keyname>6026DFCA</gpg.keyname>` (`pom.xml:124`). That value is eight hex characters -- a 32-bit OpenPGP SHORT key ID, not the 64-bit long ID and not the 160-bit full fingerprint. It is wired into `maven-gpg-plugin` as `<keyname>${gpg.keyname}</keyname>` in both signing profiles: `snapshots` (`pom.xml:287`, execution `sign-artifacts` bound to `package` at `pom.xml:282`, goal `sign` at `pom.xml:284`) and `release` (`pom.xml:335`, bound to `package` at `pom.xml:330`, goal `sign` at `pom.xml:332`).",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "eb436e48-e4a5-440d-8805-b7edee89fc77",
+        "cwe": "CWE-345",
+        "signature": "cd60c796fa93e19b",
+        "risk_score": null,
+        "priority": null,
+        "researcher_severity": "LOW",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": null,
+        "repro_status": null,
+        "all_code_paths": [
+          "pom.xml:124",
+          "pom.xml:287",
+          "pom.xml:335",
+          "pom.xml:282",
+          "pom.xml:330"
+        ],
+        "sanity_triage_applied": null
+      }
+    }
+  ]
+}

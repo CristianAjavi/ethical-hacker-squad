@@ -1,0 +1,42 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "SQL Injection via Unsanitized ORDER BY Parameter",
+    "file": "routes/invoices.js",
+    "line": 24,
+    "severity": "Critical",
+    "impact": "Complete database compromise. Attacker can execute arbitrary SQL queries including SELECT, INSERT, UPDATE, DELETE, and DROP TABLE commands. Can extract sensitive data, modify invoices, delete records, or destroy tables entirely.",
+    "evidence": "Line 24 contains: `ORDER BY ${order}` where `order` is directly concatenated from `req.query.order` without validation or parameterization. No whitelist or prepared statement used for the ORDER BY clause, unlike the correctly-implemented /payments endpoint which uses SORTABLE whitelist.",
+    "recommendation": "Implement a whitelist of allowed column names for sorting. Example: const SORTABLE = { date: 'created_at', amount: 'total_cents', id: 'id' }; const column = SORTABLE[req.query.order] || SORTABLE.date; Then use: ORDER BY ${column}"
+  },
+  {
+    "id": "F-002",
+    "title": "Cross-Site Scripting (XSS) via Unescaped HTML in Invoice Notes",
+    "file": "lib/render.js",
+    "line": 5,
+    "severity": "High",
+    "impact": "Arbitrary JavaScript execution in user browsers. Attackers can steal session cookies, hijack user accounts, perform unauthorized actions on behalf of users, deface the invoice display, or redirect users to malicious sites. Affects all users viewing the invoice with the malicious note.",
+    "evidence": "Line 5: `return \\`<div class=\"note\">${note}</div>\\`;` embeds user input directly without HTML entity encoding. The module imports escape-html but fails to use it here. By contrast, customerName() on line 10 correctly uses escapeHtml(name), showing the correct pattern is available but not applied.",
+    "recommendation": "Apply HTML escaping to all user-provided content. Change line 5 to: `return \\`<div class=\"note\">${escapeHtml(note)}</div>\\`;` This matches the correct pattern already used for customerName()."
+  },
+  {
+    "id": "F-003",
+    "title": "Server-Side Request Forgery (SSRF) in Logo Fetching",
+    "file": "lib/remote.js",
+    "line": 6,
+    "severity": "High",
+    "impact": "Unauthorized access to internal resources. Attacker can probe internal IP ranges, access cloud metadata endpoints (AWS, GCP, Azure), read AWS credentials and tokens, access internal services bypassing firewalls, and perform port scanning on internal network. Can escalate to full infrastructure compromise.",
+    "evidence": "Line 6: `const response = await fetch(url, { redirect: 'follow' });` accepts any URL without hostname validation. Used by POST /branding/preview endpoint which passes req.body.logoUrl directly to fetchLogo(). Unlike fetchAsset() on line 13 which enforces ALLOWED whitelist, fetchLogo() has zero restrictions on which hosts can be accessed.",
+    "recommendation": "Implement hostname whitelist validation. Example: const ALLOWED_HOSTS = new Set(['assets.example.com', 'cdn.example.com']); const url_obj = new URL(url); if (!ALLOWED_HOSTS.has(url_obj.hostname)) throw new Error('host not allowed'); Alternatively, disable redirect following: { redirect: 'error' }"
+  },
+  {
+    "id": "F-004",
+    "title": "JWT Verification Bypass - Unverified Token Decoding",
+    "file": "lib/auth.js",
+    "line": 6,
+    "severity": "Critical",
+    "impact": "Complete authentication bypass. Attacker can forge JWT tokens with arbitrary claims (user ID, admin role, tenant ID) without any signature verification. Enables unauthorized access to all protected endpoints, privilege escalation to admin, cross-tenant data access, and full account takeover. Multiple occurrences on lines 6 and 12.",
+    "evidence": "Line 6: `const claims = jwt.decode(bearer);` uses jwt.decode() which only decodes the payload without signature verification. Line 12 contains identical vulnerable pattern. Should use jwt.verify(bearer, secret) instead. The jsonwebtoken library is available but the wrong function is called. Attacker can create unsigned JWT with any claims.",
+    "recommendation": "Replace all jwt.decode() calls with jwt.verify(bearer, secret_key, {algorithms: ['HS256']}) where secret_key is a secure secret known only to the server. Store secret in environment variable. Example fix for line 6: const claims = jwt.verify(bearer, process.env.JWT_SECRET); Also apply fix to line 12 in tagRequest()."
+  }
+]}

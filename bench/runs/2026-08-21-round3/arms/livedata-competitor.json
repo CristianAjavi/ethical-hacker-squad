@@ -1,0 +1,94 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 330,
+      "title": "Privilege-limiting flag 'enforceRequiredRights' is writable through the Live Data update path with only EDIT right, and its value is parsed fail-open",
+      "impact": "The document flag that limits what a page's stored scripts may do is writable through the generic Live Data property path behind nothing but EDIT, and any value other than the exact string 'true' silently clears it. Because clearing the flag does not dirty the content, the page keeps its existing - potentially far more privileged - content author, which ordinary editing could not achieve. Scored MEDIUM rather than HIGH solely because the static-confirmation cap applies: no reproduction was authorized in this engagement. On the same evidence with a working reproducer the Hazard would be 7.0 (HIGH). Fix the parse and the authorization together; either alone leaves the other.",
+      "evidence": "Line 330: `document.setEnforceRequiredRights(Boolean.parseBoolean(String.valueOf(value)));` \u2014 the only authorization on the path is `checkAccess(Right.EDIT, documentReference)` at lines 124/181, and Boolean.parseBoolean yields true ONLY for the literal \"true\", so \"on\", \"1\", \"yes\", a trailing space or a null all resolve to false, i.e. enforcement OFF. Writing only this flag leaves isContentDirty() false at line 266, so the pre-existing (more privileged) content author is preserved \u2014 which rewriting the page body could not do.",
+      "severity": "MEDIUM (Mantis Risk Score 5.6; impact 4 + likelihood 3, exposure EXPOSED)"
+    },
+    {
+      "id": "M-002",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 252,
+      "title": "HTML-conversion target list is caller-controlled and unvalidated: any submitted property can be routed through HTMLConverter with a caller-chosen syntax",
+      "impact": "The list naming which submitted values are HTML, and the syntax each is converted into, both arrive in the same caller-supplied map as the values themselves; entries that carry no recognised class prefix are passed through verbatim rather than rejected, because removeStart is not a filter. The server holds no independent notion of which fields are HTML or what syntax they are stored in. Reject unprefixed entries and resolve the syntax from class metadata.",
+      "evidence": "Line 252: `result.add(Strings.CS.removeStart(requiresHTMLConversionProperty, defaultPrefix));` \u2014 removeStart returns the input UNCHANGED when the prefix is absent, so an unrecognised name is accepted verbatim, not rejected. Line 215 then calls `htmlConverter.fromHTML((String) v, (String) properties.get(syntaxKey))`, taking both the value and the target syntax id from that same caller-supplied map.",
+      "severity": "MEDIUM (Mantis Risk Score 3.2; impact 2 + likelihood 2, exposure EXPOSED)"
+    },
+    {
+      "id": "M-003",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 280,
+      "title": "Unrestricted property mass assignment: request-shaped map keys select the document field or XObject property to write, with no allowlist",
+      "impact": "Property keys select the write target by a four-character prefix test with no allowlist anywhere in the class, so an update can address document fields and XObject properties the live table never declared editable. Rated MEDIUM rather than higher because the checked right already permits the same changes by ordinary means; its real significance is that it is the dispatch that carries a caller to the privilege-affecting sink scored at line 330. Derive the writable key set from the Live Data configuration.",
+      "evidence": "Line 280: `if (StringUtils.defaultIfEmpty(property, \"\").startsWith(\"doc.\"))` is the entire write-target routing decision; line 194 iterates the caller's map without filtering keys and lines 195-197 take the target class from the caller's own map. No allowlist exists anywhere in the class.",
+      "severity": "MEDIUM (Mantis Risk Score 3.2; impact 2 + likelihood 2, exposure EXPOSED)"
+    },
+    {
+      "id": "M-004",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 296,
+      "title": "Documented 'update' API silently creates a new XObject of a caller-chosen class at a caller-chosen index",
+      "impact": "A method documented on both overloads as updating an existing object creates one instead when the requested index equals the current object count, using a class reference the caller supplies and that nothing validates. Whether this grants anything the ordinary object editor does not is explicitly unresolved and is the single question that would re-rank this finding. Honour the contract, or make creation explicit and separately authorised on the class being instantiated.",
+      "evidence": "Lines 294-297: `if (baseObject == null && objectNumber == document.getXObjectSize(classReference)) { baseObject = document.newXObject(classReference, xcontext); }` \u2014 against Javadoc line 87-88, \"The first xobject of the specified type (xclass reference) is updated\". classReference is never validated.",
+      "severity": "MEDIUM (Mantis Risk Score 3.2; impact 2 + likelihood 2, exposure EXPOSED)"
+    },
+    {
+      "id": "M-005",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 138,
+      "title": "Return contract of update() is broken in both directions: empty Optional after a successful write, non-empty Optional after no change",
+      "impact": "update() returns the value captured before the mutation, so the documented meaning of Optional.empty() is inverted in both directions - most pointedly, the call that creates and persists a new object returns the sentinel defined as 'nothing has been modified'. Harmless unless a caller drives audit logging or notification off the return value. Return an explicit changed/unchanged signal.",
+      "evidence": "Line 138: `return Optional.ofNullable(changedValue);` where changedValue is captured before every mutation (307 before 315, 329 before 330, 333 before 334), against Javadoc lines 95/116 defining Optional.empty() as \"nothing has been modified\".",
+      "severity": "LOW (Mantis Risk Score 2.9; impact 1 + likelihood 3, exposure EXPOSED)"
+    },
+    {
+      "id": "M-006",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 272,
+      "title": "Every Live Data write is persisted as a minor edit, keeping inline modifications out of default change surfaces",
+      "impact": "Every write through this bridge is stamped as a minor edit with the fixed comment 'LiveData update.', so a one-cell edit, a full content replacement and a required-rights toggle produce identical, contentless history entries. No capability is gained, but the record of the other findings is degraded. Let the caller set the flag and name the changed properties in the comment.",
+      "evidence": "Line 272: `xcontext.getWiki().saveDocument(document, \"LiveData update.\", true, xcontext);` \u2014 the third argument is the minor-edit flag, hardcoded true, with a fixed comment naming no property.",
+      "severity": "LOW (Mantis Risk Score 2.9; impact 1 + likelihood 3, exposure EXPOSED)"
+    },
+    {
+      "id": "M-007",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 315,
+      "title": "Unchecked casts and null-unsafe operations on caller-supplied values raise unchecked exceptions outside the API's declared error channel",
+      "impact": "Caller-supplied values typed as Object are consumed as String without checks at five sites, and Map.of rejects the null a JSON client naturally sends to clear a field; none of these is covered by the declared throws clauses, so malformed input becomes an unhandled server error rather than the API's own failure mode. The title case additionally persists stringified junk without complaint. LOW priority; fix with explicit coercion and matching error handling.",
+      "evidence": "Line 315: `xClass.fromMap(Map.of(property, newValue), baseObject);` \u2014 Map.of rejects null keys and null values. Same class of defect at lines 195, 208, 215 and 338; line 334 uses the tolerant `String.valueOf(value)` for title while line 338 uses a hard `(String) value` cast for content. None is covered by the declared throws clauses.",
+      "severity": "LOW (Mantis Risk Score 2.9; impact 1 + likelihood 3, exposure EXPOSED)"
+    },
+    {
+      "id": "M-008",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 216,
+      "title": "HTML-conversion loop deletes unrelated pending updates by name arithmetic, with the outcome depending on caller-supplied map iteration order",
+      "impact": "The conversion loop deletes '<name>_syntax' and '<name>_cache' from the pending update by string concatenation, unconditionally and unscoped, so one entry's processing can cancel another's - and the split that feeds it neither trims nor rejects empty entries. Because updateAll returns void, the loss is never reported. Remove only the auxiliary keys the conversion step actually consumed.",
+      "evidence": "Lines 216-217: `properties.remove(syntaxKey); properties.remove(cacheKey);` with keys built by concatenation at lines 212-213, executed unconditionally even when computeIfPresent matched nothing; line 238 splits the list with no trim and no empty-entry rejection.",
+      "severity": "LOW (Mantis Risk Score 2.4; impact 2 + likelihood 1, exposure EXPOSED)"
+    },
+    {
+      "id": "M-009",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 266,
+      "title": "Writes that never happen are reported as success: no failure channel for unknown document fields or undeclared XObject properties",
+      "impact": "There is no path by which a caller learns its update was a no-op: unknown document fields warn and continue, doc.fullName is dropped without even a warning, undeclared XObject properties are ignored, and updateAll returns void. A batch in which some properties were silently dropped is indistinguishable from one fully applied. Return per-property outcomes or throw.",
+      "evidence": "Line 266: `if (document.isContentDirty() || document.isMetaDataDirty()) {` \u2014 every path that mutated nothing falls through with no exception and no signal, while updateAll (line 177) returns void; `doc.fullName` is excluded from even the warning by line 342.",
+      "severity": "LOW (Mantis Risk Score 2.4; impact 2 + likelihood 1, exposure EXPOSED)"
+    },
+    {
+      "id": "M-010",
+      "file": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+      "line": 343,
+      "title": "Caller-controlled property name and value are written to the application log without neutralization",
+      "impact": "The default branch of the document-field switch writes the caller-supplied property name and value into the application log verbatim, so CR/LF can forge records and any submitted value - including one typed into a mistyped field - is persisted to disk. Reachable by any unrecognised doc.* key. Log a neutralized, length-capped identifier and never the value.",
+      "evidence": "Lines 343-347: `this.logger.warn(\"Unknown property [{}]. Document [{}] will not be updated with value [{}].\", property, document, value)` \u2014 caller-supplied name and value interpolated with no neutralization, in the DEFAULT branch of the switch.",
+      "severity": "LOW (Mantis Risk Score 2.0; impact 2 + likelihood 3, exposure EXPOSED)"
+    }
+  ]
+}

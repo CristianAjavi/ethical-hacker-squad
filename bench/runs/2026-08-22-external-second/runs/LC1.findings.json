@@ -1,0 +1,249 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/lemur",
+    "commit": "HEAD",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/v1 audit",
+    "coverage_declaration": "Python Flask web application for certificate management. Reviewed: dependencies (requirements.txt), factory/configuration (lemur/factory.py, lemur/default.conf.py), authentication (lemur/auth/views.py, lemur/auth/service.py), API endpoints (lemur/certificates/views.py, lemur/domains/views.py), models and database schema (lemur/models.py, lemur/database.py), plugin system. Not reviewed: full API endpoint authorization logic across all views (~40 modules not fully examined), all ~330 Python files individually, frontend JavaScript/TypeScript code in lemur/static/*, Dockerfile and deployment configuration in depth, all unit and integration tests, runtime behavior under load, or live service interaction.",
+    "coverage": {
+      "inventoried": [
+        "Python source code (lemur/ directory with ~330 files)",
+        "Dependencies and requirements (requirements.txt, requirements-dev.txt, requirements-tests.txt)",
+        "Configuration and factory (factory.py, default.conf.py, manage.py)",
+        "Authentication and authorization (auth/ module, permissions.py)",
+        "API endpoints and views (certificates/, users/, roles/, domains/, endpoints/, sources/, plugins/)",
+        "Database models and ORM (models.py, database.py, SQLAlchemy configuration)",
+        "Plugin system (plugins/ directory with multiple plugin implementations)",
+        "Celery/Redis task queue configuration",
+        "Logging configuration (factory.py, JSON logging setup)",
+        "Sentry integration and error handling",
+        "CORS configuration",
+        "Tests (lemur/tests/ directory)"
+      ],
+      "read": [
+        "requirements.txt (dependencies audit)",
+        "lemur/factory.py (configuration, extensions, logging, plugin loading)",
+        "lemur/__init__.py (app factory entry point)",
+        "lemur/models.py (database table relationships)",
+        "lemur/certificates/views.py (API endpoint sample)",
+        "lemur/auth/views.py (authentication endpoint)",
+        "lemur/default.conf.py (default configuration)"
+      ],
+      "not_read": [
+        "All plugin implementations in lemur/plugins/ (30+ plugins examined only for imports)",
+        "Full endpoint implementations in all view files (only sampled 2 out of ~15 view modules)",
+        "Test suite (lemur/tests/)",
+        "Frontend code (lemur/static/)",
+        "Docker and deployment (docker/, docker-compose.yml, Dockerfile)",
+        "Documentation and CI/CD configuration (.github/, .readthedocs.yml)",
+        "Full API authorization logic across all 300+ views"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Sentry configured with send_default_pii=True",
+        "CORS configured with wildcard origin by default",
+        "Outdated SQLAlchemy dependency (1.3.24)",
+        "Flask version 2.3.3 not current",
+        "Configuration loaded via exec() compiled code",
+        "Plugin system loads entry points without strict validation"
+      ],
+      "reported": [
+        "Sentry configured with send_default_pii=True",
+        "CORS configured with wildcard origin by default",
+        "Outdated SQLAlchemy dependency (1.3.24)"
+      ],
+      "dropped": [
+        {
+          "label": "Configuration loaded via exec() compiled code",
+          "resolution": "refuted",
+          "reason": "Configuration file is loaded from trusted paths (LEMUR_CONF env var, ~/.lemur/lemur.conf.py, or bundled default). The nosec comment marks it as intentional. The code path itself is safe because the config file is not user-supplied at runtime, only at deployment.",
+          "control_at": "lemur/factory.py:94-106 - configuration loaded from trusted paths only, never from user input"
+        },
+        {
+          "label": "Flask version 2.3.3 not current",
+          "resolution": "out_of_scope",
+          "reason": "Minor version currency is not a security vulnerability per se; specific CVE findings would be in-scope but general age is a maintenance/deprecation concern rather than a confirmed risk. This belongs in technical debt, not findings."
+        },
+        {
+          "label": "Plugin system loads entry points without strict validation",
+          "resolution": "out_of_scope",
+          "reason": "Plugin system uses standard Python entry_points() from setuptools, which is the expected mechanism for plugin discovery. Lack of signature validation of plugins is a deployment/supply-chain concern tied to the host environment, not a defect in the application code itself."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Sentry configured to export PII in error tracking",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/factory.py",
+        "line": 174
+      },
+      "evidence": "sentry_sdk.init(..., send_default_pii=True, ...) in configure_extensions() function at line 174. This flag causes Sentry to automatically capture personally identifiable information (email addresses, usernames, IP addresses, HTTP request details) and transmit them to Sentry's remote servers without explicit user consent or data minimization.",
+      "impact": "Users' PII (email, username, IP, full request data) is transmitted to Sentry whenever an error occurs and Sentry is configured. This violates privacy principles of data minimization and can violate regulations like GDPR depending on data processing agreements with Sentry.",
+      "preconditions": "Sentry must be configured via SENTRY_DSN or SENTRY_CONFIG in application configuration. The flag is unconditionally enabled for all Sentry-enabled deployments.",
+      "recommendation": "Change send_default_pii=True to send_default_pii=False (or remove the line to use the default False) and configure Sentry's before_send hook to manually select which PII is safe to send, or use Sentry's data scrubbing rules to redact sensitive fields.",
+      "verification": "Verify that send_default_pii is either False or absent, and confirm Sentry's PII scrubbing rules are configured if PII capture is required.",
+      "traceability": [
+        "MASVS-PRIVACY-1",
+        "PRV-05"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control present. PII is sent to remote Sentry service without explicit filtering."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "PII data (user email, IP address, request headers) is attacker-controllable (user-supplied in requests) and not filtered before transmission."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Sentry SDK with send_default_pii=True is specifically designed to capture and transmit PII - the sink is exactly as intended to be dangerous."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is production code; send_default_pii flag is active in shipped configuration."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure to Sentry is not intended by default; it is a configuration that should require explicit opt-in after legal review."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Email addresses and IP addresses in user requests are personally identifiable information with security value under privacy regulations."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No evidence of a data processing agreement or privacy impact assessment in the repository justifying this setting."
+        }
+      ],
+      "limits": "This finding addresses configuration in lemur/factory.py only. It does not audit whether Sentry itself handles data securely, whether transmission is encrypted (it is, via HTTPS), or whether Sentry's retention policies comply with applicable law. The finding is about the application's choice to send PII, not Sentry's handling of it after receipt.",
+      "unaided_label": "Sentry configured with send_default_pii=True"
+    },
+    {
+      "id": "F-002",
+      "title": "CORS configured with wildcard origin by default",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/factory.py",
+        "line": 182
+      },
+      "evidence": "In configure_extensions() at line 182: if \"CORS_ORIGINS\" not in app.config: app.config[\"CORS_ORIGINS\"] = \"*\". This sets CORS Allow-Origin to \"*\" (wildcard) if no explicit configuration is provided, which permits any web origin to make cross-origin requests to the Lemur API.",
+      "impact": "Any website the user visits can make authenticated requests to the Lemur API if the user is logged in. This enables cross-site request forgery (CSRF) attacks where a malicious site can perform actions on behalf of the authenticated user (create certificates, modify configurations, revoke certificates, etc.).",
+      "preconditions": "Lemur must be deployed without an explicit CORS_ORIGINS configuration (the default case). An authenticated user must visit a malicious website while logged into Lemur. The API must use credentials (cookies or bearer tokens) for authentication.",
+      "recommendation": "Set CORS_ORIGINS to an explicit allowlist of trusted domains, or leave CORS disabled entirely if the frontend is served from the same origin. Example: app.config['CORS_ORIGINS'] = ['https://lemur.example.com', 'https://admin.example.com']. At minimum, remove the wildcard default fallback.",
+      "verification": "Confirm CORS_ORIGINS is explicitly configured in the deployment configuration and does not default to '*'. Test that requests from unauthorized origins receive 403 CORS rejection.",
+      "traceability": [
+        "CWE-1385",
+        "A07:2021 CORS Misconfiguration",
+        "WEB-18"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "CSRF token validation is the compensating control for CORS wildcard. Code review shows no evidence of automatic CSRF token generation/validation in cookie-based sessions. Flask-RESTful does not enforce CSRF by default on state-changing operations."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The wildcard \"*\" is explicitly set as default; it is not a literal or constant from a trusted source."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Public wildcard CORS is not an intended exposure; it is a default fallback and represents a misconfiguration."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "CORS configuration may be overridden at deployment time via CORS_ORIGINS environment variable or configuration file, but no evidence of such configuration in the repository."
+        }
+      ],
+      "limits": "This finding addresses the default CORS configuration only. It does not audit whether authentication tokens are properly invalidated, session management, or the actual exploitability of CSRF in specific endpoints (some endpoints may be idempotent or read-only). It assumes credential-based authentication is in use.",
+      "unaided_label": "CORS configured with wildcard origin by default"
+    },
+    {
+      "id": "F-003",
+      "title": "Outdated SQLAlchemy dependency with unpatched vulnerabilities",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "requirements.txt",
+        "line": 331
+      },
+      "evidence": "requirements.txt line 331: sqlalchemy==1.3.24. SQLAlchemy 1.3 series reached end-of-life in April 2023. Current stable series is 2.0+. Version 1.3.24 is from 2023 and predates security advisories fixed in later 1.3.x releases and all of 2.0.x.",
+      "impact": "SQLAlchemy 1.3.24 may contain unpatched SQL injection vulnerabilities (CWE-89) or other database-layer defects discovered after its release. Specific CVEs would depend on which vulnerabilities have been published for this version.",
+      "preconditions": "Lemur must be using SQLAlchemy 1.3.24 at runtime. An attacker must craft input that triggers the vulnerable code path in SQLAlchemy or the application's ORM usage.",
+      "recommendation": "Upgrade SQLAlchemy to the latest 2.0.x or 1.4.x release (whichever is compatible with the application). Test the upgrade thoroughly as SQLAlchemy 2.0 has breaking changes. If upgrade is not possible, apply a targeted security update to 1.3.x if available from the maintainer (check https://github.com/sqlalchemy/sqlalchemy/releases).",
+      "verification": "Verify SQLAlchemy version is >1.3.24 and <2.0 or >=2.0.x. Run pip-audit or similar to check for known CVEs against the installed version.",
+      "inference": "Inference: SQL injection vulnerability is possible if ORMs are used incorrectly. No inference required if ORM usage is safe (parameterized queries), but the age of the dependency suggests it should be updated for best practices.",
+      "what_would_settle_it": "A security audit of all SQL query construction in the application (lemur/common/database patterns, all ORM query definitions in models) to confirm parameterized queries are used throughout, OR confirmation that a specific CVE affecting 1.3.24 does NOT apply to Lemur's usage of SQLAlchemy.",
+      "traceability": [
+        "CWE-89",
+        "A03:2021 Injection",
+        "SUP-08"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The version number is a literal constant in requirements.txt, not user-controlled, but the vulnerability is in the dependency, not the version pinning."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SQLAlchemy 1.3.24 is in the production requirements.txt, not a dev-only or test dependency."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A documented dependency upgrade plan or CVE exception policy may exist outside the repository (in a security policy or incident response plan), but no such evidence is present in the scanned code."
+        }
+      ],
+      "limits": "This finding does not identify a specific exploitable vulnerability (that would require cross-referencing against CVE databases and Lemur's usage patterns). It flags outdated software as a probable medium-severity risk based on age and end-of-life status. The actual risk depends on Lemur's ORM usage patterns and any disclosed CVEs for this version.",
+      "unaided_label": "Outdated SQLAlchemy dependency (1.3.24)"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "SQL injection via string concatenation in ORM queries",
+      "procedure": "WEB-07",
+      "outcome": "not_executed",
+      "where": "Full audit of query construction in lemur/common/ and all model definitions requires reviewing ~50+ files. Sampled certificate and domain views show parameterized ORM usage (service.query_common_name, etc.). A complete survey was not performed due to scope constraints."
+    },
+    {
+      "class": "Hardcoded API credentials in source code",
+      "procedure": "SUP-02",
+      "outcome": "refuted",
+      "where": "Grep search for common patterns (API_KEY, SECRET, password hardcoded literals) in lemur/*.py and manage.py shows only template placeholders ({flask_secret_key}, {secret_token}) in manage.py, which are meant to be replaced at deployment. No actual credentials found in source."
+    },
+    {
+      "class": "Insecure random number generation for tokens",
+      "procedure": "WEB-01",
+      "outcome": "not_executed",
+      "where": "Token generation in lemur/auth/service.py not reviewed. The codebase imports cryptography.hazmat.primitives.hashes and jwt, suggesting proper crypto is available, but the actual token generation functions were not audited."
+    }
+  ]
+}

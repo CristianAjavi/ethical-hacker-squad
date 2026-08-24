@@ -1,0 +1,123 @@
+{
+ "claims": [
+  {
+   "claim_id": "C-001",
+   "title": "Build profile auto-activated by an out-of-tree marker file redirects the code-generation input compiled into the shipped jar",
+   "location": "pom.xml:136",
+   "impact": "An actor with write access to the directory two levels above the checkout -- on a typical hosted CI runner the shared workspace root, writable by any earlier workflow step, any third-party action, or any restored cache in the same job -- flips the build to read its code-generation input from a directory that actor also controls, silently and on every subsequent build. The generated Java is compiled into a widely consumed AMQP client library, and under the `release` / `snapshots` profiles the resulting artifact is then GPG-signed at `package` (`pom.xml:282`, `pom.xml:330`) and published, so the tampering is laundered into an authentically signed release. The blast radius is every downstream consumer of the jar. No release-engineer action beyond running an ordinary build is required, and the activation leaves no explicit signal in the build invocation.",
+   "evidence": "pom.xml:136 `<exists>../../UMBRELLA.md</exists>` auto-activates the in-umbrella profile, whose :140 sets `deps.dir` to `${basedir}/..`; :111 derives `codegen.dir` from deps.dir; :623 is the spec path consumed by the generate-sources codegen (:614, :621), and :653 adds the generated tree to the compile source root. File existence outside the project therefore selects an input that reaches the shipped jar. (deps.dir is also an ordinary property, so -Ddeps.dir achieves the same redirect.)"
+  },
+  {
+   "claim_id": "C-002",
+   "title": "Duplicate field-table keys are silently dropped, first occurrence wins",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Header smuggling. A table carrying the same key twice is resolved by this parser as the FIRST value while a peer or middlebox that resolves last-wins (or rejects duplicates) sees a different value for the same message. Any authorization, routing or dedup decision keyed on a header can be made to disagree between the two views, and no error is raised to signal the ambiguity.",
+   "evidence": "readTable() does `if(!table.containsKey(name)) table.put(name, value);` - a later duplicate is parsed, discarded and never reported. A field table is a set of name/value pairs and AMQP 0-9-1 does not define a resolution order for a repeated name, so each implementation picks its own - which is exactly why silently normalizing it here, rather than rejecting it, creates a cross-parser disagreement an attacker controls."
+  },
+  {
+   "claim_id": "C-003",
+   "title": "GPG release signing selects the signing key by a 32-bit short key ID",
+   "location": "pom.xml:124",
+   "impact": "An actor who can place a secret key in the keyring used for releases -- a compromised release workstation, a shared or injected `GPG_HOME` on a build agent, or a keyring restored from a poisoned CI cache -- can make the build sign with a key of their choosing without editing the pom, because the manifest identifies the key only by a 32-bit value they can collide at will. Artifacts then carry a signature that the project's own manifest considers correct, while chaining to a key the project does not control; downstream verifiers who trust the short ID (as the pom implicitly does) accept it. The prerequisite is high -- write access to the signing keyring on the release host, which already implies substantial compromise -- which bounds this well below the code-injection path, but the pom-side defect is real and independently fixable.",
+   "evidence": "pom.xml:124 `<gpg.keyname>6026DFCA</gpg.keyname>` -- eight hex characters, a 32-bit OpenPGP short key ID -- is consumed as `<keyname>` by maven-gpg-plugin in both signing profiles at :287 and :335. 32-bit key IDs are not collision-resistant, so key selection resolves against local keyring state instead of binding to a unique key."
+  },
+  {
+   "claim_id": "C-004",
+   "title": "Malformed wire input raises an unchecked UnsupportedOperationException instead of MalformedFrameException",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "A remote peer chooses which exception type the decoder throws. A RuntimeException escapes the IOException/MalformedFrameException handling the frame machinery uses for hostile input, so a protocol-level error surfaces as an unhandled runtime failure on the I/O thread or inside user callbacks instead of a clean connection teardown.",
+   "evidence": "readBytes() throws `new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\")` on the else branch of the length check, i.e. on a value supplied by the remote peer. Every other rejection path in this class (line 217) uses MalformedFrameException, which extends IOException."
+  },
+  {
+   "claim_id": "C-005",
+   "title": "Declared table/array length is never reconciled with the enclosing frame, and end-of-table is inferred from available()",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+   "impact": "A table or array may declare up to 4294967295 bytes inside a frame that is orders of magnitude smaller; the mismatch is only discovered as an EOFException deep inside a nested read, after the nested allocations of F-001/F-002 have already been attempted. Conversely, because the loop terminates on available() == 0 rather than on the declared length being consumed, a table is silently accepted as complete whenever the underlying stream reports no bytes ready - correct only while the frame body is fully buffered in memory, a property this class does not enforce and cannot see.",
+   "evidence": "readTable() (line 142) and readArray() (line 240) take `unsignedExtend(in.readInt())` straight into TruncatedInputStream with no upper bound, then loop on `while(tableIn.available() > 0)` (lines 148, 244); neither checks afterwards that exactly tableLength bytes were consumed."
+  },
+  {
+   "claim_id": "C-006",
+   "title": "readBytes answers a peer-declared length with an unchecked UnsupportedOperationException, bypassing the MalformedFrameException error channel",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "Five unauthenticated bytes on the decode path force the decoder off its declared error contract. Instead of the MalformedFrameException the class raises for every other rejected input (:217), the peer gets an unchecked UnsupportedOperationException out of methods that declare only IOException. Any handler written to the declared contract is bypassed, so hostile input reaches whatever generic or absent handling sits above -- at best an equivalent shutdown, at worst a decode thread that dies without running the connection's error and shutdown notification path, stalling consumers with no exception surfaced to the application. Availability tier is STANDARD and the exact caller behaviour is UNKNOWN in this scope, which bounds this at MEDIUM.",
+   "evidence": "ValueReader.java:84 declares `throws IOException`; :92 throws `UnsupportedOperationException` (a RuntimeException); :217 shows the class's designed hostile-input channel is MalformedFrameException, an IOException. The guard at :87 is a strict `<`, so every declared length in [0x7FFFFFFF, 0xFFFFFFFF] takes the unchecked throw. A caller's `catch (IOException e)` -- the declared contract -- does not catch it."
+  },
+  {
+   "claim_id": "C-007",
+   "title": "Manifest is cleanly pinned, but slf4j-api sits on an EOL 1.7.x branch and the build runs on Groovy 2.4.21",
+   "location": "pom.xml:58",
+   "impact": "No exploitable path found. Flagged because slf4j-api 1.7.36 is the only compile-scope dependency left on an end-of-life branch (everything else - netty 4.2.15, jackson 2.21.3, micrometer 1.17.0, metrics 4.2.39 - is current), and groovy-all 2.4.21 executes at generate-sources time as a build-time supply-chain surface on a line that has been unmaintained for years.",
+   "evidence": "pom.xml line 58 `<slf4j.version>1.7.36</slf4j.version>` on a non-optional, non-test dependency (line 376); line 81 `<groovy.all.version>2.4.21</groovy.all.version>` injected into groovy-maven-plugin (line 596) to run codegen.py at generate-sources. Positives worth recording: no version ranges, no SNAPSHOT dependencies, no repository/pluginRepository overrides at all, and no plaintext-HTTP resolution URL anywhere in the file."
+  },
+  {
+   "claim_id": "C-008",
+   "title": "Timestamp decoding multiplies an attacker-controlled 64-bit value by 1000 with silent overflow",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "A remote peer picks the sign and magnitude of the resulting Date at will: values above ~9.2e15 ms wrap, so a far-future POSIX second decodes to a date in the past (and vice versa). Application logic that trusts a message timestamp for expiry, ordering, replay windows or audit records can be steered to the wrong side of a comparison.",
+   "evidence": "readTimestamp() is `new Date(in.readLong()*1000)` - no range check, and the multiplication is plain long arithmetic that wraps silently. AMQP 0-9-1 timestamps are unsigned 64-bit seconds, so the whole upper half of the range is also misread as negative."
+  },
+  {
+   "claim_id": "C-009",
+   "title": "readTable returns an immutable empty map or a mutable HashMap depending on a peer-supplied length, so the peer chooses the returned object's contract",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+   "impact": "A peer decides, per table and with four bytes at :142, whether the caller receives a mutable or an immutable collection through a single declared return type. A caller that enriches or normalises decoded headers -- adding a default, stamping a received-at value, removing an internal key -- works for every non-empty table and throws an unchecked UnsupportedOperationException the first time a peer sends a zero-length table, on a path a catch (IOException e) will not intercept. The related 'V' nullability facet (:214) lets a peer make a header read as absent to get()-based checks while still occupying its key and shadowing a later duplicate (:151). Both are integrity-of-the-decoded-object-graph issues against a STANDARD-tier asset, and both require caller behaviour that is UNKNOWN in this scope, so this is rated LOW.",
+   "evidence": "ValueReader.java:143 returns `Collections.emptyMap()` (immutable; put throws UnsupportedOperationException) while :145/:154 return a mutable HashMap -- both through the single declared `Map<String,Object>` return type, with the peer selecting via the 4-byte tableLength read at :142. readArray is consistent by contrast, always returning a mutable ArrayList (:243, :248)."
+  },
+  {
+   "claim_id": "C-010",
+   "title": "Support status of the shipped dependency branches was not established, so their clean advisory result is unmeasured rather than clean",
+   "location": "pom.xml:59",
+   "impact": "Grants an attacker nothing by itself; it is recorded because omitting it is what makes an unsupported branch read as a clean one. For any of these components whose branch is in fact past end of support, no advisory will ever be published and no fixed version will ever exist, so silence from osv-scanner, trivy, grype or dependency-check is silence by design and not a measurement \u2014 and the remediation would be a migration to the current major line, not an upgrade within the branch. slf4j-api is the one that matters most here because it is the only one of the four that ships inside the consumer's dependency graph; groovy-all executes at build time only and the other two are test scope.",
+   "evidence": "Directly observed pins: slf4j-api 1.7.36 (property line 59, declared as a non-optional compile-scope dependency, so it is inherited by every consumer of the published jar); groovy-all 2.4.21 (property line 81, dependency of groovy-maven-plugin, which runs a script at generate-sources and therefore executes on the build path); jetty-servlet 9.4.58.v20250814 (property line 71, test scope); logback-classic 1.2.13 (property line 64, test scope). All 25 direct dependencies carry an exact version through a property \u2014 no ranges, no LATEST, no RELEASE \u2014 so the first field SUP-24 requires, the version in use, is executable and was recorded. The second and third fields, the vendor's declared end-of-support date and its source, have no offline oracle and were not obtained: the engagement forbids network access."
+  },
+  {
+   "claim_id": "C-011",
+   "title": "readTable returns an immutable map for an empty table and a mutable one otherwise, and the remote peer picks the branch",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+   "impact": "The mutability of a decoded header table is decided by attacker-supplied bytes. Any caller that decodes headers and then adds to the returned map - a normal thing to do in a consumer or an interceptor - works for every message until a peer sends a zero-length table, at which point Collections.emptyMap() throws UnsupportedOperationException. That is a remotely triggerable crash in application code, reachable at will and easy to miss in testing because the common path is mutable.",
+   "evidence": "readTable() line 143 `if (tableLength == 0) return Collections.emptyMap();` versus line 145 `Map<String, Object> table = new HashMap<String, Object>();` on the non-empty path. Nothing in the method signature or javadoc tells the caller the return value's mutability varies."
+  },
+  {
+   "claim_id": "C-012",
+   "title": "Field names are decoded with lossy UTF-8 replacement, allowing distinct wire keys to collide into one map key",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "Invalid UTF-8 in a short string never fails; every bad byte becomes U+FFFD. Different byte sequences therefore collapse to the same String, and combined with the first-wins duplicate rule (F-004) an attacker can place a crafted key earlier in the table so that it captures the slot of a legitimate key that arrives later, or shadow a key the application looks up by name.",
+   "evidence": "readShortstr() returns `new String(b, \"utf-8\")`, which uses CharsetDecoder REPLACE action; the raw bytes are discarded and there is no validation of the decoded name before it is used as the HashMap key at line 152."
+  },
+  {
+   "claim_id": "C-013",
+   "title": "Unbounded nesting depth in field-table/field-array decoding causes StackOverflowError",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+   "impact": "A single small frame drives the decoder thousands of frames deep and throws StackOverflowError. Being an Error, not an IOException/MalformedFrameException, it bypasses the malformed-frame handling this decoder's callers are written around: the connection I/O thread (or a consumer callback thread) dies with an unhandled Error, and each level also leaks a HashMap/ArrayList plus two stream wrappers.",
+   "evidence": "readFieldValue -> case 'F' -> readTable (line 181/139) and case 'A' -> readArray (line 184/237) recurse with no depth counter and no depth parameter anywhere in the class. A nested table costs 6 bytes per level on the wire (1-byte shortstr length + 'F' + 4-byte length) and a nested array 5 bytes ('A' + 4-byte length), so a default 128 KiB frame reaches >20,000 levels; with a broker-proposed unlimited frame-max the depth is unbounded."
+  },
+  {
+   "claim_id": "C-014",
+   "title": "Nested field tables and field arrays recurse without a depth limit, so a few kilobytes of wire input exhaust the thread stack",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "Stack exhaustion in the thread that decodes the value: a StackOverflowError, which like OutOfMemoryError is a java.lang.Error and therefore escapes the IOException contract that every method in this chain declares and that a protocol error handler would catch. The decoding thread dies or unwinds through code that never expected to unwind, leaving connection state inconsistent; the per-level allocations add heap pressure on top. The cost to the attacker is a single small frame, and the input is legal AMQP structure rather than a malformed field, so a length or syntax check upstream would not stop it.",
+   "evidence": "readFieldValue (line 158) dispatches tag 'F' to readTable (line 181) and tag 'A' to readArray (line 184); readTable (lines 139-155) and readArray (lines 237-249) both loop calling readFieldValue again. The cycle readFieldValue -> readTable -> readFieldValue carries no depth parameter, no counter and no cap anywhere in the file. Each nesting level costs the attacker about six bytes on the wire (a zero-length short string name, the tag byte, the four-byte length) for tables and five for arrays, while costing the victim a full Java frame per level plus a new HashMap or ArrayList, a new DataInputStream and a new TruncatedInputStream (lines 145-147, 241-243). A frame of a few tens of kilobytes therefore encodes thousands of nesting levels."
+  },
+  {
+   "claim_id": "C-015",
+   "title": "Silent header-table key collapse: malformed UTF-8 is replaced with U+FFFD and the resulting duplicate key is dropped without error",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "Integrity of the decoded header table. An attacker who can place a header on the wire ahead of a legitimate one can suppress the legitimate value while the application still sees a well-formed Map with the expected key present -- the application cannot distinguish a faithfully decoded table from a collapsed one. Conversely, distinct headers the sender believed were separate silently become one. Any per-header logic (routing, filtering, de-duplication, audit logging of headers) operates on a table that differs from what was actually transmitted.",
+   "evidence": "ValueReader.java:70 `new String(b, \"utf-8\")` -- the charset-NAME constructor, specified to substitute U+FFFD rather than throw, so wire keys 0xFF and 0xFE both decode to the same one-char String. :151-152 `if(!table.containsKey(name)) table.put(name, value)` then drops the later value with no exception, no log and no return signal (the value is consumed at :150 first, so framing stays aligned). Distinct wire keys collapse to one map key and wire order picks the winner."
+  },
+  {
+   "claim_id": "C-016",
+   "title": "Unbounded mutual recursion between readFieldValue and readArray/readTable turns five peer bytes into two stack frames",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+   "impact": "A peer that can put bytes on the decode path drives the decoder to arbitrary recursion depth at 5 bytes per level. Once the thread's stack is exhausted the decode fails with StackOverflowError, an unchecked java.lang.Error that escapes methods declared 'throws IOException' and is not caught by the connection's IOException handler. The expected outcomes are loss of the connection's decode thread without the orderly shutdown path the IOException channel would have triggered, or -- if a broad catch(Throwable) exists upstream -- resumption on a stream whose parse offset is no longer known. Availability of the client's message consumption is the asset; per the threat model this asset is STANDARD tier and recoverable by reconnect, which is why this is not rated higher. Whether the byte budget N is large enough in a given deployment is UNKNOWN in this scope (no caller, no frame-size ceiling observable), and that uncertainty -- not the presence of the recursion -- is the reason for MEDIUM rather than HIGH.",
+   "evidence": "ValueReader.java:161 switches on one peer byte; :181 case 'F' calls readTable(:139) whose loop calls readFieldValue at :150; :184 case 'A' calls readArray(:237) whose loop calls readFieldValue at :245. The cycle is closed and none of the three signatures (:139, :158, :237) carries a depth parameter -- there is no depth counter or ceiling anywhere in the 280-line file. One 'A' level costs 5 wire bytes (tag at :161 + 4-byte length at :240) and 2 retained stack frames."
+  },
+  {
+   "claim_id": "C-017",
+   "title": "Table and array declared extents are never bounded or reconciled with the enclosing stream",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+   "impact": "Integrity of the decoded object graph \u2014 the threat model's second high-value asset. A peer that controls one nested `'F'` or `'A'` field can over-declare its extent so that sibling entries of the enclosing table are absorbed into it and never surface to the application. Where some of those siblings originate with a trusted party rather than the attacker \u2014 broker- or plugin-inserted headers, reachable by threat-model actor A2, a publisher with only publish rights whose headers a benign broker relays \u2014 that is silent suppression of trusted metadata rather than mere self-corruption of the attacker's own fields. In the early-termination direction the enclosing stream is left misaligned and subsequent decoding proceeds from a wrong offset. Neither direction raises an error: the methods return normally and the mismatch becomes application truth. No memory-exhaustion claim is made here. Rated MEDIUM because the concrete integrity gain depends on a decoding context that cannot be verified in this scope (no caller, no TruncatedInputStream); privileges are rated LOW because a fully hostile peer (A1) already controls every byte and gains nothing from swallowing its own siblings, so the meaningful vector is the partially-trusted A2 case.",
+   "evidence": "ValueReader.java:142 widens tableLength to 0..4294967295 and the ONLY test is `== 0` at :143; :240 applies no test at all -- readArray lacks even the range check readBytes has at :87. Both pass the raw value to TruncatedInputStream (:146, :241). Neither :154 nor :248 compares bytes consumed against the declared extent before returning, so a short or over-declared container returns normally with no error."
+  }
+ ]
+}

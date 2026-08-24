@@ -1,0 +1,256 @@
+{
+ "claims": [
+  {
+   "claim_id": "C01",
+   "title": "Arbitrary HashMap growth from network data causes DoS via memory exhaustion",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 145,
+   "severity": "high",
+   "impact": "Table parsing (lines 139-155) creates a HashMap with no limit on key count. A single malicious frame can declare a table of 1000000+ entries, exhausting heap memory regardless of frame size declaration.",
+   "evidence": "Line 145: 'new HashMap<String, Object>()' with no capacity check. Line 151-152: silently ignores duplicate keys but adds all unique ones. No cardinality limit on table contents."
+  },
+  {
+   "claim_id": "C02",
+   "title": "Long multiplication overflow in timestamp conversion silently produces wrong dates",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 269,
+   "severity": "medium",
+   "impact": "Line 269 multiplies readLong() by 1000 without overflow check. If the timestamp value > Long.MAX_VALUE/1000, multiplication silently wraps to a negative or incorrect value, producing a wrong Date object. Applications relying on timestamp correctness could accept stale/future-dated messages.",
+   "evidence": "Line 269: 'return new Date(in.readLong()*1000);'. No Math.multiplyExact() or bounds checking. Long.MAX_VALUE = 9223372036854775807; dividing by 1000 gives max safe input of 9223372036854775L."
+  },
+  {
+   "claim_id": "C03",
+   "title": "Unreliable stream EOF detection in readArray",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 244,
+   "severity": "MEDIUM",
+   "impact": "Similar to F-002: infinite loops or incorrect parsing of array data due to unreliable available() detection.",
+   "evidence": "Lines 241-248: TruncatedInputStream is wrapped and readArray relies on available() > 0 to detect end-of-array, which is unreliable."
+  },
+  {
+   "claim_id": "C04",
+   "title": "Duplicate table keys silently discarded without error reporting",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 151,
+   "severity": "medium",
+   "impact": "Lines 151-152 check 'if(!table.containsKey(name))' and skip duplicate keys silently. Malformed or attack frames with duplicate keys will not raise an exception; the first value is retained and later values are discarded without trace. This can hide frame corruption or attacks.",
+   "evidence": "Line 151-152: conditional put() with no error case. No log, no exception, no counter when duplicates are skipped."
+  },
+  {
+   "claim_id": "C05",
+   "title": "Manual unsigned int parsing without proper EOF handling",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 227,
+   "severity": "MEDIUM",
+   "impact": "Incorrect EOF detection leading to silent data corruption or misaligned frame parsing. The method doesn't distinguish between a byte value of 0xFF and EOF condition.",
+   "evidence": "Lines 227-232: readUnsignedInt reads 4 individual bytes via in.read() and checks if ANY is negative (EOF). However, in.read() returning -1 is indistinguishable from the byte 0xFF without explicit EOF handling. The logic is correct but brittle."
+  },
+  {
+   "claim_id": "C06",
+   "title": "Unbounded memory allocation in readBytes from untrusted input",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 86,
+   "severity": "HIGH",
+   "impact": "Denial of Service (DoS) attack via memory exhaustion. An attacker can craft a malicious AMQP message with a large content-length field, causing the parser to attempt allocating arrays up to 2GB, exhausting heap memory and crashing the JVM.",
+   "evidence": "Lines 86-90: contentLength is read as unsigned int (0 to 4GB), but only checked if it is less than Integer.MAX_VALUE. No upper bound validation or rate limiting. A contentLength of 2GB would be allocated on line 88: byte[] buffer = new byte[(int)contentLength]."
+  },
+  {
+   "claim_id": "C07",
+   "title": "Unbounded BigInteger/BigDecimal construction from network data",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 175,
+   "severity": "medium",
+   "impact": "Line 175 constructs BigInteger and BigDecimal directly from 4-byte unsigned input without magnitude limits. While 4 bytes limits the exponent, the scale field at line 172 is also unchecked. A scale > Integer.MAX_VALUE or < Integer.MIN_VALUE passed to BigDecimal constructor could cause issues. No validation of numeric range.",
+   "evidence": "Line 172: 'int scale = in.readUnsignedByte();' - reads into int but should be 0-127. Line 175: 'new BigDecimal(new BigInteger(unscaled), scale)' with no bounds check on scale."
+  },
+  {
+   "claim_id": "C08",
+   "title": "Missing array size validation allows large array allocations",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 68,
+   "severity": "medium",
+   "impact": "Line 68 in readShortstr() allocates a byte array of size read from unsigned byte (0-255) without validation. While this specific case is bounded by 255 bytes, similar pattern in readBytes() (line 88) allocates up to Integer.MAX_VALUE. An attacker can declare a 2GB array to exhaust memory.",
+   "evidence": "Line 68: 'new byte[in.readUnsignedByte()]' - bounded by 255, acceptable. Line 88: 'new byte[(int)contentLength]' - can be up to 2^31-1 bytes (2GB). No sanity check on declared size vs. actual stream size."
+  },
+  {
+   "claim_id": "C09",
+   "title": "Potential Integer Overflow in Timestamp Multiplication",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 269,
+   "severity": "HIGH",
+   "impact": "Multiplication overflow can occur when in.readLong() is multiplied by 1000. A timestamp close to Long.MAX_VALUE will overflow to negative values, resulting in incorrect Date construction and potential exploitation for timing-based attacks.",
+   "evidence": "Line 269: 'return new Date(in.readLong()*1000);' - No overflow check before multiplication. A 64-bit timestamp multiplied by 1000 exceeds Long.MAX_VALUE at values > 9223372036854775L ms (~292M years)."
+  },
+  {
+   "claim_id": "C10",
+   "title": "Inefficient and Error-Prone Unsigned Int Reading",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 227,
+   "severity": "MEDIUM",
+   "impact": "The readUnsignedInt method uses four separate read() calls instead of readInt(). This is inefficient and creates a race condition window where partial reads can occur in multi-threaded environments. If any read() returns -1 (EOF), the check at line 231 may not catch all malformed data scenarios.",
+   "evidence": "Lines 227-233: Uses individual in.read() calls to construct a 32-bit integer manually. This bypasses DataInputStream's built-in readInt() method. If exactly 1-3 bytes are read before EOF, some branches of the bitwise logic could still construct a non-negative value, passing the check."
+  },
+  {
+   "claim_id": "C11",
+   "title": "Silent Data Loss on Duplicate Table Keys",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 151,
+   "severity": "MEDIUM",
+   "impact": "When parsing AMQP table headers, duplicate keys silently overwrite earlier values without warning or logging. An attacker or misconfigured client can send crafted messages with duplicate keys to cause data loss, potentially losing critical message metadata or headers.",
+   "evidence": "Lines 148-153: The loop reads field name-value pairs and only adds to the map if !table.containsKey(name). This silently discards the second and subsequent values for duplicate keys. AMQP spec does not explicitly forbid duplicate keys, and early values are lost without trace."
+  },
+  {
+   "claim_id": "C12",
+   "title": "Memory Exhaustion via Unvalidated BigDecimal Scale",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 172,
+   "severity": "HIGH",
+   "impact": "An attacker can send a malicious AMQP table with a decimal field containing an extremely large negative scale value. BigDecimal(BigInteger, scale) with large negative scale allocates memory proportional to the scale magnitude, enabling denial-of-service via heap exhaustion.",
+   "evidence": "Lines 172-175: scale is read directly from the wire as an unsigned byte without bounds validation. While unsigned byte is limited to 0-255, sufficiently large scales can still cause issues in bigint operations. Additionally, if scale interpretation allows signed values, negative scales are not checked."
+  },
+  {
+   "claim_id": "C13",
+   "title": "Hardcoded Charset Without Validation or Error Handling",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 70,
+   "severity": "LOW",
+   "impact": "The hardcoded 'utf-8' charset is assumed available but could theoretically be unavailable on certain JVM configurations. Additionally, no UnsupportedEncodingException is explicitly caught despite the throws clause. Malformed UTF-8 sequences are silently converted by the String constructor without validation.",
+   "evidence": "Line 70: 'return new String(b, \"utf-8\");' - Assumes UTF-8 codec is always available (it should be per Java spec, but the assumption is not defensive). No explicit handling of character encoding errors."
+  },
+  {
+   "claim_id": "C14",
+   "title": "No validation of unsigned int bit shift positions in readUnsignedInt()",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 233,
+   "severity": "low",
+   "impact": "Line 233 performs bit shifts ('ch1 << 24', 'ch2 << 16', etc.) on long values read from individual bytes. While the logic is correct, it reinvents the wheel compared to DataInputStream.readInt(). The manual byte-by-byte reading is more error-prone and harder to audit than platform-provided methods.",
+   "evidence": "Lines 224-233: Manual unsigned int parsing via four read() calls and bit shifts. This is functionally equivalent to readInt() but obfuscates intent and audit surface."
+  },
+  {
+   "claim_id": "C15",
+   "title": "Unvalidated recursive table/array nesting allows stack exhaustion",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 139,
+   "severity": "high",
+   "impact": "Malicious AMQP frames with deeply nested tables (line 181: case 'F') and arrays (line 184: case 'A') can cause StackOverflowError. readFieldValue() calls readTable() which calls readFieldValue() recursively with no depth limit.",
+   "evidence": "Lines 139-155 (readTable), 158-221 (readFieldValue), 237-249 (readArray). No MAX_NESTING_DEPTH or depth counter. Recursive calls at lines 181 and 184 are unbounded."
+  },
+  {
+   "claim_id": "C16",
+   "title": "Potential integer overflow in timestamp multiplication",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 269,
+   "severity": "LOW",
+   "impact": "Incorrect or wrapped timestamp values if in.readLong() returns a value near Long.MAX_VALUE. Multiplication by 1000 could overflow.",
+   "evidence": "Line 269: new Date(in.readLong()*1000) does not check for overflow. If in.readLong() > Long.MAX_VALUE/1000 (~9.2e15), multiplication overflows silently."
+  },
+  {
+   "claim_id": "C17",
+   "title": "Unvalidated scale parameter in BigDecimal construction",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 172,
+   "severity": "MEDIUM",
+   "impact": "Unexpected behavior or exceptions when parsing BigDecimal field values. A very large scale value (e.g., Integer.MAX_VALUE) could cause performance issues or precision loss.",
+   "evidence": "Lines 172-175: scale is read as unsigned byte and used directly without validation. A scale >= 128 is unusual for AMQP; no check ensures it is in reasonable bounds."
+  },
+  {
+   "claim_id": "C18",
+   "title": "Unreliable Loop Termination Using available() With TruncatedInputStream",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 148,
+   "severity": "MEDIUM",
+   "impact": "Both readTable() and readArray() use 'while(arrayIn.available() > 0)' to parse variable-length structures. The available() method is not guaranteed to return accurate byte counts, especially on wrapped streams like TruncatedInputStream. If available() returns 0 before all declared bytes are consumed, the loop exits prematurely, leaving partial data unparsed.",
+   "evidence": "Lines 148 and 244: 'while(tableIn.available() > 0)' and 'while(arrayIn.available() > 0)' rely on TruncatedInputStream (created at lines 146-147 and 241-242) to correctly report available bytes. The JavaDoc for available() explicitly states it may return 0 even when bytes remain unread, particularly in blocking/wrapped streams."
+  },
+  {
+   "claim_id": "C19",
+   "title": "No timeout protection on stream I/O operations",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 89,
+   "severity": "medium",
+   "impact": "readFully() calls (lines 69, 89, 174) will block indefinitely if the stream stalls or the peer never sends the declared number of bytes. A slow or malicious peer can cause thread deadlock. This is a thread-level DoS if connections are not bound to a timeout.",
+   "evidence": "Lines 69, 89, 174: 'in.readFully(...)' with no timeout. If stream is exhausted before expected bytes arrive, the thread hangs forever."
+  },
+  {
+   "claim_id": "C20",
+   "title": "Unbounded table field collection leading to memory exhaustion",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 145,
+   "severity": "HIGH",
+   "impact": "DoS via crafted messages containing tables with thousands of field entries. No limit on field count; an attacker can create a pathological message with a valid tableLength but millions of tiny fields, exhausting memory and CPU.",
+   "evidence": "Lines 139-155: readTable() allocates a HashMap and loops reading fields without any limit on the number of entries added. If an attacker crafts a malicious frame with tableLength=1MB containing 100k tiny fields, the HashMap will grow unbounded."
+  },
+  {
+   "claim_id": "C21",
+   "title": "Available() loop condition unreliable for stream position determination",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 244,
+   "severity": "medium",
+   "impact": "Lines 244 and 148 use 'while(.*In.available() > 0)' to detect end of stream. The available() method is not guaranteed to return exact byte counts and may return 0 even when data remains (e.g., after blocking reads or with certain stream implementations). This can cause premature loop exit, leaving data unread and corrupting subsequent frame parsing.",
+   "evidence": "Line 148: 'while(tableIn.available() > 0)' in readTable(). Line 244: 'while(arrayIn.available() > 0)' in readArray(). Both rely on TruncatedInputStream.available() being accurate after partial reads."
+  },
+  {
+   "claim_id": "C22",
+   "title": "Hard-coded UTF-8 string instead of StandardCharsets constant",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 70,
+   "severity": "low",
+   "impact": "Line 70 uses 'new String(b, \"utf-8\")' with hard-coded string. This re-parses the charset name on every call, incurring CPU overhead. If the string is misspelled, an UnsupportedEncodingException is thrown at runtime instead of compile-time.",
+   "evidence": "Line 70: 'return new String(b, \"utf-8\");' Hard-coded string literal."
+  },
+  {
+   "claim_id": "C23",
+   "title": "No maximum nesting depth for recursive table/array structures",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 181,
+   "severity": "MEDIUM",
+   "impact": "Stack overflow via deeply nested table or array structures. An attacker can craft a message with tables containing tables containing tables (or arrays of arrays), causing unbounded recursion.",
+   "evidence": "Lines 180-185: readTable and readArray recursively call readFieldValue, which can parse nested tables (case 'F') and arrays (case 'A'). No recursion depth limit is enforced."
+  },
+  {
+   "claim_id": "C24",
+   "title": "Resource leak: TruncatedInputStream not explicitly closed",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 146,
+   "severity": "LOW",
+   "impact": "Potential resource leak if TruncatedInputStream holds file handles or other resources. While DataInputStream typically wraps in-memory streams, best practice is to close resources explicitly.",
+   "evidence": "Lines 146-147 and 241-242: TruncatedInputStream objects are created but never explicitly closed. If TruncatedInputStream opens underlying resources, they may not be released."
+  },
+  {
+   "claim_id": "C25",
+   "title": "Unbounded Recursion Risk in Nested Table/Array Parsing",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 180,
+   "severity": "MEDIUM",
+   "impact": "The readFieldValue method recursively calls itself for nested tables (case 'F') and arrays (case 'A'). An attacker can send deeply nested structures (tables containing tables containing arrays, etc.) to exhaust the stack via recursion, causing a StackOverflowError and denying service.",
+   "evidence": "Lines 158-221: readFieldValue processes case 'F' (line 180-181) which calls readTable(), which calls readFieldValue() for each value. Similarly, case 'A' (line 183-184) calls readArray(), which calls readFieldValue(). No depth limit or recursion guard is present. Maximum nesting depth is unbounded."
+  },
+  {
+   "claim_id": "C26",
+   "title": "Unbounded array element collection leading to memory exhaustion",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 243,
+   "severity": "HIGH",
+   "impact": "DoS via crafted arrays with millions of elements, causing memory exhaustion and slow parsing.",
+   "evidence": "Lines 237-249: readArray() has no limit on array.size(). An attacker can create a frame with length=10MB containing millions of null entries, exhausting heap memory."
+  },
+  {
+   "claim_id": "C27",
+   "title": "Underflow Risk: contentLength Comparison Uses Less-Than Instead of Less-Than-Equal",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 87,
+   "severity": "LOW",
+   "impact": "The check 'if(contentLength < Integer.MAX_VALUE)' allows the exact value Integer.MAX_VALUE (2,147,483,647 bytes) to proceed. When cast to int, Integer.MAX_VALUE wraps to -2147483648, causing readFully() to be called with a negative buffer size, which throws NegativeArraySizeException instead of a controlled MalformedFrameException.",
+   "evidence": "Line 87: 'if(contentLength < Integer.MAX_VALUE)' means contentLength == Integer.MAX_VALUE is treated as supported. However, line 88 casts to int: 'new byte[(int)contentLength]' which overflows. Integer.MAX_VALUE as an int remains Integer.MAX_VALUE (no overflow in Java int cast), but the logic is fragile and the error message is misleading."
+  },
+  {
+   "claim_id": "C28",
+   "title": "Unreliable stream EOF detection using available() method",
+   "file": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target/src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 148,
+   "severity": "MEDIUM",
+   "impact": "Infinite loops or incorrect parsing of table data. The available() method is unreliable and does not accurately report remaining bytes. Wrapping a DataInputStream with TruncatedInputStream may not properly signal EOF, causing the while loop to behave unpredictably.",
+   "evidence": "Lines 146-148: A TruncatedInputStream wrapper is created, but the code relies on available() > 0 to detect end-of-table. DataInputStream.available() is documented as unreliable and may return 0 even when bytes remain, or return non-zero when EOF is near."
+  }
+ ]
+}

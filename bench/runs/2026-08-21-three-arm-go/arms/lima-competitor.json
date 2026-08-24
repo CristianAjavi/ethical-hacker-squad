@@ -1,0 +1,47 @@
+{"findings": [
+  {
+    "id": "M-001",
+    "file": "cmd/lima-guestagent/daemon_linux.go",
+    "line": 141,
+    "title": "Guest agent control socket is chmod 0777, granting every local uid access to the root daemon's RPC API",
+    "impact": "Any unprivileged local user inside the guest VM obtains unauthenticated access to the host's control channel into that VM and drives a root-privileged RPC surface, including the port-forwarding tunnel server, as a confused deputy. The exact maximum consequence could not be enumerated because pkg/guestagent/api/server and pkg/portfwdserver are not in the reviewed subset; the unauthenticated unprivileged local access to a root process's control API is proven from the reviewed file alone.",
+    "evidence": "daemon_linux.go:88-90 aborts unless os.Geteuid()==0; line 72 hardcodes socket := \"/run/lima-guestagent.sock\"; line 141 runs os.Chmod(socket, 0o777), and write permission on a socket inode is exactly what connect(2) requires; line 148 serves server.GuestServer{Agent: agent, TunnelS: portfwdserver.NewTunnelServer()} on that listener. No SO_PEERCRED or other gate exists between connect(2) and the API. The same file proves host-only is the intended policy: cidFilteredListener (lines 31-48) rejects any peer whose ContextID != hostCID (2, line 25) and the startup log at line 134 reads 'host CID only'. 25-guestagent-base.sh:75 deletes a legacy user-scope unit while install_systemd_linux.go:95 runs systemctl --system, so the daemon moved from the guest user to root while the socket mode did not change with it.",
+    "severity": "MEDIUM (Mantis risk score 4.5; impact 4, likelihood 3, exposure INTERNAL 0.8, static_confirmation 0.8; capped MEDIUM by local_attack_vector; self_contained_blast deliberately not applied because the target is the operator control plane)"
+  },
+  {
+    "id": "M-002",
+    "file": "pkg/cidata/cidata.TEMPLATE.d/boot.Linux/25-guestagent-base.sh",
+    "line": 16,
+    "title": "Root chown of reverse-sshfs mount points follows symlinks, letting the guest user take ownership of an arbitrary path",
+    "impact": "An unprivileged local user in the guest becomes the owner of an arbitrary directory or file of their choosing, which is a direct route to root inside the guest VM. Ranked below M-001 only because one precondition (that a configured mount point's parent directory is writable by the guest user) is not established by the reviewed subset.",
+    "evidence": "Line 14 is mkdir -p \"${mountpoint}\" and line 16 is chown \"${LIMA_CIDATA_UID}:${gid}\" \"${mountpoint}\", run as root under cloud-init on every boot; neither carries -h/--no-dereference and neither is preceded by an lstat or -L test. chown(2) dereferences a symlink and changes the target; mkdir -p succeeds silently on a symlink to an existing directory, so the two compose. Rule 13 is satisfied by the untrusted-writer form and line 16 is itself the proof: it transfers ownership of the mount point to LIMA_CIDATA_UID, the unprivileged guest user, so from boot 1 the attacker owns the inode the next boot will chown. Not a race: the symlink is planted at leisure and the chown fires at the next boot.",
+    "severity": "MEDIUM (Mantis risk score 3.8; impact 4, likelihood 2 after a Reachability-in-Practice reduction of 1, exposure INTERNAL 0.8, static_confirmation 0.8; vague_code_paths recorded UNKNOWN rather than fired, so its force-LOW cap was not applied)"
+  },
+  {
+    "id": "M-003",
+    "file": "pkg/cidata/cidata.TEMPLATE.d/boot.Linux/25-guestagent-base.sh",
+    "line": 75,
+    "title": "Root rm -f traverses attacker-controlled directory components inside the guest user's home",
+    "impact": "An unprivileged guest user redirects a root-privileged unlink to delete a file named lima-guestagent.service in a directory of their choosing. Bounded: the final filename is fixed, and the only such file on the system is regenerated a few lines later in the same script run, so this is reported for the unsafe pattern rather than for its blast radius.",
+    "evidence": "Line 75 runs rm -f \"${LIMA_CIDATA_HOME}/.config/systemd/user/lima-guestagent.service\" as root. LIMA_CIDATA_HOME is the unprivileged guest user's home, so .config, .config/systemd and .config/systemd/user are all created and owned by that user. rm does not dereference a symlink in the final path component but does resolve symlinks in intermediate components, so replacing .config/systemd/user with a directory symlink redirects the unlink out of the home.",
+    "severity": "MEDIUM (Mantis risk score 3.2; impact 2, likelihood 3, exposure INTERNAL 0.8, static_confirmation 0.8; production_viability VIABLE)"
+  },
+  {
+    "id": "M-004",
+    "file": "pkg/cidata/cidata.TEMPLATE.d/boot.Linux/25-guestagent-base.sh",
+    "line": 23,
+    "title": "Guest agent update check reports up-to-date when both sha256sum invocations fail",
+    "impact": "An unmounted, empty or unreadable cidata source is misreported as 'up-to-date': a stale guest agent binary can persist across an intended update and the service restart is skipped, while the log asserts the opposite. No attacker-controlled path to this state exists in the reviewed subset, so it is scored as an integrity defect in the update mechanism rather than as an attack.",
+    "evidence": "Line 23 compares \"$(sha256sum <\"${LIMA_CIDATA_MNT}\"/lima-guestagent)\" with \"$(sha256sum <\"${LIMA_CIDATA_GUEST_INSTALL_PREFIX}\"/bin/lima-guestagent 2>/dev/null)\". Both operands are the empty string when their input redirect fails, and '' = '' compares equal, so the comparison cannot distinguish 'hashes match' from 'neither hash could be computed'. set -e (line 6) does not intervene because errexit is suppressed for the whole condition list of an if.",
+    "severity": "LOW (Mantis risk score 1.9; impact 1, likelihood 2; unreachable_inputs fired, consistent with the computed score; reported in the report's low-priority appendix)"
+  },
+  {
+    "id": "M-005",
+    "file": "cmd/lima-guestagent/daemon_linux.go",
+    "line": 37,
+    "title": "vsock CID authorization check fails open when either type assertion does not hold",
+    "impact": "The daemon's only authorization control admits a connection with the ContextID comparison never evaluated on any path where a type assertion is false, so the host-CID-only restriction would be silently unenforced. No triggering input is demonstrated and none is claimed: github.com/mdlayher/vsock is not in the reviewed subset, so triggerability is undetermined.",
+    "evidence": "Lines 36-46: if vsockConn, ok := conn.(*vsock.Conn); ok { if addr, ok := vsockConn.RemoteAddr().(*vsock.Addr); ok { if addr.ContextID != hostCID { reject } } } followed by an unconditional return conn, nil. Neither comma-ok assertion has an else branch and there is no default-deny, so the ContextID comparison at line 39 is not on every path to acceptance.",
+    "severity": "LOW (Mantis risk score 1.3; impact 1 as a defence-in-depth/fail-open shape defect, likelihood 1; status PROVISIONALLY_VALID because review Rule 03 is UNKNOWN, not FAIL, and schema.json forbids UNKNOWN entries on a VALID finding; reported in the report's low-priority appendix)"
+  }
+]}

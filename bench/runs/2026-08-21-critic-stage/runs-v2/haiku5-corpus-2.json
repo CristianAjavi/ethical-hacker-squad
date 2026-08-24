@@ -1,0 +1,132 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "commit": "HEAD",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad-leader (unaided analysis + WEB-26 procedure)",
+    "coverage": {
+      "inventoried": [
+        "supply-chain: pom.xml Maven dependencies",
+        "web-api: src/main/java/com/rabbitmq/client/impl/ValueReader.java (binary protocol deserialization)"
+      ],
+      "read": [
+        "supply-chain: pom.xml Maven dependencies",
+        "web-api: src/main/java/com/rabbitmq/client/impl/ValueReader.java (binary protocol deserialization)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "unbounded_byte_array_allocation_dos",
+        "unbounded_recursion_depth_dos"
+      ],
+      "reported": [
+        "unbounded_byte_array_allocation_dos",
+        "unbounded_recursion_depth_dos"
+      ],
+      "dropped": []
+    },
+    "coverage_declaration": "Analyzed Maven pom.xml for dependency inventory. Analyzed ValueReader.java for WEB-26 vulnerabilities: allocation sizing from untrusted input and recursive data structure parsing. Did not execute compiled code or run integration tests against a live broker. Did not perform supply-chain scanning of dependencies (supply-chain-secrets-malware.md §8 not exercised). Pattern search identified both allocations and recursion entry points; no compensating controls found in the visible code.",
+    "authorization": null
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Wire-protocol length drives heap allocation without maximum bound (readBytes)",
+      "procedure": "WEB-26",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:83-94",
+      "evidence": "Lines 86-88: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength];` The condition at line 87 acts as a cast-safety guard (prevents overflow during int conversion) but not as a resource limit. It permits allocations up to 2147483646 bytes (~2 GB) based on untrusted wire-protocol input. This matches the vulnerable pattern in WEB-26: 'a cast-safety test (len < Integer.MAX_VALUE, n >= 0) is not a limit.' The code allocates before validating that the promised bytes are actually available in the buffer.",
+      "impact": "Denial of Service via heap exhaustion. An attacker controlling the AMQP connection (malicious server or MITM) can transmit a single frame with a `readBytes` length field set to a large value like 0x7FFFFFFE (2147483646), causing the client to attempt a multi-gigabyte heap allocation. If the allocation succeeds, it exhausts available heap; if rejected by the JVM, it crashes the client. Either way, further operations on that connection fail.",
+      "preconditions": "Client connects to a malicious, compromised, or attacker-controlled AMQP server. The attack is at the protocol level; no authentication or special privilege is required.",
+      "recommendation": "Enforce a configured maximum size limit for `readBytes` allocations before calling `new byte[size]`. The limit should be (1) smaller than heap size, (2) configurable per connection or globally, and (3) documented in API docs. Proposed default: 128 MB or smaller depending on typical message sizes in the user's workload. The check must run **before** the allocation: `if (contentLength > maxSize) throw new MalformedFrameException(...)`. Also validate that contentLength is consistent with the actual remaining bytes in the frame if TruncatedInputStream imposes a bound.",
+      "verification": "not executed",
+      "inference": null,
+      "what_would_settle_it": null,
+      "unaided_label": "unbounded_byte_array_allocation_dos",
+      "withdrawn_reason": null,
+      "traceability": "CWE-789 (Uncontrolled Memory Allocation), CWE-400 (Uncontrolled Resource Consumption), A04:2025 (Insecure Deserialization)",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control is present in code. TruncatedInputStream may provide a frame-level bound, but that is not visible in the provided files and cannot be verified without seeing its implementation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "contentLength is read directly from an untrusted DataInputStream (in.readInt() at line 86) with no constraints. The attacker fully controls this value."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is `new byte[size]`, which performs the allocation immediately and unconditionally. There is no parsing or safe format transformation."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the remote AMQP server or network attacker. Trust boundary is crossed at the connection entry point."
+        }
+      ],
+      "limits": "This analysis assumes TruncatedInputStream does not apply a hard cap to allocations (not verified without seeing its code). Does not measure actual out-of-memory behavior under different JVM heap configurations. Does not test whether readFully() at line 89 is reached if the allocation itself fails. Does not establish whether legitimate AMQP workloads ever require multi-megabyte buffers or if a much smaller limit is safe."
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursion depth in nested field structures (readFieldValue mutual recursion)",
+      "procedure": "WEB-26",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158-221,139-155,237-249",
+      "evidence": "Method readFieldValue() (lines 158-221) contains a switch statement that handles type discriminators. For type 'F' (line 180-181), it calls `readTable(in)`, which calls `readFieldValue()` in a loop (line 150). For type 'A' (line 183-184), it calls `readArray(in)`, which calls `readFieldValue()` in a loop (line 245). These form mutual recursion: `readFieldValue` → `readTable` → `readFieldValue` and `readFieldValue` → `readArray` → `readFieldValue`. No recursion depth parameter is threaded through these methods, so an attacker can nest arbitrarily deep: a table containing a field that is a table containing a field that is a table, etc. Each recursion level consumes stack space; depth N costs O(N) bytes of stack.",
+      "impact": "Denial of Service via stack exhaustion. An attacker can construct an AMQP frame with deeply nested tables or arrays, triggering StackOverflowError after roughly 10,000-50,000 levels of nesting (depending on stack frame size and JVM). The error crashes the client.",
+      "preconditions": "Client connects to a malicious AMQP server. The attacker crafts an AMQP frame with type 'F' (table) containing a field of type 'F' (table) containing a field of type 'F', repeated hundreds or thousands of times, or similarly for type 'A' (array) containing arrays.",
+      "recommendation": "Thread a recursion depth counter through the method signatures: `readFieldValue(DataInputStream in, int depth)` and `readTable(DataInputStream in, int depth)` and `readArray(DataInputStream in, int depth)`. At entry to readFieldValue, check `if (depth >= MAX_DEPTH) throw new MalformedFrameException(...)` where `MAX_DEPTH` is a constant (e.g., 32, 64, or 128) chosen to allow reasonable nesting in legitimate messages while preventing unbounded recursion. Increment depth when recursing: `readTable(tableIn, depth + 1)`.",
+      "verification": "not executed",
+      "inference": null,
+      "what_would_settle_it": null,
+      "unaided_label": "unbounded_recursion_depth_dos",
+      "withdrawn_reason": null,
+      "traceability": "CWE-674 (Uncontrolled Recursion), CWE-400 (Uncontrolled Resource Consumption), A04:2025 (Insecure Deserialization)",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No depth-limiting control is present. The signature of readFieldValue, readTable, and readArray do not accept a depth parameter, and no static depth limit is enforced."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recursion depth is determined by the structure of untrusted wire-protocol input. Each table or array type discriminator in the stream drives one recursion level."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the remote AMQP server. The attacker controls the frame structure."
+        }
+      ],
+      "limits": "This analysis does not measure exact stack depth consumption per frame or per nesting level. Does not determine the typical maximum nesting depth in legitimate AMQP payloads. Does not confirm that the JVM raises StackOverflowError before running out of stack (it should, but behavior is platform-dependent). Does not test whether a depth limit of X would break any existing client code."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Field name injection in table parsing",
+      "tested": "Table keys are read as strings (readShortstr, lines 148-149) and inserted into a HashMap. No keys are executed as code, evaluated as expressions, or passed to any sink that interprets them. Keys are treated as opaque strings.",
+      "boundary": "No injection boundary exists: field names are data only."
+    },
+    {
+      "class": "Integer overflow in readUnsignedInt bit operations",
+      "tested": "Lines 227-233 manually reconstruct a 32-bit unsigned value from four bytes using bit shifts and OR operations within a long. All shifts are left shifts of a long, which cannot overflow past 64 bits. The result fits in a long and is returned as-is.",
+      "boundary": "Java long arithmetic is safe here; the unsigned int is correctly extended without overflow."
+    },
+    {
+      "class": "readFully() truncation leading to protocol desynchronization",
+      "tested": "Lines 89 and 174 use in.readFully(buffer), which blocks until the buffer is full or throws EOFException. The TruncatedInputStream wrapper (lines 146-147, 241-242) enforces a size limit on the input stream. While readFully() could theoretically be interrupted, that is not a security vulnerability in the protocol parser; it is a general JVM exception handling concern.",
+      "boundary": "Control: TruncatedInputStream enforces the promised length; readFully() respects it."
+    }
+  ]
+}

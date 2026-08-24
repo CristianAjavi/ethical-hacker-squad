@@ -1,0 +1,52 @@
+stages: [build, test, integration, publish]
+
+include:
+  - project: platform/ci-templates
+    ref: main
+    file: /jobs/build.yml
+  - project: platform/ci-templates
+    ref: 8f14e45fceea167a5a36dedd4bea2543f6d1a2b7
+    file: /jobs/sast.yml
+
+variables:
+  NODE_VERSION: "20"
+  REPORT_DIR: build/reports
+
+default:
+  image: node:20-bookworm
+  tags: [linux-docker]
+
+unit:
+  stage: test
+  script:
+    - npm ci
+    - npm test -- --reporter junit --outputFile "$REPORT_DIR/unit.xml"
+  artifacts:
+    reports:
+      junit: build/reports/unit.xml
+
+integration:
+  stage: integration
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - npm ci
+    - ./scripts/seed-staging.sh
+    - curl -sS -H "PRIVATE-TOKEN: $STAGING_DEPLOY_TOKEN" "$STAGING_API/reset"
+    - npm run test:integration
+
+changelog:
+  stage: build
+  variables:
+    SUBJECT: $CI_COMMIT_TITLE
+  script:
+    - echo "$SUBJECT" >> "$REPORT_DIR/subjects.txt"
+
+publish:
+  stage: publish
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - npm ci
+    - npm publish

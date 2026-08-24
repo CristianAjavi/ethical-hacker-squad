@@ -1,0 +1,112 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 122,
+      "title": "Externally controlled class name reaches Class.forName during JSON parsing in ProcedureDescription",
+      "impact": "An attacker who authors or tampers with the service description makes the parsing client load and INITIALIZE a class of the attacker's choosing from the client application's own classpath, at parse time, with the client's privileges. Any class whose static initializer has side effects becomes an attacker-selected gadget. Even with no useful gadget present, success vs. IllegalStateException (line 125) is a clean boolean oracle for classpath contents, and the exception message embeds the attacker's string, injecting it into the client's logs.",
+      "evidence": "Line 122 is `return Class.forName(javaReturnType);` \u2014 the 1-arg overload, which initializes the class. `javaReturnType` is assigned by the public setter at 92-95, which eagerly calls computeReturnTypeAsJavaClass() at 94; the constructor at 48-49 passes the whole untrusted map to JSONUtil.tryFill(this, pm). No allowlist or bound stands between them.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped MEDIUM 4.20 by rule repro_failure)"
+    },
+    {
+      "id": "M-002",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 171,
+      "title": "Attacker-supplied 'idempotent' flag is a security-relevant transport decision taken from the untrusted document",
+      "impact": "If a consumer follows the documented semantics, a hostile description can mark a state-changing procedure as idempotent and thereby have the call issued as a GET \u2014 moving the parameters into a URL that intermediaries log and cache, and into a request shape that is trivially cross-site-forgeable and retried automatically. The reverse (marking a safe procedure non-idempotent) is a lesser availability/latency concern. PREMISE, stated explicitly: no consumer of isIdempotent() exists in CODE_ROOT, so the security relevance rests on this file's own javadoc rather than on an observed call site; if no consumer acts on the flag this is inert.",
+      "evidence": "Line 35's javadoc defines the field as 'True if this procedure is idempotent, that is, can be accessed via HTTP GET'; setIdempotent at 171-173 is a public setter reachable by the reflective fill, and the trusted constructor hard-codes it false at line 66.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped MEDIUM 3.50 by rule repro_failure)"
+    },
+    {
+      "id": "M-003",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 172,
+      "title": "The idempotent flag, documented as authorizing HTTP GET access, is settable from the untrusted description document through a public setter",
+      "impact": "A security-relevant transport/caching decision is taken from data the attacker supplies. If the consumer honours the flag, a remote party can have a state-changing procedure marked idempotent, moving the call onto GET semantics: the arguments then land in a URL that is logged by proxies and browsers, becomes cacheable, becomes CSRF-reachable from a simple link or image tag, and becomes safe-to-retry in the eyes of intermediaries. The reverse (marking a genuinely idempotent call non-idempotent) is a lesser availability/performance nuisance. Rated LOW because the consumer's behavior could not be verified in this snapshot.",
+      "evidence": "Line 172 is `this.idempotent = idempotent;` inside the public setter at 171-173, so the field is reachable by the reflective bean fill. Line 35's javadoc defines the flag as 'True if this procedure is idempotent, that is, can be accessed via HTTP GET', and line 66 shows the trusted Method constructor hard-coding it to `this.idempotent = false;` \u2014 only the document path can raise it.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped MEDIUM 3.50 by rule repro_failure)"
+    },
+    {
+      "id": "M-004",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 49,
+      "title": "The this reference escapes to external code before construction completes, in a non-final class whose constructor can still throw afterwards",
+      "impact": "A half-initialized ProcedureDescription can be observed as if it were complete \u2014 across threads, or by a subclass that survives a thrown constructor \u2014 yielding null `params`/`name` where the API contract implies non-null, or letting a subclass capture the parsed contents of a description whose construction was deliberately made to fail. Both require code already running in the same JVM (a concurrent consumer, or an attacker-defined subclass), so this is a robustness/hardening issue, not a remotely reachable one.\n\nMERGED FROM c3ab0aa9: The most natural embedder-side mitigation for the externally controlled Class.forName - subclass the type and override the setter to enforce an allowlist - does not work and does not report that it does not work, because the override runs against its own uninitialized state during the superclass constructor. An embedder can therefore believe the sink is closed while it is open. Separately, a construction that aborts part-way through the fill leaves an object with attacker-influenced fields and a null params array whose onward reachability is decided by code outside this file.",
+      "evidence": "Line 49 is `JSONUtil.tryFill(this, pm);` \u2014 the constructor's FIRST statement, publishing `this` to external code while `params` (declared line 39) is still null and while the constructor can still throw at line 53. Line 28 declares `public class ProcedureDescription {` with no `final`, and none of its setters are final, so that external call drives overridable methods from a superclass constructor.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped MEDIUM 3.50 by rule repro_failure)"
+    },
+    {
+      "id": "M-005",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 49,
+      "title": "The reflective fill runs its class-loading side effect before the constructor validates the document, so rejecting the document cannot prevent it",
+      "impact": "The code-selection primitive fires on strictly less than a well-formed document, and every validation the design would naturally grow - in this constructor or in any caller - is positioned after it, so none of it can contain the effect. A defender reading this constructor top to bottom will reasonably conclude that malformed documents are rejected and therefore inert; they are not, and the gap is invisible because the dangerous work happens inside a one-line call to another component. This ordering is also what makes the sink cheap to reach at scale: the attacker never has to produce a valid procedure entry.",
+      "evidence": "Line 49 (`JSONUtil.tryFill(this, pm);`) precedes lines 52-56, which are the only structural checks the constructor performs. The fill reaches line 94 (`this._javaReturnTypeAsClass = computeReturnTypeAsJavaClass();`) and thence line 122's `Class.forName`, so the class-loading side effect has already completed by the time the constructor first inspects the document's shape.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped MEDIUM 3.50 by rule repro_failure)"
+    },
+    {
+      "id": "M-006",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 73,
+      "title": "Method-based constructor writes javaReturnType directly, bypassing the setter that populates the derived _javaReturnTypeAsClass field",
+      "impact": "Callers that ask a locally built (server-side) procedure description for its return Class get null, and any unconditional dereference of that result is a NullPointerException on a path that works fine for descriptions that arrived over the wire. This is a correctness/robustness defect with a latent availability edge, not an attacker-triggered one; the attacker-facing significance is that the two construction paths are not interchangeable even though the public API presents them as if they were.\n\nMERGED FROM 0a026ee8: Any consumer that resolves a procedure's Java return type through `getReturnType()` receives null for every description built from a reflected `Method` (the server-side path) and for every default-constructed instance, instead of the correct Class. Depending on the unseen consumer this is either a NullPointerException at dispatch/response-conversion time (availability: a remote request that reaches this path aborts) or a silent wrong-type decision. The failure is data-independent and permanent for the object, so it is a latent correctness/availability defect rather than a memory-safety issue.",
+      "evidence": "Line 94 (`this._javaReturnTypeAsClass = computeReturnTypeAsJavaClass();`) is the only assignment to the derived field, but line 73 (`this.javaReturnType = m.getReturnType().getName();`) writes the source field directly, bypassing the setter; getReturnType() at 98 returns the derived field verbatim.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped LOW 3.20 by rule repro_failure)"
+    },
+    {
+      "id": "M-007",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 125,
+      "title": "Unbounded attacker-controlled string is concatenated into an IllegalStateException message with no length limit or neutralization",
+      "impact": "Log forging and log injection: an operator or a log-parsing pipeline reading the resulting entry can be shown fabricated lines (false timestamps, false severity, spoofed events), which undermines the very logs used to investigate the far more serious class-loading behavior on line 122. Secondary effects are log-volume inflation from an unbounded value and echo of attacker-controlled text into any error surface that renders `getMessage()`. No code execution follows from this line itself.",
+      "evidence": "Line 125 is `throw new IllegalStateException(\"Unable to load class: \" + javaReturnType, e);` \u2014 the attacker-supplied string from line 93 concatenated raw into the message, with no length cap and no CRLF neutralization anywhere in the class.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped LOW 2.80 by rule repro_failure)"
+    },
+    {
+      "id": "M-008",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 124,
+      "title": "Class.forName failure handling catches only ClassNotFoundException, letting Errors and NullPointerException escape the constructor",
+      "impact": "A caller that guards description parsing with catch (Exception e) - the natural way to skip one bad procedure entry and keep going - does not contain any of the Error outcomes: they propagate straight past the handler and terminate the parsing thread. A remote peer selects the outcome by choosing the name, so it can probe for a value that yields an uncontainable Error instead of the containable IllegalStateException, converting a recoverable parse failure into a remote abort of the client's RPC facility. In outcome (3) the abort occurs only after the attacker's chosen static initializer has executed, so the crash is the tail of the code-selection primitive, not a defence against it. Outcome (1) additionally means a JSON null - not an exotic payload - can crash the parse with a NullPointerException raised inside a method whose visible contract promises IllegalStateException.",
+      "evidence": "Line 124 is `} catch (ClassNotFoundException e) {` \u2014 the sole catch around line 122's `Class.forName(javaReturnType)`. The comparison chain at 103-119 is written constant-first (e.g. `\"int\".equals(javaReturnType)`), so a null name returns false from all nine tests and falls through to `Class.forName(null)`, which throws NullPointerException; `NoClassDefFoundError` and `ExceptionInInitializerError` are Errors and are likewise uncaught.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped LOW 2.24 by rule repro_failure)"
+    },
+    {
+      "id": "M-009",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 131,
+      "title": "Public getters hand out live internal state: the mutable params array without a defensive copy, plus the reflected Method and Class handles",
+      "impact": "An in-process component that receives a ProcedureDescription \u2014 a dispatcher, a cache, a plugin, or any code the description is passed to \u2014 can silently rewrite the parameter list of a shared, possibly cached description, so a later invocation is marshalled against parameters the description no longer legitimately holds. Exposure of the `Method` handle widens the reflective surface available to such a component, and the `Class<?>` getter puts a reflective object on the standard bean path. Exploitation requires code already running in the JVM, so this is hardening/defense-in-depth rather than a directly reachable remote flaw.",
+      "evidence": "Four bare escapes with no defensive copy: line 131 and line 140 are each `return params;` (the live array, through `internal_getParams()` and the public `getParams()`), line 86 is `public Method internal_getMethod() { return method; }` (a reflective invocation handle), and line 98 is `return _javaReturnTypeAsClass;` (a live Class handle returned from a JavaBean getter).",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped LOW 2.24 by rule repro_failure)"
+    },
+    {
+      "id": "M-010",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 53,
+      "title": "Map constructor dereferences and casts the attacker-supplied params entry with no null or type check, while the same class null-guards params elsewhere",
+      "impact": "A single malformed or hostile procedure entry aborts parsing of the entire service description with an unchecked runtime exception rather than a typed parse error, from anywhere on the untrusted path. In a client that parses descriptions in a loop or on a connection callback, this is a remote denial of the RPC facility; at minimum it is an unhandled-exception escape across a trust boundary that callers cannot distinguish from an internal bug.\n\nMERGED FROM c33d678d: A malformed or hostile JSON-RPC service description crashes the parse with an unchecked NullPointerException or ClassCastException escaping a public constructor. Where the caller does not catch RuntimeException this aborts the connection/handshake \u2014 a cheap, no-authentication availability nuisance for the party that supplies the description. There is no state corruption and no amplification (one exception per malformed document), which is why this is rated LOW rather than a true DoS. The `@SuppressWarnings(\"unchecked\")` also means a document can smuggle wrongly typed elements past the compiler's notice into whatever ParameterDescription does with them.",
+      "evidence": "Lines 52-53: `List<Map<String,Object>> p = (List<Map<String,Object>>) pm.get(\"params\"); params = new ParameterDescription[p.size()];` \u2014 no null check, no instanceof. The class's own arity() at 136 is `(params == null) ? 0 : params.length`, proving the guard was known to be needed.",
+      "severity": "LOW (mantis_risk_score 2.00; capped from uncapped LOW 2.24 by rule repro_failure)"
+    },
+    {
+      "id": "M-011",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 139,
+      "title": "getParams() and internal_getParams() return the live internal ParameterDescription array",
+      "impact": "A component that validates a procedure's parameter list cannot rely on that validation still holding when the procedure is invoked: any other holder of the same ProcedureDescription can mutate the array in between (a time-of-check/time-of-use gap on the parameter description). Also removes any possibility of treating a parsed description as immutable/shareable across threads.",
+      "evidence": "Lines 131 and 140 are both bare `return params;` \u2014 the field, not a copy, with no defensive clone anywhere in the class.",
+      "severity": "LOW (mantis_risk_score 1.68; capped from uncapped LOW 1.68 by rule repro_failure)"
+    },
+    {
+      "id": "M-012",
+      "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+      "line": 139,
+      "title": "params is never populated on the no-arg construction path, so getParams()/internal_getParams() can return null",
+      "impact": "A caller that follows the documented contract and iterates the returned array gets a NullPointerException for any description built through the no-arg path. The inconsistency (one accessor guards the null, two do not) makes the failure depend on which accessor a consumer happened to pick.",
+      "evidence": "The no-arg constructor at 76-78 has an empty body, the class declares no setParams, and getParams() at 140 returns the field unguarded while arity() at 136 guards the same field for null.",
+      "severity": "LOW (mantis_risk_score 1.68; capped from uncapped LOW 1.68 by rule repro_failure)"
+    }
+  ]
+}

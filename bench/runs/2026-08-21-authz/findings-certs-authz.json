@@ -1,0 +1,198 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/bench-authz/target (certs-authz: api/resources.py, api/permissions.py, api/schemas.py, api/models.py)",
+    "commit": "no VCS in scope; sha256 of the four api/*.py files, sorted by path: 8860d21c3f024b95a054bd11ac79021d482b4465f9d950861d00ee21a4c5f10a",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad web-and-API specialist, knowledge pack web-api.md + web-api-clientside-logic.md",
+    "coverage_declaration": "Static read-only review of the four Python modules given, end to end, line by line: the HTTP resources, the two permission objects, the marshmallow input/output schemas and the SQLAlchemy event listener. Sections loaded from the pack: web-api.md 0 (always) and 2 (AuthZ: WEB-04, WEB-05, WEB-24, WEB-25, WEB-06). Sections not loaded because the inventory has no matching construct: 1 (no login, token or cookie code), 3, 4, 5, and the whole of web-api-clientside-logic.md (no rendering, no client bundle, no CORS/CSRF configuration, no crypto or secret handling, no GraphQL or socket). NOT exercised: the api.service module (login_required, current_user, create, upload, list_for, attach_tags, get_certificate, counts_by_month, recompute), the route registration and any before_request layer, the ORM mapping and the base class of the schemas, database state, and any deployed instance. Nothing was executed and no request was sent."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "CertificatesUpload.post issues against any authority: the gate its sibling CertificatesList.post enforces is absent",
+      "procedure": "WEB-24",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "api/resources.py",
+        "line": 25,
+        "component": "CertificatesUpload.post"
+      },
+      "evidence": "The only authorization symbol this module imports for authorities is AuthorityPermission (api/resources.py:4). It is used twice, and both uses are in a different handler than the one that lacks it:\n\n  api/resources.py:17-21  CertificatesList.post\n      permission = AuthorityPermission(data[\"authority\"].id, service.current_user().roles)\n      if not permission.can():\n          return dict(message=\"You are not authorized to use this authority\"), 403\n      return service.create(**data), 201\n\n  api/resources.py:24-26  CertificatesUpload.post\n      return service.upload(**data), 201        # no permission object constructed, no can(), no 403\n\nThe same validated payload is forwarded whole (**data) to a sibling service call in the same certificate family, including the authority key that the gated handler checks. The only cross-cutting layer either handler passes through is the shared base class, and it is in the file and says so itself: api/resources.py:7-10, class AuthenticatedResource with method_decorators = [service.login_required] and the docstring \"Every subclass requires a session. It does not imply any role.\" Roles are read only inside CertificatesList.post and CertificatesStats.post; CertificatesUpload never touches service.current_user().roles.",
+      "impact": "Any principal with a valid session — no role on any authority — can drive the certificate-issuance path against an authority they were never granted, by sending the body to the upload route instead of the create route. The permission model of the service (roles bound to authority_id, api/permissions.py:11-12) is not weakened, it is bypassed: a caller who would receive 403 on one route receives 201 on the other for the same authority.",
+      "preconditions": "An authenticated session (any user, no role required) and knowledge of the upload route and of an authority id. Authority ids are low-entropy references that appear in the create flow and in listings.",
+      "recommendation": "Do not fix this by copying the four lines into CertificatesUpload.post: the asymmetry will come back with the next sibling handler. Move the authority check to the layer both handlers must pass — a method decorator on the resource, or better, into the service call itself (service.create/service.upload resolving the principal and refusing an authority the caller has no role on), so that a handler cannot reach the issuance path without the gate. Then add the route x method x role matrix test of WEB-05's minimal test so a new handler with no gate fails the suite rather than shipping.",
+      "traceability": [
+        "CWE-862",
+        "CWE-863",
+        "CWE-285",
+        "A01:2025",
+        "ASVS 5.0 V8",
+        "WSTG-ATHZ-02",
+        "API5:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The one layer neither handler can skip is in scope and does not carry the control: api/resources.py:7-10, AuthenticatedResource.method_decorators = [service.login_required], whose own docstring states \"It does not imply any role.\" No decorator, no before_request and no policy object appears on CertificatesUpload; the module's authorization is in-band, constructed per handler (api/resources.py:18, 32, 43)."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No control outside the repository was asserted by the target and no exported artifact, ruleset or written statement was produced with it. The authority model lives inside the code under review (api/permissions.py:4-12), so there is no external gate to credit; per triage.md this is checked, not assumed."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exculpating reading for this class is that the two handlers do not reach the same effect. It does not survive one step: both are post handlers of the certificate resource family taking the same validated payload (data=None, api/resources.py:17 and :25) and both forward it unaltered to a service call that persists a certificate (service.create / service.upload). An upload that produced an object with no authority binding would have no use for the authority key the sibling gates, and the payload carries exactly one."
+        }
+      ],
+      "limits": "This finding establishes the missing gate, which is decidable inside api/resources.py. It does not establish what service.upload() writes: the api.service module was not in scope, so the precise persisted effect (same table, same authority column) was read from the shared payload and the handler naming, not from the function body. If upload() turns out to enforce the authority internally, the defect is still that two sibling handlers disagree about where the gate lives."
+    },
+    {
+      "id": "F-002",
+      "title": "supersedes[] names any certificate by id, and the append listener flips notify and superseded on the row it names",
+      "procedure": "WEB-25",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "api/schemas.py",
+        "line": 15,
+        "component": "CertificateInputSchema.resolve -> Certificate.supersedes append listener"
+      },
+      "evidence": "The body field supersedes is a bare list of integers (api/schemas.py:10) that the schema turns into live rows by id alone:\n\n  api/schemas.py:15   data[\"supersedes\"] = [service.get_certificate(i) for i in data.get(\"supersedes\", [])]\n  api/schemas.py:16-17 data[\"tags\"] = [t for t in service.current_user().tags\n                                        if t.id in set(data.get(\"tags\", []))]\n\nThe two lines sit next to each other in the same post_load and disagree: the tags line resolves the caller's own rows and intersects them with what was asked for, so an id the caller does not own is dropped; the supersedes line passes the client's integer straight to service.get_certificate(i), with no principal in the call and no filter after it. The resolved rows reach the model whole (api/resources.py:21 service.create(**data), api/resources.py:26 service.upload(**data); api/models.py:11 self.supersedes = kwargs.get(\"supersedes\") or []).\n\nWhat naming the row does to it is not in the handler, it is in the listener:\n\n  api/models.py:16-20\n      @event.listens_for(Certificate.supersedes, \"append\")\n      def on_supersedes_append(target, value, initiator):\n          value.notify = False\n          value.superseded = True\n\nvalue is the named certificate, not the one being created. Neither handler authorizes it: CertificatesList.post checks only data[\"authority\"] (api/resources.py:18-20) and CertificatesUpload.post checks nothing at all.",
+      "impact": "A principal with any valid session writes to certificates that belong to other principals, without ever holding a reference to them beyond a guessable integer. Two flags flip on the victim's row: superseded = True misstates the lifecycle of a certificate that is still in use, and notify = False silences it — the field the model initialises to True at api/models.py:12 is what drives expiry warning. The victim stops being told their certificate is about to expire and it lapses in production without a warning ever being sent. It is an integrity write across the tenant boundary with a delayed availability effect, and it leaves the attacker's own new certificate as the apparent successor.",
+      "preconditions": "An authenticated session, and one or more certificate ids. Ids are sequential integers here (fields.Integer, api/schemas.py:10), so enumeration needs no prior knowledge; a single request may carry a list, so the whole range can be swept at once. No role and no authority membership is needed on the upload route (see F-001), and on the create route only an authority the attacker legitimately holds.",
+      "recommendation": "Scope the resolver, not the handler: resolve supersedes the way the very next line resolves tags — from the caller's own certificates (service.current_user().certificates, or get_certificate(i, principal=current_user) that returns nothing outside the caller's scope) so an unowned id disappears before it ever becomes an object. Then keep the check where the effect is: the listener at api/models.py:16-20 mutates a second principal's row, so it should assert the ownership invariant (or raise) rather than trusting whoever assembled the collection. A relationship append that silently disables another user's notification is a state change that deserves an audit record too.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-732",
+        "A01:2025",
+        "ASVS 5.0 V8",
+        "WSTG-ATHZ-04",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is the request body. supersedes is declared as fields.List(fields.Integer()) with no allowlist, no membership test and no constant anywhere in its path (api/schemas.py:10, :15); it is traced backwards to the client and nothing narrows it. The contrast is in the same method: the tags list at api/schemas.py:16-17 IS constrained to a set the attacker cannot widen, and supersedes is not."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The named row is another principal's certificate, and naming it is not read-only: api/models.py:16-20 writes value.notify = False and value.superseded = True on it. The data has security value by the target's own construction - Certificate carries owner (api/models.py:9) and notify is initialised True at api/models.py:12, so the flag being flipped is a live control on the victim's record, not a lookup value."
+        }
+      ],
+      "inference": "One link is inferred rather than observed: that service.get_certificate(i) returns certificates owned by other principals. Its call site shows the identifier alone with no principal argument (api/schemas.py:15) and the adjacent line shows what this codebase writes when it does mean to scope a body-supplied id list (api/schemas.py:16-17), but the function body lives in api.service, which was not in scope. If get_certificate turns out to filter by the current principal internally, the chain closes there.",
+      "limits": "Establishes the unscoped resolution and the listener effect from code in scope. Does not establish: the ORM mapping of Certificate.supersedes (the listener is registered on it, but whether every write path funnels through append was not read), whether a database constraint or a service-layer check rejects a cross-owner relationship later, and whether notify is in fact consumed by an expiry job - the consumer of the flag is outside the four files given. The severity rests on notify meaning what api/models.py:18 says it means."
+    },
+    {
+      "id": "F-003",
+      "title": "CertificateTags.post authorizes the tags in the body and never the certificate named in the path",
+      "procedure": "WEB-04",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "api/resources.py",
+        "line": 30,
+        "component": "CertificateTags.post"
+      },
+      "evidence": "The route takes an identifier and the identifier is never authorized:\n\n  api/resources.py:29-35\n      class CertificateTags(AuthenticatedResource):\n          def post(self, certificate_id, data=None):\n              for tag in data[\"tags\"]:\n                  permission = TagPermission(tag.id, service.current_user())\n                  if not permission.can():\n                      return dict(message=\"You are not authorized to use this tag\"), 403\n              return service.attach_tags(certificate_id, data[\"tags\"])\n\ncertificate_id arrives from the path, is compared with nothing and is handed to service.attach_tags with no principal beside it. The check the handler does run is on the other object and cannot fail: api/schemas.py:16-17 has already rebuilt data[\"tags\"] out of service.current_user().tags, so every element is a row the caller owns and TagPermission.can() (api/permissions.py:20-21, any(t.id == self.tag_id for t in self.user.tags)) returns True for all of them. The module knows how to scope a read when it means to - api/resources.py:15 passes service.current_user() into service.list_for - and no equivalent appears on this write. Certificate carries an owner (api/models.py:9), so the row addressed by certificate_id belongs to somebody.",
+      "impact": "An authenticated caller writes to certificates owned by other principals by putting their id in the path: their own tags become attached to a stranger's certificate. The gain is bounded - the attacker cannot attach a tag they do not hold, because the schema constrains that list - but they acquire a write on an object outside their scope, and tags are a permissioned object in this system (api/permissions.py:15-21), so anything downstream that groups, filters, routes notifications or grants visibility by tag inherits an association the certificate's owner never made. It also works in the other direction as noise: a victim's certificate can be labelled arbitrarily.",
+      "preconditions": "An authenticated session, at least one tag owned by the caller, and a certificate id. Ids are sequential integers in this API (api/schemas.py:10-11), so no prior reference to the victim's certificate is needed.",
+      "recommendation": "Authorize the object in the path before touching it, in the same breath as the tags: resolve the certificate through the caller (service.current_user().certificates.get(certificate_id), or a CertificatePermission object alongside the AuthorityPermission and TagPermission the module already has) and return 404 rather than 403 so the route does not confirm which ids exist. The tag loop can then stay as defence in depth. As a systemic fix, make attach_tags take the principal instead of a bare id, so no caller can reach it without one.",
+      "traceability": [
+        "CWE-639",
+        "CWE-862",
+        "CWE-284",
+        "A01:2025",
+        "ASVS 5.0 V8",
+        "WSTG-ATHZ-04",
+        "API1:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A service-layer control cannot be excluded from what I was given: service.attach_tags lives in api.service, which was not in scope, and the call site (api/resources.py:35) passes no principal that such a control could use. The layers I can read carry nothing - AuthenticatedResource contributes only service.login_required and states it implies no role (api/resources.py:7-10), and the handler itself checks only tags. Per triage.md an unread layer is UNKNOWN, not covered, so this finding cannot be reported as confirmed."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing marks this write as intended and bounded. The handler spends four lines refusing tags the caller does not own (api/resources.py:31-34), which is the target declaring that this route is meant to be restricted; a route designed to let anyone label anyone's certificate would not carry that loop. No comment, docstring or allowlist in scope declares the certificate side public."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The object written to is another principal's record: Certificate holds owner (api/models.py:9) and the API's own read path is scoped per user (api/resources.py:15). The values written are not neutral labels either - tags are permissioned in this system, which is why TagPermission exists at api/permissions.py:15-21."
+        }
+      ],
+      "inference": "One link is inferred: that service.attach_tags(certificate_id, tags) does not itself filter by the current principal. The call site shows the identifier alone with no principal argument (api/resources.py:35) and the module's own convention for a scoped call is visible one screen above (api/resources.py:15, service.list_for(service.current_user())), but the function body is in api.service, which was not in scope.",
+      "limits": "Establishes that no ownership check on certificate_id exists in the resource, the permissions or the schemas. Does not establish what attach_tags writes, whether the association is reversible, or whether any downstream consumer grants access by tag - the effect of a tag is outside the four files given, which is why the severity is held at the capability gained rather than raised on a speculated consequence."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "BOLA / tenant scoping on the certificate listing",
+      "procedure": "WEB-04",
+      "outcome": "refuted",
+      "where": "api/resources.py:14-15, CertificatesList.get returns service.list_for(service.current_user()): the read carries no client-supplied identifier to substitute and the subject is passed at the call site, so FP-01 holds. Bound: the body of list_for was not read, so the scoping argument rests on the principal reaching it."
+    },
+    {
+      "class": "BFLA / missing authentication on the resource family",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "api/resources.py:7-10, AuthenticatedResource.method_decorators = [service.login_required] is inherited by all four resources, and flask_restful applies method_decorators to every verb, so no handler in the file is reachable without a session. FP-01 holds. Bound: this rules out the missing-session case only; the missing-role case on the same base class is F-001."
+    },
+    {
+      "class": "Permission predicates themselves (logic flaw, wildcard, default-allow)",
+      "procedure": "WEB-05",
+      "outcome": "refuted",
+      "where": "api/permissions.py:11-12 and :20-21 are membership tests over the principal's own roles and tags - any(r.authority_id == self.authority_id ...) and any(t.id == self.tag_id ...) - with no wildcard, no default-true branch, no empty-collection shortcut that returns True and no client-supplied side of the comparison (the authority id comes from a resolved object, api/resources.py:18). The predicates compute the right answer; the defects reported are in who calls them."
+    },
+    {
+      "class": "Authorization gate on the tags in the request body",
+      "procedure": "WEB-25",
+      "outcome": "refuted",
+      "where": "api/resources.py:31-34 loops TagPermission over data['tags'], but api/schemas.py:16-17 has already rebuilt that list out of service.current_user().tags, so every element is owned by the caller and can() cannot return False. FP-02 holds: the value is constrained before it reaches the sink. The construct is a vacuous check rather than a weakness - the unauthorized object on that route is the path id, reported as F-003."
+    },
+    {
+      "class": "Sibling-handler asymmetry on CertificatesStats (gated post, ungated get)",
+      "procedure": "WEB-24",
+      "outcome": "refuted",
+      "where": "api/resources.py:38-46 has the shape this procedure looks for - post gated by AuthorityPermission, get with no gate - but the two do not reach a comparable effect: get calls service.counts_by_month() with no argument and acts on no authority, while the gated effect (service.recompute(data['authority'])) has no ungated twin, and the route carries no identifier. FP-09 holds. Bound: whether counts_by_month() aggregates across owners, and whether that aggregate is public by design, could not be established with api.service out of scope; this refutes the asymmetry claim, not an unscoped-aggregate disclosure."
+    },
+    {
+      "class": "Mass assignment onto the model (owner, notify, superseded)",
+      "procedure": "WEB-06",
+      "outcome": "inconclusive",
+      "where": "api/models.py:5-13: notify and superseded are assigned unconditionally in __init__ (:12-13), so no request key can set them - only the listener at :16-20 changes them, which is F-002. owner is read from kwargs (:9) and is not a declared input field (api/schemas.py:6-11), so under marshmallow's default unknown policy it never reaches **data. Inconclusive rather than refuted because the base class of CertificateInputSchema is elided in the file given, so the unknown-field policy actually in force could not be read; nothing in scope shows a client-supplied owner reaching the model."
+    },
+    {
+      "class": "Property-level exposure in the response",
+      "procedure": "WEB-06",
+      "outcome": "refuted",
+      "where": "api/schemas.py:21-24, CertificateOutputSchema is an explicit three-field allowlist (name, owner, superseded) and the certificate body (api/models.py:7) is never serialized, so FP-01 holds. Bound: this is the only serializer given; other responses and error bodies of the service were not seen."
+    },
+    {
+      "class": "File upload and path traversal",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "The name CertificatesUpload (api/resources.py:24) is the only trigger for this class in the inventory. The handler takes no filename, no path, no stream and no file object: it forwards the same validated JSON payload as its sibling, and the schema declares name, body, authority, supersedes and tags with no file field (api/schemas.py:6-11). FP-09 holds - the construct is not what its name suggests. Its real defect is the missing authority gate, F-001."
+    },
+    {
+      "class": "Injection, SSRF and deserialization sinks",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "Read across all four modules: no query built by string concatenation or ORM filter from raw input, no subprocess/os.system/eval, no template render, no outbound HTTP client or user-supplied URL, no pickle/yaml/marshal. The where-to-look patterns of WEB-07 through WEB-12 have no construct in this inventory, which is why sections 3 to 5 were not loaded. Bound: those sinks may exist in api.service, which was not in scope."
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "lemur/certificates/views.py",
+      "line": 734,
+      "title": "Certificate creator is permanently exempt from the RBAC check, so ownership transfer never revokes private-key access",
+      "impact": "A user who created a certificate and later transferred it away keeps unconditional ability to export the private key and to update, revoke, deactivate, delete and re-describe it, with no way to revoke that access through the product. Because auto-rotation copies the creator onto the reissued certificate, the exemption also covers key material generated after the handoff that the former creator never legitimately held.",
+      "evidence": "Every per-certificate gate is `if g.current_user != cert.user:` wrapping the CertificatePermission check, so the creator skips the check rather than passing it (views.py:734, and identically at 942, 1097, 1154, 1270, 1590, 1677, 1754, 1829). The transfer path is built to revoke the old owner - service.update_owner rebuilds cert.roles and cert.notifications to drop the previous owner and sets `cert.owner = new_cert_data[\"owner\"]` (service.py:413-417) - but never touches cert.user, and nothing in either file reassigns it after creation. service.reissue_certificate propagates it: `if not user: primitives[\"creator\"] = certificate.user` (service.py:1021-1022), while create/mint/create_csr generate fresh key material.",
+      "severity": "MEDIUM (Mantis risk score 5.6; impact 4, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Static Confirmation)"
+    },
+    {
+      "id": "M-002",
+      "file": "lemur/certificates/service.py",
+      "line": 451,
+      "title": "Domain issuance authorization is evaluated against request fields while a caller-supplied CSR is signed verbatim",
+      "impact": "An authenticated user authorized for one domain can obtain a certificate signed by a trusted authority for identifiers they do not control, by sending an authorized common_name/extensions pair for the permission check and an unrelated CSR for the actual signing. This defeats the primary security purpose of the service and enables impersonation of arbitrary services in the deployment's PKI.",
+      "evidence": "The view authorizes the JSON fields: `service.allowed_issuance_for_domain(data[\"common_name\"], data[\"extensions\"])` (views.py:539). service.mint discards them whenever a CSR was supplied - `# allow the CSR to be specified by the user` / `if not kwargs.get(\"csr\"): ... else: csr = str(kwargs.get(\"csr\"))` (service.py:446-451) - and passes it straight to `issuer.create_certificate(csr, kwargs)` (service.py:455). The names certified therefore come from an input the authorization check never read. That csr is caller-supplied is established in-subset by the comment at service.py:446, the csr_imported signal (service.py:42), and reissue_certificate deleting primitives['csr'] (service.py:1018-1020).",
+      "severity": "MEDIUM (Mantis risk score 4.48; impact 5, likelihood 3, exposure EXPOSED, viability CONDITIONAL_VIABLE; caps applied: Static Confirmation)"
+    },
+    {
+      "id": "M-003",
+      "file": "lemur/certificates/service.py",
+      "line": 1375,
+      "title": "allowed_issuance_for_domain authorizes only x509.DNSName SANs; every other SAN type reaches the CSR unchecked",
+      "impact": "An authenticated user can place identifiers of any non-DNS type (URI, RFC822Name, IPAddress, OtherName) into a CA-signed certificate with no domain-authorization check - for example a URI SAN carrying another workload's service identity in an mTLS/SPIFFE deployment, or an address belonging to someone else in an S/MIME deployment.",
+      "evidence": "The authorization loop filters by type before checking anything: `for san in extensions[\"sub_alt_names\"][\"names\"]: if isinstance(san, x509.DNSName): ... is_authorized_for_domain(san.value)` (service.py:1373-1378), with no else branch and no rejection of other types. create_csr consumes the same list with no type filter: `if k == \"sub_alt_names\": if v[\"names\"]: builder = builder.add_extension(v[\"names\"], critical=True)` (service.py:843-845). The per-entry nameType is chosen by the requester (views.py:417-427). Secondary path: `check_permission_for_cn = True if common_name else False` (service.py:1370) means an empty CN plus an all-non-DNSName SAN list performs zero authorization calls.",
+      "severity": "MEDIUM (Mantis risk score 3.92; impact 4, likelihood 3, exposure EXPOSED, viability CONDITIONAL_VIABLE; caps applied: Static Confirmation)"
+    },
+    {
+      "id": "M-004",
+      "file": "lemur/certificates/views.py",
+      "line": 657,
+      "title": "Upload endpoint returns before the CERTIFICATE_CREATE_REQUEST_VALIDATION hook whenever a destination is supplied",
+      "impact": "Any caller who can upload can skip the operator-configured request-validation policy by attaching a destination - and the skip is available precisely on the branch that also ships the uploaded certificate and its private key onward to that destination. Whatever the deployment used the hook to forbid becomes reachable on this route.",
+      "evidence": "The destination branch returns first: `if data.get(\"destinations\"): if data.get(\"private_key\"): return service.upload(**data)` (views.py:655-657). The policy hook is only consulted after that return, at `if current_app.config.get(\"CERTIFICATE_CREATE_REQUEST_VALIDATION\"):` (views.py:662-665), so it is unreachable for any request carrying both fields, both of which are caller-set. The sibling create endpoint runs the same hook before doing any work (views.py:517-520), as do the update and key-export handlers with their equivalents (views.py:741, 952, 1107, 1280, 1843).",
+      "severity": "MEDIUM (Mantis risk score 3.92; impact 4, likelihood 3, exposure EXPOSED, viability CONDITIONAL_VIABLE; caps applied: Static Confirmation; Non-Default Configurations)"
+    },
+    {
+      "id": "M-005",
+      "file": "lemur/certificates/views.py",
+      "line": 1607,
+      "title": "Export authorization is gated on a caller-selected plugin attribute while the private key is passed to the plugin unconditionally",
+      "impact": "Any authenticated user can invoke export against any certificate id using a plugin that does not declare requires_key, with no ownership check, and the certificate's private key is handed to that plugin. Even where no such plugin exists today, the unconditional key argument means one added later silently becomes a disclosure.",
+      "evidence": "The plugin comes from the request body - `plugin = data[\"plugin\"][\"plugin_object\"]` (views.py:1575) - and the entire authorization block, including the 403, is nested inside `if plugin.requires_key:` (views.py:1577-1602). Outside that block the key is passed regardless: `extension, passphrase, data = plugin.export(cert.body, cert.chain, cert.private_key, options)` (views.py:1607-1609). The predicate deciding whether anyone is authorized is thus an attribute of an object the caller chooses.",
+      "severity": "MEDIUM (Mantis risk score 3.92; impact 4, likelihood 3, exposure EXPOSED, viability CONDITIONAL_VIABLE; caps applied: Static Confirmation; Non-Default Configurations)"
+    },
+    {
+      "id": "M-006",
+      "file": "lemur/certificates/views.py",
+      "line": 654,
+      "title": "Upload endpoint omits the is_valid_owner check that the create endpoint enforces on the same field",
+      "impact": "A caller can attribute an uploaded certificate to an arbitrary owner - an individual, which the create path forbids outright, or another team's distribution list. The named owner's role is auto-created and attached, so the certificate appears in that team's inventory and notifications, but the attacker gains no access they did not already have.",
+      "evidence": "CertificatesList.post rejects an invalid owner with 412 via `validators.is_valid_owner(data[\"owner\"])` (views.py:514-515); CertificateUpdateOwner.post (views.py:1265-1267) and Certificates.put (views.py:978-981) apply the same check. CertificatesUpload.post accepts the same owner field and contains no such call anywhere between its role check (views.py:651) and service.upload - it goes straight to `data[\"creator\"] = g.user` (views.py:654). service.create_certificate_roles then materialises the owner via `role_service.get_or_create(kwargs[\"owner\"], ...)` and attaches it (service.py:421-433).",
+      "severity": "LOW (Mantis risk score 2.8; impact 2, likelihood 3, exposure EXPOSED, viability CONDITIONAL_VIABLE; caps applied: Static Confirmation)"
+    },
+    {
+      "id": "M-007",
+      "file": "lemur/certificates/views.py",
+      "line": 1606,
+      "title": "Private-key disclosure through the export endpoint is not written to the audit log",
+      "impact": "Key material can leave through /certificates/<id>/export with no audit-log record, so the route is invisible to whatever monitoring consumes that log. It grants an attacker nothing on its own, but it is the one key-egress route that leaves no trail, which raises expected dwell time for the two private-key findings above.",
+      "evidence": "CertificatePrivateKey.get writes both the activity entry `log_service.create(g.current_user, \"key_view\", certificate=cert)` (views.py:746) and the structured `log_service.audit_log(\"export_private_key\", cert.name, f\"Exported private key. access_via={access_via} creator_id={cert.user_id} current_owner={cert.owner}\")` (views.py:751-756). CertificateExport.post discloses the same material (views.py:1607-1609, returned base64 at 1617-1621) but writes only log_service.create (views.py:1606); no audit_log call exists anywhere in the class.",
+      "severity": "LOW (Mantis risk score 2.0; impact 1, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Minor Configuration Hygiene; Static Confirmation)"
+    },
+    {
+      "id": "M-008",
+      "file": "lemur/certificates/views.py",
+      "line": 146,
+      "title": "Unvalidated filter parsing on /certificates/valid raises an unhandled exception",
+      "impact": "Any authenticated caller can force an unhandled server-side exception (HTTP 500) with a trivial request, producing error-handler noise and, depending on the deployment's error configuration, an internal traceback in the response. Robustness, not a security boundary.",
+      "evidence": "`filter` is registered as an optional query argument with no required flag and no default (views.py:138), then dereferenced and indexed without checking either: `common_name = args.pop(\"filter\").split(\";\")[1]` (views.py:146). A missing filter yields AttributeError on None; a filter with no ';' yields IndexError.",
+      "severity": "LOW (Mantis risk score 2.0; impact 1, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Non-Security Critical Components; Static Confirmation)"
+    },
+    {
+      "id": "M-009",
+      "file": "lemur/certificates/service.py",
+      "line": 623,
+      "title": "render() indexes the split filter without checking its shape",
+      "impact": "Any authenticated caller of the main certificate listing can force an unhandled exception (HTTP 500) with a single malformed query parameter.",
+      "evidence": "`filt = args.pop(\"filter\")` is followed by `terms = filt.split(\";\")` and immediately `term = f\"%{terms[1]}%\"` (service.py:619-623), evaluated before any branch is selected, so a filter with no ';' raises IndexError regardless of the filter type intended. Reached from GET /certificates (views.py:377-393) and the notification listing (views.py:1387-1402).",
+      "severity": "LOW (Mantis risk score 2.0; impact 1, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Non-Security Critical Components; Static Confirmation)"
+    },
+    {
+      "id": "M-010",
+      "file": "lemur/certificates/views.py",
+      "line": 1494,
+      "title": "Replacements endpoint dereferences a missing certificate without a null check",
+      "impact": "Requesting the replacements of a non-existent certificate id returns an unhandled exception (HTTP 500) instead of the 404 that every sibling handler returns for the same condition.",
+      "evidence": "`return service.get(certificate_id).replaces` (views.py:1494), unguarded, while service.get returns database.get(Certificate, cert_id) which yields None for an unknown id (service.py:51-58). Nine sibling handlers guard the identical call with `if not cert: return dict(message=\"Cannot find specified certificate\"), 404` (views.py:729-731, 936-939, 1091-1094, 1145-1148, 1260-1263, 1570-1573, 1671-1674, 1748-1751, 1824-1826).",
+      "severity": "LOW (Mantis risk score 2.0; impact 1, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Non-Security Critical Components; Static Confirmation)"
+    },
+    {
+      "id": "M-011",
+      "file": "lemur/certificates/views.py",
+      "line": 690,
+      "title": "Internal exception text is reflected to the client in the stats, revoke and deactivate handlers",
+      "impact": "Backend detail - ORM/SQL errors, plugin internals, upstream CA responses - is returned verbatim to an authenticated caller, disclosing implementation information the endpoint contract does not intend to expose. Reconnaissance detail rather than a breach, since the audience is already authenticated.",
+      "evidence": "Three handlers interpolate the caught exception into the response body: `return dict(message=f\"Failed to retrieve stats: {str(e)}\"), 400` (views.py:688-690), `Failed to revoke: {str(e)}` (views.py:1706-1708) and `Failed to Deactivate: {str(e)}` (views.py:1773-1775). The value is str(e) of whatever service.stats, the issuer plugin or SQLAlchemy raised; all three already call capture_exception().",
+      "severity": "LOW (Mantis risk score 2.0; impact 2, likelihood 3, exposure EXPOSED, viability VIABLE; caps applied: Minor Configuration Hygiene; Static Confirmation)"
+    }
+  ],
+  "_pipeline": {
+    "note": "Transcription of out/report.md. These are the findings that SURVIVED the pipeline, not raw researcher output.",
+    "raw_findings_from_researcher": 19,
+    "merged_by_dedupe": 0,
+    "rejected_by_review_as_FALSE_POSITIVE": 5,
+    "unresolved_NEEDS_RESEARCH_dropped_by_calibrate": 3,
+    "marked_NON_VIABLE_by_critic": 0,
+    "surviving_and_scored": 11,
+    "severity_ceiling_note": "mantis-reproduce was outside this authorization, so every finding is repro_status=statically_confirmed with no empirical trace. The Category-B static_confirmation cap is in force on all 11 (likelihood <=3, x0.8 Hazard, CRITICAL forbidden). See report.md, Deviations."
+  }
+}
