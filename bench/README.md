@@ -200,7 +200,7 @@ The prediction was refutable and held. And the most useful thing in it is a **co
 >
 > It was caught by an arm applying this corpus's own rule that a refutation must cite the line of the control: it named the bound that makes the defect impossible. A silent non-finding would have shipped as a result.
 
-**The "missed by nine lines" reading is withdrawn with the round.** It said both arms reached `req_resp_decoder.go`, reported a real defect at line 945, and never mentioned `sliceMapToSlice` nine lines away. On a patched tree `sliceMapToSlice` carried its bound, so **not reporting it was correct**. There was no blind spot. A procedure was written to fix it anyway, and measured to have no effect: [2026-08-22, exhaust the file](runs/2026-08-22-exhaust-the-file-2/).
+**The "missed by nine lines" reading is withdrawn with the round.** It said both arms reached `req_resp_decoder.go`, reported a real defect at line 945, and never mentioned `sliceMapToSlice` nine lines away. On a patched tree `sliceMapToSlice` carried its bound, so **not reporting it was correct**. There was no blind spot. A procedure was written to fix it anyway, and measured to have no effect: [2026-08-22, exhaust the file](runs/2026-08-22-exhaust-the-file-2/). Its [superseded pre-registration](runs/2026-08-22-exhaust-the-file/) is kept unedited beside it, linked here rather than only from its own banner: an artifact preserved and unreachable is preserved for nobody.
 
 **Re-run on the verified pre-fix commit, all three arms find it 3/3** — [2026-08-22, unaided on the verified tree](runs/2026-08-22-unaided-verified/):
 
@@ -374,6 +374,12 @@ None of these was designed. Each one is what a retraction or a near-miss cost, a
 Anything the cases do not contain: mobile surfaces, remediation and verification, and every class in the corpus that has no case here. <!-- bench:packs -->
 Today the bench exercises `web-api`, `local-app`, `infra-cloud`, `supply-chain`, `ai-safety` and `privacy-abuse`, and the score is silent about `mobile` and `remediation` — silent, not clean.
 <!-- /bench:packs --> It also says nothing about how the squad behaves under a real repository's size, where the expensive failure is not missing a pattern but never reading the file.
+
+## Pre-registered, not yet run
+
+A round whose criteria are committed and whose numbers do not exist. It is listed here from the moment it is written, because a pre-registration a reader cannot find before the result arrives proves nothing about the order the two were written in — which is the whole point of writing it first.
+
+- [2026-08-24, the near-miss round](runs/2026-08-24-chain-completion/) — three rounds record the same shape of miss: the right file open, something true reported, and the defect beside it missed. The candidate procedure is **frozen in the run directory and is not in the corpus**, and moves into `references/` only if the pre-registered band is met.
 
 ## Growing it
 
