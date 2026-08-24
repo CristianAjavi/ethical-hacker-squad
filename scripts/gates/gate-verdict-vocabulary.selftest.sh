@@ -5,11 +5,14 @@
 # verdict across four files, for one deliverable. This gate is what keeps that
 # from coming back, and it had never been observed failing.
 #
-# The fixture is a COPY of the real files rather than a synthetic corpus, for
-# the same reason the governance labs copy theirs: a hand-built vocabulary would
+# The fixture is a COPY of the real corpus rather than a synthetic one, for the
+# same reason the governance labs copy theirs: a hand-built vocabulary would
 # drift from the one the gate actually polices, and the copy is known to conform
 # because the gate says so on every run of this repository. Each case then
 # breaks exactly one thing on that copy.
+#
+# It copies the TREES and never a list of names - see build_corpus below for the
+# measurement that forced that.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 set -uo pipefail
@@ -24,16 +27,23 @@ REFS="skills/ethical-hacker-squad/references"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-vocab-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
-# build_corpus <dir> — the files this gate reads, copied from the real tree
+# build_corpus <dir> — the corpus this gate reads, copied whole from the real tree.
+#
+# It copies the TREES, never a list of file names. A first version enumerated the
+# eight files the gate reads today, and that list is a hardcoded literal tracking
+# a file set that changes on its own: the moment `remediation.md` was split into
+# `remediation.md` + `remediation-verification.md` on another branch, the gate
+# asked for a file the battery did not copy and every case came back "could not
+# measure" - 3 ok, 9 failures, on a tree where nothing was actually wrong. Caught
+# by merging every open branch together and running the suite on the result.
+#
+# The same defect class this repository has now fixed three times. Copying the
+# trees costs a few hundred KiB per case in a temporary directory and cannot rot.
 build_corpus() {
-  local d="$1" f
-  for f in "$REFS/vocabulary.md" "$REFS/team.md" "$REFS/report.md" \
-           "$REFS/traceability.md" "$REFS/bibliography.md" "$REFS/tooling.md" \
-           "$REFS/knowledge/remediation.md" "agents/ehs-verifier.md"; do
-    [ -f "$ROOT/$f" ] || continue
-    mkdir -p "$d/$(dirname "$f")"
-    cp "$ROOT/$f" "$d/$f"
-  done
+  local d="$1"
+  mkdir -p "$d/skills/ethical-hacker-squad" "$d/agents"
+  cp -R "$ROOT/skills/ethical-hacker-squad/references" "$d/skills/ethical-hacker-squad/references"
+  cp -R "$ROOT/agents/." "$d/agents/"
 }
 
 run_case() {  # <name> <expected rc> <needle> <mutation>
