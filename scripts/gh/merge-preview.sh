@@ -61,6 +61,7 @@ BASE="origin/main"
 LIST_ONLY=0
 UNION=0
 SKIP_GATES="gate-tree-delta.sh"
+SKIP_WHY="its delta over a combined merge is a number nobody ships"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -73,6 +74,16 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
+
+# gate-actions-lint.sh delegates `run:` analysis to shellcheck and returns 2
+# without it - which is correct, and would turn every local preview into "could
+# not measure" for a reason that has nothing to do with the combination. CI runs
+# it in its own job with the tool installed. Here it is skipped ONLY when the
+# tool is genuinely absent, and the reason is printed either way.
+if ! command -v shellcheck >/dev/null 2>&1; then
+  SKIP_GATES="$SKIP_GATES gate-actions-lint.sh"
+  SKIP_WHY="$SKIP_WHY; gate-actions-lint.sh because shellcheck is not installed here - install it for a local green that means what CI's means"
+fi
 
 command -v git >/dev/null 2>&1 || { echo "COULD NOT MEASURE: git is missing" >&2; exit 2; }
 git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || { echo "COULD NOT MEASURE: $ROOT is not a git work tree" >&2; exit 2; }
@@ -88,7 +99,8 @@ fi
 
 printf '\n=== merge preview: %s + %d branch(es) ===\n' "$BASE" "${#BRANCHES[@]}"
 printf 'ORDER     : %s\n' "${BRANCHES[*]}"
-printf 'SKIPPED   : %s (its delta over a combined merge is a number nobody ships)\n' "$SKIP_GATES"
+printf 'SKIPPED   : %s\n' "$SKIP_GATES"
+printf 'WHY       : %s\n' "$SKIP_WHY"
 
 if [ "$LIST_ONLY" -eq 1 ]; then exit 0; fi
 
@@ -162,7 +174,9 @@ fi
 
 printf '\n== gates over the merged tree\n'
 gates_rc=0
-( cd "$WT/tree" && EHS_BASE_REF="$BASE" ./scripts/gates/run-all.sh --skip "$SKIP_GATES" ) \
+skip_args=()
+for g in $SKIP_GATES; do skip_args+=(--skip "$g"); done
+( cd "$WT/tree" && EHS_BASE_REF="$BASE" ./scripts/gates/run-all.sh "${skip_args[@]}" ) \
   > "$WT/gates.log" 2>&1 || gates_rc=$?
 grep -E '^(OK|FAIL|UNMEASURABLE|discovered)' "$WT/gates.log" | sed 's/^/  /' | tail -40
 case "$gates_rc" in
