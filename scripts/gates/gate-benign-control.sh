@@ -44,7 +44,7 @@
 #   0 = I MEASURED and it conforms
 #   1 = I MEASURED and it FAILS (rule absent, gutted, duplicated, unwired, or a
 #       malformed region in a file I could read)
-#   2 = I COULD NOT MEASURE (missing tool, missing or unreadable remediation.md
+#   2 = I COULD NOT MEASURE (missing tool, missing or unreadable remediation-verification.md
 #       or vocabulary.md, no `verification` dimension to validate terms against)
 #
 # ENVIRONMENT VARIABLES
@@ -122,7 +122,7 @@ fi
 
 REFS="skills/ethical-hacker-squad/references"
 KDIR_REL="$REFS/knowledge"
-REM_REL="$KDIR_REL/remediation.md"
+REM_REL="$KDIR_REL/remediation-verification.md"
 VOCAB_REL="$REFS/vocabulary.md"
 REM="$ROOT/$REM_REL"
 VOCAB="$ROOT/$VOCAB_REL"

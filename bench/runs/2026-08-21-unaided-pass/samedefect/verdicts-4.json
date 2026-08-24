@@ -1,0 +1,44 @@
+{
+  "matches": [
+    {
+      "left": "L01",
+      "right": "R05",
+      "why": "Same line, same mechanism: readTimestamp does `new Date(in.readLong()*1000)` with no range check, so the peer-controlled seconds value silently wraps in long arithmetic and yields an attacker-chosen bogus instant."
+    },
+    {
+      "left": "L02",
+      "right": "R02",
+      "why": "Both are the missing depth limit on the readFieldValue -> readTable/readArray cycle (case 'F' line 181 / case 'A' line 184): unbounded mutual recursion, StackOverflowError from a payload that fits inside the default frame max."
+    },
+    {
+      "left": "L03",
+      "right": "R08",
+      "why": "Both are the first-wins duplicate-key rule `if(!table.containsKey(name)) table.put(name, value)` in readTable, framed as a parser differential / header shadowing against the broker and non-Java clients. R08 additionally folds in the lenient UTF-8 decoding, but its title, lead impact and lead evidence are the duplicate-key drop, which is exactly L03."
+    },
+    {
+      "left": "L04",
+      "right": "R07",
+      "why": "Same defect in readBytes: the 32-bit length prefix sizes and allocates the byte[] before any payload is read, and the only guard (contentLength < Integer.MAX_VALUE) still admits 0x7FFFFFFE, so 5 wire bytes force a ~2 GiB allocation, reachable pre-auth via the connection.start server-properties table."
+    },
+    {
+      "left": "L06",
+      "right": "R06",
+      "why": "Same defect: `if (tableLength == 0) return Collections.emptyMap();` versus the mutable HashMap on every other path, letting the remote peer choose the map type and select an UnsupportedOperationException path in consumer code."
+    },
+    {
+      "left": "L07",
+      "right": "R04",
+      "why": "Same defect: both readTable and readArray loops are driven by `available() > 0` with no check that the declared tableLength/length was consumed exactly, giving silent truncation, missing headers and leftover bytes that desynchronize the parse; both call out the public constructor accepting a socket-backed stream."
+    }
+  ],
+  "unmatched_left": [
+    "L05",
+    "L08"
+  ],
+  "unmatched_right": [
+    "R01",
+    "R03",
+    "R09"
+  ],
+  "hardest_call": "L08 (lenient UTF-8 in readShortstr) versus R08. R08 is a compound finding that covers both the first-wins duplicate rule and the lenient `new String(b, \"utf-8\")` decoding, so it could plausibly have been paired with either L03 or L08 — but each item may be matched only once. I gave it to L03 because R08's title, primary impact and primary evidence are the duplicate-key drop, with the UTF-8 leniency described as something that 'compounds it'; on the left side the two are deliberately separate findings (L08 itself cross-references the duplicate rule as F-004), so L08 — a distinct mechanism, malformed bytes collapsing to U+FFFD so different wire bytes collide on one String key — is left unmatched rather than double-booked. Secondary calls: L05 (gpg short key ID selecting the signing key) and R09 (codegen executing over an unpinned, un-checksummed external spec plus no dependency integrity gate) are both pom.xml supply-chain items but different mechanisms on different lines, so not the same defect; R01 (no cap on entry/element count, object-graph amplification) explicitly distinguishes itself from the 2 GiB single-allocation path, and R03 is about the exception type (UnsupportedOperationException/OOM instead of MalformedFrameException) rather than the missing bound, so neither collapses into L04/R07."
+}

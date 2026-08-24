@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory contains CI/CD workflows (`.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`), several deployment environments, a Terraform state backend or a secret manager, or a live host or cluster named in scope.
 > **Do not load it if:** the work is confined to infrastructure as code, container images or Kubernetes manifests — those are `infra-cloud.md` §1-§3.
-> **Cost:** ~151 lines. Load by section using the index. The other half of the pack, `infra-cloud.md`, holds §1-§3 and `INF-01`..`INF-12`.
+> **Cost:** ~151 lines. Load by section using the index. The rest of the pack: `infra-cloud.md` holds §1-§3 and `INF-01`..`INF-12`; `infra-cloud-cicd-platforms.md` holds §7 and `INF-19`..`INF-23`, the same classes on GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |

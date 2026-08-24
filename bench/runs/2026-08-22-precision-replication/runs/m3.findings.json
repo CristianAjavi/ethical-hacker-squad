@@ -1,0 +1,89 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Remote Code Execution via Unvalidated Shell Execution",
+      "file": "agent/answer.py",
+      "line": 48,
+      "severity": "CRITICAL",
+      "impact": "An attacker can prompt the LLM to generate arbitrary shell commands that execute on the host system with the privileges of the application process. This could lead to complete system compromise.",
+      "evidence": {
+        "snippet": "subprocess.run(model_output, shell=True, capture_output=True, text=True).stdout",
+        "context": "Function summarize_and_run() executes arbitrary model output as shell commands without validation",
+        "dangerous_pattern": "shell=True with untrusted input"
+      },
+      "recommendation": "1) Remove shell=True and use a whitelist of allowed commands. 2) Implement strict input validation. 3) Consider using subprocess.run() with args as a list instead of string. 4) Use a sandboxed execution environment (container/VM). 5) Never pass unvalidated LLM output to shell execution."
+    },
+    {
+      "id": "F-002",
+      "title": "Hardcoded API Credentials in Configuration File",
+      "file": "config/mcp.json",
+      "line": 6,
+      "severity": "CRITICAL",
+      "impact": "If this config file is committed to version control, leaked, or accessible to unauthorized users, the hardcoded API key can be used to access the billing system directly. This allows unauthorized billing operations, data theft, and potential fraud.",
+      "evidence": {
+        "credential": "sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a",
+        "context": "Billing MCP server environment variable contains API key in plaintext config",
+        "exposed_key_format": "starts with 'sk-' pattern typical of API secrets"
+      },
+      "recommendation": "1) Rotate/revoke the exposed credential immediately. 2) Use environment variables or secrets management (AWS Secrets Manager, HashiCorp Vault, .env files with .gitignore). 3) Implement code scanning to detect hardcoded secrets. 4) Add pre-commit hooks to prevent credential commits. 5) Audit all logs for use of this key."
+    },
+    {
+      "id": "F-003",
+      "title": "Unvalidated Dependency Version (npm @latest)",
+      "file": "config/mcp.json",
+      "line": 5,
+      "severity": "HIGH",
+      "impact": "If a malicious version of @acme/billing-mcp is published, it will be automatically downloaded and executed. The package is loaded with -y (skip confirmation) and receives the billing API key as an environment variable. A compromised package could steal credentials or intercept billing transactions.",
+      "evidence": {
+        "dependency": "@acme/billing-mcp@latest",
+        "issue": "Using @latest tag without version pinning",
+        "risk": "Automatic updates to any new version including malicious ones"
+      },
+      "recommendation": "1) Pin to a specific version (e.g., @acme/billing-mcp@1.2.3). 2) Use package-lock.json to lock transitive dependencies. 3) Implement package verification (checksums, signatures). 4) Use software composition analysis (SCA) tools to detect supply chain risks. 5) Consider private/vendored packages for critical dependencies."
+    },
+    {
+      "id": "F-004",
+      "title": "Unvalidated Data Persistence from LLM Output",
+      "file": "agent/memory.py",
+      "line": 13,
+      "severity": "MEDIUM",
+      "impact": "The LLM can inject arbitrary content into the persistent memory store. This could be used to: 1) Store malicious payloads for later execution, 2) Corrupt the memory structure, 3) Store command injection payloads, 4) Persist sensitive data unintentionally.",
+      "evidence": {
+        "snippet": "data.setdefault('notes', []).append(reply)",
+        "function": "remember_from_reply()",
+        "issue": "Model output is directly appended without validation"
+      },
+      "recommendation": "1) Validate the content of 'reply' before storing (length limits, character restrictions). 2) Use a schema validator (e.g., Pydantic) for memory structure. 3) Implement access controls on memory reads/writes. 4) Log all memory modifications for audit. 5) Consider a dedicated database with proper validation."
+    },
+    {
+      "id": "F-005",
+      "title": "Missing Authorization Check in Tool Execution",
+      "file": "agent/answer.py",
+      "line": 29,
+      "severity": "HIGH",
+      "impact": "The run_tool() function allows the LLM to issue refunds to any customer account without verifying if the requesting user has permission to do so. An attacker could prompt the LLM to issue refunds to arbitrary accounts, including their own (fraudulent refund) or other accounts (denial of service). The code includes a run_tool_scoped() variant that properly checks authentication, but run_tool() is vulnerable.",
+      "evidence": {
+        "function": "run_tool()",
+        "issue": "Model can trigger refund operations on any account without authorization",
+        "snippet": "if decision['tool'] == 'refund': return issue_refund(decision['account_id'], decision['amount'])"
+      },
+      "recommendation": "1) Always require authorization checks before sensitive operations. 2) Use run_tool_scoped() pattern exclusively - never expose unscoped operations. 3) Implement role-based access control (RBAC) with specific grants per user. 4) Audit all tool invocations and refund operations. 5) Consider requiring manual approval for refunds above a threshold."
+    },
+    {
+      "id": "F-006",
+      "title": "Insufficient Input Validation in Model Output Handler",
+      "file": "agent/answer.py",
+      "line": 54,
+      "severity": "MEDIUM",
+      "impact": "While the 'op' field has a whitelist, the 'value' field and any additional keys in the dictionary are not validated. The LLM could inject: 1) Large values that overflow storage, 2) Non-numeric values causing type errors, 3) Additional fields that could affect downstream processing, 4) Structured payloads exploiting downstream consumers.",
+      "evidence": {
+        "function": "summarize_and_render()",
+        "validation": "Only 'op' field is checked against whitelist",
+        "issue": "Other fields (value, additional keys) are not validated",
+        "snippet": "allowed = {'total', 'count', 'average'}; if model_output.get('op') not in allowed"
+      },
+      "recommendation": "1) Define a strict schema for model_output (e.g., {'op': str, 'value': int/float}). 2) Validate both op and value against expected types and ranges. 3) Reject unknown keys (fail closed). 4) Use Pydantic or similar for schema validation. 5) Set limits on numeric values (min/max ranges)."
+    }
+  ]
+}

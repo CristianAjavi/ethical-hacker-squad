@@ -1,0 +1,461 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "extern3/new-api/target - Go API gateway slice: common/init.go (process initialisation), constant/env.go (environment configuration), router/api-router.go (HTTP route table). The middleware/ directory exists in the tree and is empty.",
+    "commit": "no VCS metadata in the target tree; sha256 of the concatenated audited files sorted by path = bb0a7b63ab50a03581d48863b39b9b73820ea3b11d269247a8646bbc96858523 (common/init.go a64e3dbd..., constant/env.go 9f9c0aca..., router/api-router.go 861f4ea2...)",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad, corpus snapshot at extern3/corpus (coverage.md routing, triage.md FP-01..FP-10, findings-artifact.md contract)",
+    "coverage_declaration": "Exercised, by coverage.md routing on the observed inventory (HTTP routes/controllers/middleware registration; environment and secret configuration; a runtime-created directory): web-api.md SS0-SS4 (WEB-01..WEB-10), web-api-clientside-logic.md SS7-SS9, SS11 (WEB-15, WEB-16, WEB-18, WEB-19, WEB-22, WEB-23) and local-app.md SS4 (LOC-08). Not exercised, and not to be read as clean: every controller body, every middleware body (UserAuth, AdminAuth, RootAuth, SecureVerificationRequired, CORS, TokenAuthReadOnly, TurnstileCheck, all rate limiters, BodyStorageCleanup) - the middleware/ directory in the target tree is empty, so no authentication, authorization, CSRF, CORS or rate-limit control could be read, only its registration; the relay/, model/ and controller/ packages that would hold the readers of every configured limit; the declaration of SessionSecret, CryptoSecret, SQLitePath, Version and the GetEnvOrDefault* helpers (common/constants.go and common/utils.go were not provided); the web/dashboard router, the relay router and any router other than SetApiRouter; the frontend. No dependency manifest, lockfile, container or CI definition and no VCS history was included, so supply-chain (SUP-*), secret-history (supply-chain-secrets-malware.md SS8) and infrastructure (INF-*) surfaces were not exercised at all. Injection (WEB-07..WEB-09), BOLA (WEB-04), deserialization (WEB-11) and file handling (WEB-12) have no sink inside the audited files and could not be assessed for the application. No AI-safety procedure applied: no model call, prompt assembly, tool definition, MCP configuration or retrieval pipeline appears in this slice, only two provider-safety configuration defaults reported ad-hoc below.",
+    "authorization": "Read-only static audit of an authorized local copy. No network access, no execution of the target, no remote or active test was run; every finding below is source-level. Nothing in this artifact required an active-test authorization reference."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Request-body size limit is configured and documented but has no enforcement point in the audited scope",
+      "procedure": "WEB-23",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 138,
+        "component": "constant.MaxRequestBodyMB / MAX_REQUEST_BODY_MB"
+      },
+      "evidence": "constant/env.go:12 declares `var MaxRequestBodyMB int`. common/init.go:137-138 assigns it from the environment with a comment stating its purpose - a maximum decompressed request-body size, to stop oversized requests and zip bombs from exhausting memory - and a default of 128: `constant.MaxRequestBodyMB = GetEnvOrDefault(\"MAX_REQUEST_BODY_MB\", 128)`. A symbol search over the whole provided tree returns three hits and no reader: `grep -rn MaxRequestBodyMB .` -> constant/env.go:12 (declaration), common/init.go:137 (comment), common/init.go:138 (assignment). The layer that would normally carry such a cap is in scope and shows nothing: router/api-router.go:16-19 registers the complete middleware chain for the /api group - RouteTag, gzip.Gzip, BodyStorageCleanup, GlobalAPIRateLimit - and none of them is a body-size limiter; no http.MaxBytesReader, no reassignment of c.Request.Body and no MaxMultipartMemory setting appears anywhere in the audited files. The same group carries request-body-storing middleware (BodyStorageCleanup, router/api-router.go:18) and unauthenticated POST endpoints that accept a body: /api/setup (line 22), /api/stripe/webhook (56), /api/creem/webhook (57), /api/waffo/webhook (58), /api/waffo-pancake/webhook/:env (61), /api/user/epay/notify (75), /api/subscription/epay/notify (179).",
+      "impact": "An unauthenticated client can POST arbitrarily large bodies to a payment-webhook or setup endpoint. The configured ceiling never applies, so the only bound is what the process can allocate; with the body-storage middleware on the same chain the data is retained rather than streamed away. Concurrent large requests exhaust process memory and take the gateway down for every user of the service. The knob makes the situation worse than a plain omission: an operator who reads the deployment documentation, sets MAX_REQUEST_BODY_MB and sees the option accepted believes a limit is in force when nothing reads it.",
+      "preconditions": "Network reach to any /api route; no credential is needed because the unauthenticated webhook and setup endpoints accept a POST body. No ingress or proxy body cap in front of the service.",
+      "recommendation": "Enforce the value where the body is first touched, not at the call sites: register a middleware on the /api group (and on the relay group) that wraps c.Request.Body in http.MaxBytesReader with constant.MaxRequestBodyMB<<20 and returns 413 on overflow, before BodyStorageCleanup can retain anything, and set engine.MaxMultipartMemory from the same constant. Then add a test that a body one byte over the limit is rejected, so the constant can never again be configurable without being read. As a structural fix, make every bound-declaring constant unreadable by accident - a typed accessor with a single call site, or a start-up assertion that each configured limit has a registered enforcer.",
+      "verification": "not executed",
+      "inference": "That no reader exists at all. What was observed is that no reader exists in the three files provided and that the /api middleware chain, which is fully visible, contains no limiter; a reader could still live in the middleware/, relay/ or controller/ packages, which were not provided (the middleware/ directory in the target tree is empty).",
+      "traceability": ["CWE-400", "CWE-770", "CWE-1188", "A04:2025", "A05:2025", "ASVS 5.0 V11", "NIST 800-53 SC"],
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Two exculpations live outside the repository slice and neither artifact arrived: (a) a reader in middleware/, relay/ or controller/ - the middleware/ directory in the target tree is empty, so this could not be settled; (b) a body cap in front of the service (ingress proxy-body-size, API gateway, WAF) - no deployment manifest, ingress definition or written statement was provided. Per FP-08 the absence of that evidence is UNKNOWN, never HOLDS, which is why this finding is reported as probable and not confirmed."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it looks like: a plain package-level int assigned from GetEnvOrDefault, consumed by symbol and not by name. There is no struct-tag binding, viper unmarshal, reflection, code generation or template that would make a symbol search blind here - constant/env.go is a flat list of bare `var` declarations, so a symbol search is a complete search over this package."
+        }
+      ],
+      "limits": "Availability only. Nothing here establishes disclosure, integrity loss or code execution, and a crashed process restarts. It does not establish the reachable body size (that depends on the deployment's front layer), nor whether the relay path applies a different bound of its own. It is not a claim that the other seventeen bound-declaring constants are unenforced: those are recorded under ruled_out as inconclusive, because unlike this one their enforcement layer was not in scope."
+    },
+    {
+      "id": "F-002",
+      "title": "Step-up re-verification is registered on exactly one route while eight sibling account-critical routes have none",
+      "procedure": "WEB-03",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 235,
+        "component": "middleware.SecureVerificationRequired"
+      },
+      "evidence": "The codebase ships a step-up primitive and a universal verification endpoint: router/api-router.go:64 `apiRouter.POST(\"/verify\", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)` and router/api-router.go:235 `channelRoute.POST(\"/:id/key\", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)`. `SecureVerificationRequired` appears exactly once in the file. The following routes change or disclose account-security state behind an ordinary session and carry no step-up: line 86 `selfRoute.DELETE(\"/self\", controller.DeleteSelf)`; line 114 `selfRoute.POST(\"/2fa/disable\", controller.Disable2FA)`; line 115 `selfRoute.POST(\"/2fa/backup_codes\", controller.RegenerateBackupCodes)`; line 93 `selfRoute.DELETE(\"/passkey\", controller.PasskeyDelete)`; line 87 `selfRoute.GET(\"/token\", controller.GenerateAccessToken)`; line 276 `tokenRoute.POST(\"/:id/key\", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKey)`; line 281 `tokenRoute.POST(\"/batch/keys\", ...)`; line 107 `selfRoute.POST(\"/aff_transfer\", controller.TransferAffQuota)`. Lines 114 and 115 additionally carry no rate limiter at all, while the login-side sibling at line 70 (`/login/2fa`) carries CriticalRateLimit.",
+      "impact": "Anyone holding a live session - stolen cookie, a browser left open, an XSS on the dashboard, or an operator-side session hijack - converts it in one request into durable, session-independent access: read the account's API keys in cleartext (/api/token/:id/key, /api/token/batch/keys), mint a fresh access token (/api/user/token), then remove the second factor (/api/user/2fa/disable) and the passkeys, which also removes the recovery signal the victim would have used to notice. The gateway's own design says these operations deserve re-verification: it built SecureVerificationRequired and a /api/verify endpoint for exactly this and wired them to one route only.",
+      "preconditions": "A valid user session for the victim account (any session-theft primitive). For /api/channel/:id/key the design already requires root plus re-verification, so the gap is on the user-scoped side.",
+      "recommendation": "Make step-up a property of the operation, not of a route: define the set of security-critical operations (credential disclosure, credential minting, MFA and passkey removal, account deletion, balance transfer) and require middleware.SecureVerificationRequired on all of them, plus CriticalRateLimit on the 2FA routes that have none. Enforce it structurally - a table of protected paths asserted in a test, so a route added later inherits the requirement instead of silently missing it - rather than by adding the middleware eight times by hand.",
+      "verification": "not executed",
+      "inference": "That the handlers do not implement their own re-verification. The route registrations are observed in full; whether controller.Disable2FA, controller.GetTokenKey and their siblings demand a password, TOTP code or recent-auth check internally could not be read, because the controller package was not provided.",
+      "traceability": ["CWE-620", "CWE-862", "CWE-522", "WSTG-ATHN-*", "ASVS 5.0 V6", "A07:2025", "API5:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The compensating control would be an in-handler re-authentication check, which is a layer that cannot be skipped and would exculpate. It could not be established: the controller/ package is outside the provided scope. The asymmetry is evidence against it - if the check lived in the handlers, SecureVerificationRequired on /api/channel/:id/key would be redundant - but that is an argument, not the artifact FP-01 requires, so the answer is UNKNOWN and the finding is capped at probable."
+        }
+      ],
+      "limits": "This establishes what the route table requires, not what the handlers require. It does not establish that a session can in fact be stolen - no XSS, cookie-attribute or CSRF weakness was demonstrated here, and the session middleware was not readable. It says nothing about whether the step-up primitive itself is correctly implemented; SecureVerificationRequired was never read."
+    },
+    {
+      "id": "F-003",
+      "title": "SESSION_SECRET default-value guard is skipped entirely when the variable is unset",
+      "procedure": "WEB-19",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 49,
+        "component": "InitEnv - SESSION_SECRET"
+      },
+      "evidence": "common/init.go:49-58 - `if os.Getenv(\"SESSION_SECRET\") != \"\" { ss := os.Getenv(\"SESSION_SECRET\"); if ss == \"random_string\" { log.Fatal(...) } else { SessionSecret = ss } }`. The refusal to start on the known placeholder value fires only inside the branch where the variable is set. The outer conditional has no else branch, so an operator who never sets SESSION_SECRET produces no warning and no fatal, and SessionSecret keeps whatever value its declaration gives it - a declaration that is not in the audited files. The guard therefore protects against the operator who copies the sample value and not against the operator who copies nothing, which is the larger population and the one the check was written for.",
+      "impact": "If the package-level default is a compile-time constant, every deployment that does not set the variable shares one session-signing secret that is readable in the public source, so an attacker forges session material for any such instance. The same value also becomes the encryption secret by way of the CRYPTO_SECRET fallback on line 62 (see F-004), extending the consequence from session forgery to whatever CryptoSecret protects. The failure mode is silent by construction: the deployment that is most exposed is the one that produced no log line at all.",
+      "preconditions": "SESSION_SECRET left unset at start-up, and a package-level default that is a fixed constant rather than a per-process random value.",
+      "recommendation": "Invert the guard so absence fails the same way a placeholder does: require the variable, refuse to start when it is unset or shorter than a minimum length, and treat the known placeholder as one case of an invalid value rather than as the only case checked. If a zero-configuration start must keep working, generate a random secret per installation, persist it outside the source tree, and log that it was generated. Cover both paths with a start-up test - unset and placeholder - so the branch cannot regress.",
+      "verification": "not executed",
+      "inference": "The value SessionSecret holds when the variable is unset. Its declaration lives outside the audited files (the common package's constants file was not provided), so whether the fallback is a shipped constant, an empty string or a per-process random value was not observed. The control-flow defect - the check being reachable only when the variable is set - is observed directly.",
+      "traceability": ["CWE-1188", "CWE-798", "CWE-453", "WSTG-CRYP-*", "ASVS 5.0 V11", "A04:2025", "A02:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A start-up validation elsewhere - in the main package, in a database bootstrap, or at the point the secret is first used - would be a layer that cannot be skipped and would exculpate. Neither main.go nor the common package's remaining files were provided, so this could not be settled and the finding is capped at probable."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a debug-only or test path. InitEnv is the process's production configuration entry point: it is the same function that parses the port flag, prints the version and exits, and initialises every runtime constant, so the branch ships and executes on every start."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The reading is one step: the fatal is nested inside `if os.Getenv(\"SESSION_SECRET\") != \"\"`, so the unset case cannot reach it. There is no earlier assignment, no init() in the audited files and no shadowing that would make the construct mean something else."
+        }
+      ],
+      "limits": "Does not establish what the unset default actually is, and therefore does not establish exploitability - only that the guard written to prevent a weak secret cannot see the commonest way to get one. Says nothing about how the secret is used once set: the signing and encryption call sites were not in scope."
+    },
+    {
+      "id": "F-004",
+      "title": "Encryption secret silently falls back to the session-signing secret",
+      "procedure": "WEB-19",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 62,
+        "component": "InitEnv - CRYPTO_SECRET"
+      },
+      "evidence": "common/init.go:59-63 - `if os.Getenv(\"CRYPTO_SECRET\") != \"\" { CryptoSecret = os.Getenv(\"CRYPTO_SECRET\") } else { CryptoSecret = SessionSecret }`. Two distinct cryptographic purposes - session signing and data encryption, kept as two separate variables and two separate environment variables - collapse onto one value in the default configuration. No warning is emitted when the fallback is taken.",
+      "impact": "Key separation is lost for every deployment that sets only one of the two variables, which is the default path. One disclosure then compromises both purposes: a session secret that leaks through a shared cache, a process listing, a crash dump or a configuration backup also decrypts whatever CryptoSecret protects, and rotating one without the other silently changes the other. It also makes rotation hazardous - changing SESSION_SECRET to invalidate sessions changes the encryption key underneath any data already encrypted with it.",
+      "preconditions": "CRYPTO_SECRET left unset, which is the documented default behaviour of this branch.",
+      "recommendation": "Derive rather than alias: if a single operator-supplied secret must seed both, run it through a KDF with a distinct, fixed info/label per purpose (HKDF-Expand with \"session\" and \"crypto\") so the two keys are independent and neither can be recovered from the other. Log when a derived key is used, and refuse to start if the deployment already holds data encrypted under a previous secret and only one of the two variables changed.",
+      "verification": "not executed",
+      "inference": "What CryptoSecret protects. The assignment is observed directly; the encryption call sites - plausibly stored upstream channel keys, OAuth credentials or 2FA seeds, given the routes at router/api-router.go:235 and 111-115 - are outside the audited scope, so the severity of a shared-key compromise could not be measured.",
+      "traceability": ["CWE-323", "CWE-1188", "CWE-522", "WSTG-CRYP-*", "ASVS 5.0 V11", "A04:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer downstream can restore key separation that was never created: whatever consumes CryptoSecret receives the same bytes as the session signer. A per-use KDF at the call site would exculpate, but that would have to be applied to the value read here, and no such derivation appears in the audited files."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The fallback is the shipped default path in the production initialisation function, not a development branch, and it is the path taken whenever the operator sets only SESSION_SECRET."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A direct assignment between two package variables, one step to read. It is not a placeholder, an alias awaiting later overwrite, or a value re-derived downstream inside the audited files."
+        }
+      ],
+      "limits": "No demonstration that either secret leaks; this reports a lost defensive property, not an exploited one. Severity is deliberately low for that reason and would rise if the encryption call sites showed high-value material under a key the session layer also holds."
+    },
+    {
+      "id": "F-005",
+      "title": "TLS certificate verification toggle disables verification for the whole process, not for the relay it names",
+      "procedure": "WEB-19",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 86,
+        "component": "TLS_INSECURE_SKIP_VERIFY - http.DefaultTransport"
+      },
+      "evidence": "common/init.go:86-95 - when TLS_INSECURE_SKIP_VERIFY is true the code reaches into the process-wide client, `http.DefaultTransport.(*http.Transport)`, and either sets `tr.TLSClientConfig.InsecureSkipVerify = true` in place or assigns the shared InsecureTLSConfig to it. The default is false (GetEnvOrDefaultBool(..., false)), so this is opt-in; what is not bounded is its reach. Every outbound client in the process that has not been given its own transport now skips certificate validation, and the route table shows what else makes outbound calls: OAuth and OIDC (router/api-router.go:53, 204), payment providers (56-58, 61, 97-106), upstream ratio and model fetches (225, 249-250), Ollama pulls (257-259) and deployment connection tests (379, 382). Mutating the shared TLSClientConfig in place rather than cloning it also propagates to any client that already holds a reference to it.",
+      "impact": "An operator who enables the flag for one self-signed upstream also disables certificate validation on the OIDC discovery fetch that establishes who a user is, and on the payment-provider calls that decide what a user has paid. An attacker positioned on any of those paths presents any certificate and the gateway accepts it - identity assertions and payment confirmations become forgeable, from a setting whose name refers to the relay. The blast radius is invisible at the point of decision: nothing in the option's name or in the log tells the operator which other clients they just changed.",
+      "preconditions": "TLS_INSECURE_SKIP_VERIFY set to true by the operator (off by default), plus a network position on one of the affected paths.",
+      "recommendation": "Scope the relaxation to the client that needs it: build a dedicated *http.Transport for the upstream in question and leave http.DefaultTransport untouched, so no other subsystem inherits the change. Better, replace the blanket toggle with per-upstream trust - a custom RootCAs pool holding the self-signed certificate - so certificate validation still happens for the one host that needs it. If a global toggle is kept, clone the TLSClientConfig instead of mutating it in place, log the full list of subsystems it affects at start-up, and refuse to combine it with payment or OIDC providers.",
+      "verification": "not executed",
+      "inference": "That the OAuth, OIDC and payment clients use http.DefaultTransport. The mutation of the shared transport is observed directly; whether each of those subsystems constructs its own transport was not - the controller and oauth packages were not provided. If they all build their own, the reach is smaller than described and the finding drops.",
+      "traceability": ["CWE-295", "CWE-1188", "WSTG-CRYP-*", "ASVS 5.0 V12", "A04:2025", "A02:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no layer that can re-impose certificate validation once the shared transport has been mutated; a client using http.DefaultTransport has no opportunity to opt back in. A subsystem that builds its own transport is not a compensating control, it is simply outside the blast radius, and that possibility is recorded as the named inference instead."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The branch is compiled into the shipped binary and selected at run time from the environment, not removed by the release build. FP-04 requires the path to be absent from what ships; here it is present and one environment variable away, which is why this is reported at low severity rather than closed."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "http.DefaultTransport is the standard library's process-wide default client transport, not a local variable with a similar name, and the type assertion in the code confirms that is what is being modified."
+        }
+      ],
+      "limits": "Off by default, so this is not a claim about a stock deployment. It does not establish that any specific subsystem inherits the change - that is the named inference - nor that a man-in-the-middle position exists on any path. Severity would rise to high on a deployment that sets the flag and whose OIDC client uses the default transport."
+    },
+    {
+      "id": "F-006",
+      "title": "Log directory created world-writable with mode 0777",
+      "procedure": "LOC-08",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 74,
+        "component": "InitEnv - LogDir"
+      },
+      "evidence": "common/init.go:67-79 resolves the --log-dir flag (default ./logs) to an absolute path and, when it does not exist, creates it with `os.Mkdir(*LogDir, 0777)`. 0777 is read, written and traversed by every local principal. The program never calls os.Chmod afterwards and never sets a umask of its own, so the mode it requests is the mode it intends. The directory is not incidental: router/api-router.go:218-219 exposes `performanceRoute.GET(\"/logs\", controller.GetLogFiles)` and `DELETE(\"/logs\", controller.CleanupLogFiles)`, so the application reads that directory back and serves it to a root-authenticated operator.",
+      "impact": "Any other local principal - a second service on the host, a sidecar container sharing the volume, a compromised low-privilege account - reads the gateway's logs and writes into the directory. Reading matters because this is an LLM gateway: its logs carry request and error detail, and DIFY_DEBUG defaults to on (see F-007), so verbose upstream traffic is the default. Writing matters more: the directory feeds an operator-facing log viewer, so an attacker who cannot reach the API can still plant or truncate the file an administrator will read, and can pre-create or replace log files the process later opens.",
+      "preconditions": "A second local principal on the host or in the shared volume - another user account, a co-mounted container, or any process not running as the gateway's user. On a single-tenant container with no other principal the mode is inert.",
+      "recommendation": "Create the directory with 0750 (or 0700 when nothing else must read it) and set the mode explicitly with os.Chmod after creation, because os.Mkdir's mode is masked by the process umask and therefore is not a guarantee in either direction. Use os.MkdirAll so a nested path does not fail, and verify the resulting mode at start-up, refusing to run if the log directory is group- or world-writable.",
+      "verification": "not executed",
+      "inference": "The effective mode on disk. 0777 is the requested mode and is observed directly; the created mode is that value masked by the process umask, so under the common 022 it lands at 0755 - still world-readable, no longer world-writable. The umask of the deployment was not observable, and running the target was out of scope.",
+      "traceability": ["CWE-276", "CWE-732", "CWE-668", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "UNKNOWN",
+          "reason": "The exculpation would be that no second principal exists - a single-process container with its own filesystem, or a per-user directory the platform already restricts. The deployment topology could not be established: no Dockerfile, compose file, Kubernetes manifest or volume definition was included in the target, and the default path is a relative ./logs whose parent's ownership depends entirely on where the binary is run. Per FP-06 that is UNKNOWN, so the finding is capped at probable."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The content is not public: these are the operational logs of a gateway that proxies user prompts and handles payment callbacks, and the application itself treats the directory as sensitive enough to gate its listing behind RootAuth at router/api-router.go:212-219. Write access is the sharper half and is independent of what the content is worth."
+        }
+      ],
+      "limits": "Local-privilege only; nothing here is reachable over the network. It does not establish what the logs actually contain - the logging call sites were not in scope - nor the effective mode after umask. It says nothing about the log files themselves, only the directory."
+    },
+    {
+      "id": "F-007",
+      "title": "Upstream provider content-safety filters are disabled by the shipped defaults",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 110,
+        "component": "GEMINI_SAFETY_SETTING / COHERE_SAFETY_SETTING"
+      },
+      "evidence": "common/init.go:110-111 - `GeminiSafetySetting = GetEnvOrDefaultString(\"GEMINI_SAFETY_SETTING\", \"BLOCK_NONE\")` and `CohereSafetySetting = GetEnvOrDefaultString(\"COHERE_SAFETY_SETTING\", \"NONE\")`. BLOCK_NONE is the Gemini API's value for applying no threshold to a harm category, and NONE is Cohere's off position for its safety mode. An operator who configures nothing gets both providers' content filtering turned off, chosen by the gateway rather than by the provider default. Every neighbouring security-relevant default in the same function is the safe value - TLS_INSECURE_SKIP_VERIFY false (line 86), GENERATE_DEFAULT_TOKEN false (149), ERROR_LOG_ENABLED false (151) - so the two safety settings are the outliers, not the house style. No procedure in the corpus covers content-moderation defaults, hence procedure ad-hoc.",
+      "impact": "The gateway ships with the upstream providers' only content control switched off, silently, for every deployment that does not set the two variables. An abuse actor with an ordinary account obtains model behaviour the provider would otherwise refuse, and the operator - who reasonably assumes provider defaults apply - carries the resulting terms-of-service and legal exposure without ever having made the decision. Because it is a default rather than an option, the population affected is every unconfigured install.",
+      "preconditions": "GEMINI_SAFETY_SETTING and COHERE_SAFETY_SETTING left unset, and a configured Gemini or Cohere channel. Any account able to send a relay request through that channel.",
+      "recommendation": "Default to the provider's own default - omit the safety parameter entirely unless the operator sets it - so that turning filtering off is an explicit, recorded decision rather than the consequence of installing the software. Keep the environment variables for operators who genuinely need BLOCK_NONE, log a start-up warning naming the providers whose filters are disabled, and state the behaviour in the deployment documentation next to the variable.",
+      "verification": "not executed",
+      "inference": "That these values are forwarded into the provider request. The defaults are observed directly; the relay adaptors that would place them in the Gemini safetySettings array and the Cohere safety_mode field are outside the audited scope, so the last link - configuration becoming request payload - was read from the variable names and values rather than from the call site.",
+      "traceability": ["CWE-1188", "A02:2025", "ASVS 5.0 V14"],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "These are the shipped production defaults in the process initialisation function, not a test fixture or a debug branch, and they take effect precisely when nothing is configured."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-05 exculpates an exposure that is intended and bounded. An operator choosing BLOCK_NONE for their own gateway would be exactly that - but this is not the operator's choice, it is what an operator who chose nothing receives, and nothing in the code or the surrounding comments records the decision or bounds it. The environment variables remain the intended, bounded path and are unaffected by the fix."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-10 downgrades a control that is not load-bearing because an equivalent exists elsewhere. No second content control appears anywhere in the audited files - no moderation middleware on the relay group, no moderation constant in constant/env.go - so the provider filter is the only one in the path and its default state is the whole control."
+        }
+      ],
+      "limits": "Not a memory-safety or access-control weakness and it grants no access to any account or data; it is a safe-default defect with abuse and compliance consequences. It does not establish what a given provider does on receiving these values today, nor that any specific request was ever unfiltered. Whether an operator's own moderation layer sits in front of the gateway was not observable."
+    },
+    {
+      "id": "F-008",
+      "title": "Debug flag for an upstream adaptor defaults to enabled",
+      "procedure": "WEB-22",
+      "status": "probable",
+      "severity": "informational",
+      "confidence": "medium",
+      "location": {
+        "path": "common/init.go",
+        "line": 134,
+        "component": "constant.DifyDebug / DIFY_DEBUG"
+      },
+      "evidence": "common/init.go:134 - `constant.DifyDebug = GetEnvOrDefaultBool(\"DIFY_DEBUG\", true)`. It is the only debug-named switch in the file that defaults on; the general one two lines earlier is opt-in, `DebugEnabled = os.Getenv(\"DEBUG\") == \"true\"` (line 82), and the error-log switch is off by default (line 151). The name follows the pattern of an adaptor-level verbosity flag, and the pack's disclosure procedure treats logging of request bodies and upstream traffic as the class to check.",
+      "impact": "Whatever the flag makes verbose is verbose in every unconfigured deployment. On a gateway the material in question is upstream request and response traffic - user prompts and model output - so the plausible consequence is that content lands in the log by default, where it is retained beyond the request, exposed to anyone who reads the log directory (F-006 makes that directory world-readable) and to the root-authenticated log viewer at router/api-router.go:218. The attacker gains nothing directly from the flag itself; it is recorded because it silently changes what a deployment stores.",
+      "preconditions": "DIFY_DEBUG left unset, a configured Dify channel, and read access to the logs for the disclosure half.",
+      "recommendation": "Default the flag to false, matching DEBUG and ERROR_LOG_ENABLED in the same function, so verbosity is a decision rather than an inheritance. Independently, apply a redaction filter to whatever it logs - prompts, responses and any Authorization header - so that enabling it deliberately does not put user content in cleartext on disk.",
+      "verification": "not executed",
+      "inference": "What the flag causes to be logged. The default is observed directly; every reader of constant.DifyDebug is outside the audited scope (a symbol search over the provided tree returns only the declaration at constant/env.go:4 and this assignment), so the content and the destination of the extra output were not read.",
+      "traceability": ["CWE-532", "CWE-200", "WSTG-ERRH-*", "ASVS 5.0 V16", "A09:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A redaction processor in the logger would exculpate the disclosure half. The logging configuration and the Dify adaptor were not provided, so this could not be established and the finding stays probable at informational severity."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The default is true in the shipped initialisation path, so the debug behaviour is present in production unless an operator opts out - the inverse of the arrangement FP-04 describes, where the path is absent from what ships."
+        }
+      ],
+      "limits": "The weakest-evidenced item in this artifact and reported as informational for that reason: the defect observed is a default value, and the impact rests entirely on code that was not in scope. If the flag turns out to gate nothing sensitive, this is noise and should be withdrawn."
+    },
+    {
+      "id": "F-009",
+      "title": "The same handler is registered both behind authentication and without it",
+      "procedure": "WEB-05",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 77,
+        "component": "controller.GetUserGroups"
+      },
+      "evidence": "router/api-router.go:77 registers `userRoute.GET(\"/groups\", controller.GetUserGroups)` on a group that applies no authentication - userRoute (line 66) inherits only the /api chain of RouteTag, gzip, BodyStorageCleanup and GlobalAPIRateLimit (lines 16-19). Five lines later, router/api-router.go:82 registers the identical handler behind authentication: `selfRoute.GET(\"/self/groups\", controller.GetUserGroups)`, where selfRoute carries middleware.UserAuth() (line 80). One handler, two authorization regimes, in the same route group: either the authentication on /api/user/self/groups is unnecessary or its absence on /api/user/groups is an omission, and the route table cannot be right both ways.",
+      "impact": "Two outcomes, and both matter. If the handler resolves the caller's identity from the request context, calling it anonymously exercises a path with no user present - the class of input a handler written for authenticated callers does not expect, which is where nil dereferences and 500s live. If it does not, the gateway's group topology - group names, and on a billing gateway the multipliers attached to them - is served to any unauthenticated client, which is internal pricing and tiering configuration disclosed to anyone who requests the path.",
+      "preconditions": "Network reach to /api/user/groups. No credential.",
+      "recommendation": "Decide which regime is correct and remove the other registration rather than leaving both: if the data is genuinely public, drop the authenticated duplicate and say so in a comment; if it is not, move the route inside selfRoute. Structurally, adopt deny-by-default for this router - a start-up assertion that every registered route resolves to a group carrying an auth middleware, with a short, explicit allowlist for the public ones (/api/status, /api/about, the webhooks) - so an unauthenticated registration has to be declared rather than merely written.",
+      "verification": "not executed",
+      "inference": "What the handler returns to an anonymous caller. The two registrations and their middleware chains are observed in full; controller.GetUserGroups was not provided, so whether it branches on the presence of a user, returns the whole group set, or fails could not be read.",
+      "traceability": ["CWE-862", "CWE-200", "WSTG-ATHZ-*", "ASVS 5.0 V8", "A01:2025", "API5:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The compensating control would be an identity check inside GetUserGroups itself - a layer no caller can skip. The controller package is outside the provided scope, so this could not be settled; the duplicate registration behind UserAuth is an argument against it but not the artifact FP-01 demands. Capped at probable."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed and the second principal is explicit: the route is reachable by an unauthenticated internet client, while the identical handler is otherwise reserved for authenticated users of the gateway."
+        }
+      ],
+      "limits": "This establishes an inconsistency in the route table, not the sensitivity of the data behind it - the group model was not in scope, and if groups carry only public tier names the disclosure half is worth nothing. The severity reflects that. Nothing here is a claim about the other unauthenticated routes in the table, which are individually plausible as public (status, about, notice, pricing, the payment webhooks)."
+    },
+    {
+      "id": "F-010",
+      "title": "Access-token endpoint returns a credential over GET with no cache suppression and no rate limit",
+      "procedure": "WEB-16",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 87,
+        "component": "controller.GenerateAccessToken"
+      },
+      "evidence": "router/api-router.go:87 - `selfRoute.GET(\"/token\", controller.GenerateAccessToken)`, carrying UserAuth from line 80 and nothing else. Every sibling route in this file that hands back a credential carries cache suppression: line 276 `tokenRoute.POST(\"/:id/key\", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKey)`, line 281 `tokenRoute.POST(\"/batch/keys\", middleware.CriticalRateLimit(), middleware.DisableCache(), ...)`, line 235 `channelRoute.POST(\"/:id/key\", ..., middleware.DisableCache(), middleware.SecureVerificationRequired(), ...)`. This one has neither DisableCache nor CriticalRateLimit, and it is the only one of the four reached with GET - a verb that names a safe, cacheable, prefetchable, link-followable operation while the handler name says it produces a token.",
+      "impact": "A credential travels in a response that no header marks as private, so it is eligible for storage by the browser cache, a corporate proxy and any CDN in front of the service - the classic way an authenticated response is later served to, or read by, somebody else. The verb compounds it: a GET is what a browser issues on a plain top-level navigation, which a Lax-SameSite session cookie still accompanies, so a link the victim follows reaches an endpoint that regenerates their access token. The attacker cannot read that cross-origin response, but the victim's existing token stops working, which is a denial of service against the account triggered by a link.",
+      "preconditions": "For the caching half: a shared cache in front of the service and no cache-control header applied elsewhere. For the verb half: a session credential the browser attaches automatically, and a victim who follows a link.",
+      "recommendation": "Move credential issuance to POST and put middleware.DisableCache() and middleware.CriticalRateLimit() on it, matching the three sibling credential routes; a request that mints a secret is not a safe method and must not be cacheable. Then assert the rule instead of repeating it - a test over the route table requiring that every route whose handler returns a credential carries DisableCache and a non-safe verb, so the next such route inherits it.",
+      "verification": "not executed",
+      "inference": "That no cache-control header is applied elsewhere in the chain. The four route registrations and their middleware lists are observed directly; whether middleware.RouteTag or a global handler sets Cache-Control for the whole /api group could not be read, because the middleware/ directory in the target is empty. The existence of a dedicated DisableCache middleware used on exactly three routes is evidence that no global one exists, but it is not the artifact.",
+      "traceability": ["CWE-524", "CWE-525", "CWE-522", "WSTG-SESS-*", "ASVS 5.0 V13", "A02:2025", "API8:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A global no-store header set in an unread middleware would exculpate the caching half, and the middleware/ directory in the target tree is empty so this could not be established. Per FP-08's doctrine, which FP-01 shares, an unverifiable control is UNKNOWN and the finding is capped at probable."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The response body is an access token: a bearer credential for the account, which is the highest-value class of response to leave cacheable. The handler name states it and the three sibling routes that return the same class of value are all marked DisableCache by the same codebase."
+        }
+      ],
+      "limits": "No response headers were observed - the target was not executed and the middleware bodies were not readable - so this rests on the route registrations and on the contrast with three siblings. It does not establish that a shared cache exists in any deployment, nor the session mechanism: whether a cookie accompanies a cross-site GET here depends on the SameSite attribute, which was not readable. CSRF as a class is recorded separately under ruled_out as inconclusive."
+    },
+    {
+      "id": "F-011",
+      "title": "Balance-transfer endpoint is the only value-moving route in its group without a rate limiter",
+      "procedure": "WEB-18",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "router/api-router.go",
+        "line": 107,
+        "component": "controller.TransferAffQuota"
+      },
+      "evidence": "Inside selfRoute (router/api-router.go:79-124) every route that moves value carries middleware.CriticalRateLimit(): /topup (97), /pay (98), /stripe/pay (100), /creem/pay (102), /waffo/pay (104), /waffo-pancake/pay (106). Line 107, `selfRoute.POST(\"/aff_transfer\", controller.TransferAffQuota)`, moves affiliate quota into the account balance and carries none. The same omission covers the quote endpoints beside it - /amount (99), /stripe/amount (101), /waffo/amount (103), /waffo-pancake/amount (105) - and the check-in route at line 119 is limited only by TurnstileCheck. The group-wide GlobalAPIRateLimit (line 19) is the coarse per-caller limit the file itself treats as insufficient for this class, which is why CriticalRateLimit exists and is applied six times in the same block.",
+      "impact": "The transfer is a read-decide-write over a balance - check the affiliate quota, credit the account, debit the quota - and it is the one such route with no throttle in front of it, so an attacker can issue it at full speed. That is the standard shape for exercising a missing transaction or lock into a double credit, and it also removes the ceiling on how many attempts a probe of the transfer logic gets. The quote endpoints beside it are cheaper but unmetered, which is free load on whatever pricing or provider call they make.",
+      "preconditions": "A valid user account with a non-zero affiliate balance. No special role.",
+      "recommendation": "Add middleware.CriticalRateLimit() to /aff_transfer so it matches the six value-moving routes beside it, and to the /amount quote routes at a cheaper tier. The rate limit is the outer bound, not the fix: make the transfer atomic in the data layer - a conditional update guarded on the current quota, or a row lock inside one transaction - so that concurrency cannot double-credit even without a limiter, and cover it with a concurrent-request test.",
+      "verification": "not executed",
+      "inference": "That no limiter or atomicity guard applies inside the handler. The route registrations and the six-versus-one contrast are observed directly; controller.TransferAffQuota was not provided, so whether it opens a transaction, takes a row lock or applies its own throttle could not be read.",
+      "traceability": ["CWE-770", "CWE-799", "CWE-367", "WSTG-BUSL-*", "ASVS 5.0 V2", "A06:2025", "API4:2023"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A database-level guarantee - a conditional atomic update, a unique constraint or a row lock inside TransferAffQuota - would be a control no caller can skip and would exculpate the concurrency half, and an in-handler throttle would exculpate the rest. The controller package is outside the provided scope, so neither could be established, and the finding stays probable."
+        }
+      ],
+      "limits": "Only the absence of a registered limiter is established, not that the transfer is exploitable: no concurrency test was run - the target was not executed - and the handler was not read. Severity is low for that reason. Nothing here establishes the magnitude of a possible over-credit, which depends on business rules that were not in scope."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unenforced declared limits, other than the request-body cap of F-001",
+      "procedure": "WEB-23",
+      "outcome": "inconclusive",
+      "where": "Every bound-declaring constant in the target was listed and its readers counted: StreamingTimeout, MaxFileDownloadMB, StreamScannerMaxBufferMB, NotifyLimitCount, NotificationLimitDurationMinute, TaskQueryLimit, TaskTimeoutMinutes (constant/env.go) and RelayTimeout, RelayIdleConnTimeout, RelayMaxIdleConns, RelayMaxIdleConnsPerHost, SyncFrequency, BatchUpdateInterval (common/init.go:102-107). All have zero readers in the provided tree - but so would a correctly enforced constant, because their enforcement points are the relay, task and HTTP-client packages that were not provided, and no in-scope layer would have carried them. That is what separates them from F-001, where the layer that should hold the cap is fully visible and empty. Settle each by searching its own package; zero readers there is the same finding."
+    },
+    {
+      "class": "Rate limiter configured but never registered",
+      "procedure": "WEB-23",
+      "outcome": "inconclusive",
+      "where": "GlobalWebRateLimitEnable, GlobalWebRateLimitNum and GlobalWebRateLimitDuration are configured at common/init.go:118-120 and no middleware.GlobalWebRateLimit appears on any route in router/api-router.go. This file is the API router only; a web or dashboard router that would register it was not provided. Settle it by grepping the router package as a whole."
+    },
+    {
+      "class": "Rate limiting of search endpoints",
+      "procedure": "WEB-18",
+      "outcome": "refuted",
+      "where": "middleware.SearchRateLimit() is registered on two of the nine /search routes - /api/token/search (line 274) and /api/log/self/search (313) - and omitted from the other seven: /api/user/search (132), /api/channel/search (231), /api/redemption/search (298), /api/vendors/search (353), /api/models/search (367), /api/deployments/search (381), /api/log/search (311). All seven sit behind AdminAuth, and the two that carry the limiter are exactly the two reachable by an ordinary user, so the pattern is a deliberate split rather than an omission. No unauthenticated search route exists in the table. Residual, not reported: the heaviest query in the set, the admin log search, is unthrottled for a compromised admin session."
+    },
+    {
+      "class": "SQL, ORM, OS-command and template injection",
+      "procedure": "WEB-07",
+      "outcome": "inconclusive",
+      "where": "The three audited files contain no query builder, no raw SQL, no shell invocation and no template render - the only string handling is strings.Split/TrimSpace/ToLower over two environment variables at common/init.go:157-181. Every handler body is outside the provided scope, so this establishes nothing about the application; it is a statement about 608 lines, not about the gateway."
+    },
+    {
+      "class": "SSRF and outbound fetch to caller-supplied destinations",
+      "procedure": "WEB-10",
+      "outcome": "inconclusive",
+      "where": "Six route families take a destination from the caller and fetch it server-side: /api/custom-oauth-provider/discovery (line 204, RootAuth), /api/ratio_sync/fetch (225, RootAuth), /api/channel/fetch_models (250, RootAuth) and /api/channel/fetch_models/:id (249, AdminAuth), /api/channel/ollama/pull and /pull/stream (257-258, AdminAuth), /api/deployments/settings/test-connection and /api/deployments/test-connection (379, 382, AdminAuth). All require an administrative role, so the trust boundary crossed is network rather than user. No destination validation is observable - the handlers were not provided - so nothing is concluded. Note the interaction with F-005: if TLS_INSECURE_SKIP_VERIFY is enabled, these are the fetches whose certificate validation it removes."
+    },
+    {
+      "class": "CSRF on state-changing requests",
+      "procedure": "WEB-15",
+      "outcome": "inconclusive",
+      "where": "No CSRF middleware appears anywhere in the router, and several state-changing operations are registered as GET: /api/user/logout (74, no auth), /api/user/token (87), /api/channel/test and /test/:id (236-237), /api/channel/update_balance and /update_balance/:id (238-239), /api/user/epay/notify (76), /api/subscription/epay/notify (180). Whether that matters depends on the session mechanism - a cookie makes it CSRF, an Authorization header does not - and on the SameSite attribute; the auth middleware could not be read because the middleware/ directory in the target is empty. The one instance with independent evidence is reported as F-010."
+    },
+    {
+      "class": "CORS policy on credentialed endpoints",
+      "procedure": "WEB-16",
+      "outcome": "inconclusive",
+      "where": "middleware.CORS() is registered on /api/usage/token (line 285, with TokenAuthReadOnly) and on /api/log/token (320-322, with TokenAuthReadOnly). Whether the policy reflects the Origin header and whether it sets Access-Control-Allow-Credentials could not be read - the middleware body was not provided and the target was not executed. Both routes authenticate by API key rather than by cookie, which narrows but does not close the question if the same middleware also accepts a session."
+    },
+    {
+      "class": "BOLA and tenant scoping on identifier routes",
+      "procedure": "WEB-04",
+      "outcome": "inconclusive",
+      "where": "About thirty routes carry a :id, :provider_id, :binding_type or :container_id parameter (users, channels, tokens, redemptions, vendors, models, deployments, subscriptions, OAuth bindings). The route table shows the role required to reach each and shows nothing about whether the object is scoped to the caller, which is precisely the link this class turns on. Every handler and every model is outside the provided scope. This is the highest-value class left unmeasured by the given scope."
+    },
+    {
+      "class": "Webhook and payment-callback authenticity",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "Seven unauthenticated money-related endpoints are registered with no verification middleware at route level: /api/stripe/webhook, /api/creem/webhook, /api/waffo/webhook, /api/waffo-pancake/webhook/:env (lines 56-61), /api/user/epay/notify on both POST and GET (75-76), and /api/subscription/epay/notify and /return on both verbs (179-182). Signature verification for such callbacks normally lives in the handler, and the in-file comment at lines 59-60 says exactly that for the Pancake route (the handler enforces the env match), which is consistent with the pattern. The handlers were not provided, so nothing is concluded. Settle it by reading each handler for a signature check performed on the raw body before parsing."
+    },
+    {
+      "class": "Unauthenticated setup endpoint",
+      "procedure": "WEB-05",
+      "outcome": "inconclusive",
+      "where": "/api/setup is registered for GET and POST with no auth middleware (router/api-router.go:21-22). A first-run bootstrap of this shape normally self-gates on an already-initialised flag, and that check would live in controller.GetSetup and controller.PostSetup, which were not provided. FP-01 could therefore not be answered and no finding is raised; if the handler does not check, this is the most severe item in the table."
+    },
+    {
+      "class": "Middleware registration order on the /api/log group",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit()) is called at router/api-router.go:320, after eight routes were already registered on the same group at lines 306-313. In gin, Use extends only the routes registered after it, so the two middlewares reach /api/log/token alone and the earlier routes keep the AdminAuth or UserAuth they each carry inline. The effect matches the apparent intent and no route loses a control; the pattern is fragile - a route added between lines 313 and 320 would silently pick up a different chain - but it is not a control gap."
+    },
+    {
+      "class": "Hardcoded credentials in the audited files",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The three files contain no credential literal: every secret is read from the environment (SESSION_SECRET, CRYPTO_SECRET), and the string literals present are flag defaults, environment-variable names, an Azure API version, the help text with two public project URLs, and the placeholder value random_string, which the code exists to reject. No token, key, password or private-key material appears. Bound strictly to these 608 lines - no dependency manifest, lockfile, container definition or VCS history was included, so neither the wider tree nor the commit history was scanned and no statement is made about them."
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/repl/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (audit)",
+    "coverage": {
+      "inventoried": [
+        "config/mcp.json (MCP server configuration with credentials)",
+        "agent/answer.py (LLM-based tool dispatcher and execution)",
+        "agent/memory.py (Persistent memory store)"
+      ],
+      "read": [
+        "config/mcp.json (MCP server configuration with credentials)",
+        "agent/answer.py (LLM-based tool dispatcher and execution)",
+        "agent/memory.py (Persistent memory store)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "hardcoded_api_key_in_config",
+        "command_injection_subprocess_shell",
+        "unscoped_tool_authorization",
+        "model_controlled_memory_persistence"
+      ],
+      "reported": [
+        "hardcoded_api_key_in_config",
+        "command_injection_subprocess_shell",
+        "unscoped_tool_authorization",
+        "model_controlled_memory_persistence"
+      ],
+      "dropped": []
+    },
+    "coverage_declaration": "Inventoried all four files in the target. Examined AI safety procedures AI-01, AI-05, AI-06, AI-13, AI-15, and supply-chain procedure SUP-18. Did not load procedures for: local applications (no CLI tools), mobile (not mobile), infrastructure (no IaC or cloud), web/API (not a web service), privacy-abuse (limited scope for this engagement), or the full depth of web-api-clientside-logic or multi-procedure cross-dependencies. The target is a minimal RAG agent with MCP configuration; procedures for web frameworks, database isolation and multi-tenant systems were not invoked."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API key in MCP server configuration",
+      "procedure": "SUP-18",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "config/mcp.json, line 6",
+      "evidence": "The file contains an MCP server configuration with a literal API key `sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a` in the `env` block for the billing server. The value matches the distinctive format of a provider API key with `sk-acme-` prefix. GitGuardian reports this exact scenario as measured surface (24,008 unique secrets in MCP configurations, 2,117 valid).",
+      "impact": "Any person or automated system reading the file gains direct access to the billing API with the privilege level of that key. MCP servers load this configuration during startup, exposing it to any process with read access to the file.",
+      "preconditions": "The configuration file must be read by a process that runs the MCP server or by an attacker with file system access. Since the scope is an authorized target, the practical impact is internal exposure within the development environment and any system where this configuration is deployed.",
+      "recommendation": "1. Rotate the API key immediately. 2. Extract the API key to an environment variable: replace `\"sk-acme-...\"` with `\"${BILLING_API_KEY}\"` and ensure the variable is set from a secret manager at runtime. 3. Add `config/*.json` to `.gitignore` and remove the file from git history using `git filter-repo` or `bfg`. 4. Scan other configuration files and the git history for similar patterns.",
+      "traceability": "CWE-798, CWE-540, CWE-312, A02:2025, A04:2025, CICD-SEC-6, SSDF PS.1.1, LLM02:2026, ASI03",
+      "triage": {
+        "FP-02": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is not a placeholder, test key, or example format. The `sk-acme-` prefix and entropy of the suffix match a live credential format documented in the supply-chain-secrets-malware pack."
+        },
+        "FP-04": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The file is checked into version control as a primary configuration file in the working tree, not a build artifact or debug-only path."
+        },
+        "FP-07": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The API key grants access to a sensitive external service (billing), making it security-critical, not non-sensitive content."
+        }
+      },
+      "limits": "No confirmation was obtained that the key is currently active by attempting API calls (per SUP-18 guidance, such verification is not performed). The format detection is high-precision; the specific validity of this string to the provider's API remains unverified."
+    },
+    {
+      "id": "F-002",
+      "title": "Code injection via subprocess with shell=True on LLM-controlled output",
+      "procedure": "AI-15",
+      "status": "confirmed",
+      "severity": "critical",
+      "confidence": "high",
+      "location": "agent/answer.py, lines 46-48",
+      "evidence": "The function `summarize_and_run` invokes `subprocess.run(model_output, shell=True, ...)` where `model_output` is a string returned directly from LLM processing with no sanitization. The model output is treated as a shell script to be executed without any parsing, schema validation or sandboxing.",
+      "impact": "An attacker (or an instruction) that reaches the LLM's context can cause arbitrary shell commands to execute on the host system with the privileges of the process running this code. This includes reading credentials, modifying files, exfiltrating data, and lateral movement.",
+      "preconditions": "The `summarize_and_run` function must be called from a code path that processes LLM output. The model must be exposed to attacker-controllable input, either through the customer question or through the RAG retrieval system if untrusted documents are indexed.",
+      "recommendation": "1. Do not use `shell=True`. Use `subprocess.run(model_output.split(), shell=False)` if the output format is guaranteed to be a simple command. 2. Better: validate that the model's response conforms to a strict schema (e.g., a JSON object with named parameters) before execution. 3. Best: run the command in a sandbox with no network and no credentials: a Docker container with `--read-only` filesystem, or a `subprocess.run(..., shell=True, chroot=tempdir)` with no relevant paths mounted. 4. Add a test demonstrating that a canary command (e.g., `echo CANARY`) from the model is blocked before execution.",
+      "traceability": "CWE-94, CWE-78, A05:2025, LLM10:2026, ASI05, ASVS 5.0 V1, ASVS 5.0 V15",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control is present. The model output reaches the sink directly; no sandboxing, parsing or allowlist mediates the call."
+        },
+        "FP-03": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is `subprocess.run(..., shell=True)`, which is dangerous in the form it is called. The `shell=True` flag evaluates the string as a shell script, making it an executable sink."
+        }
+      },
+      "limits": "The finding is based on code path reachability. No execution against a live LLM was performed. The impact assumes the model is exposed to untrusted content; if it is confined to a trusted prompt, the practical risk is lower but the code defect stands."
+    },
+    {
+      "id": "F-003",
+      "title": "Tool authorization decided by untrusted model decision without account scoping",
+      "procedure": "AI-05",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "agent/answer.py, lines 27-33",
+      "evidence": "The `run_tool` function receives a decision object from the model and dispatches directly to either `issue_refund` or `lookup` based on `decision[\"tool\"]`. The `account_id` in the refund case comes directly from the model's decision, not from the authenticated user context. No role-based access control or per-user authorization is performed before the refund is issued.",
+      "impact": "The model can directly cause a refund to any account by including the chosen account ID in its response. A customer's question or a document retrieved in the RAG system can be crafted to cause the model to issue a refund to an attacker-controlled account, or to cause confusion about which customer account is being refunded.",
+      "preconditions": "The agent must be running with access to call the `run_tool` function, and there must be a code path where the model's tool decision is passed to `run_tool` rather than the more restrictive `run_tool_scoped` variant.",
+      "recommendation": "1. Never dispatch to refund or other sensitive tools based on the model's choice of parameters. 2. Always use `run_tool_scoped`, which restricts sensitive operations to the authenticated user's own account. 3. For the refund tool specifically, enforce an explicit human confirmation step before execution, showing the literal account ID and amount. 4. Add a unit test to `run_tool` demonstrating that a well-formed refund request with a different account ID is rejected at authorization, not at parameter validation.",
+      "traceability": "CWE-862, CWE-863, A01:2025, LLM03:2026, ASI02, ASI03, ASVS 5.0 V8",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces authorization in a layer the model cannot skip. The model controls the tool choice and the parameters directly."
+        }
+      },
+      "limits": "The finding describes the dispatcher vulnerability. A second finding (F-004) addresses the related issue of missing privilege degradation when the model ingests external content."
+    },
+    {
+      "id": "F-004",
+      "title": "Persistent memory populated from LLM output without schema or origin validation",
+      "procedure": "AI-13",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": "agent/memory.py, lines 10-14",
+      "evidence": "The function `remember_from_reply` accepts a `reply` string directly from the model and appends it to a `notes` list in persistent storage. There is no origin marking, no schema enforcement, and no validation that the string originated from a trusted source. Any text the model produces—including text retrieved from external documents—is stored as user history and will be re-injected into future sessions.",
+      "impact": "An instruction or malicious content injected into the RAG system will be summarized by the model, stored in memory via `remember_from_reply`, and re-injected into future conversations as if it were the user's own history. This is memory poisoning: a one-time injection produces continuous exfiltration or manipulation across all later sessions.",
+      "preconditions": "The `remember_from_reply` function must be called from a code path that processes external content or LLM output. The memory must be associated with a user or session and retrieved in later interactions. The documents indexed in the RAG system must be controllable by an attacker (or must be assumed to be retrievable from untrusted sources such as customer tickets).",
+      "recommendation": "1. Do not call `remember_from_reply` with arbitrary model output. 2. Replace it with `remember_preference`, which restricts writes to a closed schema of enumerated keys. 3. If free-text memory is required, mark its origin in the metadata (e.g., `{\"text\": reply, \"origin\": \"model_summary\", \"trusted\": false}`) and filter it during retrieval. 4. Add an expiry to remembered notes so stale injections expire automatically. 5. Add a test demonstrating that an injected marker in an external document does not persist in memory across sessions.",
+      "traceability": "CWE-349, LLM01:2026, LLM05:2026, ASI06, AML.T0051.001",
+      "triage": {
+        "FP-01": {
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No control enforces that the reply must come from a trusted source. The function accepts any string and stores it."
+        }
+      },
+      "limits": "The finding assumes that the model output or retrieved documents are untrusted. If the system is configured such that the model is never exposed to external content and only processes curated instructions, the risk is mitigated by architecture rather than by this code."
+    }
+  ],
+  "ruled_out": []
+}

@@ -65,6 +65,16 @@ d=json.loads(p.read_text())
 d["properties"]["findings"]["items"]["properties"]["cvss_vector"]={"type":"string"}
 p.write_text(json.dumps(d,indent=2))'
 
+case_run field-documented-at-the-wrong-level 1 "does not explain it at that level" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings-artifact.md"
+p.write_text(p.read_text().replace("| `findings[].limits` |","| `limits` |",1))'
+
+case_run field-table-invents-a-field 1 "which the schema does not declare there" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings-artifact.md"
+p.write_text(p.read_text().replace("| `findings[].impact` |","| `findings[].blast_radius` |",1))'
+
 case_run vocabulary-region-gone 2 "" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/vocabulary.md"

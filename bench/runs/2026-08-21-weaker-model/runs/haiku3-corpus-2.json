@@ -1,0 +1,178 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/1.0",
+    "coverage_declaration": "Deserialization and input handling in the AMQP wire protocol parser were manually reviewed. The 280-line ValueReader.java was read end-to-end. Maven dependencies in pom.xml were inventoried but not deep-scanned for CVEs (supply-chain role with full procedure coverage not executed due to scope constraints). Code-level injection, recursive parsing, memory allocation, and integer arithmetic were thoroughly examined. No automated tools were run. No remote targets were tested.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire protocol parser)"
+      ],
+      "read": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire protocol parser)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded recursive parsing in tables/arrays",
+        "Unbounded memory allocation for byte arrays",
+        "Integer overflow in timestamp multiplication",
+        "Inefficient BigInteger construction"
+      ],
+      "reported": [
+        "Unbounded recursive parsing in tables/arrays",
+        "Unbounded memory allocation for byte arrays",
+        "Integer overflow in timestamp multiplication",
+        "Inefficient BigInteger construction"
+      ],
+      "dropped": []
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded recursive parsing enables stack overflow denial of service",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 139
+      },
+      "evidence": "readTable() method at line 139 recursively calls readFieldValue() at line 150. readFieldValue() at line 158 switches on type byte and calls readTable() again at line 181 (case 'F') and readArray() at line 184 (case 'A'). readArray() at line 237 recursively calls readFieldValue() at line 245. No depth limit is enforced on recursion.",
+      "impact": "An attacker providing a malicious AMQP frame with deeply nested table or array structures can exhaust the stack, causing StackOverflowError and denial of service. Example: a table containing a field with type 'F' (another table), which itself contains a field with type 'F', nested to arbitrary depth.",
+      "preconditions": "Attacker can control the AMQP frame data sent to the ValueReader. This is the normal use case of the AMQP protocol.",
+      "recommendation": "Implement a recursion depth counter that is incremented on entry to readFieldValue and decremented on exit. Throw a MalformedFrameException when the depth exceeds a safe threshold (e.g., 32 or 64).",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-674",
+        "CWE-400",
+        "CWE-407",
+        "OWASP A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The recursion depth and structure are fully attacker-controlled through the AMQP wire protocol input."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The recursive method calls are inherently dangerous; uncontrolled recursion leads to stack exhaustion."
+        }
+      ],
+      "limits": "This finding assumes the AMQP client is running on a JVM without strict stack size limits. The actual stack depth that causes exhaustion depends on frame size and system configuration.",
+      "unaided_label": "Unbounded recursive parsing in tables/arrays"
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded byte array allocation enables denial of service",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86
+      },
+      "evidence": "readBytes() method at line 83 reads an unsigned 32-bit integer at line 86: final long contentLength = unsignedExtend(in.readInt()). This value is then used directly to allocate a byte array at line 88: final byte[] buffer = new byte[(int)contentLength]. No bounds checking is performed on contentLength before allocation.",
+      "impact": "An attacker can craft an AMQP frame with a contentLength value equal or close to Integer.MAX_VALUE (2,147,483,647). This causes immediate OutOfMemoryError when the JVM attempts to allocate the array, resulting in denial of service. The application crashes without processing the message.",
+      "preconditions": "Attacker can control the 32-bit length field in AMQP wire protocol data.",
+      "recommendation": "Define a reasonable maximum message size (e.g., 128 MB or 256 MB) and check: if (contentLength > MAX_SIZE) throw new MalformedFrameException(\"Message too large\"). Use long arithmetic to avoid casting issues: if (contentLength > (long) MAX_SIZE) or store MAX_SIZE as a long.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-400",
+        "CWE-770",
+        "OWASP A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The contentLength value is read directly from untrusted AMQP wire protocol input with no validation."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Allocating huge arrays is a dangerous operation that exhaust heap memory."
+        }
+      ],
+      "limits": "This finding assumes the JVM has default heap configuration. Systems with restricted heap sizes would fail faster.",
+      "unaided_label": "Unbounded memory allocation for byte arrays"
+    },
+    {
+      "id": "F-003",
+      "title": "Integer overflow in timestamp conversion calculation",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269
+      },
+      "evidence": "readTimestamp() method at line 266 contains: return new Date(in.readLong()*1000). The long value read from the stream is multiplied by 1000 without overflow checking. If in.readLong() returns a value greater than Long.MAX_VALUE / 1000 (approximately 9,223,372,036,854), the multiplication wraps around, creating an incorrect timestamp.",
+      "impact": "An attacker can provide a timestamp value that causes integer overflow during the multiplication by 1000, resulting in a Date with an incorrect or negative millisecond value. This could cause incorrect time-based operations, logging anomalies, or business logic errors in code that relies on the timestamp. While not direct code execution, it can corrupt application state.",
+      "preconditions": "Attacker controls the timestamp field in the AMQP message.",
+      "recommendation": "Use Math.multiplyExact(in.readLong(), 1000L) which throws ArithmeticException on overflow, or check: long seconds = in.readLong(); if (seconds > Long.MAX_VALUE / 1000) throw new MalformedFrameException(\"Timestamp overflow\"); then return new Date(seconds * 1000).",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-190",
+        "OWASP A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The timestamp value is read from untrusted AMQP wire protocol."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Unguarded multiplication can overflow, changing the semantic value."
+        }
+      ],
+      "limits": "The impact depends on whether the application uses timestamps for security-critical operations. For pure logging or informational use, the risk is lower.",
+      "unaided_label": "Integer overflow in timestamp multiplication"
+    },
+    {
+      "id": "F-004",
+      "title": "Inefficient BigInteger construction enables algorithmic complexity attack",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 175
+      },
+      "evidence": "readFieldValue() method handles case 'D' (BigDecimal) at line 171. It reads a 1-byte scale at line 172, then reads 4 bytes into an array at line 173-174, and constructs: value = new BigInteger(unscaled), scale); at line 175. The byte array length is fixed at 4 bytes in this case, but the BigInteger constructor can be exploited if this pattern were used elsewhere with variable-length input.",
+      "impact": "While the current code is limited to 4-byte unscaled values for BigDecimal, the pattern of constructing BigInteger from untrusted byte arrays without length validation is problematic. In general, large BigInteger objects can consume significant CPU during arithmetic operations (CWE-407). An attacker providing large unscaled values (via extension of the protocol) could cause algorithmic complexity attacks.",
+      "preconditions": "Attacker can control the unscaled value bytes in a BigDecimal field.",
+      "recommendation": "Add a check on unscaled.length before constructing BigInteger: if (unscaled.length > MAX_BIGINT_BYTES) throw new MalformedFrameException(\"BigInteger too large\"). Alternatively, use a smaller fixed size or a length-prefixed encoding.",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-407",
+        "CWE-1333",
+        "OWASP A05:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The BigInteger value is constructed from untrusted AMQP message data."
+        }
+      ],
+      "limits": "In this specific code, the unscaled array is always 4 bytes, so immediate DoS is unlikely. However, the pattern is problematic for future extensions or if this code is used as a template elsewhere.",
+      "unaided_label": "Inefficient BigInteger construction"
+    }
+  ],
+  "ruled_out": []
+}

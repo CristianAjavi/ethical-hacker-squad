@@ -73,8 +73,17 @@ case "$path" in
                          | {name: .[0], color: .[1], description: .[2]})') ;;
   repos/*/vulnerability-alerts) exit 0 ;;
   repos/*/commits/*/check-runs)
-    out='[{"name":"gates","app":{"id":'"$APP"'},"status":"completed","conclusion":"success"}]'
-    out='{"check_runs":'"$out"'}' ;;
+    # DERIVED from governance.json, never hardcoded. A lab that knows about one
+    # context reports every other one as "never observed", so the anti-lockout
+    # safeguard fires as a false drift the day a second required check is
+    # declared - which is exactly what happened when workflow-hardening was
+    # added. LAB_HIDE_CONTEXT removes one on purpose, so that safeguard is
+    # exercised deliberately instead of by accident.
+    out=$(jq -c --argjson app "$APP" --arg hide "${LAB_HIDE_CONTEXT:-}" '
+      ( [ .promotion.required_contexts[]? ]
+        + [ .branches[.promotion.source_branch].protection.required_status_checks.checks[]?.context ] )
+      | unique | map(select(. != $hide))
+      | {check_runs: map({name: ., app: {id: $app}, status: "completed", conclusion: "success"})}' "$STATE") ;;
   repos/*/commits*) out='[{"sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' ;;
   repos/*)
     out=$(jq -c '.settings + {permissions:{admin:true}, owner:{type:"User"},
@@ -103,6 +112,15 @@ res "a single deviated setting -> rc 1 (drift)" "$RC" 1 "$OUT"
 case "$OUT" in *"allow_auto_merge: actual=false desired=true"*) echo "        (it names the exact field that drifted)";;
   *) echo "        FAIL: it does not name the drifted field"; FAIL=$((FAIL+1));; esac
 case "$OUT" in *"APPLIED"*) echo "        FAIL: it mutated in dry-run"; FAIL=$((FAIL+1));; *) echo "        (dry-run mutated nothing)";; esac
+
+# The anti-lockout safeguard, proved instead of assumed: --apply must refuse to
+# declare a required context that was never observed on the source branch, or a
+# typo in the JSON leaves main unmergeable with no way back through the API.
+OUT=$(LAB_HIDE_CONTEXT=workflow-hardening PATH="$LAB/bin:$PATH" \
+      "$LAB/repo/scripts/gh/apply-governance.sh" --no-color 2>&1); RC=$?
+res "a required context never observed -> rc 1 (anti-lockout)" "$RC" 1 "$OUT"
+case "$OUT" in *"NEVER been observed"*) echo "        (it names the context it refuses to declare)";;
+  *) echo "        FAIL: it does not name the unobserved context"; FAIL=$((FAIL+1));; esac
 
 echo ""
 echo "  $PASS PASS / $FAIL FAIL"

@@ -1,0 +1,67 @@
+{
+ "findings": [
+  {
+   "item_id": "N01",
+   "title": "GET /api/locks answers without authentication while every sibling /api/* handler requires the API token, and /api/ is exempt from web basic auth",
+   "location": "server/controllers/api_controller.go:383",
+   "impact": "An unauthenticated client that can reach the Atlantis HTTP port retrieves an inventory of the repositories, project paths, open pull request numbers and URLs, and the usernames of the engineers holding locks - the same data an operator deliberately placed behind --web-basic-auth on the index page. For a self-hosted Atlantis serving private repositories this is internal reconnaissance material (repository names, active change surface, valid usernames) obtained with no credential.",
+   "evidence": "ListLocks (api_controller.go:383-410) obtains the middleware only to reuse its Responder and then calls a.Locker.List() directly; it never calls middleware.RequireAuth(w, r) and never inspects a.APISecret. Every other handler on the same controller does: DriftStatus (line 421), Remediate (line 1129), GetRemediationResult (line 1729), ListRemediationResults (line 1841) and DetectDrift (line 2082) all open with `if !middleware.RequireAuth(w, r) { return }`, and Plan (282) / Apply (315) authenticate inside apiParseAndValidate (line 1009-1017, subtle.ConstantTimeCompare against a.APISecret). The route is registered unconditionally at server/server.go:1212. The only other gate is the negroni middleware in server/middleware.go, whose allow-list at lines 37-43 ends with `strings.HasPrefix(r.URL.Path, \"/api/\")`, so basic auth is skipped for this path. The response body carries, per lock: reposit"
+  },
+  {
+   "item_id": "N02",
+   "title": "The job-log WebSocket accepts any Origin by default, and websocket.NewWriter hardcodes an always-true origin check that would override the flag for any caller",
+   "location": "server/controllers/websocket/writer.go:18",
+   "impact": "With the default configuration a page on any origin the victim visits can open the job-log socket and read streamed terraform output for a job whose id it can name, subject to the multiplexor's IsKeyExists check (websocket/mux.go:67-70). The NewWriter override adds no impact today but guarantees that the first caller of that constructor silently loses the --websocket-check-origin setting.",
+   "evidence": "checkOriginFunc (websocket/mux.go:36-42) returns nil when checkOrigin is true - letting gorilla apply checkSameOrigin - and an always-true function otherwise. NewMultiplexor wires it correctly from userConfig.WebsocketCheckOrigin (server/server.go:1062-1066), whose default is false (cmd/server.go:688-691), so the live GET /jobs/{job-id}/ws handshake accepts any Origin unless the operator opts in. Separately, NewWriter (writer.go:14-22) builds the upgrader from checkOriginFunc and then, on line 18, unconditionally reassigns `upgrader.CheckOrigin = func(r *http.Request) bool { return true }`, discarding its own parameter. Grep over server/ and cmd/ shows NewWriter has no caller today - the multiplexor constructs its Writer struct literally - so the override is latent rather than live."
+  },
+  {
+   "item_id": "N03",
+   "title": "The var-file allow-list is applied only to the `plan` command, so `atlantis import -- -var-file=<path>` skips it entirely",
+   "location": "server/events/command_runner.go:413",
+   "impact": "Same host-file read as F-002 but reached through a command the allow-list does not cover at all, so an operator who tightened --var-file-allowlist still has an open path. The reader is the Atlantis process, and the output returns to the pull request.",
+   "evidence": "checkVarFilesInPlanCommandAllowlisted (command_runner.go:411-417) returns nil immediately unless `cmd.CommandName() == command.Plan`, and it is the only caller of VarFileAllowlistChecker.Check (invoked at command_runner.go:446 from validateCommentCommand). The comment extra args of the other commands reach terraform by the same route: import_step_runner.go:48-50 appends ctx.CommentArgs to `terraform import`, and state_rm_step_runner.go:50 appends them to `terraform state rm`. So for `atlantis import -- -var-file=/path ADDRESS ID` the allow-list is never consulted, with the ordinary single-dash spelling and no reliance on F-002."
+  },
+  {
+   "item_id": "N04",
+   "title": "The external team-allowlist command is composed as a shell string from VCS-supplied repository and team names",
+   "location": "server/events/external_team_allowlist_checker.go:59",
+   "impact": "At minimum, an identifier containing a space splits into extra positional arguments, so the operator's allowlist script sees a shifted argument vector and can decide wrongly - a fail-open in an authorization control. If any provider in scope permits a shell metacharacter in the values that reach line 59, the consequence is command execution as the Atlantis process.",
+   "evidence": "buildCommandString (external_team_allowlist_checker.go:48-60) builds one string by strings.Join of the operator's command, its extra args, the command name, ctx.BaseRepo.FullName and the team names formatted as `owner/team`, separated by spaces. That string is executed as `sh -c` at lines 27 and 37, and DefaultExternalTeamAllowlistRunner (server/core/runtime/external_team_allowlist_runner.go:24-25) passes it to exec.CommandContext as the shell's -c argument. BaseRepo.FullName and Owner come from the webhook payload via the event parser; team names come from VCSClient.GetTeamNamesForUser. Neither is quoted or escaped, and neither is validated for shell metacharacters or whitespace before this point - the codebase itself notes elsewhere that some providers permit spaces in repository owner names (server/core/runtime/apply_step_runner.go:73-75 and server/core/runtime/plan_step_runner.go:136"
+  },
+  {
+   "item_id": "N05",
+   "title": "Web basic auth compares username and password with Go string equality rather than a constant-time comparison",
+   "location": "server/middleware.go:49",
+   "impact": "A timing oracle on the web UI password in principle. Over HTTP, against short strings, the signal is far below network jitter, so the practical gain to an attacker is nil - it is recorded because it is the one secret comparison in the tree that does not follow the codebase's own convention.",
+   "evidence": "`if user == l.WebUsername && pass == l.WebPassword` (server/middleware.go:49). Go's string == short-circuits on the first differing byte. The same codebase uses the constant-time primitive everywhere else a secret is compared: subtle.ConstantTimeCompare in api_response.go:222 (X-Atlantis-Token), api_controller.go:1016 (the same token on the legacy path) and gitlab_request_parser_validator.go:56 (the GitLab webhook token), and hmac.Equal in vcs/common/request_validation.go:42."
+  },
+  {
+   "item_id": "N06",
+   "title": "The --var-file-allowlist check matches only the single-dash spelling, so `--var-file=<path>` in a pull request comment reaches terraform unchecked",
+   "location": "server/events/var_file_allowlist_checker.go:40",
+   "impact": "The control that runatlantis.io/docs/security.md:64-69 describes as the mitigation for 'the files on your Atlantis install may be accessible as variable definition files from pull requests' is bypassed by changing one character. Anyone able to comment on a pull request in an allow-listed repository can make the Atlantis process read a file of their choosing outside the allow-list (default: the data directory only) as a Terraform variable definitions file - cloud credential files, ~/.terraformrc with registry tokens, a mounted service-account token, /proc/self/environ. Terraform surfaces the file back to the commenter either as loaded variable values or, for a file that is not valid HCL, as a parse diagnostic that quotes the offending source; Atlantis posts terraform output to the pull request and streams it to the job log.",
+   "evidence": "Check (var_file_allowlist_checker.go:37-56) recognises a var-file argument in exactly two shapes: the two-token form guarded by `flag == \"-var-file\"` (line 40) and the joined form guarded by `len(flagSplit) == 2 && flagSplit[0] == \"-var-file\"` (line 46). Both comparisons are string equality against the single-dash spelling. Anything else falls through with path == \"\" and is not tested by isAllowedPath at all. The arguments being tested are the raw extra args a commenter typed after `--`: comment_parser.go:378-390 collects them from pflag's ArgsLenAtDash() into CommentCommand.Flags, and the only filter applied on the way is isBlockedExtraArg (comment_parser.go:399-406) against DefaultBlockedExtraArgs, which is `-chdir, --chdir, -plugin-dir, --plugin-dir` (comment_parser.go:50-55) and contains no var-file entry. Those same Flags become ProjectContext.CommentArgs and are appended verbatim t"
+  },
+  {
+   "item_id": "N07",
+   "title": "The GitLab webhook validator writes the caller-supplied X-Gitlab-Token value into the error message it logs and returns",
+   "location": "server/controllers/events/gitlab_request_parser_validator.go:57",
+   "impact": "None to the caller, who supplied the value. The effect is on the operator's logs: an anonymous client controls a string that lands verbatim in the server log at Warn level, which is a log-injection and log-noise surface, and the log is a place where a genuine secret pasted into the header by a misconfigured integration would then be stored in clear text.",
+   "evidence": "On a token mismatch the validator returns `fmt.Errorf(\"header %s=%s did not match expected secret\", secretHeader, headerSecret)` (line 57), interpolating the value the caller sent. handleGitlabPost (events_controller.go:629-631) passes err.Error() to e.respond, which logs it at Warn (events_controller.go:900-905) and writes it into the HTTP response body. The GitHub, Gitea and Bitbucket paths do not do this - they surface only the library's generic validation error."
+  },
+  {
+   "item_id": "N08",
+   "title": "Webhook and API request bodies are read into memory with io.ReadAll and no size bound anywhere in the server",
+   "location": "server/controllers/events/events_controller.go:222",
+   "impact": "An unauthenticated client that can reach the listener forces the process to allocate memory proportional to the body it sends, with no ceiling and no credential; concurrent requests multiply it. On a container with a memory limit this is an OOM kill of the Atlantis server, which stops plan and apply for every repository it serves.",
+   "evidence": "`grep -rn \"MaxBytesReader|MaxHeaderBytes|LimitReader\" server cmd --include=*.go` returns nothing. The http.Server built at server/server.go:1272 sets ReadHeaderTimeout but no MaxHeaderBytes and wraps no body limiter. Every entry point buffers the whole body before it can decide anything: events_controller.go:222 (Bitbucket Cloud) and :252 (Bitbucket Server) read the body BEFORE common.ValidateSignature is called on it; events_controller.go:323 does the same for Gitea; github_request_validator.go:54 and gitlab_request_parser_validator.go:62 read it inside the validators; api_controller.go:1021, :1145 and :2098 read it on the API paths. /events is by design unauthenticated at the transport layer - it is the endpoint the VCS posts to - so the allocation happens for any anonymous POST, and the signature that would reject a forged request is only checked afterwards."
+  }
+ ],
+ "advisories_to_match": [
+  {
+   "advisory_id": "GHSA-26w5-6g95-gj28",
+   "summary": "Atlantis Workspace Handling has Path Traversal that Allows Out-of-Bounds Directory Deletion/Creation",
+   "description": "### Summary\nAtlantis versions `>= 0.19.8` and `< 0.45.0` did not consistently validate user-controlled `workspace` values before using them to construct local workspace paths.\n\nA crafted workspace value containing path traversal segments could cause Atlantis to resolve workspace paths outside the intended per-pull workspace directory. In vulnerable versions or code paths, Atlantis could create, use, or remove/recreate out-of-bounds directories with the privileges of the Atlantis process user, before Terraform rejected the invalid workspace name.\n\nThe issue is fixed in Atlantis `0.45.0`.\n\n### Details\nThe issue is a path traversal vulnerability in Atlantis workspace handling. `workspace` values can be supplied through repository-level `atlantis.yaml` configuration accepted by the server or through authenticated API input. A value such as `../../../../../../../../tmp/f1-canary` could escape the intended Atlantis workspace root.\n\nIn affected code paths, Atlantis used the resolved workspace path for local working-directory operations. For example, workspace values were joined into repo pull paths, and clone preparation paths could call directory removal/recreation operations such as `os"
+  }
+ ]
+}

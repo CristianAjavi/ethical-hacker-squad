@@ -1,0 +1,308 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (haiku-4.5, corpus-4)",
+    "coverage_declaration": "Audited deserialization of AMQP wire-protocol values in ValueReader.java, focusing on input validation, resource limits, and integer overflow. Procedures WEB-11 (deserialization) and related classes (CWE-502, CWE-789, CWE-674, CWE-190) were applied. Supply-chain audit of pom.xml dependencies was inventoried but deferred pending additional authorization scope. No web frameworks, HTTP handlers, authentication, authorization, SQL injection, file upload, or other web-specific attack surfaces identified in the target scope.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire-protocol deserialization)"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire-protocol deserialization)"
+      ],
+      "not_read": [
+        "pom.xml (Maven dependencies) - supply-chain audit deferred pending scope decision"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded memory allocation in readBytes() - could allocate up to 2GB per field from untrusted network input",
+        "Stack overflow risk from recursive field/table/array parsing without depth limits",
+        "Silent data loss when duplicate keys appear in tables",
+        "Timestamp multiplication overflow in readTimestamp()"
+      ],
+      "reported": [
+        "Unbounded memory allocation in readBytes() - could allocate up to 2GB per field from untrusted network input",
+        "Stack overflow risk from recursive field/table/array parsing without depth limits",
+        "Timestamp multiplication overflow in readTimestamp()"
+      ],
+      "dropped": [
+        {
+          "label": "Silent data loss when duplicate keys appear in tables",
+          "resolution": "out_of_scope",
+          "reason": "AMQP protocol behavior for duplicate keys is not a security vulnerability but a protocol design choice. Intentional duplicate key handling per AMQP specification."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation from attacker-controlled content length",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86
+      },
+      "evidence": "readBytes() at line 83-95 reads a 32-bit length prefix from untrusted network input via in.readInt(), sign-extends it to a long via unsignedExtend(), and allocates a byte array of that size. Line 87 checks `if(contentLength < Integer.MAX_VALUE)` before allocation, permitting allocations up to 2,147,483,647 bytes (~2GB) per invocation.",
+      "impact": "Denial of service through memory exhaustion. An attacker controlling the AMQP wire protocol data can trigger allocation of large byte arrays (up to 2GB each) from within readBytes() calls nested in readTable(), readArray(), and readFieldValue(). Multiple fields in a single message could allocate multiple 2GB+ arrays, exhausting heap memory and crashing the JVM.",
+      "preconditions": "Application using ValueReader to parse AMQP frames from an untrusted network connection (typical for AMQP brokers and clients receiving frames from the network).",
+      "recommendation": "Enforce a reasonable maximum content length limit before allocation. For example: (1) Add a configurable MAX_CONTENT_LENGTH constant (e.g., 128MB), (2) Check contentLength against this limit before allocating, (3) Throw an exception if the limit is exceeded. Apply this check in readBytes(), and also in readTable() and readArray() at the entry points where the length is read.",
+      "traceability": [
+        "CWE-502",
+        "CWE-789",
+        "A08:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The check at line 87 (`if(contentLength < Integer.MAX_VALUE)`) is present but the bound it enforces (2GB) is still exploitable for DoS. It is not a compensating control sufficient to prevent the vulnerability."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The contentLength value comes directly from in.readInt() on line 86, which reads from an untrusted DataInputStream, and is attacker-controlled."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The byte array allocation on line 88 is the dangerous sink; new byte[(int)contentLength] will actually allocate memory up to the specified size, executing the vulnerable operation."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not debug-only code; readBytes() is called by readLongstr(), which is part of the public API and used in production field parsing."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The memory allocation is not an intended exposure; it is part of deserialization logic and should be bounded."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "This is not a local-application boundary issue; it is a remote protocol handling issue."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The deserialized content has security value; it comes from the network and is part of AMQP frames that may contain sensitive data or attack vectors."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The JVM may have a heap size limit, but there is no evidence in the code that this limit is enforced or documented as a compensating control. Without explicit configuration, the JVM can still allocate large amounts of memory up to its -Xmx setting."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it appears to be: an unbounded allocation controlled by untrusted input."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defense-in-depth issue; memory exhaustion is a direct DoS impact, not a missing secondary control."
+        }
+      ],
+      "limits": "This analysis assumes standard JVM configuration without additional memory limits enforced by the container or operating system. If the application runs in a container with strict memory limits, the impact may be partially mitigated.",
+      "unaided_label": "Unbounded memory allocation in readBytes() - could allocate up to 2GB per field from untrusted network input"
+    },
+    {
+      "id": "F-002",
+      "title": "Stack overflow from unbounded recursion in field/table/array parsing",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158
+      },
+      "evidence": "readFieldValue() (line 158-221) recursively calls itself indirectly through: (1) case 'F' → readTable() (line 181), which calls readFieldValue() in a loop (line 150), and (2) case 'A' → readArray() (line 184), which calls readFieldValue() in a loop (line 245). There is no recursion depth limit or stack depth check anywhere in this chain.",
+      "impact": "Denial of service through stack overflow. An attacker can craft an AMQP message with deeply nested table and array structures (e.g., a table containing an array containing a table containing an array, etc.) that trigger recursive calls. Each recursion consumes stack frames until StackOverflowError is thrown, crashing the thread or the entire JVM.",
+      "preconditions": "Application parsing AMQP frames from untrusted network input. The attacker must be able to craft and send AMQP table/array structures with arbitrary nesting depth.",
+      "recommendation": "Implement a recursion depth counter and enforce a maximum nesting level (e.g., max depth 10-20 levels). (1) Add a depth parameter to readFieldValue(), readTable(), and readArray(), (2) Increment it on each recursive call, (3) Throw an exception (e.g., MalformedFrameException) if depth exceeds the limit. Alternatively, convert the recursive parsing to iterative using an explicit stack data structure.",
+      "traceability": [
+        "CWE-674",
+        "CWE-787",
+        "A08:2025",
+        "OWASP-RESOURCE-EXHAUSTION"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no compensating control that enforces a recursion depth limit or detects stack overflow before it occurs."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting depth is controlled by the AMQP message content, which is read from untrusted network input via the DataInputStream."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The recursive calls to readFieldValue() are the dangerous sink, and they execute exactly as written."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "These are part of the public API (readTable(), readArray()) and are used in production."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recursive parsing is not an intended exposure; nesting depth should be bounded."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a local-application boundary issue."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The data has security value as it is part of AMQP frames from the network."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The JVM has a default stack size limit, but this is configuration-dependent and not controlled in the code. There is no evidence of stack depth monitoring or limits enforced in the ValueReader code itself."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly as it appears: unbounded recursion."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Stack overflow is a direct DoS impact, not a defense-in-depth issue."
+        }
+      ],
+      "limits": "Analysis based on static code review. Practical exploitation would require crafting specific AMQP message structures and measuring the recursion depth at which StackOverflowError occurs on the target JVM configuration.",
+      "unaided_label": "Stack overflow risk from recursive field/table/array parsing without depth limits"
+    },
+    {
+      "id": "F-003",
+      "title": "Integer overflow in timestamp multiplication",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269
+      },
+      "evidence": "readTimestamp() (line 266-270) reads an 8-byte long value from the stream via in.readLong() and multiplies it by 1000 without overflow checking: `return new Date(in.readLong()*1000);`. If the input value is Long.MAX_VALUE (9,223,372,036,854,775,807), the multiplication overflows to a negative number due to Java's signed long wraparound.",
+      "impact": "Incorrect timestamp representation, potential for time-based logic bypass or incorrect chronological ordering of events. The Date constructor will receive a negative or wrapped millisecond value, causing the timestamp to represent an incorrect date (potentially in 1969 or other erroneous year). This could bypass time-based security checks or cause confusion in logging and audit trails.",
+      "preconditions": "An AMQP message contains a timestamp field (type 'T') with a large long value. The application depends on the correct representation of timestamps for security decisions or audit logging.",
+      "recommendation": "Perform overflow checking before multiplication. (1) Check if the long value is within a safe range before multiplying by 1000 (e.g., check if value > Long.MAX_VALUE / 1000), (2) Use Math.multiplyExact(value, 1000L) which will throw ArithmeticException on overflow, (3) Throw a MalformedFrameException if the timestamp is out of acceptable range.",
+      "traceability": [
+        "CWE-190",
+        "CWE-191",
+        "A08:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no overflow check before the multiplication on line 269."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The timestamp value is read from untrusted network input via in.readLong()."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The multiplication operation is the vulnerable sink and will execute with wraparound on overflow."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "readTimestamp() is part of the public API."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Timestamp parsing is not an intended exposure point."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a local-application boundary issue."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Timestamp values have security value as they may affect audit logs and time-dependent security decisions."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external control is documented for timestamp validation."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The operation is exactly as it appears: an unprotected multiplication that can overflow."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is a direct flaw in timestamp handling, not a defense-in-depth issue."
+        }
+      ],
+      "limits": "The severity of this issue depends on how the returned Date object is used by the application. If timestamps are only used for informational purposes and not for security decisions, the impact is reduced to informational.",
+      "unaided_label": "Timestamp multiplication overflow in readTimestamp()"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Remote code execution through arbitrary object deserialization",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "ValueReader is a protocol deserializer for AMQP wire types (strings, integers, tables, arrays, etc.), not a Java object deserializer. It does not use ObjectInputStream, XStream, or similar gadget-chain-vulnerable libraries. The closest is readTable() which reconstructs HashMap<String, Object>, but the values are primitives and safe types (Long, Double, Boolean, LongString, Date, Map, List), not arbitrary Java classes. References: lines 139-155 (readTable) and 158-221 (readFieldValue)."
+    },
+    {
+      "class": "SQL injection",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "ValueReader does not construct SQL queries. It parses AMQP protocol values. The parsed data is returned to the caller, and any SQL construction is the responsibility of the caller. No SQL sink identified in this file."
+    },
+    {
+      "class": "OS command injection",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "ValueReader does not invoke Runtime.exec, ProcessBuilder, or any shell execution. No system() or similar call identified."
+    },
+    {
+      "class": "Path traversal through file operations",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "ValueReader does not interact with the file system. No File operations, path joins, or file I/O identified."
+    },
+    {
+      "class": "XXE through XML parsing",
+      "procedure": "WEB-10",
+      "outcome": "refuted",
+      "where": "ValueReader does not parse XML or use SAX/DOM parsers. It parses AMQP binary protocol only."
+    },
+    {
+      "class": "Cross-site scripting (XSS) through HTML generation",
+      "procedure": "WEB-13",
+      "outcome": "refuted",
+      "where": "ValueReader is a backend protocol handler with no HTML/template generation. It returns Java objects (String, Map, List, Date, etc.), not HTML markup. XSS is a client-side concern, not applicable here."
+    }
+  ]
+}
