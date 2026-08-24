@@ -13,10 +13,27 @@
 #   while every gate was green, and the machinery manual said so in prose that
 #   nothing executed.
 #
-#   This is the half of that comparison a workflow can actually do. `permissions:
-#   administration: read` on the built-in token is enough to GET a branch's
-#   protection, so it needs no personal access token and puts no admin secret
-#   into a public repository - which was the other option, and a worse one.
+#   TWO DEPTHS, and the tool says which one it reached.
+#     FULL   - GET .../branches/<b>/protection, which needs ADMIN. Run locally by
+#              the maintainer, this compares every declared field.
+#     SHALLOW- GET .../branches/<b>, which any token can read, and whose
+#              `protected` boolean answers ONE question: is the branch protected
+#              at all? That is the question this repository got wrong, so it is
+#              worth asking even when the details are out of reach.
+#
+#   The first draft asked for `permissions: administration: read` on the built-in
+#   token. actionlint refuted it in CI: there is no such scope. The available
+#   ones are actions, artifact-metadata, attestations, checks, contents,
+#   deployments, discussions, id-token, issues, models, packages, pages,
+#   pull-requests, repository-projects, security-events and statuses - none of
+#   which grants admin. A workflow token therefore CANNOT read a protection
+#   block, and the only way to the full comparison is an admin personal access
+#   token stored as a secret in a public security repository, which is a larger
+#   surface than the problem it solves.
+#
+#   So the workflow runs SHALLOW and says so. It catches the failure that
+#   actually happened - `main` protected by nothing - and never claims the
+#   fields it could not read.
 #
 # WHAT IT COMPARES, and what it does not
 #   Only the protection block of the branches under `branches` in
@@ -111,8 +128,25 @@ for b in $BRANCHES; do
   want="$(declared "$b")"
   have="$(live "$b")"
   if [ -z "$have" ]; then
-    printf '  DRIFT              %-8s has NO protection at all (GET -> 404). Every required check is required by nothing\n' "$b"
-    n_drift=$((n_drift + 1)); continue
+    # No protection block came back. That is either "there is none" or "this
+    # token may not read one", and the two are not the same statement. The
+    # `protected` boolean on the branch itself is readable by any token and
+    # settles it.
+    prot="$(gh api "repos/$REPO/branches/$b" --jq '.protected' 2>/dev/null)"
+    case "$prot" in
+      false)
+        printf '  DRIFT              %-8s is NOT protected at all. Every required check is required by nothing\n' "$b"
+        n_drift=$((n_drift + 1)) ;;
+      true)
+        printf '  COULD NOT MEASURE  %-8s is protected, but this token cannot read the protection block\n' "$b"
+        printf '                     (that needs admin; there is no `administration` scope for a workflow token).\n'
+        printf '                     Protected-at-all is confirmed; whether it MATCHES the declaration is not.\n'
+        n_unmeas=$((n_unmeas + 1)) ;;
+      *)
+        printf '  COULD NOT MEASURE  %-8s neither the protection block nor the branch could be read\n' "$b"
+        n_unmeas=$((n_unmeas + 1)) ;;
+    esac
+    continue
   fi
   if [ "$want" = "$have" ]; then
     printf '  ok                 %-8s live protection matches the declared one\n' "$b"

@@ -38,22 +38,36 @@ JSON
 # The double. LAB_MODE picks which repository it is pretending to be.
 cat > "$LAB/bin/gh" <<'GH'
 #!/usr/bin/env bash
-path=""
-for a in "$@"; do case "$a" in api|--jq|-*) ;; *) [ -z "$path" ] && path="$a" ;; esac; done
+# Honours --jq, because the tool under test uses it and a double that ignores it
+# hands back a whole JSON object where the caller expects one field. That is not
+# a smaller double, it is a different API.
+path=""; jqf=""; want_jq=0
+for a in "$@"; do
+  if [ "$want_jq" -eq 1 ]; then jqf="$a"; want_jq=0; continue; fi
+  case "$a" in
+    --jq) want_jq=1 ;;
+    api|-*) ;;
+    *) [ -z "$path" ] && path="$a" ;;
+  esac
+done
+emit() { if [ -n "$jqf" ]; then printf '%s' "$1" | jq -r "$jqf"; else printf '%s\n' "$1"; fi; }
 # `absent` first: a generic pattern placed above it would answer "the branch
 # exists" before the absent case is ever reached, and the suite would score the
 # does-not-exist case as a drift. It did, on the first run.
 case "$LAB_MODE:$path" in
   absent:*) exit 1 ;;
-  *:repos/*/branches/main) echo '{"name":"main"}' ;;
-  noprot:repos/*/branches/main/protection) exit 1 ;;
+  noprot:repos/*/branches/main)   emit '{"name":"main","protected":false}' ;;
+  shallow:repos/*/branches/main)  emit '{"name":"main","protected":true}' ;;
+  *:repos/*/branches/main)        emit '{"name":"main","protected":true}' ;;
+  noprot:repos/*/branches/main/protection)  exit 1 ;;
+  shallow:repos/*/branches/main/protection) exit 1 ;;
   match:repos/*/branches/main/protection)
-    echo '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":15368}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
+    emit '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":15368}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
   drift:repos/*/branches/main/protection)
-    echo '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":15368}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":true},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
+    emit '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":15368}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":true},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
   unpinned:repos/*/branches/main/protection)
-    echo '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":99999}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
-  *) echo '{}' ;;
+    emit '{"required_status_checks":{"strict":false,"checks":[{"context":"gates","app_id":99999}]},"required_pull_request_reviews":{},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":true}}' ;;
+  *) emit '{}' ;;
 esac
 GH
 chmod +x "$LAB/bin/gh"
@@ -72,7 +86,11 @@ res() {  # <label> <mode> <expected rc> [needle]
 echo "== protection-check.sh against an API double"
 res "live matches declared -> rc 0"                match    0 "matches the declared"
 res "a field drifted -> rc 1"                      drift    1 "force: live=true declared=false"
-res "NO protection at all -> rc 1"                 noprot   1 "required by nothing"
+res "NO protection at all -> rc 1"                 noprot   1 "is NOT protected at all"
+# What a workflow token actually sees: the branch says it is protected and the
+# block is unreadable without admin. Protected-at-all is confirmed; matching the
+# declaration is not, and the tool must not round that up to a pass.
+res "protected but the block is unreadable -> rc 2" shallow  2 "cannot read the protection block"
 res "the branch does not exist -> rc 2"            absent   2 "does not exist yet"
 res "a check not pinned to the app -> rc 1"        unpinned 1 "contexts"
 
