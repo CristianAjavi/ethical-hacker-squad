@@ -4,9 +4,27 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 > **Authorized use only.** This skill is for auditing systems you own or have explicit permission to test. Its safety contract forbids persistence, exfiltration, destruction, denial of service, real phishing, stealth evasion and lateral movement, and requires authorization before scanning remote targets, exploiting a vulnerability, or touching production.
 
+## What it is measured to do, and what it is not
+
+This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
+
+**Seventeen blinded measurements — sixteen against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
+
+Two results are larger than the comparison. Against a competing product (`google/mantis`) on precision at weak scale, **it is more precise than this corpus** — 53% of its claims refuted against our 62%, exactly as our own pre-registration predicted, because it ships an explicit critic stage we do not. And across three arms, fifteen runs and 71 claims, **not one arm produced a single true finding beyond the two the ground truth already named.** Everything else was refuted by two independent adversarial verifiers. Detection, on this evidence, is the model's rather than any product's.
+
+What *is* measured, and is narrower than "finds more":
+
+- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format has no field for;
+- a **coverage declaration** that must resolve every surface it inventories as read or not-read, so a reader can tell silence from a clean bill — a blinded reader test caught one of our own reports failing exactly that, which is why a validator now enforces it;
+- **zero decoys reported** on eleven constructs built to be mistaken for the defect beside them.
+
+Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
+
+One dimension **is** measured in this project's favour, and it is not capability. Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 3,931 lines of corpus across eight role packs, with 154 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,207 lines of corpus across eight role packs, with 163 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -31,23 +49,28 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 
 ## Knowledge
 
-Seven packs, one per role. Five of them are stored as **more than one file** (`mobile` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
+Eight packs, one per role. Five of them are stored as **more than one file** (`mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
 
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
-| web-api | `web-api.md` | `WEB-01`..`WEB-12` | authn and sessions, object- and function-level authorization, injection, SSRF, deserialization and upload |
-| | `web-api-clientside-logic.md` | `WEB-13`..`WEB-22` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, error and log leakage |
+| web-api | `web-api.md` | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | authn and sessions, object- and function-level authorization, injection, SSRF, deserialization and upload |
+| | `web-api-clientside-logic.md` | `WEB-13`..`WEB-23`, `WEB-26` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, error and log leakage |
 | mobile | `mobile.md` | `MOB-01`..`MOB-12` | manifest and exported surface, storage and logs, WebViews and bridges, deep links and intents, TLS and pinning, crypto and embedded secrets |
 | | `mobile-runtime-trust.md` | `MOB-13`, `MOB-16`..`MOB-18` | client-only controls, biometrics bound to a key, overlay and accessibility defenses on confirmation screens, code loaded after the store |
 | | `mobile-ios.md` | `MOB-14`..`MOB-15` | iOS specifics: `Info.plist`, ATS, URL schemes, entitlements, Keychain, pasteboard |
 | infra-cloud | `infra-cloud.md` | `INF-01`..`INF-12` | Terraform and IaC, containers, Kubernetes |
 | | `infra-cloud-cicd-exposure.md` | `INF-13`..`INF-18` | CI/CD and GitHub Actions, environment separation and deployment secrets, remote exposure |
+| | `infra-cloud-cicd-platforms.md` | `INF-19`..`INF-23` | GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket: untrusted-contributor pipelines, metadata in a shell step, credential scope, moving pipeline imports, the runner as a machine |
 | supply-chain | `supply-chain.md` | `SUP-01`..`SUP-15` | manifests and locks, install scripts, dependency confusion, typosquatting and slopsquatting, pipeline integrity, provenance and SBOM, reachability-aware triage |
 | | `supply-chain-secrets-malware.md` | `SUP-16`..`SUP-20` | secrets in tree, history and CI, malicious-package indicators |
+| | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-25` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
 | ai-safety | `ai-safety.md` | `AI-01`..`AI-11` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
-| | `ai-safety-data-output.md` | `AI-12`..`AI-22` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
-| privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-11` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
-| remediation | `remediation.md` | `REM-01`..`REM-07`, `VER-01`..`VER-07` | minimum root-cause patching, regression tests that must fail without the patch, adversarial verification, honest classification |
+| | `ai-safety-data-output.md` | `AI-12`..`AI-24` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
+| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
+| local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |
+| privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
+| remediation | `remediation.md` | `REM-01`..`REM-07` | minimum root-cause patching, regression tests that must fail without the patch, authorization limits, ordering |
+| verification | `remediation-verification.md` | `VER-01`..`VER-08` | adversarial posture, negative checks, honest classification |
 
 Navigation is progressive: `SKILL.md` is a router, `coverage.md` maps detected technology to roles and to the exact file and sections that hold them, and each specialist loads only its own pack — and only the sections its inventory justifies. Loading everything is a bug, not thoroughness.
 

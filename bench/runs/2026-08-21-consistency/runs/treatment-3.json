@@ -1,0 +1,322 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target — a message-broker client library: the wire-value decoder and the dependency manifest.",
+    "commit": "5.34.0-SNAPSHOT, taken from pom.xml <version>; the target tree carries no VCS metadata.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad, corpus copy under variance/corpus (the skill's own version string was out of reading scope)",
+    "coverage": {
+      "inventoried": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java — decoder for AMQP wire values (short strings, long strings, field tables, field arrays, timestamps)",
+        "pom.xml — dependency manifest, build plugins, release and publishing configuration",
+        "com.rabbitmq.client.impl.TruncatedInputStream — the length-limiting stream the decoder wraps around nested values",
+        "com.rabbitmq.client.impl.LongStringHelper — the long-string factory the decoder calls",
+        "Callers of the decoder named in the file: MethodArgumentReader, ContentHeaderPropertyReader, and whatever constructs the DataInputStream from the socket",
+        "Build-time source generation declared in pom.xml: codegen.py, src/main/scripts/generate_amqp_sources.groovy, deps/rabbitmq_codegen/amqp-rabbitmq-0.9.1.json",
+        "Test sources and the integration testsuite declared by the failsafe/surefire configuration",
+        "CI workflows, a dependency lock or resolved tree, and an SBOM"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java — decoder for AMQP wire values (short strings, long strings, field tables, field arrays, timestamps)",
+        "pom.xml — dependency manifest, build plugins, release and publishing configuration"
+      ],
+      "not_read": [
+        "com.rabbitmq.client.impl.TruncatedInputStream — the length-limiting stream the decoder wraps around nested values",
+        "com.rabbitmq.client.impl.LongStringHelper — the long-string factory the decoder calls",
+        "Callers of the decoder named in the file: MethodArgumentReader, ContentHeaderPropertyReader, and whatever constructs the DataInputStream from the socket",
+        "Build-time source generation declared in pom.xml: codegen.py, src/main/scripts/generate_amqp_sources.groovy, deps/rabbitmq_codegen/amqp-rabbitmq-0.9.1.json",
+        "Test sources and the integration testsuite declared by the failsafe/surefire configuration",
+        "CI workflows, a dependency lock or resolved tree, and an SBOM"
+      ]
+    },
+    "coverage_declaration": "Two files were exercised, by reading only: the target was neither modified nor executed and no network was used. On the decoder, the classes exercised were untrusted-input resource consumption (WEB-26: allocation sized from the wire, recursion with no depth counter, a declared length never compared with the bytes available), decoding correctness on attacker-chosen values, and the injection and deserialization classes that transfer to a library (WEB-07, WEB-11). On the manifest, the classes exercised were the offline half of SUP-01, SUP-02, SUP-04, SUP-05 and SUP-06. NOT exercised, and silence about them is silence: everything in `not_read` above; known-CVE reachability (SUP-13) and prioritisation (SUP-14, SUP-15), which need advisory data this engagement forbids; support lifecycle (SUP-24), for which there is no offline oracle, so every version in the manifest is unmeasured rather than clean; secret scanning of history, since the target carries no repository; and the whole caller chain, which means every claim of remote reachability below is argued from the file's own contract and not observed at the socket."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "A four-byte length off the wire sizes the byte array before any content is read",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 88,
+        "component": "ValueReader.readBytes(DataInputStream)"
+      },
+      "evidence": "readBytes(), lines 86-94:\n    final long contentLength = unsignedExtend(in.readInt());\n    if(contentLength < Integer.MAX_VALUE) {\n        final byte [] buffer = new byte[(int)contentLength];\n        in.readFully(buffer);\n        return buffer;\n    } else {\n        throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\");\n    }\nThe only guard on contentLength is `< Integer.MAX_VALUE`, which stops the cast from wrapping and lets every value below ~2 GiB through. The allocation happens before readFully() has read a single content byte, so the bytes actually available are never consulted. Reached from readLongstr() (public API, line 108), from field values of type 'S' (line 163) and 'x' (line 211), and from readTable()/readArray() through readFieldValue().",
+      "impact": "A peer that spends four bytes makes the decoding process commit up to ~2 GiB of heap before it can fail. readFully() then throws EOFException, but the array already exists; repeated across frames or connections this is OutOfMemoryError or sustained GC pressure in the application embedding the library, with no data or credential needed by the sender. The same line also converts an over-large length into UnsupportedOperationException — an unchecked exception on a decode path whose callers are declared to throw IOException, so it escapes protocol error handling instead of being reported as a malformed frame.",
+      "preconditions": "The DataInputStream carries bytes chosen by a remote peer: a hostile or compromised broker, an on-path attacker on a connection without TLS, or — through ContentHeaderPropertyReader, named in the class comment at line 137 — message properties authored by any principal allowed to publish and relayed to this consumer. No authentication step is needed for the first two: the connection greeting and the server-properties table are decoded before any credential is exchanged.",
+      "recommendation": "Bound contentLength against something the peer does not choose before allocating: the negotiated maximum frame size, a configurable maximum field-value length, or the bytes remaining in the enclosing frame — and, where a large value is legitimate, read it in bounded chunks into a growing buffer instead of pre-sizing. Raise MalformedFrameException (an IOException) rather than UnsupportedOperationException so the protocol layer treats an over-long declared length as a protocol error.",
+      "inference": "That the DataInputStream handed to ValueReader is fed from the socket rather than from a buffer already bounded and validated by the caller. The class comment and javadoc say so (\"read AMQP wire-protocol encoded values\", \"Also called by ContentHeaderPropertyReader\"), but the construction site is outside the two files in scope.",
+      "what_would_settle_it": "com.rabbitmq.client.impl.Frame / AMQConnection / MethodArgumentReader / ContentHeaderPropertyReader: the line where the DataInputStream is constructed, and whether any maximum is applied to a declared field length before ValueReader sees it. A unit test that feeds readLongstr() the four bytes 0x7F FF FF FF followed by nothing, and measures the allocation before the EOFException, settles the rest.",
+      "traceability": [
+        "CWE-789",
+        "CWE-400",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "NIST 800-53 SC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control can reach this: the array is sized from the declared length and allocated before any read, so a cap on frame size upstream bounds the bytes that arrive but not the number the peer declares. readBytes is private static and the length is consumed inside it, so no caller can interpose a limit."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is `in.readInt()` at line 86 — four bytes taken straight from the stream, with no allowlist, constant or clamp between the read and the allocation."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is a second principal by construction: the file exists to decode a wire protocol spoken to a remote peer, and line 137 names ContentHeaderPropertyReader — message properties, which are authored by publishing peers, not by the process doing the decoding."
+        }
+      ],
+      "limits": "Nothing was executed, so the allocation was not observed at runtime and no JVM heap setting was measured; whether ~2 GiB is fatal depends on the consumer's -Xmx. It does not establish that any particular caller reaches this line with pre-authentication bytes — see the inference. It says nothing about ValueWriter or about any other decoder in the library."
+    },
+    {
+      "id": "F-002",
+      "title": "Field tables and field arrays recurse with no depth counter anywhere in the chain",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "ValueReader.readFieldValue / readTable / readArray"
+      },
+      "evidence": "The cycle is closed and carries no depth argument in any of the three signatures:\n  static Object readFieldValue(DataInputStream in)            // line 158\n      case 'F': value = readTable(in);                        // line 181\n      case 'A': value = readArray(in);                        // line 184\n  private static Map<String,Object> readTable(DataInputStream in)   // line 139\n      while(tableIn.available() > 0) { readShortstr(tableIn); readFieldValue(tableIn); }   // lines 148-152\n  private static List<Object> readArray(DataInputStream in)   // line 237\n      while(arrayIn.available() > 0) { array.add(readFieldValue(arrayIn)); }               // lines 244-247\nOne nesting level costs the sender five bytes: the type tag 'F' or 'A' plus a four-byte length. Nothing in the file counts levels, and no cap is passed in from the public entry point readTable() at line 252.",
+      "impact": "A single frame of a few tens of kilobytes buys thousands of nesting levels, which is StackOverflowError in the thread decoding the frame. That is an Error, not an IOException: the `catch (IOException)` and MalformedFrameException handling the protocol layer is written around does not catch it, so the failure surfaces as a dead connection-reading thread rather than as a rejected frame. Each level also allocates a HashMap or ArrayList and two stream wrappers, so the same bytes buy a heap multiple on the way down.",
+      "preconditions": "Same as F-001: bytes chosen by a remote peer reach the decoder — a hostile or compromised broker, an on-path attacker without TLS, or a publisher whose message headers are relayed to this consumer. A nested table is a legal AMQP field-table value, so no malformed encoding is required.",
+      "recommendation": "Carry a depth argument through readFieldValue, readTable and readArray, cap it at a small constant (the protocol has no legitimate need for deep nesting), and raise MalformedFrameException past the cap. A cap on total decoded elements per frame closes the heap half of the same amplification.",
+      "inference": "That the StackOverflowError is not caught and neutralised somewhere above ValueReader. The callers are outside the two files in scope, and a `catch (Throwable)` in the connection loop would turn this from a thread death into a logged and dropped frame.",
+      "what_would_settle_it": "The frame-reading loop in com.rabbitmq.client.impl.AMQConnection / Frame: which throwables it catches. A unit test that feeds readFieldValue a byte string of ('F' + 0xFFFFFFFF) repeated a few thousand times and observes where the StackOverflowError lands settles the rest.",
+      "traceability": [
+        "CWE-674",
+        "CWE-400",
+        "A04:2025",
+        "ASVS 5.0 V11",
+        "NIST 800-53 SC"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer above can bound recursion depth: nesting is expressed inside the frame payload, so a frame-size limit only fixes how many levels fit, and the file offers no parameter through which a caller could impose a cap."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting is chosen by whoever writes the type tags at line 161 — the stream itself. Nothing between the tag byte and the recursive call constrains it."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Same second principal as F-001: the remote peer, and through message properties any publisher whose headers this consumer decodes."
+        }
+      ],
+      "limits": "Nothing was executed, so the depth at which the stack actually overflows was not measured; it depends on -Xss and on the JIT'd frame size. It does not establish what the consuming application does when the decoding thread dies. TruncatedInputStream.available() was not read, so the exact number of levels one frame buys is an estimate from the encoding, not a measurement."
+    },
+    {
+      "id": "F-003",
+      "title": "A declared table or array length is never compared with the bytes that remain",
+      "procedure": "WEB-26",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 240,
+        "component": "ValueReader.readArray and ValueReader.readTable"
+      },
+      "evidence": "readTable(), lines 142-147:\n    long tableLength = unsignedExtend(in.readInt());\n    if (tableLength == 0) return Collections.emptyMap();\n    DataInputStream tableIn = new DataInputStream(new TruncatedInputStream(in, tableLength));\nreadArray(), lines 240-242:\n    long length = unsignedExtend(in.readInt());\n    DataInputStream arrayIn = new DataInputStream(new TruncatedInputStream(in, length));\nBoth accept 0..4294967295 from the wire and pass it straight through as a truncation limit. Neither compares it with the bytes actually available, and readArray does not even carry the `< Integer.MAX_VALUE` cast guard that readBytes has at line 87 — the same manifest of a length the peer chooses, with three different amounts of checking in one file.",
+      "impact": "An over-declared length is not an error here, it is a licence to read further. A nested table or array that declares more bytes than its parent holds keeps consuming until the underlying stream ends, so it absorbs the sibling fields that followed it; the parent loop at line 148 then sees `available() == 0` and returns a map that silently lost them, with no MalformedFrameException raised. A decoder that validated the declared length against the enclosing region would reject the same frame. The result is a parser differential: this client and any stricter peer disagree about which headers a message carries, which matters wherever an application routes, filters, audits or authorizes on a header value.",
+      "preconditions": "Bytes chosen by a remote peer reach the decoder, and some other party — the broker, a second consumer, a signature or audit path — decodes the same bytes with different length handling and a decision depends on the difference.",
+      "recommendation": "Reject a declared table, array or byte-vector length greater than the bytes remaining in the enclosing region before constructing the truncated stream, and raise MalformedFrameException when it is; apply the same check in all three places so one file stops having three different rules. Additionally assert at the end of each nested decode that exactly the declared number of bytes was consumed.",
+      "inference": "That TruncatedInputStream, given a limit larger than the bytes its underlying stream can supply, reads through to that stream's end rather than failing — which is what makes the inner value swallow its siblings. The class is referenced at lines 147 and 242 but is not in the two files in scope.",
+      "what_would_settle_it": "com.rabbitmq.client.impl.TruncatedInputStream: its read() and available() when `limit` exceeds what the wrapped stream holds. A unit test that decodes a two-field table whose first field is an array declaring a length longer than the table, and asserts whether the second field survives, settles it end to end.",
+      "traceability": [
+        "CWE-130",
+        "CWE-20",
+        "A04:2025",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "TruncatedInputStream is outside the scope read. If it refused a limit larger than the bytes it can supply, the swallow would surface as an exception and this finding would collapse to the missing cast guard alone. Absence of that file is not evidence that it does, so the answer is UNKNOWN rather than HOLDS."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both lengths are `in.readInt()` off the stream, at lines 142 and 240, with no clamp between the read and their use as a limit."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The peer that writes the frame and the application that reads the decoded map are different principals from the decoder, as F-001 sets out."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "No consumer of the decoded map is in scope, so whether a lost or shifted header reaches a decision could not be established. Severity is written at `low` on that basis rather than higher."
+        }
+      ],
+      "limits": "It does not establish that a stricter second decoder exists in this system, nor that any application reads the affected headers for a decision. Nothing was executed: the swallow is argued from the encoding and from the loop conditions, not observed."
+    },
+    {
+      "id": "F-004",
+      "title": "The timestamp field multiplies a wire-chosen 64-bit value by 1000 unchecked",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "ValueReader.readTimestamp"
+      },
+      "evidence": "readTimestamp(), line 269:\n    return new Date(in.readLong()*1000);\nreadLong() returns the peer's full signed 64-bit value; the multiplication is done in long arithmetic, which wraps silently in Java. Any value above 9223372036854775 (or below its negative) wraps, so a far-future AMQP timestamp decodes as a Date in the past and the reverse. There is no range check before or after, and no exception is possible.",
+      "impact": "The peer chooses which side of the epoch the decoded Date lands on, independently of the value it declared. Where a consumer compares that Date against now — message expiry, a deduplication or replay window, retention, ordering, an audit record — a wrapped value inverts the comparison, and the audit trail records a time the sender never sent.",
+      "preconditions": "A remote peer sets the timestamp property or a 'T' field value, and the consuming application uses the decoded Date in a comparison rather than only displaying it.",
+      "recommendation": "Reject or clamp values outside the range that can be multiplied by 1000 without wrapping — Math.multiplyExact with MalformedFrameException on overflow is the minimal change — and document the unit the field is decoded in.",
+      "inference": "That a consumer uses the decoded Date in a decision. The library's own consumers of the timestamp property are outside the two files in scope, so the arithmetic is observed and the consequence is argued.",
+      "what_would_settle_it": "The readers of BasicProperties.getTimestamp() in the library and in the embedding application: whether any of them compares it with the current time. A unit test that decodes 0x0020000000000000 as a 'T' value and prints the Date shows the wrap in one line.",
+      "traceability": [
+        "CWE-190",
+        "CWE-20"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The multiplicand is `in.readLong()` at line 269 — the peer's eight bytes, unconstrained."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The timestamp is written by the publishing peer and read by this consumer: two principals, as in F-001."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "Whether the wrapped Date reaches a decision depends on consumers outside the scope read; severity is held at `low` for that reason and the finding is written down rather than dropped."
+        }
+      ],
+      "limits": "It does not establish that any consumer in this library or in an application compares the decoded Date with the current time. It is arithmetic read from source, not a reproduction."
+    },
+    {
+      "id": "F-005",
+      "title": "A repeated field name in a table is dropped silently, first occurrence wins",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 151,
+        "component": "ValueReader.readTable"
+      },
+      "evidence": "readTable(), lines 149-152:\n    String name = readShortstr(tableIn);\n    Object value = readFieldValue(tableIn);\n    if(!table.containsKey(name))\n        table.put(name, value);\nA table that encodes the same name twice is accepted; the second value is discarded without an exception, a log line or any signal to the caller. The choice of first-wins is not stated anywhere in the file, and the wire format has no rule this code is enforcing.",
+      "impact": "Nothing on its own, and no exploit path is claimed here. It is recorded because duplicate-key handling is where header smuggling lives when two implementations disagree: a decoder that took the last occurrence would build a different map from the same bytes, and only one of the two would match what a signature, a broker-side filter or a second consumer saw.",
+      "preconditions": "None observed. A divergence needs a second decoder of the same bytes with the opposite rule, and none is in the scope read.",
+      "recommendation": "Make the choice explicit and loud: either reject a table with a repeated name as malformed — the safest option for a security-relevant field set — or document first-wins in the public API contract so consumers and any re-encoder agree with it. Silence is the part worth fixing.",
+      "traceability": [
+        "CWE-20"
+      ],
+      "triage": [
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "Real but bounded: no second decoder of the same bytes is in scope, so no divergence and no impact on a user was demonstrated. Under FP-10 it stays in the report at `informational` rather than being deleted."
+        }
+      ],
+      "limits": "It does not establish that any peer or library component decodes the same table with last-wins semantics; that comparison needs the encoder and the broker, neither of which is in scope."
+    },
+    {
+      "id": "F-006",
+      "title": "Shipped API source is generated from a build input the manifest never verifies",
+      "procedure": "SUP-04",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "pom.xml",
+        "line": 613,
+        "component": "groovy-maven-plugin execution generate-amqp-sources, phase generate-sources"
+      },
+      "evidence": "pom.xml lines 110-112 declare the input outside the module:\n    <deps.dir>${basedir}/deps</deps.dir>\n    <codegen.dir>${deps.dir}/rabbitmq_codegen</codegen.dir>\n    <codegen.spec_version>0.9.1</codegen.spec_version>\nLines 613-636 run it at generate-sources through groovy-maven-plugin, goal `execute`, with `<script>${basedir}/codegen.py</script>` and `<spec>${codegen.dir}/amqp-rabbitmq-${codegen.spec_version}.json</spec>`, writing com/rabbitmq/client/AMQP.java and com/rabbitmq/client/impl/AMQImpl.java; lines 644-656 add that directory to the main source root with build-helper `add-source`. The comment at lines 102-108 says the directory should hold a working copy of another repository. Nothing in the manifest pins a commit or a digest, and no verification step precedes the execution.",
+      "impact": "Part of the published artifact's source is decided by a directory that is not in this repository and is not checked against anything — the spec is selected by file name and a version string, not by content. Whoever populates `deps/rabbitmq_codegen` in a build environment influences generated public API code without a reviewable change in this tree. No attacker path is claimed: this is the integrity of a build input, and it is recorded as one.",
+      "preconditions": "A build environment where the codegen working copy is fetched or written by something other than the reviewed release process — a CI step that clones a branch tip, a shared runner workspace, a developer machine.",
+      "recommendation": "Pin the codegen input by commit or content digest and verify it before generate-sources, failing the build on a mismatch; or vendor the spec into this repository so the source of the shipped API is reviewable in the same tree and the same review. The build already signs its output with maven-gpg-plugin and holds publication behind `autoPublish=false`, which protects the artifact after it is built but says nothing about what went into it.",
+      "traceability": [
+        "CWE-829",
+        "CWE-494",
+        "CICD-SEC-4",
+        "SLSA Build L2"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The CI configuration that populates deps/rabbitmq_codegen is outside the target, so whether the release pipeline pins and verifies that checkout could not be established. FP-08's doctrine applies: without the workflow file this is UNKNOWN, never HOLDS."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The execution is bound to generate-sources in the default lifecycle, not to a profile, and line 653 adds the generated directory to the main source root, so the generated files are in the shipped jar."
+        }
+      ],
+      "limits": "codegen.py and src/main/scripts/generate_amqp_sources.groovy were not in scope, so what they do with the spec was read from the manifest's own comments, not verified. No CI configuration was available, so nothing is established about who can write that directory in the real release build. This is a statement about an unverified build input, not about a compromise."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Injection and unsafe deserialization in the decoder (SQL, shell, template, object graph)",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "ValueReader.java read end to end. The decoder builds only JDK value types — String, LongString, BigDecimal, Date, boxed primitives, byte[], HashMap, ArrayList — from a closed switch on a one-byte type tag (lines 161-219), whose default branch raises MalformedFrameException. No class name, callable or type token is taken from the wire, there is no reflection, no ObjectInputStream, no XML/YAML parser, and no SQL, shell, template or filesystem sink appears in the file. Bound: this covers the two files in scope only; the callers that consume the returned Map were not read."
+    },
+    {
+      "class": "Known vulnerabilities in the declared dependencies, and their reachability",
+      "procedure": "SUP-13",
+      "outcome": "blocked",
+      "where": "No SCA ran: the engagement forbids network access and advisory lookup, and the target holds no lock file or resolved tree. The 24 direct dependencies declared in pom.xml were read and their versions recorded (21 pinned inline, 3 JUnit artifacts managed by the junit-bom 5.14.4 import), but a reachability judgement also needs the application sources, of which one file is in scope. What would unblock it: authorization for an offline advisory database plus the full source tree."
+    },
+    {
+      "class": "Support lifecycle of the declared components and runtimes",
+      "procedure": "SUP-24",
+      "outcome": "blocked",
+      "where": "The executable half was done offline: slf4j-api 1.7.36 and netty 4.2.15.Final at compile scope; jackson-databind 2.21.3, micrometer-core 1.17.0, opentelemetry-api 1.63.0 and metrics-core 4.2.39 optional; groovy-all 2.4.21 on the build path; jetty 9.4.58.v20250814, logback 1.2.13, bouncycastle 1.84 and mockito 5.23.0 in test scope; source and target 1.8. The second half — each vendor's declared end-of-support date and the source of that date — has no offline oracle and was not obtained, so every one of these is unmeasured rather than clean, and any future 'no known vulnerabilities' result for them must be downgraded accordingly."
+    },
+    {
+      "class": "Non-deterministic dependency resolution: floating ranges and a missing lock",
+      "procedure": "SUP-01",
+      "outcome": "refuted",
+      "where": "pom.xml read in full. Of the 24 direct dependencies, 21 carry an explicit version through a property and the other 3 are pinned by the junit-bom 5.14.4 import in dependencyManagement; no range operator appears in any <dependency>, and the only ranges in the file are JDK profile activations ([1.8,), [11,21), [21,)). The absence of a lock file is the documented normal case for a publishable library, where resolution happens on the consumer side. Bound: this says nothing about what a CI pipeline actually resolves, since no workflow file was in scope."
+    },
+    {
+      "class": "Dependency confusion and multi-registry resolution",
+      "procedure": "SUP-05",
+      "outcome": "refuted",
+      "where": "pom.xml declares no <repositories>, <pluginRepositories>, mirrors or extra index, so every coordinate resolves from the default central repository, and the project publishes under the same groupId it consumes nothing internal from. No unscoped internal-looking name appears among the dependencies. Bound: ~/.m2/settings.xml and runner environment variables are outside the target and can still introduce an extra index."
+    },
+    {
+      "class": "Code fetched and executed during the build (the curl-pipe-shell shape)",
+      "procedure": "SUP-04",
+      "outcome": "refuted",
+      "where": "pom.xml read in full: no download step, no curl or wget, no remote script applied from a URL, and no http:// endpoint anywhere in the file. The only build-time execution is the local groovy-to-python codegen step, which is reported as F-006 for a different reason — an unverified local input, not a fetched one."
+    },
+    {
+      "class": "Secrets in the target",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "Both files in scope were read for credential-shaped strings. The only candidate is <gpg.keyname>6026DFCA</gpg.keyname> at pom.xml line 124, a public GPG key identifier used to select a signing key, not key material. Bound: the target carries no repository, so no history could be scanned, and only two files exist to scan."
+    }
+  ]
+}

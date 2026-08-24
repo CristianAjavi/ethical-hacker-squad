@@ -1,0 +1,114 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku4",
+    "coverage_declaration": "Examined pom.xml for dependency versions and their currency; examined ValueReader.java for input validation, resource allocation, and protocol parsing logic. Dependency versions verified as recent (Netty 4.2.15, Jackson 2.21.3, SLF4J 1.7.36, JUnit 5.14.4) with no known public advisories identified. Did not run automated SCA tooling, instead performed manual version cross-reference. TruncatedInputStream and LongStringHelper are referenced but source not provided; their correctness was not audited.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies and build configuration)",
+        "ValueReader.java (AMQP wire protocol parser)"
+      ],
+      "read": [
+        "pom.xml (full manifest: dependencies, versions, plugins, build configuration)",
+        "ValueReader.java (all public and static methods, input validation, array allocation logic)"
+      ],
+      "not_read": [
+        "TruncatedInputStream.java (referenced at lines 147, 242 but source code not provided)",
+        "LongStringHelper.java (referenced at line 103 but source code not provided)",
+        "Other com.rabbitmq.client.impl classes (focus limited to single file per scope)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Memory exhaustion via unbounded array allocation in readBytes()",
+        "Stack overflow via unbounded recursive deserialization in readFieldValue()"
+      ],
+      "reported": [
+        "Memory exhaustion via unbounded array allocation in readBytes()"
+      ],
+      "dropped": [
+        {
+          "label": "Stack overflow via unbounded recursive deserialization in readFieldValue()",
+          "resolution": "refuted",
+          "reason": "readFieldValue() at lines 158-221 recurses on nested tables (case 'F', line 181) and arrays (case 'A', line 184). However, recursion depth is limited by available Java heap memory: array allocation at line 88 occurs before recursion, so OutOfMemoryError on allocation prevents stack overflow. A pathological nesting structure causes OOM at the allocation stage, not SO at the recursion stage.",
+          "control_at": "ValueReader.java:87-90"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation from untrusted AMQP length field enables denial of service",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86
+      },
+      "evidence": "In readBytes() method (lines 83-94), the code reads a 32-bit unsigned length from the AMQP stream and allocates a byte array without validation: line 86 `final long contentLength = unsignedExtend(in.readInt());` converts the 32-bit value to unsigned; line 87-88 checks `if(contentLength < Integer.MAX_VALUE)` and allocates `new byte[(int)contentLength]`. An attacker sending a length of 2,147,483,646 (0x7FFFFFFE, one less than Integer.MAX_VALUE) causes allocation of a 2GB byte array. This same code path is reached by readTable() at line 142 and readArray() at line 240.",
+      "impact": "A malicious, corrupted, or network-MITM-controlled AMQP broker can send a single frame with a large table or longstring length declaration, forcing the Java client to allocate multiple gigabytes of heap memory. This exhausts memory, triggers OutOfMemoryError, and crashes the client application. Repeated attacks cause sustained denial of service.",
+      "preconditions": "Client must parse an AMQP table or longstring field where the length prefix (32-bit unsigned int) is set to a value close to Integer.MAX_VALUE. This occurs when: (1) the server sends a malicious message, (2) network traffic is intercepted and modified, or (3) the client connects to an untrusted or compromised broker.",
+      "recommendation": "Add a configurable maximum field size limit before attempting allocation. Example: define a constant `private static final long MAX_FIELD_SIZE = 268_435_456; // 256 MB` and check before allocation at line 87: `if (contentLength > MAX_FIELD_SIZE) throw new MalformedFrameException(\"Field exceeds maximum size: \" + contentLength);`. This limit should be tunable via a system property or client configuration to accommodate different deployment scenarios.",
+      "traceability": [
+        "CWE-770",
+        "CWE-400",
+        "A08:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces a maximum size. The UnsupportedOperationException comment at lines 92-93 indicates a feature limitation, not a security boundary."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The length value is fully attacker-controlled: it comes directly from the AMQP byte stream via `in.readInt()` at line 86, which could be crafted by a malicious broker or MITM."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Array allocation is dangerous in its current form. Allocating a 2GB array is not 'safe' and causes immediate impact (OutOfMemoryError)."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A boundary is crossed: from the AMQP broker (untrusted external system) to the client application process (trusted consumer of this library). A malicious broker is a valid threat model."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The AMQP 0.9.1 specification (declared in pom.xml line 717 as codegen.spec_version=0.9.1) does not mandate broker enforcement of field-size limits on clients. No external constraint prevents this attack."
+        }
+      ],
+      "limits": "This finding applies to all three call paths: direct readBytes() calls from readLongstr() (line 103), and indirect calls through readTable() (line 142) and readArray() (line 240). The attack requires either broker compromise or network interception; in normal RabbitMQ deployments with TLS and authentication, the risk is lower but not eliminated (authenticated users could still craft malicious messages).",
+      "unaided_label": "Memory exhaustion via unbounded array allocation in readBytes()"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Integer overflow in readUnsignedInt EOF detection logic",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java:227-234. The four-byte EOF check `if ((ch1 | ch2 | ch3 | ch4) < 0)` is correct. When any of the four `in.read()` calls returns -1 (EOF), the bitwise OR of -1 with any other values (0-255) is -1 (all bits set in a long). The check -1 < 0 is true, correctly throwing EOFException. This prevents reading partial unsigned integers at stream end."
+    },
+    {
+      "class": "String encoding injection or charset confusion via hardcoded UTF-8",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java:65-71 (readShortstr). The code hardcodes UTF-8 charset: `new String(b, \"utf-8\")`. This is correct per AMQP 0.9.1 specification (all text fields are UTF-8). Hardcoding prevents charset-based injection and is the intended behavior."
+    },
+    {
+      "class": "Uncontrolled recursion leading to stack overflow in readFieldValue",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java:158-221 (readFieldValue). Recursive calls occur at case 'F' (table, line 181) and case 'A' (array, line 184). Recursion depth is limited by heap memory (arrays are allocated before recursion), not by stack depth. A malicious nested structure triggers OutOfMemoryError at the byte-array allocation stage (line 88) before stack overflow occurs. The memory limit is the bottleneck, not the call stack."
+    }
+  ]
+}

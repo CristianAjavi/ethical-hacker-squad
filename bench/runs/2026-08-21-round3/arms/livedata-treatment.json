@@ -1,0 +1,294 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern5/livedata/target/xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+    "commit": "not available: no VCS metadata in scope. The class javadoc carries an unexpanded `$Id$` keyword and `@since 13.4RC1` (lines 58-59), which is the only version marker present.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus at extern5/corpus (no version declared in the corpus)",
+    "coverage_declaration": "Exercised: one Java class (352 lines), read end to end, statically and read-only. Roles staffed from coverage.md: `web-api` (server-side write handler with authorization, an untyped property map and a converter sink) and, for the log/audit surface, `privacy-abuse` §7 via `web-api-clientside-logic.md` §11. Pack sections opened: `web-api.md` §0 (what tools do not see), §1 skimmed for the authN boundary, §2 in full (WEB-04, WEB-05, WEB-24, WEB-25, WEB-06), §3 (WEB-07..WEB-09), §4 (WEB-10) and §5 (WEB-11, WEB-12) to rule the injection families in or out; `web-api-clientside-logic.md` §8 (WEB-17, WEB-18, WEB-23) and §11 (WEB-22). NOT exercised, and therefore not to be read as clean: everything outside this single file. No callers, no Live Data source implementation, no REST/script entry point, no XWiki model or persistence classes, no tests, no build file, no configuration, no repository history. `supply-chain` was not staffed (no `pom.xml`, no lockfile and no git tree in the provided target, so the routing rows for dependencies and for secret scanning of history do not match the inventory); `infra-cloud`, `mobile`, `ai-safety`, `local-app` and `privacy-abuse` §1-§6 and §8-§10 were not staffed for lack of any matching signal. No dynamic test, no build, no execution and no network access were used, per the engagement brief; every finding below is therefore static and none reaches `confirmed`. Classes that could not be decided inside this scope are listed in `ruled_out` with the bound of how far the reading reached, not as absence."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Caller-supplied property map is applied to the document with no allowlist, and it can set `enforceRequiredRights`, a security control, with only EDIT checked",
+      "procedure": "WEB-06",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 328,
+        "component": "ModelBridge.updateDocument / ModelBridge.updateAll"
+      },
+      "evidence": "The only authorization decision in the class is one coarse check per entry point: `this.authorization.checkAccess(Right.EDIT, documentReference)` at line 124 (`update`) and line 181 (`updateAll`). After it, `updateAll` iterates the caller's map verbatim -- `for (Map.Entry<String, Object> property : properties.entrySet()) { ... this.updateProperty(property.getKey(), property.getValue(), targetClassReference, objectNumber, document); }` (lines 194-199) -- with no comparison against any list of properties the Live Data configuration declared editable. `updateProperty` routes any key beginning with `doc.` into `updateDocument` (line 280-281), whose switch accepts four document fields (lines 323-339). Three of them are ordinary content: `title`, `content`, `hidden`. The fourth is not: `case \"enforceRequiredRights\" -> { changedValue = document.isEnforceRequiredRights(); document.setEnforceRequiredRights(Boolean.parseBoolean(String.valueOf(value))); }` (lines 328-331). Its name states that it governs whether the document's declared required rights are enforced; it is written through the same untyped path, with the same single EDIT check, as the page title. Nothing between line 181 and line 330 narrows what a caller may name.",
+      "impact": "A caller holding only EDIT on one document can, in the same request that changes that document's content, flip the flag that decides whether the document's required-rights declaration is enforced. Turning enforcement off removes a restriction the platform applies to what the document's scripts may do; turning it on for a document that legitimately requires elevated rights disables that document's functionality. Because the write path is the generic property map rather than a dedicated, separately authorized operation, the privilege needed to change a security control here is the privilege needed to fix a typo in a title.",
+      "preconditions": "An authenticated principal with EDIT right on the target document, and a reachable Live Data / live table update entry point that forwards a client-supplied property map into `updateAll` or `update`. Both are ordinary for this component; neither was observed, because no caller is in scope.",
+      "recommendation": "Do not let the transport's property map decide which document fields are writable. Derive the writable set from the Live Data source's own declared editable properties and reject anything outside it, failing closed on an unknown name instead of falling through to a switch. Separately, take `enforceRequiredRights` out of the generic `doc.` switch and give it its own authorization decision at the right level for a security control, rather than inheriting the EDIT check that covers `title`.",
+      "inference": "That the property map reaching `updateAll` is client-controlled rather than assembled server-side from a validated configuration. The map is an untyped `Map<String, Object>` parameter and no caller is in scope, so the source end of the chain was argued from the method's shape and from the `RequiresHTMLConversion` request-field convention it handles, not observed.",
+      "traceability": ["CWE-915", "CWE-862", "CWE-732", "A01:2025", "ASVS 5.0 V4", "ASVS 5.0 V8", "WSTG-INPV-*", "API3:2023", "NIST 800-53 AC"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control could exist in the Live Data source or in the REST/script layer that calls this bridge -- an allowlist of editable properties applied before the map is handed over. No such caller is in the provided scope (the target is this file alone), and nothing inside the file references one. Per the rule, absence of evidence is not HOLDS."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The field written at line 330 is not data whose sensitivity is arguable: `enforceRequiredRights` is by its own name the enforcement switch of an access-control mechanism, and line 329 reads its prior state back to the caller."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A platform-level restriction on who may change required-rights enforcement may exist outside the repository slice provided. No exported configuration, ticket or written statement arrived with the engagement, so per FP-08 this is UNKNOWN and never HOLDS."
+        }
+      ],
+      "limits": "This does not establish what an attacker gains after enforcement is disabled: the downstream consequence depends on how the platform resolves script rights for a document that no longer enforces its declaration, and that resolution is not in scope. It also does not establish that no caller filters the map. What it does establish is that this class applies no such filter and performs no second authorization decision for the one field among the four that is a security control."
+    },
+    {
+      "id": "F-002",
+      "title": "The XClass whose object is created or overwritten is named by the caller, and only the document in the path is authorized",
+      "procedure": "WEB-25",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 292,
+        "component": "ModelBridge.updateXObject"
+      },
+      "evidence": "`updateXObject` resolves its target purely from parameters the caller chose: `BaseObject baseObject = document.getXObject(classReference, objectNumber);` (line 292), and when nothing is there it creates one -- `if (baseObject == null && objectNumber == document.getXObjectSize(classReference)) { baseObject = document.newXObject(classReference, xcontext); }` (lines 294-297) -- then writes into it with `xClass.fromMap(Map.of(property, newValue), baseObject);` (line 315). In `updateAll` the class is picked per property from a second caller-supplied map: `DocumentReference propertyClassReference = propertyClassReferences.get(property.getKey()); DocumentReference targetClassReference = propertyClassReference != null ? propertyClassReference : classReference;` (lines 195-197). The single authorization decision in the method's call chain is `checkAccess(Right.EDIT, documentReference)` at line 181 -- it authorizes the *document* named in the request, and nothing authorizes the *class* named alongside it. There is no allowlist, no comparison against the class the Live Data source was configured with, and no rejection of classes that carry security meaning rather than content.",
+      "impact": "A caller with EDIT on one document can create or overwrite an object of any XClass in that document, and set any property that class declares, through an endpoint whose declared purpose is editing the cells of a live table. That is a wider capability than the request appears to ask for: object creation of a class the table never displayed, at an index the caller picks, in a single call. Where a class encodes rights, required-rights declarations, scheduling or credentials rather than page content, naming it in the body is how a caller reaches it.",
+      "preconditions": "An authenticated principal with EDIT right on the target document, and a Live Data update path that lets the client choose the source's class reference and the per-property class map. The class map is already a per-request structure in this signature (`Map<String, DocumentReference> propertyClassReferences`, line 178).",
+      "recommendation": "Authorize the class as well as the document. Constrain `classReference` and every value of `propertyClassReferences` to the classes the Live Data source's own configuration declares for that table, reject anything else, and treat object *creation* (line 296) as a distinct operation from object update rather than a fallback of the same code path.",
+      "inference": "That `classReference` and `propertyClassReferences` carry values a client can influence. Both are method parameters; their origin lies in the Live Data source layer, which is not in scope. The rest of the chain -- resolution, creation and write -- is read directly in lines 292-315.",
+      "traceability": ["CWE-862", "CWE-639", "CWE-732", "A01:2025", "ASVS 5.0 V8", "WSTG-ATHZ-04", "NIST 800-53 AC"],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "The class references arrive as parameters at lines 178 and 289; tracing them backwards to something outside an attacker's reach requires the Live Data source implementation, which is not in the provided scope. Neither direction could be established, so UNKNOWN rather than DOES_NOT_HOLD."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The object named is not a lookup row the caller could have supplied literally: line 296 creates it and line 315 writes caller-chosen values into it, so naming the class has an effect on stored state rather than merely on a response."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "The platform may apply a class-level check in a listener or in the save path that no code in this file references. Nothing in scope shows one, and per FP-01 a control that a caller may forget -- or that could not be located at all -- is not this rule."
+        }
+      ],
+      "limits": "This does not demonstrate a concrete escalation through a specific class: which XClasses carry security meaning, and whether the platform independently restricts writing to them, is outside the file. The finding is the missing check, decidable here: the method authorizes one object and acts on another that the request names."
+    },
+    {
+      "id": "F-003",
+      "title": "The prefix filter that decides which properties get HTML-converted fails open, because `removeStart` returns the input unchanged when the prefix is absent",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 252,
+        "component": "ModelBridge.getPropertiesRequiringHTMLConversion"
+      },
+      "evidence": "The method splits a caller-supplied string into names (`requiresHTMLConversion.split(\",\")`, line 238) and is built around a prefix scheme, `String.format(\"%s_%d_\", className, objectNumber)` (line 259), whose purpose is to bind each name to a class and an object index. The first loop honours it: a name is accepted only if it matches a computed prefix exactly, `if (requiresHTMLConversionSet.remove(htmlConversionProperty))` (line 244). The second loop does not: `result.add(Strings.CS.removeStart(requiresHTMLConversionProperty, defaultPrefix));` (line 252). `removeStart` strips the prefix when present and returns the string unchanged when it is absent, so a name that matches no prefix at all is not rejected -- it is added verbatim. The set that comes back is then used without further checking: `properties.computeIfPresent(propertyName, (k, v) -> this.htmlConverter.fromHTML((String) v, (String) properties.get(syntaxKey)));` plus `properties.remove(syntaxKey); properties.remove(cacheKey);` (lines 214-217). The filter is a filter only for names that were already well-formed.",
+      "impact": "A caller who controls the `RequiresHTMLConversion` value can name any key present in the same request and have it rewritten by the HTML converter, with the target syntax also taken from the request (`propertyName + \"_syntax\"`, line 212) and never validated against a known syntax. That includes the document fields `doc.content` and `doc.title`, which the class/index prefix scheme exists to keep out of this path. The same loop also silently drops `<name>_syntax` and `<name>_cache` for any name the caller chooses, so a caller can remove two companion keys from an update the server would otherwise have applied. An unrecognised or absent syntax value reaches the converter as-is.",
+      "preconditions": "A request that carries the `RequiresHTMLConversion` key (line 207 gates the whole block on it) together with the property being targeted, so that `computeIfPresent` at line 214 finds it. Reachable only through `updateAll`; the single-property `update` path never calls `convertPropertiesFromHtml`.",
+      "recommendation": "Make the prefix mandatory rather than optional: accept a name only when it actually starts with a computed prefix -- `startsWith` then `substring`, or `Optional`-returning strip -- and drop names that match none, instead of passing them through. Validate the `_syntax` value against the registered syntaxes before it reaches the converter, and reject `doc.`-prefixed names in this loop explicitly, since they are document fields and not properties of any XClass.",
+      "inference": "That the resulting conversion is undesirable rather than merely redundant. What `htmlConverter.fromHTML` produces from arbitrary HTML for a given syntax is behaviour of a component outside the scope, so the consequence of routing an extra property through it is argued from the method's own design intent -- the prefix scheme -- and not observed at the sink.",
+      "traceability": ["CWE-20", "CWE-693", "A05:2025", "ASVS 5.0 V1", "WSTG-INPV-*"],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is read straight out of the untyped property map the method is handed -- `(String) properties.remove(REQUIRES_HTML_CONVERSION)` at line 208 -- and reaches `split` at line 238 with nothing in between that constrains it. No allowlist, no enum, no literal."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Whether `htmlConverter.fromHTML` (line 215) is a dangerous sink in the form it is reached depends on what the converter emits for the requested syntax; that component is not in the provided scope, so its behaviour could not be established."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A caller could constrain the `RequiresHTMLConversion` value before handing over the map. `getPropertiesRequiringHTMLConversion` is public (line 231) and reachable independently of `convertPropertiesFromHtml`, and no caller is in scope, so no unskippable layer could be named."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is what it looks like: the first loop in the same method (lines 241-247) performs the exact-match version of the same decision, so the second loop's tolerant strip is a difference in behaviour inside one method, not an idiom being misread."
+        }
+      ],
+      "limits": "This does not establish an escalation of privilege. It establishes that a filter which the surrounding code treats as authoritative does not constrain what it is given, and that a request-controlled syntax value reaches a converter unvalidated. Whether either matters downstream needs the converter and the caller, neither of which is in scope."
+    },
+    {
+      "id": "F-004",
+      "title": "Caller-controlled values are cast rather than coerced, so an unexpected JSON type raises an unhandled runtime exception",
+      "procedure": "WEB-22",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 338,
+        "component": "ModelBridge.updateDocument / ModelBridge.convertPropertiesFromHtml / ModelBridge.updateXObject"
+      },
+      "evidence": "Values arrive as `Object` and are handled inconsistently inside a single switch: `case \"title\" -> { ... document.setTitle(String.valueOf(value)); }` (line 334) coerces, while the next case `case \"content\" -> { ... document.setContent((String) value); }` (line 338) casts. Two contracts for the same parameter, four lines apart, is the signature of an oversight rather than a deliberate rule. The same unguarded cast appears three more times on caller-controlled data: `String requiresHTMLConversion = (String) properties.remove(REQUIRES_HTML_CONVERSION);` (line 208) and, inside the remapping lambda, `this.htmlConverter.fromHTML((String) v, (String) properties.get(syntaxKey))` (line 215), where the second argument is additionally `null` whenever the caller omits the `_syntax` companion key. Separately, `xClass.fromMap(Map.of(property, newValue), baseObject);` (line 315) uses `Map.of`, which rejects a null key or value with `NullPointerException`, so a JSON null for any property -- or a null `property` name reaching `updateXObject` through `updateProperty`, which guards only the `startsWith` test with `StringUtils.defaultIfEmpty` at line 280 -- fails there. None of these are caught anywhere in the class; the declared `throws` clause covers `AccessDeniedException`, `XWikiException` and `LiveDataException` only.",
+      "impact": "A caller can turn any of these into a server-side runtime exception by sending a property value of the wrong JSON type -- a number, an array, an object or null -- for `doc.content`, for `RequiresHTMLConversion`, or for any converted property. What the caller gets back depends on the error handling of the layer above: at best a generic failure, at worst a response carrying the exception class and stack frames, which is the reconnaissance case WEB-22 exists for. It is also an availability nuisance on a write path that is otherwise cheap to call.",
+      "preconditions": "Authenticated access to a Live Data update path with EDIT right on some document -- the checks at lines 124 and 181 pass first, so the exception is raised after authorization, on the caller's own document.",
+      "recommendation": "Coerce instead of casting, consistently: use the same `String.valueOf`/null-guard treatment the `title` case already uses, and reject values of an unexpected type with a `LiveDataException` carrying a controlled message rather than letting a `ClassCastException` escape. Replace `Map.of` at line 315 with a map that tolerates a null value, or validate and reject nulls explicitly. Confirm at the transport layer that no exception body is returned to the client.",
+      "inference": "That the exception surfaces to the caller in a form that discloses more than a generic failure. The class does not render responses, so what the framework does with an escaped `ClassCastException` or `NullPointerException` is outside the scope and was not observed; only the raising of it is read directly.",
+      "traceability": ["CWE-704", "CWE-248", "CWE-209", "CWE-20", "WSTG-ERRH-*", "ASVS 5.0 V16", "A09:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A global exception mapper in the REST or script layer could convert the escape into a generic error, which would bound the disclosure half of the impact. No such layer is in the provided scope and none is referenced from this file."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code is in `src/main/java` of the shipped module, in a `@Component`-annotated singleton (lines 61-63), not in test scaffolding and not behind any flag or environment condition."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The cast operands are the values of the untyped `Map<String, Object>` the public API accepts (line 177) and the `Object value` parameter (line 120); nothing between the signature and the cast constrains their runtime type."
+        }
+      ],
+      "limits": "This does not establish that a stack trace reaches the client, only that an unchecked exception is raised on caller-controlled input inside a method that declares three specific checked exceptions and handles none of these. The disclosure half needs the layer above."
+    },
+    {
+      "id": "F-005",
+      "title": "The rejected-property branch writes the caller's property name and value into the log unescaped",
+      "procedure": "WEB-22",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 343,
+        "component": "ModelBridge.updateDocument"
+      },
+      "evidence": "The default branch of the document-field switch logs both halves of the rejected input: `this.logger.warn(\"Unknown property [{}]. Document [{}] will not be updated with value [{}].\", property, document, value);` (lines 343-346). `property` is the caller's map key with the leading `doc.` removed (line 281) and `value` is the caller's value; neither is escaped, truncated or filtered. The branch is reached by design for every `doc.`-prefixed name the switch does not know, so a caller decides both how often it fires and what it contains, and the only name exempted from it is `fullName` (line 342).",
+      "impact": "Two effects, both marginal but real. A caller controls text that lands verbatim in a server log line, including newlines, so fabricated log records can be injected around a genuine one -- the audit trail of this write path is caller-writable. And because the branch fires precisely when the value is *not* stored, the log becomes the only place that value comes to rest: a mistyped or renamed field carrying content the caller intended for the document is retained in log storage, under a different retention and a different set of readers than the wiki content it was meant to become.",
+      "preconditions": "Any authenticated caller with EDIT right on any document, sending a `doc.`-prefixed property name other than `hidden`, `enforceRequiredRights`, `title`, `content` or `fullName`. No special role and no unusual configuration.",
+      "recommendation": "Log the property name only, and only after escaping line breaks; do not log the value at all on this branch -- the value is caller data and the message already conveys that it was discarded. If the value is genuinely needed for support, put it behind a debug level and through the same redaction the rest of the platform's logging uses.",
+      "inference": "That the configured logging backend does not itself escape line terminators in interpolated arguments. Logback and the SLF4J bindings can be configured either way, and no logging configuration is in the provided scope, so the injection half rests on the default rather than on an observed setting.",
+      "traceability": ["CWE-117", "CWE-532", "CWE-778", "WSTG-ERRH-*", "ASVS 5.0 V16", "A09:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A redaction or escaping processor could be installed in the logging pipeline. No logging configuration arrived with the target, so per the rule this cannot be answered HOLDS on the strength of it being likely."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The statement is at WARN level in shipped main-source code, not behind a debug guard: line 343 executes in any deployment that reaches the default branch."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The text written is not fixed public content of known shape: it is whatever the caller put in the value of a property the server then refused to store, so its sensitivity is decided by the caller and not by the system."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The impact reaches a reader: log records that an operator would take as system-generated can be shaped by a caller. That is more than a defence-in-depth gap, even though it is small, so it stays at `low` rather than dropping to informational."
+        }
+      ],
+      "limits": "This does not establish where the logs are shipped, who reads them, or what retention applies -- all of which decide how much the second effect matters, and none of which is in scope. It establishes only that the sink is unescaped and caller-controlled."
+    },
+    {
+      "id": "F-006",
+      "title": "Every write through this bridge is recorded as a minor edit, including a full replacement of document content",
+      "procedure": "WEB-22",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "xwiki-platform-core/xwiki-platform-livedata/xwiki-platform-livedata-livetable/src/main/java/org/xwiki/livedata/internal/livetable/ModelBridge.java",
+        "line": 272,
+        "component": "ModelBridge.saveDocument"
+      },
+      "evidence": "The save is unconditional in its metadata: `xcontext.getWiki().saveDocument(document, \"LiveData update.\", true, xcontext);` (line 272). The third argument is the minor-edit flag and it is the literal `true` for every path that reaches this method -- a single cell edit through `update` (line 137) and a bulk write through `updateAll` (line 201) alike, and regardless of whether what changed was one xobject property, the document title, or the whole of `document.setContent(...)` at line 338. The comment string is likewise fixed at `\"LiveData update.\"`, so the revision comment records the mechanism and never the field. Nothing in the class varies either value by what was actually modified.",
+      "impact": "No exploit path is claimed. What is weakened is the visibility of a change: a write that replaces document content is filed with the same weight as a cosmetic one, and the revision comment carries no information about which property moved. For a reviewer reconstructing what happened, the history of documents edited through Live Data is less informative than the history of the same documents edited through the ordinary editor -- and a caller who prefers their change to be inconspicuous does not have to do anything to get that.",
+      "preconditions": "None beyond reaching the bridge at all; the flag is a literal, not a parameter.",
+      "recommendation": "Decide the minor-edit flag from what changed rather than hard-coding it: a document-content or title replacement is not a minor edit even when it arrives through a table cell. Put the changed property names into the revision comment, which costs nothing and is the piece a later reader actually needs.",
+      "traceability": ["CWE-778", "ASVS 5.0 V16", "A09:2025", "WSTG-ERRH-*"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Whether a deployment surfaces minor edits in notifications, activity streams and history views is a platform configuration, and none was provided with the target."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not an intended, bounded exposure: the flag is not a declared property of the Live Data write path anywhere in the file, it is a literal argument with no comment explaining it, applied identically to a title tweak and to a full content replacement."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recorded as `hardening` rather than downgraded: no exploit path is asserted at all, so there is nothing for FP-10 to bound. The item is written down because the fix is cheap and the information loss is permanent once a revision is stored."
+        }
+      ],
+      "limits": "This does not establish that minor edits are hidden in any particular deployment, nor that any notification is actually suppressed. It establishes that the class removes the distinction at the source, so no downstream consumer can recover it."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Privilege escalation through a stale content author after a content change",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "The strongest candidate in the file and the reason it is here rather than in `findings`. `saveDocument` takes explicit responsibility for authorship -- `document.setAuthorReference(xcontext.getUserReference());` at line 271 -- immediately before saving, and the class does modify content (`document.setContent(...)`, line 338; converted wiki syntax written back into the property map, line 215). It never touches the content author, which is the identity a wiki platform of this shape resolves script rights from. Read one way that is a missing assignment; read the other, setting the metadata author *before* the save is exactly the idiom that lets the persistence layer derive the content author from it when the content is dirty, which would make the omission correct. Deciding between the two requires the document and store classes, and the scope is this file alone, so nothing was concluded. Bound: lines 262-274 read in full; `XWikiDocument`, the hibernate store and any authorship listener not available. What would settle it: the body of the save path, specifically whether it propagates the metadata author to the content author when `isContentDirty()`."
+    },
+    {
+      "class": "Function-level authorization asymmetry between sibling handlers (WEB-24)",
+      "procedure": "WEB-24",
+      "outcome": "refuted",
+      "where": "Listed every public entry point and every use of the one authorization symbol the class holds (`ContextualAuthorizationManager`, line 70). Three public methods: `update` (line 100, delegating to line 120), `updateAll` (line 155, delegating to line 177) and `getPropertiesRequiringHTMLConversion` (line 231). Both write paths call `checkAccess(Right.EDIT, documentReference)` as their first statement -- lines 124 and 181 -- and the two four-argument overloads reach them by delegation, so no write entry point is ungated. The third public method changes no state: it reads its arguments and returns a set. No ungated sibling of a gated effect exists inside this file. Bound: the asymmetry class is decidable within one file, which is what the procedure claims; it says nothing about entry points elsewhere that might bypass this bridge entirely."
+    },
+    {
+      "class": "Data-layer injection: SQL, ORM, NoSQL (WEB-07)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "No query is constructed anywhere in the 352 lines: no `Statement`, no `createQuery`, no `@Query`, no string concatenation into any persistence call. All state changes go through typed model APIs -- `document.setTitle`, `document.setContent`, `document.setHidden`, `document.setEnforceRequiredRights`, `xClass.fromMap(...)`, `document.newXObject(...)` -- and the single save is `getWiki().saveDocument(document, ...)` at line 272. The only string building in the file is `String.format(\"%s_%d_\", ...)` at line 259, which produces a map key, not a query. Bound: whether the store below builds queries safely is outside this scope."
+    },
+    {
+      "class": "OS command execution, SSRF and outbound network (WEB-08, WEB-10)",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "No process or HTTP symbol is imported or used: no `Runtime`, `ProcessBuilder`, `exec`, and no HTTP client, URL, socket or redirect handling. The import block (lines 22-52) is collections, javax.inject, commons-lang3, slf4j and platform model/security/wysiwyg types only, and no member call in the body reaches the network or the shell. The nearest thing to an outbound call is `htmlConverter.fromHTML` (line 215), an in-process component. Bound: what that component does internally is not in scope."
+    },
+    {
+      "class": "Deserialization of untrusted data, file upload and path traversal (WEB-11, WEB-12)",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "No deserialization sink and no filesystem access. Caller values are handled only by `String.valueOf`, a cast, `Boolean.parseBoolean`/`Boolean.valueOf`, and `list.stream().map(String::valueOf).toArray(String[]::new)` at line 311 for the list case in `updateXObject`; there is no `ObjectInputStream`, no YAML/XML/JSON parser, no `File`, `Path`, `Files` or stream API in the file. Bound: the transport that produced the `Map<String, Object>` does deserialize a request body, and that transport is not in scope."
+    },
+    {
+      "class": "Race condition and lost update on the read-modify-write cycle (WEB-17)",
+      "procedure": "WEB-17",
+      "outcome": "inconclusive",
+      "where": "The cycle is present and unguarded inside the file: load at line 126 (and 183), `document.clone()` at line 133 (and 190), mutate, then save at line 272, with no version token, no ETag, no expected-revision parameter in either public signature and no lock. Two concurrent Live Data updates to the same document would each save a copy derived from a snapshot taken before the other, so the later write wins whole. Whether that is a defect depends on conflict detection in the save path -- some wiki platforms compare revisions there and reject or merge -- and that path is not in scope, so this was not concluded. Bound: lines 120-139, 177-202 and 262-274 read in full; no store, no concurrency test run (execution was out of scope)."
+    },
+    {
+      "class": "Cross-site scripting and output encoding (WEB-13, WEB-14)",
+      "procedure": "WEB-13",
+      "outcome": "not executed",
+      "where": "The class produces no HTTP response, no template and no HTML; it writes values into a model and returns the previous value as an `Object` (lines 138, 307, 350). Encoding of anything stored here happens at render time in components that are not in the provided scope, so the class was not exercised for this family rather than cleared of it. Bound: the read side of these fields was never seen."
+    },
+    {
+      "class": "Dependency, lockfile and secret-in-history review (supply-chain pack)",
+      "procedure": "SUP-01",
+      "outcome": "not executed",
+      "where": "Not staffed, and deliberately so: coverage.md routes this pack on a manifest (`pom.xml`, lockfile) or a git tree, and the provided target contains one `.java` file and no build file, no lockfile and no repository metadata. Neither the dependency inventory nor the history secret scan could be run against anything. Bound: the module this class belongs to certainly has a `pom.xml` upstream; it was not provided and was not sought."
+    }
+  ]
+}

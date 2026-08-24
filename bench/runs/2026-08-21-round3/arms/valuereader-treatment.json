@@ -1,0 +1,297 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern5/valuereader/target — two files only: src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP wire-format value decoder) and pom.xml (dependency manifest of the published jar com.rabbitmq:amqp-client).",
+    "commit": "amqp-client 5.34.0-SNAPSHOT (pom.xml line 7). No VCS revision, tag or .git directory was provided with the tree, so the audit is pinned to the manifest version only.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (extern5/corpus) — manual specialist audit, no automated pipeline stage",
+    "coverage_declaration": "EXERCISED, by reading only: every method of ValueReader.java end to end (17 field-value type tags, the four length-prefixed readers, the two container readers) and every dependency, property, profile and build plugin declared in pom.xml. Packs opened: coverage.md routing table; web-api.md §0, §3, §5 (WEB-07..WEB-12, transferred to a library surface per the coverage row for published libraries); local-app.md §0 and §5 (LOC-10, attacker identification for a package other people import); supply-chain.md §1-§4, §6, §7 (SUP-01..SUP-08, SUP-11..SUP-15); supply-chain-source-lifecycle.md §11 (SUP-24, SUP-25); triage.md FP-01..FP-10 answered for every reported finding. NOT EXERCISED, and their absence from this report is not a clean result: (a) UNCOVERED SURFACE — untrusted-input resource exhaustion in a binary protocol decoder (unbounded pre-allocation, uncontrolled recursion, decompression/expansion amplification) has NO procedure in this corpus; coverage.md flags library surfaces as partial coverage and traceability.md's gap list does not close this class, so F-001 and F-002 are reported as ad-hoc and reasoned from first principles rather than from a written method; (b) no caller of ValueReader is in scope — the frame reader, ContentHeaderPropertyReader, TruncatedInputStream, LongStringHelper and the connection thread's exception handling were not provided, so every reachability and containment statement below is inferred, never observed; (c) the target was never built or executed and no fuzzing, debugging or heap measurement was performed (read-only mandate); (d) no network, therefore SUP-13/SUP-14/SUP-15 could not run at all — no advisory feed, KEV catalog, EPSS score or registry existence check was consulted, and NO claim is made about known CVEs in any of the 25 declared dependencies; (e) SUP-24 support calendars have no offline oracle, so branch end-of-support dates are recorded as unmeasured, not as clean; (f) no .git directory and no CI workflow files were provided, so git history secret scanning (§8), CI/CD publishing integrity (§5) and source-side protection (§10) were not measured; (g) memory safety, binary exploitation and anything requiring a debugger are out of scope of every pack in this corpus.",
+    "authorization": "Authorized read-only static review of the provided tree. No remote host was contacted, nothing was executed, nothing was modified; no active or remote test was run, so no per-test authorization reference applies."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Attacker-controlled 32-bit length prefix drives an unbounded heap allocation before any payload byte is read (readBytes)",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86,
+        "component": "com.rabbitmq.client.impl.ValueReader#readBytes(DataInputStream)"
+      },
+      "evidence": "Lines 83-95:\n    final long contentLength = unsignedExtend(in.readInt());\n    if(contentLength < Integer.MAX_VALUE) {\n        final byte [] buffer = new byte[(int)contentLength];\n        in.readFully(buffer);\n        return buffer;\n    } else {\n        throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\");\n    }\nThe guard excludes exactly one value (2147483647). A wire-supplied length of 0x7FFFFFFE passes it, so five bytes of input — the type tag plus the four length bytes — request a 2147483646-byte array before readFully() reads a single byte of the value. The size is never compared against the bytes actually remaining in the enclosing frame, and no configurable ceiling exists anywhere in the file. Three reachable entry points share the sink: the public readLongstr() (lines 100-112), the field-table tag 'S' (line 163) and the field-table tag 'x' (line 211), the last two nestable inside readTable/readArray to any depth.",
+      "impact": "A peer that can place bytes on the stream forces the consuming JVM to request up to ~2 GiB of heap per occurrence, at an amplification of roughly 4x10^8 to 1. On any heap smaller than the requested array the result is an OutOfMemoryError — a java.lang.Error, not the IOException this call chain declares — which is not caught by ordinary protocol error handling and, unlike a per-connection failure, degrades or kills the whole application JVM, not just the AMQP connection. Repeating it costs the attacker five bytes per attempt. Because tag 'S' is legal inside message-header field tables, the same primitive is potentially reachable from any principal permitted to publish to an exchange the victim consumes from, not only from the broker itself.",
+      "preconditions": "The consuming application parses AMQP values from a peer it does not fully control: a hostile or compromised broker; a network position on a connection not protected by TLS (plaintext 5672 is the protocol default); or, if the broker relays header field tables byte-for-byte, any publisher able to reach an exchange the victim consumes from. No credentials are needed for the first two, and the connection.start handshake carries a server-properties field table, so the primitive is available before the client authenticates.",
+      "recommendation": "Bound the length before allocating, not after: compare contentLength against a configurable maximum (and against the bytes actually available in the enclosing frame or TruncatedInputStream) and reject anything larger with MalformedFrameException, which is the checked exception this call chain already declares. Where very large values must be supported, read incrementally into a growing buffer capped at that maximum instead of sizing the array from the prefix. Also replace the UnsupportedOperationException on the else branch: an unchecked exception escapes the IOException contract of every caller in the same way an Error does.",
+      "inference": "One link is inferred rather than observed: that the DataInputStream handed to this class carries bytes from a remote peer. Only ValueReader.java and pom.xml are in scope — no call site, frame reader or connection loop was provided. The inference rests on the class javadoc (\"read AMQP wire-protocol encoded values\"), its package com.rabbitmq.client.impl, its single DataInputStream constructor and the javadoc at line 137 stating readTable is also called by ContentHeaderPropertyReader.",
+      "traceability": ["CWE-789", "CWE-770", "CWE-400", "CWE-20", "CAPEC-130"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "No calling code is in scope, so a ceiling enforced by an unskippable outer layer cannot be excluded by reading. What can be read argues against one: the array is sized from the length prefix alone and allocated before any read, so neither a negotiated frame_max nor the TruncatedInputStream wrappers this file itself uses (lines 146-147 and 241-242) can prevent it — they bound reads, not allocations, and readFully would fail only after the array exists. This UNKNOWN is what caps the finding at probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The allocation size is four bytes read straight off the stream at line 86, passed through unsignedExtend with no allowlist, clamp or ceiling; the only value excluded is Integer.MAX_VALUE itself."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is new byte[(int)contentLength] at line 88 — a raw heap allocation. There is no parsing-instead-of-evaluating variant of it that would make the size safe."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code sits in src/main/java with no flag, profile or debug guard, and pom.xml declares packaging jar for the published artifact com.rabbitmq:amqp-client, so this path ships to every consumer."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Nothing is being reported as an exposure, binding or published surface; the rule addresses intended exposure, which is not the claim here."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is named per local-app.md §0: the second principal is the remote AMQP peer (or a publisher whose headers the broker relays), and the victim is the application that imports the library. Peer to consuming JVM is a crossing between two principals, not a user acting on their own process."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "NOT_APPLICABLE",
+          "reason": "This is an availability finding. No data is read, disclosed or classified, so the question of whether the data has security value does not arise."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "No broker-side, platform-side or deployment-side control was evidenced — no configuration export, ticket or written statement arrived, and none was requested because the engagement is offline. Per FP-08 the absence of that evidence is UNKNOWN and never HOLDS."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: a fixed-size array allocated from a wire-supplied 32-bit length. There is no benign reading — no pooled buffer, no lazy allocation, no framework indirection."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The impact reaches the user of the library as heap exhaustion in their own JVM; it is not a defence-in-depth gap with a working equivalent elsewhere, so it does not downgrade to informational."
+        }
+      ],
+      "limits": "Establishes the allocation and its trigger by reading the code; does not establish a crash on any specific JVM, because no heap size was measured and the target was never executed. Does not establish that a RabbitMQ broker relays a crafted header field table unchanged to consumers — that path was not tested and would need a broker in scope. Does not establish which callers reach readBytes with peer-controlled data, since no caller is in scope."
+    },
+    {
+      "id": "F-002",
+      "title": "Nested field tables and field arrays recurse without a depth limit, so a few kilobytes of wire input exhaust the thread stack",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "com.rabbitmq.client.impl.ValueReader#readFieldValue / #readTable / #readArray"
+      },
+      "evidence": "readFieldValue (line 158) dispatches tag 'F' to readTable (line 181) and tag 'A' to readArray (line 184); readTable (lines 139-155) and readArray (lines 237-249) both loop calling readFieldValue again. The cycle readFieldValue -> readTable -> readFieldValue carries no depth parameter, no counter and no cap anywhere in the file. Each nesting level costs the attacker about six bytes on the wire (a zero-length short string name, the tag byte, the four-byte length) for tables and five for arrays, while costing the victim a full Java frame per level plus a new HashMap or ArrayList, a new DataInputStream and a new TruncatedInputStream (lines 145-147, 241-243). A frame of a few tens of kilobytes therefore encodes thousands of nesting levels.",
+      "impact": "Stack exhaustion in the thread that decodes the value: a StackOverflowError, which like OutOfMemoryError is a java.lang.Error and therefore escapes the IOException contract that every method in this chain declares and that a protocol error handler would catch. The decoding thread dies or unwinds through code that never expected to unwind, leaving connection state inconsistent; the per-level allocations add heap pressure on top. The cost to the attacker is a single small frame, and the input is legal AMQP structure rather than a malformed field, so a length or syntax check upstream would not stop it.",
+      "preconditions": "Same peer position as F-001: a hostile or compromised broker, a network position on a non-TLS connection, or — if header field tables are relayed verbatim — a principal able to publish to an exchange the victim consumes from. Deep nesting is syntactically valid AMQP, so no protocol violation is required.",
+      "recommendation": "Thread an explicit depth counter through readFieldValue, readTable and readArray and reject anything beyond a small hard cap (AMQP field tables have no legitimate need for deep nesting) with MalformedFrameException. Cap the total element and entry count decoded per frame in the same pass, so that neither depth nor breadth is bounded only by how many bytes the peer chose to send.",
+      "inference": "The same single inferred link as F-001: that the DataInputStream reaching this class carries peer-controlled bytes. No call site is in scope; the inference rests on the class javadoc, the package com.rabbitmq.client.impl and the note at line 137 that readTable is also called by ContentHeaderPropertyReader. Whether the decoding thread has a catch of Throwable above it is likewise unobservable here.",
+      "traceability": ["CWE-674", "CWE-400", "CWE-20", "CAPEC-130"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "No caller is in scope, so a depth or size limit imposed by an outer layer cannot be excluded. What is visible argues against a sufficient one: the only bound in the file is TruncatedInputStream, which limits bytes and not nesting, and the byte cost per level is small enough that any realistic frame budget still permits thousands of levels. This UNKNOWN caps the finding at probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting depth is entirely a function of the tag bytes the peer sends; nothing in the file constrains the sequence of 'F' and 'A' tags that readFieldValue will follow."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is the recursive call itself (lines 181 and 184). There is no non-recursive form of it in this implementation, and no trampolining or explicit stack."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Main source tree, no guard; pom.xml packages it into the published jar. readFieldValue is package-visible for tests but is reached from the public readTable() at line 252."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No exposure, port or distribution artifact is being claimed as the defect; the rule does not bear on an input-parsing recursion."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Named per local-app.md §0: library to consumer, and peer to consuming JVM. The principal who writes the nested table is not the principal who runs the decoder."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Availability finding; no data is read out or classified."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "No evidence of a broker-side nesting limit or a platform control arrived, and none could be requested offline. FP-08 makes that UNKNOWN, never HOLDS."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mutual recursion is direct and visible in three methods of one file; there is no reading in which the cycle is bounded by construction."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consequence lands on the consuming application as a killed decoding thread and inconsistent connection state, so it is not a redundant defence whose equivalent already holds elsewhere."
+        }
+      ],
+      "limits": "Establishes unbounded recursion by reading the code; does not establish the exact depth at which a given JVM overflows, because no stack size was measured and nothing was executed. The severity assumes the StackOverflowError is not caught by a Throwable handler above the decoding thread — that handler, if it exists, is outside the two files in scope. Whether the peer can deliver a frame large enough for the required depth depends on the negotiated frame_max, which is set by code not in scope."
+    },
+    {
+      "id": "F-003",
+      "title": "Support status of the shipped dependency branches was not established, so their clean advisory result is unmeasured rather than clean",
+      "procedure": "SUP-24",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "medium",
+      "location": {
+        "path": "pom.xml",
+        "line": 59,
+        "component": "properties block, lines 59-81"
+      },
+      "evidence": "Directly observed pins: slf4j-api 1.7.36 (property line 59, declared as a non-optional compile-scope dependency, so it is inherited by every consumer of the published jar); groovy-all 2.4.21 (property line 81, dependency of groovy-maven-plugin, which runs a script at generate-sources and therefore executes on the build path); jetty-servlet 9.4.58.v20250814 (property line 71, test scope); logback-classic 1.2.13 (property line 64, test scope). All 25 direct dependencies carry an exact version through a property — no ranges, no LATEST, no RELEASE — so the first field SUP-24 requires, the version in use, is executable and was recorded. The second and third fields, the vendor's declared end-of-support date and its source, have no offline oracle and were not obtained: the engagement forbids network access.",
+      "impact": "Grants an attacker nothing by itself; it is recorded because omitting it is what makes an unsupported branch read as a clean one. For any of these components whose branch is in fact past end of support, no advisory will ever be published and no fixed version will ever exist, so silence from osv-scanner, trivy, grype or dependency-check is silence by design and not a measurement — and the remediation would be a migration to the current major line, not an upgrade within the branch. slf4j-api is the one that matters most here because it is the only one of the four that ships inside the consumer's dependency graph; groovy-all executes at build time only and the other two are test scope.",
+      "preconditions": "None. This is a statement about what the audit could and could not measure, not about a reachable weakness.",
+      "recommendation": "Record, per component, the three SUP-24 fields — version in use, the vendor's published end-of-support date, and the source of that date — from the vendors' own support calendars, and treat every component whose date has passed as unmeasured rather than clean in any dependency report. Start with slf4j-api 1.7.36, the only pin among the four that ships to consumers and the only one whose major line appears to have a successor; for a library whose users inherit the API artifact, moving to the maintained line is a compatibility decision that belongs to the maintainers, not a patch.",
+      "traceability": ["CWE-1104", "CWE-1395", "A06:2025", "SSDF RV", "CIS v8.1 Control 2"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "NOT_APPLICABLE",
+          "reason": "There is no sink and no compensating control to point at: the claim is that a measurement was not made, not that an input reaches a dangerous operation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No attacker-controlled value is involved in a support-lifecycle observation."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No sink is named, so the form in which it is reached does not apply."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "SUP-24's build-stage exculpation covers groovy-all 2.4.21 (build path only) and the test-scope pins, but not slf4j-api 1.7.36, which is compile scope and non-optional and therefore ships in the published artifact's dependency graph. Because the finding is anchored on the shipped pin, the rule does not exculpate it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No exposure is claimed."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The crossing is library to consumer: an unsupported branch shipped inside a published jar is inherited by every application that imports it, which is a second principal in the sense of local-app.md §0."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No data is involved."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The support calendars and any extended-support subscription live outside the repository and no exported artifact, ticket or written statement arrived — the engagement is offline. FP-08 makes that UNKNOWN and forbids reading it as HOLDS, which is precisely why this is reported as unmeasured instead of dropped."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The pins were read verbatim from the properties block and resolved to their dependency declarations; they are not template literals, placeholders or a module-versus-root confusion."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "No exploit path is asserted and none was found, so the item is bounded to informational by FP-10 and carries status hardening. It is written down rather than deleted because deleting it is what converts unmeasured into clean."
+        }
+      ],
+      "limits": "Does not claim that any of these components is past end of support: that fact was not established, and asserting it without the vendor's date would be the fabrication SUP-24 warns against. Does not claim any of them is vulnerable — no advisory feed was consulted (see the ruled-out entry for SUP-13). Covers only the 25 direct dependencies declared in this pom; transitive dependencies were not resolved, because resolving them needs the network."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Deserialization of untrusted data / object-graph reconstruction (CWE-502)",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "ValueReader.readFieldValue lines 158-221. The decoder maps a closed set of 17 single-byte type tags to fixed JDK types (LongString, Integer, Long, BigDecimal, Date, Map, List, Byte, Double, Float, Short, Boolean, byte[], null); no class name, type hint or discriminator crosses the wire, nothing is resolved reflectively, and an unrecognised tag throws MalformedFrameException at line 217. There is no ObjectInputStream, XStream, SnakeYAML or Jackson polymorphic sink in the file, so FP-03 holds for the gadget-chain reading of this class. Bounded to the one file in scope: LongStringHelper and TruncatedInputStream were not provided."
+    },
+    {
+      "class": "Injection into a data layer, a shell or an interpreter",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "Whole of ValueReader.java: no SQL, ORM, query builder, Runtime.exec, ProcessBuilder, template engine or expression parser appears anywhere in the file. The decoded values are returned to the caller, and no caller is in scope, so this refutation covers the decoder only and says nothing about what a consumer does with a header value."
+    },
+    {
+      "class": "Path traversal and file handling (CWE-22)",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "Whole of ValueReader.java: the class touches no filesystem API — no File, Path, FileInputStream, archive extraction or path concatenation. Its only I/O is the DataInputStream handed to its constructor."
+    },
+    {
+      "class": "Lock file missing, out of sync or unused by the pipeline; floating version ranges",
+      "procedure": "SUP-01",
+      "outcome": "refuted",
+      "where": "pom.xml as a whole. The artifact is a publishable library (com.rabbitmq:amqp-client, packaging jar), which is SUP-01's own exculpation for a missing lock, and Maven has no lock artifact in any case. Every one of the 25 direct dependencies resolves through an exact version property (lines 59-81) — no ^, ~, LATEST, RELEASE or open range — so the SUP-02 floating-range pattern is absent from the manifest. Transitive resolution was not measured; it needs the network."
+    },
+    {
+      "class": "Arbitrary code on the build path from a remote fetch",
+      "procedure": "SUP-04",
+      "outcome": "refuted",
+      "where": "pom.xml build and profile sections. Code does execute at build time — groovy-maven-plugin runs scripts from ${groovy-scripts.dir} at generate-sources, and the in-umbrella profile silently re-points ${deps.dir} when ../../UMBRELLA.md exists — but every source is a path inside the developer's own tree; there is no curl|sh, no wget, no remote apply from:, and no <repositories> or <pluginRepositories> override in the file. The scripts themselves are not in scope (only pom.xml and ValueReader.java were provided), so their content was not read."
+    },
+    {
+      "class": "Dependency confusion and multi-registry resolution",
+      "procedure": "SUP-05",
+      "outcome": "blocked",
+      "where": "pom.xml declares groupId com.rabbitmq, which the project controls, and contains no repository or mirror configuration. The effective registry list lives in settings.xml and in runner environment variables, neither of which was provided; per FP-08 that is an evidence request, not a scan, so resolution order was not measured rather than found clean."
+    },
+    {
+      "class": "Known-vulnerability triage of declared dependencies (reachability, KEV/EPSS prioritisation, scanner noise)",
+      "procedure": "SUP-13",
+      "outcome": "not executed",
+      "where": "All 25 direct dependencies in pom.xml. The engagement forbids network access, so no advisory feed, KEV catalog, EPSS score or registry query was consulted and no SCA tool was run. No CVE claim is made about any component, and the absence of such claims from this report must not be read as a clean result."
+    },
+    {
+      "class": "SBOM generation and build provenance attestation",
+      "procedure": "SUP-11",
+      "outcome": "inconclusive",
+      "where": "pom.xml declares artifact signing (maven-gpg-plugin sign goal in both the snapshots and release profiles, keyname property at line 124) but no CycloneDX or SPDX plugin and no attestation step. That is not enough to conclude either way: the release workflow that would emit an SBOM or a provenance attestation is not in the two files provided, and per FP-08 its absence from scope is unmeasured, not absent. SLSA Build level was therefore not assessed."
+    },
+    {
+      "class": "Credentials or secrets in the files in scope",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "Both files read in full. The only credential-shaped token is <gpg.keyname>6026DFCA</gpg.keyname> at pom.xml line 124, which is a public GPG key identifier and not a secret; no password, token, private key or PEM block appears in either file. No .git directory was provided, so history was not scanned — that half of §8 is unmeasured."
+    },
+    {
+      "class": "Field-table duplicate-key handling differential",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "ValueReader.readTable lines 151-152 keep the FIRST occurrence of a repeated key (if(!table.containsKey(name))). A differential would need the peer's or broker's own policy for duplicate keys, and neither is in scope, so no claim is made that a header can be shadowed. Recorded because a consumer relying on a trusted header would inherit whichever policy wins."
+    },
+    {
+      "class": "Integer overflow in timestamp decoding",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "ValueReader.readTimestamp line 269 computes new Date(in.readLong()*1000) with no overflow check, so a chosen 64-bit input yields an arbitrary and possibly wrapped java.util.Date. Not raised to a finding: the peer already sets the timestamp field by design, so no capability beyond what the protocol grants was established, and no consumer of the value is in scope to show a time-dependent decision it would corrupt."
+    }
+  ]
+}

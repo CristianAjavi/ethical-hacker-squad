@@ -26,6 +26,20 @@ a decision, the decision is written to survive the claim being wrong.
 **Not established by anyone, including us:** the actual detection quality of any
 product in this document, ours included. See §3.4.
 
+> **Update, 2026-08-21 — that last paragraph is now partly false, and the correction does not flatter us.**
+> Detection quality has since been measured for two products in this table, ours and Mantis, on
+> published advisories with a blind judge. **On the nine advisories a published rule selected — three
+> ecosystems, five projects — the score is 6/9 for this corpus, 6/9 for the same model with no corpus,
+> and 6/9 for Mantis. Identical.** A separation of one advisory appeared in the third round, was
+> published, and was withdrawn the same day when the case was re-judged with every arm in one context
+> and the disputed verdict moved. That episode is written up in the run's README as a property of the
+> instrument: **one advisory is inside its noise.** Nothing here supports "the best available"; what it
+> supports is "measured, at parity, and published by only one of the three". The single case where this corpus pulled ahead is one we chose. The runs, their
+> artifacts and their limits are in `bench/runs/2026-08-21-ab-corpus/` and
+> `bench/runs/2026-08-21-three-arm-go/`. Nothing here supports "the best available"; what it supports
+> is "measured, and at parity on the sample nobody curated". The rest of this document was written on
+> 2026-08-16 and its figures for **this** repository are superseded by the row below.
+
 ## The field, as of today
 
 | Product | Repo | Licence | Stars | Forks | Created | Last push | What it is |
@@ -34,8 +48,9 @@ product in this document, ours included. See §3.4.
 | AIG | `Tencent/AI-Infra-Guard` | Apache-2.0 (NOTICE requires attribution) | 4,506 | 446 | 2024-12-25 | 2026-08-12 | AI red-teaming platform: fingerprint+CVE engine, 3-stage black-box agent scanner, and an offensive jailbreak-mutation Claude Code skill |
 | PT-Agents | `0xSteph/pentest-ai-agents` | MIT | 2,130 | 405 | 2026-03-28 | 2026-08-14 | Claude Code plugin, 52-53 offensive subagents including C2, evasion, exfiltration; funnel to a closed platform |
 | AgSec | `msoedov/agentic_security` | Apache-2.0 (no NOTICE file) | 1,965 | 275 | 2024-04-11 | 2026-07-31 | Black-box jailbreak scanner: fires HuggingFace prompt datasets at an LLM endpoint and reports a refusal rate |
-| Mantis | `google/mantis` | Apache-2.0 | 751 | 86 | 2026-06-15 | 2026-08-15 | 17 markdown skills forming a state machine over code review; ships **zero** vulnerability knowledge, all rigour is in the verification contract |
+| Mantis | `google/mantis` | Apache-2.0 | 751 | 86 | 2026-06-15 | 2026-08-15 | 17 markdown skills forming a state machine over code review; ships **zero** vulnerability knowledge, all rigour is in the verification contract. **Corrected 2026-08-21 by fetching it:** at commit `5f76be0` it ships **33** skills, and it was run here on four targets — see the two runs cited above |
 | **EHS** | `CristianAjavi/ethical-hacker-squad` | MIT | 0 | 0 | — | 2026-08-16 | This repository: 122 six-field procedures, 8 subagents, 6 gates, audit-only |
+| **EHS**, as of 2026-08-21 | same | MIT | — | — | — | 2026-08-21 | **160** six-field procedures across 17 files, 8 subagents, **18 gates** (every one the requirements document declares now runs, eight with their own negative-proof battery), 8 bench cases with 39 planted defects and 38 decoys, and six published measurement runs |
 
 ---
 
@@ -379,6 +394,9 @@ implement it. That one is done.
 | AgSec | 1,965 | 857 | 2.3 | 25 | Partly — payload firing, encoding evasion | No |
 | Mantis | 751 | 62 | 12.1 | 10 | No | No |
 | **EHS** | **0** | — | — | — | No | Partially: PCC, labelled an upper bound |
+
+> **Correction, 2026-08-21 evening.** The `Publishes detection quality?` column above says **No** for every competitor. That is **wrong for `AI-Infra-Guard`**, which publishes F1, precision, recall and false-positive rate for a detector on a named benchmark (`SkillTrustBench`) in its own README. It was found by a survey with a rubric fixed before any product was opened: `bench/runs/2026-08-21-field-transparency/`. Two qualifications travel with the correction and neither rescues the original claim: the method behind those figures is not published where the figures are, and the table compares models to each other rather than the product against not using it. The rest of the column was re-checked in the same survey and holds.
+
 
 The three products that ship an attack chain hold **28,477 stars**. The one product that
 took verification seriously holds **751**. That is 38:1, and it is the number people

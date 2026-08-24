@@ -1,10 +1,20 @@
 # NOTICE — attributions and third-party licences
 
-This repository is licensed under the MIT License (see `LICENSE`). It contains **no text copied from any third-party source.** Every procedure, description and recommendation is original writing.
+This repository is licensed under the MIT License (see `LICENSE`). The corpus contains **no text copied from any third-party source**: every procedure, description and recommendation is original writing. The one exception in this repository is outside the corpus and is deliberate — `docs/coverage/` quotes the wording of a licence or terms-of-use clause where that wording is the evidence for a licence determination. Those passages sit inside a region marked `licence:quoted-terms`, and `gate-licence-hygiene.sh` counts them on every run; a long quotation anywhere else fails the build.
 
 What it does contain are **references**: identifiers, version numbers, test names, publication dates and measured figures, each attributed to the work it comes from. Identifiers and facts are not copyrightable expression; the wording around them here is ours.
 
 If you fork, extend or redistribute this repository, keep this file.
+
+---
+
+## OpenSSF — SLSA, CC BY 4.0
+
+This work cites **SLSA** build and source levels (`SLSA Build L2`, `SLSA Build L3`) by identifier. The SLSA specification is published by the Open Source Security Foundation under **CC BY 4.0**; the levels are cited by name and number, and every description of what a level requires is written here in our own words.
+
+| Work | Version cited | Canonical URL |
+|---|---|---|
+| SLSA (Supply-chain Levels for Software Artifacts) | v1.0 | <https://slsa.dev/> |
 
 ---
 

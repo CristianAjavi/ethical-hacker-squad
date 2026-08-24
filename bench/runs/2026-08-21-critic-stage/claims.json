@@ -1,0 +1,58 @@
+{
+ "claims": [
+  {
+   "claim_id": "V01",
+   "title": "Stack exhaustion via deeply nested AMQP table and array structures",
+   "file": "",
+   "line": "",
+   "severity": "medium",
+   "impact": "A specially crafted AMQP message with deeply nested tables and arrays can cause a StackOverflowError when deserializing, leading to a denial of service.",
+   "evidence": "The readTable() and readArray() methods call each other recursively. A table (type 'F') contains field values, which can be arrays (type 'A'). An array contains field values, which can be tables. This creates mutual recursion with no depth limit enforced."
+  },
+  {
+   "claim_id": "V02",
+   "title": "Unbounded memory allocation via wire-supplied field length in readBytes()",
+   "file": "",
+   "line": "",
+   "severity": "high",
+   "impact": "An attacker who controls AMQP protocol input can cause the JVM to allocate arrays up to ~2GB per field, exhausting heap memory and causing denial of service. Multiple fields in a single message could exceed available memory faster.",
+   "evidence": "Lines 86-88: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength];` \u2014 readInt() is controlled by attacker via wire protocol; check allows any value < 2,147,483,647; allocation proceeds with cast to int"
+  },
+  {
+   "claim_id": "V03",
+   "title": "Unbounded memory allocation from untrusted AMQP length field enables denial of service",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 86,
+   "severity": "high",
+   "impact": "A malicious, corrupted, or network-MITM-controlled AMQP broker can send a single frame with a large table or longstring length declaration, forcing the Java client to allocate multiple gigabytes of heap memory. This exhausts memory, triggers OutOfMemoryError, and crashes the client application. Repeated attacks cause sustained denial of service.",
+   "evidence": "In readBytes() method (lines 83-94), the code reads a 32-bit unsigned length from the AMQP stream and allocates a byte array without validation: line 86 `final long contentLength = unsignedExtend(in.readInt());` converts the 32-bit value to unsigned; line 87-88 checks `if(contentLength < Integer.MAX_VALUE)` and allocates `new byte[(int)contentLength]`. An attacker sending a length of 2,147,483,646 (0x7FFFFFFE, one less than Integer.MAX_VALUE) causes allocation of a 2GB byte array. This same code path is reached by readTable() at line 142 and readArray() at line 240."
+  },
+  {
+   "claim_id": "V04",
+   "title": "Unbounded memory allocation via wire-supplied table length in readTable()",
+   "file": "",
+   "line": "",
+   "severity": "high",
+   "impact": "An attacker who controls AMQP protocol input can cause the JVM to track a TruncatedInputStream that claims to contain up to 4GB of data, and force repeated read() calls on the wire stream. While the TruncatedInputStream will eventually stop after reading that many bytes, it could trigger a denial-of-service if the message is not fully read or if reading becomes blocking. Additionally, the HashMap is populated with all field names and values from the table, so a very large table could exhaust memory during deserialization.",
+   "evidence": "Lines 142-147: `long tableLength = unsignedExtend(in.readInt()); if (tableLength == 0) return Collections.emptyMap(); Map<String, Object> table = new HashMap<String, Object>(); DataInputStream tableIn = new DataInputStream(new TruncatedInputStream(in, tableLength));` \u2014 tableLength is read from untrusted wire input; no limit check before TruncatedInputStream wraps with that length"
+  },
+  {
+   "claim_id": "V05",
+   "title": "Unreliable EOF detection using DataInputStream.available() in table and array parsing",
+   "file": "",
+   "line": "",
+   "severity": "medium",
+   "impact": "If the stream implementation does not properly return 0 from available() at EOF, the while loop may terminate prematurely, leaving unread data, or may attempt to read past the intended boundary, causing incorrect deserialization or exceptions.",
+   "evidence": "Lines 148 and 244 use `while(arrayIn.available() > 0)` to determine when to stop reading table entries and array elements. The DataInputStream.available() method is documented to return only an estimate of available bytes and is not a reliable indicator of EOF."
+  },
+  {
+   "claim_id": "V06",
+   "title": "Unbounded memory allocation via wire-supplied array length in readArray()",
+   "file": "",
+   "line": "",
+   "severity": "high",
+   "impact": "An attacker who controls AMQP protocol input can cause the JVM to read and deserialize an array with up to 4GB of data. The ArrayList will expand dynamically, consuming memory for each deserialized element. If the array contains complex nested structures (nested tables or arrays), the memory consumption and parsing time could exceed available resources.",
+   "evidence": "Lines 240-242: `long length = unsignedExtend(in.readInt()); DataInputStream arrayIn = new DataInputStream(new TruncatedInputStream(in, length)); List<Object> array = new ArrayList<Object>();` \u2014 length is read from untrusted wire; no limit before TruncatedInputStream; ArrayList will expand as elements are added from wire"
+  }
+ ]
+}

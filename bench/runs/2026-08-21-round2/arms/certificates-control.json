@@ -1,0 +1,164 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Private-key export authorization is gated on an attribute of the plugin the caller chose",
+      "file": "lemur/certificates/views.py",
+      "line": 1577,
+      "severity": "high",
+      "impact": "Any authenticated user with no role whatsoever on a certificate can have that certificate's private key handed to an export plugin of their choosing. The caller names the plugin in the request body, so the caller effectively selects whether the authorization check runs at all. Where any registered export plugin declares requires_key = False but still emits key material when it is given one (or writes it to a file/keystore/log), this is an unauthenticated-to-that-certificate private key disclosure via POST /certificates/<id>/export.",
+      "evidence": "In CertificateExport.post the CertificatePermission check is nested inside `if plugin.requires_key:` (line 1577) -> `else:` (line 1588) -> `if g.current_user != cert.user:` (line 1590). When `plugin.requires_key` is falsy the entire block, including the 403, is skipped. Yet line 1607 calls `plugin.export(cert.body, cert.chain, cert.private_key, options)` unconditionally, passing the private key regardless of `requires_key`. `plugin` comes from `data[\"plugin\"][\"plugin_object\"]` (line 1575), i.e. it is resolved from a slug supplied by the requester.",
+      "recommendation": "Perform the ownership/role check before dispatching to any plugin, independently of `requires_key`, and only pass `cert.private_key` into `plugin.export()` when `plugin.requires_key` is true (pass None otherwise). Treat `requires_key` as a capability hint for the plugin, never as an authorization gate."
+    },
+    {
+      "id": "F-002",
+      "title": "Deployment certificate-request policy hook is bypassed on upload by supplying a destination",
+      "file": "lemur/certificates/views.py",
+      "line": 655,
+      "severity": "high",
+      "impact": "The operator-configured CERTIFICATE_CREATE_REQUEST_VALIDATION hook - the site's own policy gate on what certificates may enter the system (owner rules, name/domain restrictions, ticket references, etc.) - can be skipped entirely on the upload path. A caller who would be rejected by policy just adds a `destinations` entry to the same request and the certificate is accepted and pushed to that destination. The bypass is trivially discoverable and requires no special privilege beyond the ability to reach /certificates/upload.",
+      "evidence": "CertificatesUpload.post returns at line 657 (`return service.upload(**data)`) or raises at line 659 whenever `data.get(\"destinations\")` is truthy (line 655). The policy hook is only invoked afterwards, at lines 662-665, so it is unreachable for every request that carries a destination. The equivalent hook on the issuance path (CertificatesList.post, lines 517-520) is correctly evaluated before any work is done.",
+      "recommendation": "Move the CERTIFICATE_CREATE_REQUEST_VALIDATION block above the `if data.get(\"destinations\")` branch so it runs on every code path through the handler, and add a regression test that uploads with a destination and asserts the hook was called."
+    },
+    {
+      "id": "F-003",
+      "title": "Exported passphrase is left on the shared plugin singleton and is not cleared on failure",
+      "file": "lemur/certificates/views.py",
+      "line": 1611,
+      "severity": "medium",
+      "impact": "The passphrase that protects an exported keystore (which contains the certificate's private key) is stored on a process-wide plugin object. Under a threaded/gevent worker another user's export request can read the previous requester's passphrase out of `plugin.options` before it is scrubbed, and if `plugin.export()` raises, the scrub never runs at all and the secret persists on the singleton for the lifetime of the process - including into any later error report that serialises plugin options.",
+      "evidence": "Lines 1611-1614 exist solely to delete the passphrase back out of `plugin.options` after the fact (`for option in plugin.options: if 'value' in option and option['value'] == passphrase: del option['value']`), which is direct evidence that the secret is written into the plugin object's own option list rather than kept per-request. `plugin` is the registry instance resolved at line 1575 and is shared across requests. The cleanup is a plain statement after line 1607 with no try/finally, so any exception from `plugin.export()` leaves the value in place.",
+      "recommendation": "Keep per-request option values in the request-scoped `options` dict (line 1604) and never write them onto the plugin instance; if the plugin API cannot be changed immediately, wrap lines 1607-1614 in try/finally so the scrub always runs, and deep-copy the plugin options per request."
+    },
+    {
+      "id": "F-004",
+      "title": "Certificate upload produces no entry in the certificate log",
+      "file": "lemur/certificates/views.py",
+      "line": 666,
+      "severity": "medium",
+      "impact": "The one endpoint through which externally generated private key material enters the system - and which can immediately push that material to a configured destination (AWS IAM/ACM, etc.) - leaves no record of who did it. Incident response cannot answer 'who uploaded this key and when' from the application's own audit trail, and an attacker who obtains a token with upload rights can plant a certificate/key pair with no attributable trace.",
+      "evidence": "CertificatesUpload.post returns at lines 657 and 666 without calling `log_service.create`. Every comparable mutation in this module logs: create_cert (line 546), update_cert (998, 1113, 1287, 1849), delete_cert (1165), revoke_cert (1699), deactivate_cert (1766), key_view (746, 1606).",
+      "recommendation": "Call `log_service.create(g.user, \"upload_cert\", certificate=cert)` on both return paths, and add a `log_service.audit_log` entry recording the owner, destinations and whether a private key was included."
+    },
+    {
+      "id": "F-005",
+      "title": "Duplicate-destination guard is not applied on the upload path",
+      "file": "lemur/certificates/views.py",
+      "line": 657,
+      "severity": "medium",
+      "impact": "A caller can attach two destinations that resolve to the same plugin and account through /certificates/upload, which the codebase explicitly forbids elsewhere because it lets one certificate overwrite another in the same downstream account. The guard the maintainers wrote to prevent that state is simply not reachable from this handler.",
+      "evidence": "`validate_no_duplicate_destinations` is imported at line 13 and enforced in Certificates.put (line 958) and in service.create (service.py line 504), but CertificatesUpload.post calls `service.upload(**data)` at line 657 without it, and `service.upload` (service.py lines 478-496) does not call it either - unlike `service.create`.",
+      "recommendation": "Call `validate_no_duplicate_destinations(data[\"destinations\"])` in CertificatesUpload.post (returning 400 on failure, as Certificates.put does), or better, move the check into `service.upload` so every caller of the upload path inherits it."
+    },
+    {
+      "id": "F-006",
+      "title": "Domain-level issuance authorization is skipped entirely for authorities flagged private",
+      "file": "lemur/certificates/views.py",
+      "line": 538,
+      "severity": "medium",
+      "impact": "For any authority whose `is_private_authority` flag is set, the per-domain permission model is not consulted at all: a user who is permitted to use that CA can mint a certificate for any common name and any SAN, including names owned by other teams. Whether that is acceptable depends on how private CAs are trusted internally - but if any internal trust store trusts these CAs, this is lateral impersonation of arbitrary internal services by any holder of authority permission.",
+      "evidence": "Line 538: `if not g.user.is_admin_or_global_cert_issuer and not data[\"authority\"].is_private_authority:` guards the only call to `service.allowed_issuance_for_domain` (line 539). The sole remaining control on that path is `AuthorityPermission` (line 531), which is scoped to the CA, not to the names being requested.",
+      "recommendation": "If the carve-out is intentional, document it next to the flag and require an explicit per-authority opt-in rather than deriving it from `is_private_authority`; otherwise run `allowed_issuance_for_domain` for private authorities too. Either way, emit an audit-log line whenever domain authorization is skipped, recording the authority and the requested names."
+    },
+    {
+      "id": "F-007",
+      "title": "Only DNSName SANs are authorized; other SAN types are issued unchecked",
+      "file": "lemur/certificates/service.py",
+      "line": 1375,
+      "severity": "medium",
+      "impact": "`allowed_issuance_for_domain` authorizes only entries that are `x509.DNSName`. A request whose sub_alt_names contain IPAddress, UniformResourceIdentifier, RFC822Name or otherName entries passes authorization on the strength of its DNS names (or of an empty DNS set) while the CA still signs the unchecked entries. A caller authorized for one harmless domain can obtain a certificate that also asserts an IP address or a URI belonging to someone else.",
+      "evidence": "service.py lines 1373-1378: `for san in extensions[\"sub_alt_names\"][\"names\"]: if isinstance(san, x509.DNSName): ... is_authorized_for_domain(san.value)`. Non-DNSName entries fall through the isinstance check and are never passed to `is_authorized_for_domain`, yet they remain in `extensions` and are added to the CSR by `create_csr` (lines 843-845).",
+      "recommendation": "Make the loop total: authorize DNSName and RFC822Name against the domain model, authorize IPAddress against whatever network ownership model applies, and reject any SAN type the authorization layer does not understand instead of silently allowing it."
+    },
+    {
+      "id": "F-008",
+      "title": "Column allow-list in get_by_attributes mutates the dict it is iterating and raises at runtime",
+      "file": "lemur/certificates/service.py",
+      "line": 91,
+      "severity": "low",
+      "impact": "The sanitiser that is supposed to strip non-column keys before they reach `database.find_all` does not work. If the caller passes an unknown key that is not the last key in the dict, the loop raises `RuntimeError: dictionary changed size during iteration`; if it happens to be the last key, the pop succeeds. So the same input either 500s or is filtered depending on insertion order, and the function cannot be relied on as a guard by any future caller.",
+      "evidence": "service.py lines 91-93: `for attr in conditions.keys(): if attr not in Certificate.__table__.columns: conditions.pop(attr)` - a mutation of `conditions` while its own `keys()` view is being iterated.",
+      "recommendation": "Build a new dict instead: `conditions = {k: v for k, v in conditions.items() if k in Certificate.__table__.columns}`, and decide deliberately whether an unknown attribute should be dropped silently or rejected with an error."
+    },
+    {
+      "id": "F-009",
+      "title": "Malformed filter and serial query parameters produce unhandled 500s",
+      "file": "lemur/certificates/views.py",
+      "line": 146,
+      "severity": "low",
+      "impact": "Several read endpoints crash on trivially malformed input from any authenticated caller, producing 500s, stack traces in the log and noise in the error reporter rather than a 400. It is a cheap way to fill an operator's Sentry quota and to hide real errors.",
+      "evidence": "views.py line 146: `common_name = args.pop(\"filter\").split(\";\")[1]` - AttributeError when `filter` is absent (the argument has no default and no `required=True`), IndexError when it contains no ';'. service.py line 622-623 has the same `terms[1]` indexing for the `/certificates` filter. service.py lines 709-712 call `int(serial_number[2:], 16)` on the raw `serial` parameter, raising ValueError for any non-hex value after '0x' or a ':'.",
+      "recommendation": "Validate these parameters at the parser (mark `filter` required, or default it) and return 400 with a clear message for a missing separator or an unparseable serial, instead of letting the exception escape."
+    },
+    {
+      "id": "F-010",
+      "title": "Handlers echo raw exception text back to the client",
+      "file": "lemur/certificates/views.py",
+      "line": 690,
+      "severity": "low",
+      "impact": "Internal detail - SQLAlchemy statements, plugin internals, host names, upstream CA error payloads - is returned verbatim in the API response body, giving an authenticated attacker a free reconnaissance channel into the backend and its dependencies.",
+      "evidence": "views.py line 690 `dict(message=f\"Failed to retrieve stats: {str(e)}\")`, line 1708 `f\"Failed to revoke: {str(e)}\"`, line 1775 `f\"Failed to Deactivate: {str(e)}\"`, and lines 961/1001 which return `str(e)` and the accumulated destination error text from Certificates.put.",
+      "recommendation": "Return a fixed message plus a correlation id, and keep `str(e)` in the log/Sentry event only. Where a message is genuinely actionable for the caller (duplicate destination, missing private key), raise a typed exception with a curated message rather than forwarding the raw one."
+    },
+    {
+      "id": "F-011",
+      "title": "Upload with destinations but no private key raises a bare Exception instead of returning 400",
+      "file": "lemur/certificates/views.py",
+      "line": 659,
+      "severity": "low",
+      "impact": "A predictable, user-triggerable input state is signalled with an unhandled exception, so the caller gets a 500 with whatever the error handler renders and the operator gets a spurious alert for what is ordinary bad input.",
+      "evidence": "views.py lines 658-661: `else: raise Exception(\"Private key must be provided in order to upload certificate to AWS\")`. Every other input-validation failure in this handler's neighbours returns a `(dict(message=...), code)` tuple.",
+      "recommendation": "Return `dict(message=\"Private key must be provided in order to upload a certificate to a destination\"), 400`."
+    },
+    {
+      "id": "F-012",
+      "title": "Reissue validity cap can be exceeded by up to a day and is disabled by a zero value",
+      "file": "lemur/certificates/service.py",
+      "line": 964,
+      "severity": "low",
+      "impact": "`calculate_reissue_range` is the control that keeps reissued certificates inside the authority's maximum issuance period. Truncating the comparison to whole days lets a reissue exceed that maximum by up to 23h59m, which is enough to cross a hard external limit (e.g. the 398-day browser cap) and produce certificates that clients reject. A configured maximum of 0 silently means 'no maximum' rather than 'nothing may be issued'.",
+      "evidence": "service.py lines 964-967: `if authority and authority.max_issuance_days:` (falsy for 0) then `calculated_days = (new_end - new_start).days` (timedelta.days truncates) then `if calculated_days > authority.max_issuance_days`. Additionally, at line 956-957 `default_days = authority.default_validity_days; new_end = new_start.shift(days=default_days)` raises TypeError if the authority has no default while LEMUR_AUTOROTATION_USE_DEFAULT_VALIDITY is enabled.",
+      "recommendation": "Compare durations, not truncated days: `if new_end > new_start.shift(days=authority.max_issuance_days): new_end = new_start.shift(days=authority.max_issuance_days)`. Use `is not None` for the presence test on both `max_issuance_days` and `default_validity_days`, and fail loudly when the default is missing."
+    },
+    {
+      "id": "F-013",
+      "title": "Authority translation can set the reissue authority to None",
+      "file": "lemur/certificates/service.py",
+      "line": 1042,
+      "severity": "low",
+      "impact": "A ROTATE_AUTHORITY_TRANSLATION entry that names an authority id which no longer exists silently replaces the certificate's authority with None. Auto-rotation for every certificate covered by that mapping then dies with an AttributeError, so those certificates quietly stop being rotated and expire - a self-inflicted outage that the metric/log lines were meant to make visible but instead crash on.",
+      "evidence": "service.py lines 1042 and 1046 assign `database.get(Authority, ...)` straight into `primitives[\"authority\"]` with no existence check, and line 1053 then dereferences `primitives['authority'].name` in the log message.",
+      "recommendation": "Resolve the authority into a local, verify it is not None, and either skip the translation with a warning metric or abort the reissue explicitly; never dereference the translated authority before the check."
+    },
+    {
+      "id": "F-014",
+      "title": "Security-relevant preconditions expressed as bare asserts",
+      "file": "lemur/certificates/service.py",
+      "line": 989,
+      "severity": "low",
+      "impact": "Under `python -O` (a common container hardening/perf flag) these statements are removed. `assert not ser.errors` is what stops a certificate whose re-serialisation failed from being fed into `create()` during rotation; without it the reissue proceeds with a partially populated primitives dict and can mint a certificate with silently wrong attributes.",
+      "evidence": "service.py line 989: `assert not ser.errors, \"Error re-serializing certificate: %s\" % ser.errors` in get_certificate_primitives, and line 130: `assert (page > 0)` in get_all_valid_certs.",
+      "recommendation": "Replace both with explicit `if ...: raise ValueError(...)` checks so the guarantee survives optimised interpreters."
+    },
+    {
+      "id": "F-015",
+      "title": "Authority-owner role is appended as an object to a list of role names, so the grant never applies",
+      "file": "lemur/certificates/views.py",
+      "line": 528,
+      "severity": "low",
+      "impact": "The stated intent - 'allow owner roles by team DL' - does not happen. `AuthorityPermission` is built from a list that is all strings except for one Role object, which can never match a role-name need, so members of the authority owner's group are denied use of their own authority and have to be granted access some other way. It fails closed, so it is a correctness and access-management problem rather than an exposure.",
+      "evidence": "views.py lines 522-529: `role = role_service.get_by_name(data[\"authority\"].owner)` returns a Role object; `roles = [x.name for x in data[\"authority\"].roles]` is a list of names; `roles.append(role)` mixes the two before `AuthorityPermission(data[\"authority\"].id, roles)`.",
+      "recommendation": "Append `role.name` (guarding for `role is None`), and add a test that a member of the authority owner's role can issue from that authority."
+    },
+    {
+      "id": "F-016",
+      "title": "Replacements endpoint returns 500 instead of 404 for an unknown certificate",
+      "file": "lemur/certificates/views.py",
+      "line": 1494,
+      "severity": "informational",
+      "impact": "GET /certificates/<id>/replacements on a non-existent or deleted id raises AttributeError on None and returns a 500. Minor on its own, but it makes the endpoint a usable existence oracle that behaves differently from every sibling route, and it pollutes error reporting.",
+      "evidence": "views.py line 1494: `return service.get(certificate_id).replaces` with no None check, while Certificates.get/put/delete, CertificatePrivateKey, CertificateExport, CertificateRevoke and CertificateDeactivate all check `if not cert: return dict(message=...), 404`.",
+      "recommendation": "Fetch into a local, return 404 when it is None, mirroring the other handlers."
+    }
+  ]
+}

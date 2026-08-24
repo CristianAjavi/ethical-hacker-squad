@@ -50,6 +50,38 @@
       "packs": [
         "privacy-abuse"
       ]
+    },
+    {
+      "case": "pipelines-migration",
+      "path": "bench/cases/pipelines-migration",
+      "surface": "Four CI platforms in one repository - GitLab CI, Jenkins, Azure Pipelines, CircleCI - plus a GitLab runner configuration and an export of the platform settings",
+      "packs": [
+        "infra-cloud"
+      ]
+    },
+    {
+      "case": "gateway-limits",
+      "path": "bench/cases/gateway-limits",
+      "surface": "A Go upload gateway: an environment-driven configuration module, two middlewares and the public route table that wires them",
+      "packs": [
+        "web-api"
+      ]
+    },
+    {
+      "case": "certs-authz",
+      "path": "bench/cases/certs-authz",
+      "surface": "Two resource modules of a Flask certificate service: the HTTP resources, the input schema that resolves caller-named rows, and the model listener behind them",
+      "packs": [
+        "web-api"
+      ]
+    },
+    {
+      "case": "wire-decoder",
+      "path": "bench/cases/wire-decoder",
+      "surface": "The value decoder of a small binary protocol client, the frame reader that feeds it, and the configured limits the two share",
+      "packs": [
+        "web-api"
+      ]
     }
   ],
   "planted": [
@@ -483,6 +515,179 @@
       "lines": [
         20,
         27
+      ]
+    },
+    {
+      "id": "P-33",
+      "case": "pipelines-migration",
+      "path": ".gitlab-ci.yml",
+      "symbol": "STAGING_DEPLOY_TOKEN",
+      "procedure": "INF-19",
+      "class": "outside contributor executes the pipeline with a reachable secret",
+      "why_it_is_real": "The integration job runs on merge_request_event, the settings export says merge-request pipelines are enabled for forks, and STAGING_DEPLOY_TOKEN is not protected, so a contributor's branch runs their own .gitlab-ci.yml with that token in the environment. Masked only hides it in the log.",
+      "lines": [
+        28,
+        37
+      ]
+    },
+    {
+      "id": "P-34",
+      "case": "pipelines-migration",
+      "path": "Jenkinsfile",
+      "symbol": "${env.CHANGE_TITLE}",
+      "procedure": "INF-20",
+      "class": "merge-request metadata interpolated into a shell step",
+      "why_it_is_real": "Groovy substitutes the change title into the double-quoted string before the shell parses it, so a title containing a quote and a semicolon runs commands on the agent.",
+      "lines": [
+        12,
+        12
+      ]
+    },
+    {
+      "id": "P-35",
+      "case": "pipelines-migration",
+      "path": "Jenkinsfile",
+      "symbol": "withCredentials",
+      "procedure": "INF-21",
+      "class": "credential scoped to more processes than need it",
+      "why_it_is_real": "The publish token is in the environment of every child process of the block, including a vendored third-party script that has nothing to do with publishing.",
+      "lines": [
+        19,
+        24
+      ]
+    },
+    {
+      "id": "P-36",
+      "case": "pipelines-migration",
+      "path": ".gitlab-ci.yml",
+      "symbol": "ref: main",
+      "procedure": "INF-22",
+      "class": "pipeline imported from a pointer that can move",
+      "why_it_is_real": "The build job definition is pulled from the default branch of another project, and the settings export says the whole engineering group can push to it, so anyone in that group can change what this pipeline runs.",
+      "lines": [
+        3,
+        6
+      ]
+    },
+    {
+      "id": "P-37",
+      "case": "pipelines-migration",
+      "path": "ci/runner-config.toml",
+      "symbol": "privileged = true",
+      "procedure": "INF-23",
+      "class": "privileged shared runner reachable from an untrusted pipeline",
+      "why_it_is_real": "The shared runner is privileged and mounts the host Docker socket, and it is the runner that serves the merge-request pipeline of P-33, so contributor code runs as host root.",
+      "lines": [
+        4,
+        11
+      ]
+    },
+    {
+      "id": "P-38",
+      "case": "gateway-limits",
+      "path": "config/env.go",
+      "symbol": "MaxUploadMB",
+      "procedure": "WEB-23",
+      "class": "a declared limit that nothing enforces",
+      "why_it_is_real": "MaxUploadMB is declared and assigned from MAX_UPLOAD_MB and read by nothing; the upload route is registered without BodyLimit and its handler does io.ReadAll on the body, so the configured cap is a knob the operator can set that changes nothing.",
+      "lines": [
+        12,
+        12
+      ],
+      "also_at": [
+        {
+          "path": "router/routes.go",
+          "symbol": "/v1/upload",
+          "lines": [
+            17,
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-39",
+      "case": "gateway-limits",
+      "path": "middleware/limits.go",
+      "symbol": "Throttle",
+      "procedure": "WEB-23",
+      "class": "an enforcer that exists and is never installed",
+      "why_it_is_real": "Throttle reads the configured burst and is registered on no route, so RATE_LIMIT_BURST is documented, settable and inert.",
+      "lines": [
+        18,
+        26
+      ]
+    },
+    {
+      "id": "P-40",
+      "case": "certs-authz",
+      "path": "api/resources.py",
+      "symbol": "CertificatesUpload",
+      "procedure": "WEB-24",
+      "class": "a gate one sibling handler enforces and another does not",
+      "why_it_is_real": "CertificatesList.post builds AuthorityPermission and refuses when it cannot, and CertificatesUpload.post reaches the same effect - a certificate bound to a caller-named authority - with no check at all. The gate is in the same file, eleven lines up.",
+      "lines": [
+        24,
+        26
+      ]
+    },
+    {
+      "id": "P-41",
+      "case": "certs-authz",
+      "path": "api/schemas.py",
+      "symbol": "supersedes",
+      "procedure": "WEB-25",
+      "class": "authorization checked on the object in the path, not on the objects in the body",
+      "why_it_is_real": "The resolver turns caller-supplied ids into live certificates with no ownership scope, and appending them flips notify and superseded on rows the caller does not own, silencing somebody else's lifecycle automation.",
+      "lines": [
+        10,
+        15
+      ],
+      "also_at": [
+        {
+          "path": "api/models.py",
+          "symbol": "on_supersedes_append",
+          "lines": [
+            16,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-42",
+      "case": "wire-decoder",
+      "path": "src/ValueDecoder.java",
+      "symbol": "readBlob",
+      "procedure": "WEB-26",
+      "class": "a length from the wire decides the size of an allocation",
+      "why_it_is_real": "The only test on the declared length excludes Integer.MAX_VALUE, which stops the cast from wrapping and lets every value below it through; the array is committed before readFully can fail, so five bytes on the wire ask for two gigabytes. Settings.MAX_FRAME_BYTES exists and this path never consults it.",
+      "lines": [
+        18,
+        26
+      ]
+    },
+    {
+      "id": "P-43",
+      "case": "wire-decoder",
+      "path": "src/ValueDecoder.java",
+      "symbol": "readValue",
+      "procedure": "WEB-26",
+      "class": "parser recursion with no depth cap",
+      "why_it_is_real": "readValue dispatches to readMap and readList, which call readValue again, and no signature on the cycle carries a depth parameter, so nesting costs the peer one byte per stack frame.",
+      "lines": [
+        56,
+        66
+      ],
+      "also_at": [
+        {
+          "path": "src/ValueDecoder.java",
+          "symbol": "readList",
+          "lines": [
+            47,
+            54
+          ]
+        }
       ]
     }
   ],
@@ -955,6 +1160,181 @@
       "lines": [
         13,
         19
+      ]
+    },
+    {
+      "id": "D-32",
+      "case": "pipelines-migration",
+      "path": "azure-pipelines.yml",
+      "symbol": "pr: none",
+      "looks_like": "INF-19",
+      "ruled_out_by": [
+        "FP-08"
+      ],
+      "why": "There is no pull-request trigger, and the settings export states that secrets are not made available to builds of fork pull requests.",
+      "lines": [
+        1,
+        13
+      ]
+    },
+    {
+      "id": "D-33",
+      "case": "pipelines-migration",
+      "path": "Jenkinsfile",
+      "symbol": "CHANGE_BRANCH_SAFE",
+      "looks_like": "INF-20",
+      "ruled_out_by": [
+        "FP-01"
+      ],
+      "why": "The interpolation lands in an environment variable, and the step that uses it is single-quoted, so the shell expands it as data rather than as script text.",
+      "lines": [
+        13,
+        13
+      ],
+      "also_at": [
+        {
+          "path": "Jenkinsfile",
+          "symbol": "CHANGE_BRANCH_SAFE",
+          "lines": [
+            6,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D-34",
+      "case": "pipelines-migration",
+      "path": ".gitlab-ci.yml",
+      "symbol": "8f14e45fceea167a5a36dedd4bea2543f6d1a2b7",
+      "looks_like": "INF-22",
+      "ruled_out_by": [
+        "FP-02"
+      ],
+      "why": "The second include pins a commit SHA, which cannot be repointed.",
+      "lines": [
+        7,
+        9
+      ]
+    },
+    {
+      "id": "D-35",
+      "case": "pipelines-migration",
+      "path": "ci/runner-config.toml",
+      "symbol": "release-ephemeral-01",
+      "looks_like": "INF-23",
+      "ruled_out_by": [
+        "FP-06"
+      ],
+      "why": "One build per machine, no privileged flag, no Docker socket, and access_level restricts it to protected refs, so no untrusted principal reaches it.",
+      "lines": [
+        13,
+        24
+      ]
+    },
+    {
+      "id": "D-36",
+      "case": "pipelines-migration",
+      "path": ".circleci/config.yml",
+      "symbol": "sdk-npm-publish",
+      "looks_like": "INF-21",
+      "ruled_out_by": [
+        "FP-08"
+      ],
+      "why": "The settings export shows the context restricted to a security group and fork builds receiving no secrets, and the job is filtered to main.",
+      "lines": [
+        27,
+        32
+      ]
+    },
+    {
+      "id": "D-37",
+      "case": "gateway-limits",
+      "path": "config/env.go",
+      "symbol": "MaxBodyMB",
+      "looks_like": "WEB-23",
+      "ruled_out_by": [
+        "FP-01"
+      ],
+      "why": "MaxBodyMB is read by BodyLimit, which is registered on the routes that carry a body; the reader exists and sits in the request chain.",
+      "lines": [
+        11,
+        11
+      ]
+    },
+    {
+      "id": "D-38",
+      "case": "gateway-limits",
+      "path": "config/env.go",
+      "symbol": "MaxObjectMB",
+      "looks_like": "WEB-23",
+      "ruled_out_by": [
+        "FP-09"
+      ],
+      "why": "It is consumed by NAME through the struct tag rather than by symbol, so a symbol search finds no reader while the enforcement is real.",
+      "lines": [
+        18,
+        21
+      ]
+    },
+    {
+      "id": "D-39",
+      "case": "certs-authz",
+      "path": "api/resources.py",
+      "symbol": "counts_by_month",
+      "looks_like": "WEB-24",
+      "ruled_out_by": [
+        "FP-09"
+      ],
+      "why": "CertificatesStats.get has no gate while its sibling post does, but the two do not reach the same effect: get returns aggregate counts by month and carries nothing of any caller.",
+      "lines": [
+        38,
+        40
+      ]
+    },
+    {
+      "id": "D-40",
+      "case": "certs-authz",
+      "path": "api/schemas.py",
+      "symbol": "current_user().tags",
+      "looks_like": "WEB-25",
+      "ruled_out_by": [
+        "FP-02"
+      ],
+      "why": "The tags field names other rows in the body, but the resolver iterates the caller's own tags and keeps only the intersection, so an id the caller does not own resolves to nothing.",
+      "lines": [
+        16,
+        17
+      ]
+    },
+    {
+      "id": "D-41",
+      "case": "wire-decoder",
+      "path": "src/ValueDecoder.java",
+      "symbol": "readText",
+      "looks_like": "WEB-26",
+      "ruled_out_by": [
+        "FP-01"
+      ],
+      "why": "Identical shape to readBlob, but the declared length is compared against Settings.MAX_STRING_BYTES - a bound the peer does not set - on the line before the allocation.",
+      "lines": [
+        28,
+        36
+      ]
+    },
+    {
+      "id": "D-42",
+      "case": "wire-decoder",
+      "path": "src/FrameReader.java",
+      "symbol": "readLabel",
+      "looks_like": "WEB-26",
+      "ruled_out_by": [
+        "FP-02"
+      ],
+      "why": "It allocates from a declared length with no explicit check, which is the shape, but readUnsignedShort bounds the value to 65535 by its own type, so the largest allocation the peer can ask for is 64 KiB.",
+      "lines": [
+        24,
+        29
       ]
     }
   ]

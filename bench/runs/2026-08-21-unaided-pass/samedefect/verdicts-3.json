@@ -1,0 +1,32 @@
+{
+  "matches": [
+    {
+      "left": "L01",
+      "right": "R01",
+      "why": "Same defect: the readFieldValue/readTable/readArray cycle in ValueReader carries no depth or budget parameter, so nested 'A'/'F' values drive unbounded recursion to StackOverflowError. Both cite the same three signatures, the same ~5-bytes-per-level cost, and both note the Error escapes the IOException-shaped error path. The line numbers differ (158 vs 183, i.e. the entry point vs the case that recurses) and the reproduced threshold differs (43 KB vs 20-25 KB), but that is measurement scatter over one mechanism, not two."
+    },
+    {
+      "left": "L04",
+      "right": "R07",
+      "why": "Same defect: readBytes takes a 4-byte peer-declared length, and `if(contentLength < Integer.MAX_VALUE)` is a cast-safety test rather than a limit, so `new byte[(int)contentLength]` commits up to ~2 GiB before `readFully` ever asks for a payload byte. Both quote lines 86-89, both name the guard as cast-safety, and both reproduce OutOfMemoryError under a small -Xmx with only the length prefix on the wire. L04 anchors at 86 and R07 at 88 (the read vs the allocation) inside the same statement block."
+    },
+    {
+      "left": "L02",
+      "right": "R06",
+      "why": "Same defect: for a declared length at or above Integer.MAX_VALUE, lines 91-94 throw UnsupportedOperationException, an unchecked exception, out of the wire decoder, while every other rejection in the class is MalformedFrameException (an IOException, line 217). Identical location (line 92), identical message string reproduced, and both frame the issue as the peer selecting which exception type leaves the decoder rather than as any memory or disclosure effect. Note this is deliberately kept distinct from L04/R07 even though both live in readBytes: the allocation defect is about an unbounded array sized from the wire, this one is about the type of the error channel."
+    },
+    {
+      "left": "L06",
+      "right": "R03",
+      "why": "Same defect: `if(!table.containsKey(name)) table.put(name, value);` at lines 151-152 resolves duplicate field-table names first-wins and drops the later value with no error. Same line, same code quoted, and the same impact argument (a second reader resolving last-wins yields a header-smuggling differential), with both authors conceding no second implementation was examined."
+    },
+    {
+      "left": "L05",
+      "right": "R02",
+      "why": "Same defect: the default build binds groovy-maven-plugin at generate-sources to run generate_amqp_sources.groovy / codegen.py against the rabbitmq_codegen tree under ${deps.dir}, which the pom pins by no commit, tag or hash and verifies by no digest or signature, and build-helper then compiles the generated sources into the published jar. Both also flag the same secondary lever: the in-umbrella profile auto-activating on the existence of ../../UMBRELLA.md and repointing deps.dir. Different anchor lines (615 vs 595) are two points inside the same plugin execution block."
+    }
+  ],
+  "unmatched_left": ["L03", "L07"],
+  "unmatched_right": ["R04", "R05"],
+  "hardest_call": "L07 (lenient UTF-8 in readShortstr collapses distinct wire names onto one String key) against R03 (duplicate field-table keys resolved first-wins). Both end with a table that silently holds fewer entries than the wire carried, and L07's collision is in fact consumed by the very containsKey/put line R03 is about, so the observable symptom is nearly identical. I kept them apart and left L07 unmatched because the mechanism that makes each exploitable differs: R03 is about how the decoder resolves two names that are genuinely equal, while L07 is about the decoding step being non-injective - `new String(b, \"utf-8\")` mapping malformed bytes to U+FFFD so two different names become equal in the first place. Fix one and the other survives untouched. L06 is the true counterpart of R03 (same line, same quoted code, same differential argument), which also forced the decision under the one-match-per-item rule. Secondary calls, both comfortable: L03 (available() as a loop terminator, a correctness-only defect for a socket-backed stream) has no counterpart on the right; and R04 (dependency versions on possibly-EOL branches, unmeasured) and R05 (no SBOM, no dependency-vulnerability gate) are supply-chain hygiene findings about the dependency inventory, distinct from L05/R02, which is about unverified code entering the build - shared file, different mechanism."
+}

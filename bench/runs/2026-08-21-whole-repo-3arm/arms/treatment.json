@@ -1,0 +1,375 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/wholerepo/rabbitmq-rabbitmq-java-client-cbba12b - an AMQP 0-9-1 Java client library published as a Maven artifact (461 files, 409 Java: 237 under src/main/java, 172 under src/test/java).",
+    "commit": "cbba12b, taken from the extracted archive directory name. No .git directory is present in the target, so history could not be read and no commit object was verified.",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus at scratchpad/wholerepo/corpus - coverage.md routing, knowledge packs local-app.md, web-api.md, supply-chain*.md, infra-cloud-cicd-exposure.md, triage.md FP-01..FP-10, findings.schema.json ehs.findings/v1",
+    "coverage_declaration": "ROUTING. Inventory first: one Maven manifest (pom.xml), six GitHub Actions workflows, a Makefile and four ci/*.sh scripts, a Maven wrapper, an AGENTS.md, and 409 Java files with no HTTP route, no ORM, no template engine, no IaC, no container image, no LLM or agent code and no personal-data model. Four coverage.md rows matched and four roles were staffed: (1) 'A package other people import ... an SDK' -> local-app.md section 5 (LOC-10); (2) 'Injection, deserialization or file-content parsing inside a local tool' -> web-api.md sections 3 and 5, plus web-api.md section 0 for the classes tooling misses and web-api-clientside-logic.md section 9 (WEB-19, WEB-23) for crypto, TLS and declared-limit checks; (3) 'pom.xml' and 'SBOM, artifact signing, release or publishing workflow' -> supply-chain.md sections 1-4, 6, 7 and supply-chain-secrets-malware.md section 8; (4) '.github/workflows/' -> infra-cloud-cicd-exposure.md section 4 and supply-chain.md section 5. Rows deliberately NOT taken, with the reason: mobile (no AndroidManifest, no Xcode project, no Swift), infra-cloud sections 1-3 (no Terraform, no Dockerfile in the tree - ci/cluster/docker-compose.yml only starts a stock broker image for tests), infra-cloud-cicd-platforms (no GitLab, Jenkins, Azure, CircleCI or Bitbucket files), ai-safety (no LLM call, no agent framework, no MCP config; AGENTS.md was read as a possible injection vector and is plain build instructions), privacy-abuse (the library moves opaque message bodies and stores no personal data of its own). WHAT WAS READ. 33 of the 409 Java files were opened, about 20 of them for content rather than by grep: ConnectionFactory, ConnectionFactoryConfigurator, TrustEverythingTrustManager, SocketConfigurators, SslEngineConfigurators, RpcServer, StringRpcServer, tools/json/JSONUtil, tools/json/JSONReader, tools/jsonrpc/{JsonRpcServer, JsonRpcClient, DefaultJsonRpcMapper, ServiceDescription, ProcedureDescription}, impl/{Frame, ValueReader, Utils, AMQConnection, AMQChannel, AMQCommand, CommandAssembler, ConnectionParams, SocketFrameHandler, SocketFrameHandlerFactory, AbstractFrameHandlerFactory, NettyFrameHandlerFactory, OAuth2ClientCredentialsGrantCredentialsProvider, VariableLinkedBlockingQueue}, impl/nio/{SslEngineHelper, NioParams, FrameBuilder, SocketChannelFrameHandlerFactory, SocketChannelFrameHandlerState}. Outside Java: pom.xml, all six workflow files in full, Makefile, ci/start-broker.sh, ci/release-java-client.sh, ci/cluster/configuration/rabbitmq.conf, .mvn/maven.config, .mvn/wrapper/maven-wrapper.properties, mvnw, .gitignore, AGENTS.md, README.md. Whole-tree greps were run for TLS trust managers, deserialization and reflection sinks, process execution, secret formats, archive and path handling, and secret-bearing log statements. WHAT WAS NOT READ, so that silence is not mistaken for a clean bill. Not opened at all: all 172 files under src/test/java (grep only); codegen.py (25 KB) and the AMQP framing code it generates, which is not in the tree and is therefore the largest single unreviewed component of the shipped artifact; the whole impl/recovery package including AutorecoveringConnection (1222 lines), AutorecoveringChannel (1019) and the topology-recovery retry logic; ChannelN (1677 lines) and the Channel interface (1423), so the AMQP channel surface, publisher confirms and consumer cancellation were not reviewed; PemReader and TlsUtils, despite being parsers of certificate material - they were seen only in the file listing; the SASL layer (JDKSaslConfig, DefaultSaslConfig and the mechanism implementations), so authentication mechanism selection and downgrade were not assessed; Address, AddressResolver and DnsSrvRecordAddressResolver, so broker address resolution was not assessed; JacksonJsonRpcMapper; the observation/micrometer and metrics collectors; the concurrency layer (WorkPool, ConsumerWorkService, ConsumerDispatcher, NioLoop). LIMITS OF METHOD. Nothing was executed, no dependency jar was opened and no network call was made, so every claim about a dependency's runtime behaviour is an inference and is marked as one; no build, no test run and no connection to a broker took place, so no finding here carries a reproduction. Dependency vulnerability triage (SUP-13 to SUP-15) was NOT performed: no SCA tool was run and no advisory database was consulted, by instruction, so the absence of a dependency finding here means the check was not run, not that the tree is clean. Controls that live outside the repository - the GitHub organization's default workflow permissions, branch and tag protection, and any actions allowlist - could not be read and are answered UNKNOWN under FP-08 wherever they matter.",
+    "authorization": "Read-only source review of a local copy of the tree. No network access, no execution, no build, no remote or active testing; no authorization reference was required and none was used."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "TLS enabled through the property-file configurator defaults to trusting every server certificate",
+      "procedure": "LOC-10",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/ConnectionFactoryConfigurator.java",
+        "line": 394,
+        "component": "ConnectionFactoryConfigurator.setUpSsl / setUpBasicSsl"
+      },
+      "evidence": "setUpSsl() reads ssl.validate.server.certificate (line 295) and ssl.verify.hostname (line 296) and turns an absent value into false: `validateServerCertificate == null ? Boolean.FALSE : Boolean.valueOf(...)` (line 306) and `verifyHostname == null ? Boolean.FALSE : ...` (line 301). When neither ssl.key.store nor ssl.trust.store is configured, control reaches setUpBasicSsl(cf, false, false, algorithm) (line 394). Because setUpSsl has already replaced a null algorithm with ConnectionFactory.computeDefaultTlsProtocol(...) (line 299), sslAlgorithm is never null there, so the else-branch executes `cf.useSslProtocol(sslAlgorithm, new TrustEverythingTrustManager())` (line 402). TrustEverythingTrustManager (src/main/java/com/rabbitmq/client/TrustEverythingTrustManager.java:26-30) implements checkClientTrusted and checkServerTrusted as empty method bodies and returns an empty accepted-issuer array. The only thing between the property and that sink is ConnectionFactory.logTlsNoVerificationWarning() (ConnectionFactory.java:2042), which emits a WARN record and returns.",
+      "impact": "An application that switches its broker connection to TLS purely through the documented property keys (ssl.enabled=true under the rabbitmq. prefix) gets an encrypted but unauthenticated channel. Any party able to intercept or redirect the TCP connection can present a self-signed certificate, terminate the TLS session and read and modify every AMQP frame - including the PLAIN SASL response, which carries the broker username and password inside the tunnel - and every message body published or consumed on that connection.",
+      "preconditions": "The consuming application configures the factory through ConnectionFactoryConfigurator.load(...) (properties file, Map or java.util.Properties), sets ssl.enabled=true, and sets neither ssl.trust.store nor ssl.validate.server.certificate=true. An attacker positioned on the network path between the application and the broker.",
+      "recommendation": "Invert the default: treat an absent ssl.validate.server.certificate as true and an absent ssl.verify.hostname as true so the property-driven path lands on useDefaultTrustStore() and the JDK trust store. Keep the trust-everything path reachable only behind an explicitly named opt-in, as ConnectionFactory.useTlsWithNoVerification() already is in the programmatic API, and fail the configuration rather than continue when an operator asks for TLS with no trust anchor at all.",
+      "traceability": ["CWE-295", "CWE-1188", "CWE-665", "ASVS 5.0 V15", "A02:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only thing on the path is a log statement, ConnectionFactory.logTlsNoVerificationWarning() at ConnectionFactory.java:2042. It writes a WARN record to the com.rabbitmq.client.security logger and the connection proceeds; nothing aborts, and a logger the consumer has filtered removes even that signal. A control the caller may never see is not a compensating control."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "NOT_APPLICABLE",
+          "reason": "The defect is a default value chosen by the library, not an attacker-controlled value flowing to a sink. FP-02 exculpates tainted-data findings; this is the insecure-by-default class of LOC-10."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Two boundaries are crossed and both can be named. Library to consumer: the shipped public class ConnectionFactoryConfigurator hands an unauthenticated channel to any application that reads only the property list. Network attacker to application: the second principal is whoever can intercept or redirect the TCP session to the broker, who is not the application's own operator."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "ConnectionFactoryConfigurator is a public class under src/main/java, compiled into the published amqp-client artifact by the default Maven build; pom.xml declares no source exclusion for it and no profile removes it. It is neither test scaffolding nor behind a build flag."
+        }
+      ],
+      "limits": "This establishes the default of the property-driven configuration path only. The programmatic path was checked and found safe by default: ConnectionFactory.useSslProtocol(SSLContext) calls enableHostnameVerification() (ConnectionFactory.java:905-907), and useTlsWithNoVerification() is explicitly named and documented as unsafe. No connection was made and no interception was performed; the claim rests on reading the call chain."
+    },
+    {
+      "id": "F-002",
+      "title": "Field-table parsing recurses with no depth limit, so a nested table can exhaust the connection reader thread stack",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 181,
+        "component": "ValueReader.readTable / readFieldValue / readArray"
+      },
+      "evidence": "readTable() (line 139) loops over entries calling readFieldValue() (line 158). readFieldValue() dispatches case 'F' back into readTable(in) (line 181) and case 'A' into readArray(in) (line 184), and readArray() calls readFieldValue() again (line 246). There is no depth counter, no maximum-nesting constant and no guard anywhere in ValueReader.java, ContentHeaderPropertyReader.java or MethodArgumentReader.java - a grep for depth, MAX_NEST and recursion returns nothing in all three. The only size control on the path is Utils.enforceFrameMax(frameSize, payloadLimit) in Frame.readFrom (Frame.java:136), which bounds the bytes of the frame but not the nesting those bytes describe; a level of nesting costs on the order of six bytes on the wire against a default frame maximum of 131072 (ConnectionFactory.DEFAULT_FRAME_MAX), and Utils.framePayloadLimit() returns Integer.MAX_VALUE when frameMax is 0, removing even the byte bound. The resulting StackOverflowError is caught by AMQConnection.MainLoop.run()'s `catch (Throwable ex)` (AMQConnection.java:705), which routes to handleFailure and doFinalShutdown - the connection dies rather than the JVM.",
+      "impact": "A malicious or compromised broker, or a man-in-the-middle on a connection whose server certificate is not being validated (see F-001), can send one content header or method frame whose field table is deeply nested and terminate the client's connection. With automatic connection recovery enabled the client reconnects, and if the poison frame is a message that is redelivered it is parsed again, producing a reconnect loop in which the consuming application makes no progress.",
+      "preconditions": "The attacker must be able to place bytes on the AMQP connection as the peer - a hostile or compromised broker, or an interception position on a connection that is not authenticating the broker. Whether an ordinary publisher can reach this through a real broker was not established.",
+      "recommendation": "Carry an explicit nesting depth through ValueReader.readTable, readArray and readFieldValue and throw MalformedFrameException past a small fixed maximum; the AMQP 0-9-1 field table has no legitimate use for deep nesting. Apply the same bound in ContentHeaderPropertyReader so it covers message headers as well as method arguments.",
+      "traceability": ["CWE-674", "CWE-400", "ASVS 5.0 V11", "A04:2025"],
+      "inference": "That a nesting depth reachable inside the negotiated frame maximum actually exhausts the JVM thread stack before the frame byte budget runs out. The recursion and the absence of any guard were read directly; the crash was not reproduced and no frame was constructed or sent.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only enforced bound on this path is Utils.enforceFrameMax on the frame's byte length (Frame.java:136, and the NIO twin NioUtils.enforceFrameMax at FrameBuilder.java:99). Both constrain size, not depth, and it is the same budget the attacker spends on nesting. No allowlist, schema or depth check sits between the socket and readTable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bytes come straight from the socket through Frame.readFrom into CommandAssembler and ValueReader. The type discriminator that selects the recursive branch ('F' and 'A' at ValueReader.java:181 and 184) is a single byte chosen entirely by the peer."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the remote peer of the AMQP connection, or an interceptor on it. The library is parsing bytes its own process did not author, which is the file-to-process crossing named in local-app.md section 0."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The impact is not nil: the connection dies and, with automatic recovery on, can enter a reconnect loop. It is bounded to the availability of one client connection, which is why severity is medium rather than higher, but there is a real effect on the consumer."
+        }
+      ],
+      "limits": "It does not establish that a RabbitMQ broker will accept and forward a deeply nested field table published by an ordinary client, which is what would turn this from a hostile-peer issue into a low-privilege publisher issue; that needs a live broker and was not tested. It does not establish the depth at which the stack overflows, which depends on the JVM thread stack size. A separate observation made while reading this path is recorded and not claimed as a finding: createFrameHandlerFactory passes maxInboundMessageBodySize (64 MiB by default) as the pre-negotiation frame limit on the NIO layer (ConnectionFactory.java:1104) but AMQP.FRAME_MIN_SIZE (4096) on the Netty and blocking layers (lines 1114 and 1128), so the three IO layers allow different allocation sizes before the handshake completes."
+    },
+    {
+      "id": "F-003",
+      "title": "A malformed JSON-RPC request throws an unchecked exception that terminates the RPC server main loop",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/RpcServer.java",
+        "line": 126,
+        "component": "RpcServer.mainloop, JsonRpcServer.doCall, DefaultJsonRpcMapper.parse"
+      },
+      "evidence": "RpcServer.mainloop() (line 109) wraps its loop in a single `catch (ShutdownSignalException sse)` (line 126). Any other Throwable from processRequest escapes mainloop entirely, and because `_channel.basicAck(...)` is the statement after processRequest (line 123) the offending delivery is never acknowledged. JsonRpcServer.doCall catches only `catch (ClassCastException cce)` around the parse, and its inner `catch (Throwable t)` covers only the reflective invoke, not mapper.parse. DefaultJsonRpcMapper - the mapper wired in by two of the four public JsonRpcServer constructors - dereferences three request fields with no null check: `request.get(\"version\").toString()`, `request.get(\"method\").toString()` and `((List<?>) request.get(\"params\")).toArray()`. A request body of `{\"version\":\"1.1\"}` parses cleanly through JSONReader into a one-entry map, then throws NullPointerException on the missing \"method\" key. NPE is not a ClassCastException, so it escapes doCall, handleStringCall, StringRpcServer.handleCall, RpcServer.processRequest and mainloop. Two neighbouring inputs reach the same exit: a body that is not valid JSON makes JSONReader.read() throw IllegalStateException (JSONReader.java:143), and a deeply nested array drives JSONReader.read/array mutual recursion (lines 106 and 167) into StackOverflowError.",
+      "impact": "Any principal that can publish a message to the queue a JsonRpcServer is serving can stop that server permanently with a seventeen-byte body. The main loop returns, the server stops consuming, and the poison delivery is left unacknowledged, so it is redelivered to whatever process takes over and stops that one too. The same defect applies to every RpcServer and StringRpcServer subclass: an unchecked exception from an application's own handleCall implementation ends the loop rather than failing one request.",
+      "preconditions": "The application embeds RpcServer, StringRpcServer or JsonRpcServer and calls mainloop(). The attacker needs AMQP write permission to reach the request queue - typically any account allowed to publish on the vhost, which is a far lower bar than the account running the RPC service.",
+      "recommendation": "Wrap the body of the mainloop iteration so that an unchecked exception from processRequest fails that one request instead of the loop: catch Throwable per delivery, publish a JSON-RPC error response when a reply is expected, and basicNack the delivery with requeue=false (or route it to a dead-letter exchange) so a poison message cannot be redelivered indefinitely. Independently, make DefaultJsonRpcMapper.parse validate that version, method and params are present and of the right shape and return null - which doCall already maps to a 400 - rather than dereferencing them.",
+      "traceability": ["CWE-248", "CWE-754", "CWE-20", "CWE-400", "ASVS 5.0 V11", "A04:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The two catch blocks on the path were read and neither covers this: mainloop catches ShutdownSignalException only (RpcServer.java:126) and doCall catches ClassCastException only. No middleware, no supervising thread and no restart wrapper exists inside the library; whether the embedding application wraps mainloop in its own retry is outside the library and would not stop the redelivery loop."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is the message body, delivered from the queue into StringRpcServer.handleCall as a byte array and turned into the String that DefaultJsonRpcMapper.parse consumes. Nothing constrains it: the publisher chooses every byte."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is dangerous in exactly the form it is reached. This is not a claim about code execution: the demonstrated sink is an unchecked exception crossing a loop boundary that catches only one exception type, and that behaviour was read at RpcServer.java:109-129."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "RpcServer, StringRpcServer and JsonRpcServer are public classes under src/main/java and are compiled into the published artifact. DefaultJsonRpcMapper carries an @Deprecated annotation, but it remains the mapper that JsonRpcServer(channel, interfaceClass, instance) and JsonRpcServer(channel, queueName, interfaceClass, instance) install by default, so deprecation does not remove it from the shipped path."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is between the AMQP principal publishing the request and the application hosting the RPC service. They are different accounts on the broker, and the publisher does not need any privilege on the serving application."
+        }
+      ],
+      "limits": "It establishes loss of availability only; nothing here shows information disclosure or code execution. JacksonJsonRpcMapper, the recommended alternative mapper, was not read, so no claim is made about whether it fails the same way - only that swapping the mapper does not fix the mainloop, which is the deeper of the two defects. No message was published and no server was run: the chain was read end to end in code."
+    },
+    {
+      "id": "F-004",
+      "title": "The Netty IO layer silently ignores the client's hostname-verification configuration",
+      "procedure": "LOC-10",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/NettyFrameHandlerFactory.java",
+        "line": 251,
+        "component": "ConnectionFactory.createFrameHandlerFactory / NettyFrameHandlerFactory"
+      },
+      "evidence": "ConnectionFactory.enableHostnameVerification() (line 952) works through two channels: nioParams.enableHostnameVerification() for the NIO layer and socketConf.andThen(SocketConfigurators.enableHostnameVerification()) for blocking IO, the latter setting SSLParameters.setEndpointIdentificationAlgorithm(\"HTTPS\") on an SSLSocket (SocketConfigurators.java:44-58). createFrameHandlerFactory()'s netty branch (ConnectionFactory.java:1107-1118) constructs NettyFrameHandlerFactory with this.nettyConf.sslContextFactory - not the javax sslContextFactory and not nioParams. socketConf is passed as an argument but NettyFrameHandlerFactory references `configurator` only to hand it to super (line 95) and never applies it; and SocketConfigurators.ENABLE_HOSTNAME_VERIFICATION is a no-op on anything that is not an SSLSocket, which a Netty channel is not. The TLS handler is therefore built solely from the consumer's Netty SslContext: `SslHandler sslHandler = sslContext.newHandler(ch.alloc(), addr.getHost(), port)` (NettyFrameHandlerFactory.java:251). NettyConfiguration exposes sslContext, sslContextFactory and useTlsWithNoVerification but no hostname-verification switch of its own, and the javadoc of useSslProtocol, useSslProtocol(SSLContext), setSslContextFactory and enableHostnameVerification each states that the method has NO effect when using Netty.",
+      "impact": "A consumer who calls factory.enableHostnameVerification() or relies on useSslProtocol(SSLContext) having enabled it, then switches the IO layer to netty(), loses hostname verification with no error, no warning and no compilation failure. If the SslContext they built does not enable endpoint identification itself, an attacker holding any certificate the trust store chains to - a certificate for a different host in the same PKI, or one from any public CA when the JDK default trust store is used - can impersonate the broker.",
+      "preconditions": "The consumer uses the Netty IO layer with TLS and supplies an SslContext that does not itself set an endpoint identification algorithm. Whether Netty's own default supplies it in the versions this client supports is the inferred link below.",
+      "recommendation": "Either apply the client's hostname-verification intent on the Netty path - configure the SslHandler's SSLEngine with SSLParameters.setEndpointIdentificationAlgorithm(\"HTTPS\") after newHandler, unless the consumer explicitly opted out through useTlsWithNoVerification - or make the mismatch loud: throw from netty() when TLS has been configured through the javax methods, instead of documenting the silence in javadoc that only reaches readers who look. Add an explicit enableHostnameVerification() to NettyConfiguration so the intent is expressible on that layer at all.",
+      "traceability": ["CWE-295", "CWE-1188", "ASVS 5.0 V15", "A02:2025"],
+      "inference": "Whether io.netty SslContextBuilder.forClient() enables endpoint identification by default in the Netty versions this client supports. The pom declares netty 4.2.15.Final while impl/Utils.java probes for io.netty.channel.MultiThreadIoEventLoopGroup and falls back to NioEventLoopGroup, so the client is built to run against 4.1 as well. No Netty jar was opened and no documentation was consulted, so the default was not established in either direction; what was established directly is that this library contributes no hostname verification of its own on that path.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No control in this repository covers the Netty path. The two that exist - NioParams.enableHostnameVerification and SocketConfigurators.ENABLE_HOSTNAME_VERIFICATION - are wired only into the NIO and blocking factories, and the second is inert on a non-SSLSocket by construction (SocketConfigurators.java:44)."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "NOT_APPLICABLE",
+          "reason": "As in F-001, the defect is a default and a silent configuration drop rather than a tainted value reaching a sink."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Library to consumer, and network attacker to application: the consumer expresses an intent through the public API that the library discards, and the beneficiary is whoever can present a certificate for the wrong host on the path to the broker."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The behaviour that would settle it is a dependency's default, and the dependency was not available to read - no network, no jar, no documentation. Per FP-08 that is UNKNOWN, not HOLDS, and it is what caps this finding at probable."
+        }
+      ],
+      "limits": "It does not claim that every Netty user is exposed - a consumer who builds an SslContext with an explicit endpoint identification algorithm is fine, and Netty may supply one by default. What it establishes is narrower and is enough to act on: the client's own hostname-verification configuration is not applied on the Netty path, the omission is silent at runtime, and NettyConfiguration offers no way to express the intent."
+    },
+    {
+      "id": "F-005",
+      "title": "No workflow declares permissions:, so every CI job inherits the repository default GITHUB_TOKEN scope",
+      "procedure": "INF-15",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": ".github/workflows/",
+        "component": "publish-snapshot.yml, release.yml, test.yml, test-rabbitmq-alphas.yml, test-supported-java-versions-5.x.yml, test-supported-java-versions-main.yml"
+      },
+      "evidence": "All six workflow files were read in full. None contains a permissions: key at workflow or job level. Three of them place release-grade secrets into the job environment: publish-snapshot.yml and release.yml pass MAVEN_GPG_PRIVATE_KEY to actions/setup-java and CENTRAL_USERNAME, CENTRAL_TOKEN and MAVEN_GPG_PASSPHRASE to the deploy step, and test.yml does the same inside its own build job, whose Publish snapshot step is gated only by `if: github.event_name != 'pull_request'`, so the secrets are present for every push to v5.x. release.yml additionally runs ci/release-java-client.sh after `git config user.name rabbitmq-ci`, and that script runs `mvnw release:prepare` with -Dtag, which commits and pushes a tag using the ambient token.",
+      "impact": "If the repository or organization default for GITHUB_TOKEN is read-write - the historical GitHub default - then every step in these jobs, including the Maven build and every third-party action it runs, holds a token that can write to the repository's contents, issues and packages, alongside the Maven Central credentials and the release signing key. A step compromise becomes a repository write rather than a build failure.",
+      "preconditions": "The repository or organization default workflow permission is set to read and write. That setting is not in the tree and could not be read.",
+      "recommendation": "Add `permissions: contents: read` at the top of each workflow and widen it per job only where a job demonstrably needs more - release.yml needs contents: write to push its release commit and tag, and the other five need nothing beyond read. Least privilege applies per job, not per workflow.",
+      "traceability": ["CWE-284", "CWE-732", "CWE-522", "CICD-SEC-5", "A01:2025", "NIST 800-53 AC"],
+      "inference": "That the repository or organization default GITHUB_TOKEN permission is read-write rather than read-only. That setting lives in the GitHub console, nothing in the tree pins it, and no exported setting or written statement was available.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The jobs holding secrets trigger on push to v5.x and on workflow_dispatch, so they are not reachable from a fork and that half of the exculpation applies. The boundary that remains is between a compromised build step and the repository itself: the token sits in the same job environment as the third-party actions and the Maven build."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The organization or repository default workflow permission is configuration outside the repository. No exported setting, ticket or written statement was provided, and per FP-08 absence of evidence is UNKNOWN, never HOLDS. This is what caps the finding at probable."
+        }
+      ],
+      "limits": "It does not establish that the token is in fact read-write and it claims no exploit. One artifact settles it: the repository's Actions -> General -> Workflow permissions setting, or the organization policy that pins it. Branch and tag protection - who may push the release tag that release:prepare creates - is the same class of outside-the-tree evidence and was likewise not available."
+    },
+    {
+      "id": "F-006",
+      "title": "Every action and every external checkout in the release path is referenced by a mutable tag or branch",
+      "procedure": "INF-16",
+      "status": "hardening",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": ".github/workflows/test.yml",
+        "line": 30,
+        "component": "all six workflows plus the Makefile rabbitmq_codegen target"
+      },
+      "evidence": "Across the six workflows every `uses:` is a moving tag - actions/checkout@v7, actions/setup-python@v6, actions/setup-java@v5, actions/upload-artifact@v7 - and none is pinned to a 40-character commit SHA, so the SHA-pinned share is 0 of 4 distinct actions. Two steps also check out whole external repositories with no ref: at all: `uses: actions/checkout@v7 with: repository: rabbitmq/tls-gen, path: ./tls-gen` appears in test.yml, test-rabbitmq-alphas.yml and both test-supported-java-versions workflows, and ci/start-broker.sh then executes code from that checkout with `make -C \"${PWD}\"/tls-gen/basic`. Independently the Makefile's deps target runs `git clone -n --depth=1 --filter=tree:0 https://github.com/rabbitmq/rabbitmq-server.git` at the default branch and copies deps/rabbitmq_codegen out of it; `make deps` is a step in every workflow, and codegen.py turns that checkout's specification into the AMQP framing Java sources that are compiled into the published artifact. In test.yml, publish-snapshot.yml and release.yml all of this happens inside a job that has already imported MAVEN_GPG_PRIVATE_KEY into the GPG agent through actions/setup-java.",
+      "impact": "A tag repointed at a malicious commit in any of the four actions runs with the Maven Central credentials and the release signing key already present in the job. The unpinned tls-gen checkout and the unpinned rabbitmq-server clone put externally-sourced code on the build path of a signed artifact: whoever can move those default branches chooses part of what the next signed release is built from and what runs beside the signing key.",
+      "preconditions": "Compromise of an upstream tag or default branch. No weakness in this repository is demonstrated; this is the exposure that pinning removes.",
+      "recommendation": "Pin every `uses:` to a full commit SHA with the version as a trailing comment, and add a `ref:` pinned to a tag or SHA on the rabbitmq/tls-gen checkouts. Pin the rabbitmq_codegen clone in the Makefile to a tag or commit rather than the default branch, so the generated sources entering the released jar come from a fixed input.",
+      "traceability": ["CWE-829", "CWE-494", "CWE-345", "CICD-SEC-3", "SLSA Build L2", "A08:2025", "SSDF PW"],
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "For actions/checkout, actions/setup-python, actions/setup-java and actions/upload-artifact the owner is `actions`, a different perimeter from `rabbitmq`, so the same-owner exculpation does not apply to them. It does apply to the rabbitmq/tls-gen and rabbitmq/rabbitmq-server references, which share the target's own organization; those are reported inside this finding rather than as their own precisely for that reason."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "It is not merely defence in depth here: the same jobs that run the unpinned steps hold the Maven Central token and the release GPG key, so the missing pin is load-bearing for the integrity of the published artifact rather than a nicety. Severity stays at medium because no compromise is demonstrated."
+        }
+      ],
+      "limits": "Runner exposure was not assessed as a risk because every job declares runs-on: ubuntu-24.04, so no self-hosted runner is in scope; nothing was checked about GitHub-hosted runner isolation. Whether an organization ruleset or an actions allowlist already restricts which actions may run is configuration outside the tree and was not available."
+    },
+    {
+      "id": "F-007",
+      "title": "The Maven wrapper downloads and executes a Maven distribution with no checksum pin",
+      "procedure": "SUP-04",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": ".mvn/wrapper/maven-wrapper.properties",
+        "line": 3,
+        "component": "mvnw / Maven wrapper"
+      },
+      "evidence": "maven-wrapper.properties declares wrapperVersion=3.3.4, distributionType=only-script and distributionUrl=https://repo.maven.apache.org/maven2/.../apache-maven-3.9.15-bin.zip, and nothing else. mvnw parses two properties from that file, distributionUrl and distributionSha256Sum (mvnw lines 113-116), so the wrapper supports pinning the distribution by digest; the property is simply not set, and no other checksum or signature check exists in the script's download path. `./mvnw` is the build entry point in every one of the six workflows, including release.yml and publish-snapshot.yml, where the GPG signing key has already been imported into the job.",
+      "impact": "The build's own toolchain arrives with TLS as its only integrity control. A compromise or substitution at the distribution endpoint, or an MVNW_REPOURL override injected into the job environment, replaces the Maven that compiles and signs the release, and nothing in the repository would detect it.",
+      "preconditions": "Compromise of, or a redirect to, the distribution endpoint, or control of the job environment enough to set MVNW_REPOURL. No such compromise is claimed.",
+      "recommendation": "Set distributionSha256Sum in .mvn/wrapper/maven-wrapper.properties to the published SHA-256 of apache-maven-3.9.15-bin.zip, and update it alongside every wrapper or Maven version bump.",
+      "traceability": ["CWE-494", "CWE-829", "CICD-SEC-4", "SLSA Build L2", "A08:2025", "SSDF PW"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The download path in mvnw was read: it reads distributionSha256Sum from the properties file and there is no other verification step. Because the property is absent, nothing on the path checks the archive before it is unpacked and executed."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a local-development-only step. ./mvnw is the command that builds and deploys in release.yml, publish-snapshot.yml and test.yml's publish step, so it is part of the pipeline that produces the published artifact."
+        }
+      ],
+      "limits": "Severity is low because the endpoint is Maven Central over HTTPS and no compromise is demonstrated; the finding is the missing pin, not an incident. The rest of the build path was not exhaustively reviewed for the same class: pom.xml plugins were listed but their behaviour was not read, and codegen.py, which runs during the build, was not opened at all."
+    },
+    {
+      "id": "F-008",
+      "title": "The published artifact carries no SBOM and no provenance attestation",
+      "procedure": "SUP-11",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "pom.xml",
+        "component": "release and publish-snapshot pipelines"
+      },
+      "evidence": "A grep of pom.xml for cyclonedx, sbom and spdx returns nothing, and no workflow step generates or uploads a bill of materials or an attestation; release.yml ends at `mvnw clean deploy -P release`. Signing itself is present and was verified as present: maven-gpg-plugin 3.2.8 is bound to the sign goal in both the release and milestone profiles with keyname 6026DFCA, and checksum-maven-plugin is configured, so the artifact is signed and checksummed - the gap is provenance, not signature.",
+      "impact": "A consumer of the Maven artifact cannot mechanically answer what went into it or which build produced it. There is no attacker gain here; it is recorded because the artifact is a widely-imported library and the answer to 'is this affected' during an upstream incident is currently manual.",
+      "preconditions": "None. This is an absence, not a path.",
+      "recommendation": "Attach a CycloneDX SBOM generated from the same build that produces the jar, and emit build provenance from the release workflow so the published artifact reaches SLSA Build L2. Name the target level explicitly rather than treating provenance as a checkbox.",
+      "traceability": ["CWE-1357", "CICD-SEC-9", "SLSA Build L1", "SSDF PS", "A08:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No step generates or attaches an SBOM or an attestation anywhere in the six workflows or in ci/release-java-client.sh, all of which were read in full."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The artifact is not internal: README.md documents it as a Maven Central dependency for third parties, so the consumers who would use an SBOM are outside the producing organization."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "This is real but grants an attacker nothing, so it is written down at informational rather than dropped. Signing already exists (maven-gpg-plugin, both release profiles), which is the load-bearing half of SUP-12; what is missing is the inventory and the provenance."
+        }
+      ],
+      "limits": "No published release was inspected - that would need network access - so this rests on the pipeline definitions in the tree. If SBOMs or attestations are produced by a release process outside this repository, this finding does not see it."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Secrets in the working tree",
+      "procedure": "SUP-16",
+      "outcome": "refuted",
+      "where": "Whole-tree grep for the high-precision formats (ghp_, github_pat_, AKIA, sk-ant-, xoxb-, PEM private-key headers). The only private-key material is a test fixture: a PEM key under src/test/resources/property-file-initialisation/tls/ alongside keystore.p12 and truststore.jks, and an inline literal in src/test/java/com/rabbitmq/client/PemReaderTest.java. The certificate chain is self-signed by an issuer named TLSGenSelfSignedtRootCA and dated 2020, matching the tls-gen fixtures the CI scripts regenerate; FP-07 and FP-04 both hold. ConnectionFactory.DEFAULT_USER and DEFAULT_PASS are the literal AMQP defaults guest/guest, which is protocol documentation, not a credential. Bound: HEAD of the tree only - there is no .git directory, so SUP-17 (secrets surviving in history) could not be run at all."
+    },
+    {
+      "class": "OS command injection and data-layer injection",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "Grep across src/main/java for Runtime.getRuntime, ProcessBuilder and SQL construction. The single match is Runtime.getRuntime().availableProcessors() in impl/Utils.java:41. There is no database access, no query builder and no shell invocation anywhere in the main sources. Bound: main sources only; test sources and codegen.py were not searched for this class."
+    },
+    {
+      "class": "Java deserialization of untrusted data",
+      "procedure": "WEB-11",
+      "outcome": "inconclusive",
+      "where": "Grep for ObjectInputStream, readObject, Class.forName, enableDefaultTyping and JsonTypeInfo across src/main/java. No ObjectInputStream sink is reached from network input: the only readObject is the private serialization hook of impl/VariableLinkedBlockingQueue (line 770), reachable only if an application deserializes that class itself, and Jackson is used through JacksonJsonRpcMapper without default typing being enabled anywhere in the tree. One residue is left unresolved and is why this is inconclusive rather than refuted: tools/jsonrpc/ProcedureDescription.computeReturnTypeAsJavaClass calls Class.forName(javaReturnType, false, contextClassLoader) on a string that JSONUtil.tryFill sets reflectively from a service description a JsonRpcClient fetched from a remote server (JsonRpcClient.retrieveServiceDescription -> new ServiceDescription(rawServiceDescription)). initialize=false means no static initializer runs, so this looks like a class-presence oracle rather than execution, but JacksonJsonRpcMapper was not read and the full client-side path was not traced to a conclusion."
+    },
+    {
+      "class": "Path traversal, archive extraction and temporary-file handling",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "Grep across src/main/java for ZipInputStream, extractall, FileOutputStream, Files.write, createTempFile and File.createTemp returns nothing. The library reads keystore and PEM files from paths the consumer supplies and writes no files of its own, so LOC-01 to LOC-04 have no surface here. Bound: main sources only, and PemReader itself was not read."
+    },
+    {
+      "class": "Declared limits that nothing enforces",
+      "procedure": "WEB-23",
+      "outcome": "refuted",
+      "where": "Reader counts were taken for maxInboundMessageBodySize, requestedChannelMax, requestedFrameMax, handshakeTimeout, workPoolTimeout and writeEnqueuingTimeoutInMs. Each has real readers on the enforcing side: maxInboundMessageBodySize reaches CommandAssembler.maxBodyLength, which throws at line 131, by way of ConnectionParams, AMQConnection, AMQChannel and AMQCommand, independently of the IO layer; the frame maximum is enforced by Utils.enforceFrameMax and NioUtils.enforceFrameMax on both read paths; writeEnqueuingTimeoutInMs is consumed by BlockingQueueNioQueue. No knob was found that is configurable and unread. Bound: symbol search across src/main/java only, and the IO-layer asymmetry recorded in F-002's limits was not treated as a limit-with-no-reader because the limit does have readers."
+    },
+    {
+      "class": "Credentials and tokens reaching logs",
+      "procedure": "WEB-22",
+      "outcome": "refuted",
+      "where": "Grep of every LOGGER call in src/main/java intersected with password, secret, token, credential. The OAuth2 refresh path logs only the fact of a refresh and the delay ('Refreshing token', 'Scheduling refresh in {} seconds'), never the token or the client secret; the credentials provider is logged by object reference at DefaultCredentialsRefreshService.java:332 and OAuth2ClientCredentialsGrantCredentialsProvider declares no toString, so it prints the default identity string. Bound: SLF4J call sites in main sources; exception messages and the client-properties map sent at connection negotiation were not audited for the same class."
+    },
+    {
+      "class": "Prompt injection through agent instruction files",
+      "procedure": "AI-22",
+      "outcome": "refuted",
+      "where": "AGENTS.md is the only agent-instruction file in the tree and it was read in full: build and test commands, repository layout, code-style and commit-message conventions. It contains no instruction directed at an auditing agent, no attempt to redefine scope or tooling, and no embedded content from an untrusted source. Its content is reported here as data and was not acted on."
+    },
+    {
+      "class": "Dependency vulnerabilities and end-of-support components",
+      "procedure": "SUP-13",
+      "outcome": "not executed",
+      "where": "No SCA tool was run and no advisory database was consulted, by instruction. The declared versions were read from pom.xml and are recorded so the reader knows what was and was not looked at: netty 4.2.15.Final, jackson-databind 2.21.3, micrometer 1.17.0, opentelemetry 1.63.0, bouncycastle 1.84, slf4j-api 1.7.36 (compile scope), and in build or test scope jetty 9.4.58.v20250814, logback 1.2.13 and groovy-all 2.4.21. The last two of those, and Jetty 9.4, are branches that would be worth checking against SUP-24 for end of support; that check was not performed and no conclusion about it is offered here."
+    },
+    {
+      "class": "SASL mechanism selection and credential negotiation",
+      "procedure": "WEB-01",
+      "outcome": "not executed",
+      "where": "JDKSaslConfig, DefaultSaslConfig and the mechanism implementations were identified in the file listing and never opened. Mechanism downgrade, the handling of the PLAIN response and the EXTERNAL and CR-DEMO paths are therefore unexamined. The CI broker configuration (ci/start-broker.sh and ci/cluster/configuration/rabbitmq.conf) enables PLAIN, ANONYMOUS, AMQPLAIN, EXTERNAL and RABBIT-CR-DEMO with loopback_users = none, which is a test-fixture configuration and not a shipped default, but the client-side selection logic that faces it was not read."
+    },
+    {
+      "class": "Connection and topology recovery logic",
+      "procedure": "WEB-17",
+      "outcome": "not executed",
+      "where": "The whole impl/recovery package - AutorecoveringConnection, AutorecoveringChannel, TopologyRecoveryRetryLogic, DefaultRetryHandler and the recovery filters, roughly 2,900 lines - was not opened. Recovery re-declares topology and replays consumer registrations after a failure, which is exactly the shape where a race or a state-confusion defect would live, and F-002's reconnect-loop impact depends on behaviour in that package that was not read. This is the single largest unexamined behavioural surface in the shipped library after the generated framing code."
+    }
+  ]
+}

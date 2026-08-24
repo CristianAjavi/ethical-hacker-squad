@@ -1,0 +1,98 @@
+{
+ "report_id": "B",
+ "coverage_statement": "TARGET: Unleash 8.0.1 monorepo. INVENTORY: 6,490 files total; Express/TypeScript backend in src/lib (945 non-test .ts + 384 test files across 50 feature modules), React SPA in frontend/src (~4,138 .ts/.tsx), ~90 db migrations in src/migrations, 15 mail templates in src/mailtemplates, Dockerfile + 3 docker-compose files, .github/workflows. METHOD: I did not sample uniformly. I picked the surfaces where a defect is reachable by an attacker rather than merely ugly, and I read those end to end: the request pipeline (app.ts), every file in src/lib/middleware (14 non-test files: auth, api-token, pat, rbac, cors, secure-headers, session-db, bearer-token, origin, authorization, no/oss/demo-authentication, content-type), the whole auth surface (routes/auth/*, routes/index.ts route mounting, routes/controller.ts permission wiring, public-invite.ts, user-service.ts, reset-token-service.ts, public-signup-token-service.ts, access-service.ts permission evaluation), all credential-issuing code (api-token-service.ts, pat-service.ts + pat-store.ts, edgetokens/*, edge-service.ts, routes/edge-api, admin-api/api-token.ts, admin-api/project/api-token.ts, admin-api/user/pat.ts, db/api-token-store.ts, db/reset-token-store.ts), the crypto helpers (util/anonymise, constantTimeCompare, escape-regex, random-id), feature-naming-pattern/*, and the outbound-request layer (addons/webhook.ts, addon-service.ts, feature-event-formatter-md.ts, routes/admin-api/addon.ts, email-service.ts + all 15 mustache templates). I ran targeted greps repo-wide for the classes that do not need a file-by-file read: child_process/eval/new Function (zero hits), path traversal into fs (zero hits), dynamic RegExp (2 hits, both followed up), crypto primitives (all 40 call sites triaged), rateLimit call sites (8, all traced), and `permission: NONE` route declarations (~110, tabulated per controller and the auth model behind them established). I fanned out three read-only subagents. TWO REPORTED: a frontend sweep (grep-led across all ~4,100 frontend files for XSS sinks, javascript:/data: URL sinks, open redirect, client-side secrets, postMessage) and an addons/SSRF sweep. I independently re-verified every addons-lane claim I carried forward (F-010, F-011, F-012) against the source before including it, and dropped the rest of that lane's output rather than pass on claims I could no longer restate. The frontend lane's findings (F-004, F-013, F-014, F-016) are reported as it substantiated them, with its own caveats preserved in the evidence text. DELIBERATELY NOT COVERED \u2014 treat these as silence, not a clean bill: (1) THE ENTIRE DATA-ACCESS LAYER. My third subagent, tasked with SQL-injection and query-construction review over src/lib/db/*.ts and every *-store.ts / *-read-model.ts, never returned. I had grepped 17 `.raw(` and 39 raw-builder call sites and hand-triaged only three of them (feature-search-store.ts:543 sort-order interpolation, metrics stores' INTERVAL interpolation, group-store.ts jsonb operators) before handing off; the remaining ~50 sites, and every question about missing project/tenant scoping predicates in queries, are UNEXAMINED. feature-search-store.ts (1,000+ lines of user-driven filter/sort SQL) is the single highest-risk file I did not finish. (2) src/migrations \u2014 not read at all beyond one grep for role grants. (3) The change-request, playground/feature-evaluator, export-import-toggles, segment/constraints, events/event-search, project-insights, personal-dashboard, traffic-data-usage, scheduler and instance-stats modules \u2014 I established their route permissions from the `permission: NONE` tabulation but read no handler bodies; authorization logic inside them is unreviewed. (4) frontend/cypress, frontend/scripts, vite config, and util/rewriteHTML.ts. (5) Dependency/supply-chain: pnpm-lock.yaml, patches/, and .github/workflows were not reviewed, and I did not look up advisories for any dependency (out of scope per instructions). (6) I executed nothing \u2014 no tests, no server, no browser \u2014 so every behavioral claim here is read from source, and the two library-behavior assumptions in F-013/F-016 are flagged inline as unconfirmed.",
+ "findings": [
+  {
+   "id": "F-001",
+   "title": "Global `trust proxy: true` makes req.ip attacker-controlled, defeating every rate limiter (login, password reset, user creation)",
+   "location": "src/lib/app.ts:54"
+  },
+  {
+   "id": "F-002",
+   "title": "Project feature-naming pattern is compiled and executed as an unbounded user-supplied regex (ReDoS)",
+   "location": "src/lib/features/feature-naming-pattern/feature-naming-validation.ts:3"
+  },
+  {
+   "id": "F-003",
+   "title": "Stored `javascript:` URL on an application record yields XSS in the Unleash origin",
+   "location": "frontend/src/component/application/Application.tsx:153"
+  },
+  {
+   "id": "F-004",
+   "title": "Unauthenticated user enumeration via password-reset endpoint",
+   "location": "src/lib/services/user-service.ts:719"
+  },
+  {
+   "id": "F-005",
+   "title": "Bootstrap admin password is written to the application log in cleartext",
+   "location": "src/lib/services/user-service.ts:204"
+  },
+  {
+   "id": "F-006",
+   "title": "Updating an integration returns the stored secret the caller never supplied",
+   "location": "src/lib/services/addon-service.ts:279"
+  },
+  {
+   "id": "F-007",
+   "title": "Webhook and Datadog/Teams/Slack integrations perform fully attacker-directed outbound requests (SSRF) with arbitrary headers",
+   "location": "src/lib/addons/webhook.ts:91"
+  },
+  {
+   "id": "F-008",
+   "title": "Addon event formatter disables Mustache HTML escaping process-wide, including for outbound emails",
+   "location": "src/lib/addons/feature-event-formatter-md.ts:355"
+  },
+  {
+   "id": "F-009",
+   "title": "Edge HMAC replay-nonce is persisted before the signature is verified",
+   "location": "src/lib/features/edgetokens/edge-hmac-verifier.ts:38"
+  },
+  {
+   "id": "F-010",
+   "title": "Multi-project API token secrets are exposed to holders of read rights on only one of its projects",
+   "location": "src/lib/routes/admin-api/project/api-token.ts:240"
+  },
+  {
+   "id": "F-011",
+   "title": "API token secret is accepted and retained in the browser URL query string",
+   "location": "frontend/src/component/playground/Playground/AdvancedPlayground.tsx:188"
+  },
+  {
+   "id": "F-012",
+   "title": "Feature-link URLs reach an href with no scheme allowlist on either side",
+   "location": "frontend/src/component/feature/FeatureView/FeatureOverview/FeatureOverviewMetaData/FeatureOverviewMetaData.tsx:166"
+  },
+  {
+   "id": "F-013",
+   "title": "Password-reset token is derived from a lossy UTF-8 decode of random bytes and stored unhashed",
+   "location": "src/lib/services/reset-token-service.ts:126"
+  },
+  {
+   "id": "F-014",
+   "title": "Login `redirect` parameter is sanitized on only one branch, enabling an open redirect",
+   "location": "frontend/src/component/user/SimpleAuth/SimpleAuth.tsx:37"
+  },
+  {
+   "id": "F-015",
+   "title": "Deleting a personal access token writes another user's PAT metadata into the audit log",
+   "location": "src/lib/features/pat/pat-service.ts:67"
+  },
+  {
+   "id": "F-016",
+   "title": "Dead project comparison in project API-token deletion authorization",
+   "location": "src/lib/routes/admin-api/project/api-token.ts:209"
+  }
+ ],
+ "questions": [
+  "src/lib/middleware \u2014 the request-pipeline middleware",
+  "src/migrations \u2014 the database migrations",
+  "frontend/src \u2014 the React single-page application",
+  "src/lib/db and the *-store.ts files \u2014 the raw-SQL data access layer",
+  "src/lib/openapi \u2014 the OpenAPI schema and validation layer",
+  ".github/workflows \u2014 the CI workflows",
+  "src/lib/addons \u2014 the outbound integrations",
+  "object-level authorization across the admin controllers (can user A read user B's object?)",
+  "src/mailtemplates \u2014 the email templates",
+  "the third-party dependencies and their known vulnerabilities"
+ ]
+}

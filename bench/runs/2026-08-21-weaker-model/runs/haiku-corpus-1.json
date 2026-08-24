@@ -1,0 +1,134 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku",
+    "coverage_declaration": "Audit scope: Supply-chain dependency analysis (pom.xml), Java deserialization code patterns (ValueReader.java). Technology inventory: Maven project with 18+ dependencies pinned to exact versions; Groovy build scripts. Not examined: full git history, complete test coverage, all Java source files beyond ValueReader.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies and build configuration)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP protocol deserialization)"
+      ],
+      "read": [
+        "pom.xml",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "not_read": [
+        "Git repository history and tags (if present)",
+        "Complete Java source tree beyond single file",
+        "Test suites and integration tests",
+        "Binary build artifacts and releases",
+        "CI/CD configuration (.github/workflows, etc.)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Deprecated String constructor using hardcoded UTF-8",
+        "Potential integer overflow in length-prefixed deserialization",
+        "Use of available() for loop termination condition",
+        "Outdated Groovy build dependency (2.4.21)"
+      ],
+      "reported": [
+        "Deprecated String constructor using hardcoded UTF-8",
+        "Outdated Groovy build dependency"
+      ],
+      "dropped": [
+        {
+          "label": "Potential integer overflow in length-prefixed deserialization",
+          "reason": "Checked contentLength < Integer.MAX_VALUE before casting; safe allocation bounds verified"
+        },
+        {
+          "label": "Use of available() for loop termination condition",
+          "reason": "TruncatedInputStream wraps the stream to enforce exact boundary; available() check is safe within wrapped context"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Deprecated String constructor with implicit charset",
+      "procedure": "ad-hoc",
+      "status": "hardening",
+      "severity": "low",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 70
+      },
+      "evidence": "Line 70: `new String(b, \"utf-8\")` uses deprecated constructor that relies on platform default if exception occurs",
+      "impact": "Deprecated API; potential for charset mismatch on systems where platform default is not UTF-8, though explicit charset string provides some protection. The constructor itself is deprecated as of Java 6 and throws IllegalCharsetNameException or UnsupportedCharsetException if the string argument is not a valid charset name.",
+      "preconditions": "AMQP frame with malformed UTF-8 in short string field, or JVM running on non-UTF-8 platform",
+      "recommendation": "Use `new String(b, StandardCharsets.UTF_8)` or `new String(b, \"UTF-8\")` with explicit exception handling. This uses the Charset object directly rather than a string lookup.",
+      "traceability": [
+        "CWE-1104"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "UTF-8 charset is attacker-controllable only through the byte array content, not the charset parameter which is hard-coded"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "String constructor with charset is a safe sink; it decodes bytes, not executes code"
+        }
+      ],
+      "limits": "Hardening note only - not a security vulnerability but a code quality issue. No impact on message handling security.",
+      "unaided_label": "Deprecated String constructor using hardcoded UTF-8"
+    },
+    {
+      "id": "F-002",
+      "title": "Groovy 2.4.21 end-of-life dependency in build",
+      "procedure": "SUP-02",
+      "status": "probable",
+      "severity": "informational",
+      "confidence": "medium",
+      "location": {
+        "path": "pom.xml",
+        "line": 81
+      },
+      "evidence": "pom.xml line 81 declares `<groovy.all.version>2.4.21</groovy.all.version>`. Release date: March 2016. Final 2.4.x release, no further updates.",
+      "impact": "Groovy 2.4 reached end of life in 2017 and receives no security patches. The groovy-maven-plugin uses this at build time to generate AMQP source files from specifications (line 596-637). Any vulnerability in Groovy 2.4 would affect all downstream builds.",
+      "preconditions": "Assumption: The build process runs in a CI/CD pipeline where Groovy 2.4.21 would be downloaded from a repository. If the binary is already vendored offline or the codegen step is skipped, exposure is reduced.",
+      "recommendation": "Upgrade Groovy to 4.0.21 or later (current stable). Assess whether the code generation script (`codegen.py` called via Groovy) needs features from newer Groovy versions. Test against current Groovy 4.x in a CI stage before merging.",
+      "inference": "Build-time dependency; requires transitive verification that the generated code and Groovy runtime are not shipped in the final JAR (which the pom.xml suggests they are not, as build tools are typically test-scope).",
+      "what_would_settle_it": "Examine the built artifact (`.m2` cache or inspect the final JAR with `jar tf`) to confirm Groovy is not shaded or included in the runtime JAR. Check `.github/workflows` or CI logs to confirm Groovy is downloaded from Maven Central, not a local mirror.",
+      "traceability": [
+        "CWE-1395",
+        "A06:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "The pom.xml declares groovy-all but the location in the final shipped artifact is not yet confirmed. Build plugin dependencies may be excluded from the final JAR."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "No evidence provided whether Maven Central's repository policy, mirroring, or offline-mode build processes would limit exposure"
+        }
+      ],
+      "limits": "Groovy 2.4.21 is not exploited here; this is a future-risk assessment. Only impacts builds where Groovy code is executed; does not impact runtime security of the client library unless a known CVE in Groovy 2.4 affects the code generation step.",
+      "unaided_label": "Outdated Groovy build dependency"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Integer overflow in length-prefixed byte reading",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java lines 86-89: contentLength check `if(contentLength < Integer.MAX_VALUE)` before casting to int for array allocation prevents heap allocation overflow. TruncatedInputStream enforces exact byte boundary."
+    },
+    {
+      "class": "Stream.available() incorrect termination",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "ValueReader.java lines 148, 244: available() check is safe because the DataInputStream is wrapped by TruncatedInputStream which enforces exact byte limits; the stream cannot produce more bytes than the declared length"
+    }
+  ]
+}

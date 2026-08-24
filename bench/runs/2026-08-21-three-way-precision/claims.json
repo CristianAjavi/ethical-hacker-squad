@@ -1,0 +1,157 @@
+{
+ "claims": [
+  {
+   "claim_id": "M01",
+   "title": "Integer Overflow in Timestamp Multiplication",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 269,
+   "severity": "medium",
+   "impact": "Malformed timestamp values could be created due to integer overflow when multiplying by 1000, leading to incorrect Date objects",
+   "evidence": "Line 269: 'return new Date(in.readLong()*1000);' - No overflow check before multiplication"
+  },
+  {
+   "claim_id": "M02",
+   "title": "Hardcoded Charset String Instead of StandardCharsets",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 70,
+   "severity": "low",
+   "impact": "Using hardcoded charset string 'utf-8' instead of StandardCharsets.UTF_8 is less efficient (requires charset lookup) and harder to maintain. No security impact but poor practice.",
+   "evidence": "Line 70: 'return new String(b, \"utf-8\");' - Should use StandardCharsets.UTF_8 or Charset.forName()"
+  },
+  {
+   "claim_id": "M03",
+   "title": "Unreliable Stream State Detection in Table Parsing",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 148,
+   "severity": "medium",
+   "impact": "The readTable() method at line 148 uses `while(tableIn.available() > 0)` to determine when to stop reading table entries. The available() method is unreliable for stream-based I/O\u2014it may return 0 even when data exists (especially with TruncatedInputStream), potentially causing early termination of parsing. This could result in incomplete table data being silently ignored, leading to protocol desynchronization or data loss.",
+   "evidence": "Line 148: `while(tableIn.available() > 0)` \u2014 The available() contract does not guarantee all buffered data is reported; network and wrapped streams may return 0 prematurely. Combined with TruncatedInputStream truncation, this is unreliable termination logic."
+  },
+  {
+   "claim_id": "M04",
+   "title": "Unreliable Stream.available() Check for Loop Termination",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 148,
+   "severity": "medium",
+   "impact": "The while loop using available() > 0 to read table entries may not properly handle all buffered data, leading to incomplete table parsing or data truncation",
+   "evidence": "Lines 148 and 244: 'while(tableIn.available() > 0)' and 'while(arrayIn.available() > 0)'. The Java documentation states available() returns the number of bytes immediately available without blocking, not the total remaining bytes. This check is unreliable for stream position tracking."
+  },
+  {
+   "claim_id": "M05",
+   "title": "Suspicious Timestamp Calculation with Potential Overflow",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 269,
+   "severity": "low",
+   "impact": "The timestamp at line 269 is read as a long and multiplied by 1000 before constructing a Date: `new Date(in.readLong()*1000)`. According to AMQP 0.9.1 spec, timestamps are 64-bit unsigned integers in milliseconds since epoch, not seconds. This multiplication would create dates 1000x in the future, causing incorrect Date values and potential interoperability issues with AMQP servers and clients. Additionally, for very large timestamp values, the multiplication could theoretically overflow (though unlikely for realistic epoch values).",
+   "evidence": "Line 269: `return new Date(in.readLong()*1000);` \u2014 Multiplies a long by 1000 without validation. AMQP timestamps are milliseconds, not seconds."
+  },
+  {
+   "claim_id": "M06",
+   "title": "Potential Memory Exhaustion via Large Byte Array Allocation",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 88,
+   "severity": "medium",
+   "impact": "An attacker can allocate very large byte arrays (up to Integer.MAX_VALUE - 1 bytes) by sending crafted AMQP messages with large length values, potentially exhausting heap memory and causing OutOfMemoryError",
+   "evidence": "Line 88: 'final byte [] buffer = new byte[(int)contentLength];' - The code allocates arrays up to Integer.MAX_VALUE bytes. While the check at line 87 prevents values >= Integer.MAX_VALUE, values like 1GB are still allowed and could exhaust available heap."
+  },
+  {
+   "claim_id": "M07",
+   "title": "Unbounded Memory Allocation via Length Field",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 86,
+   "severity": "HIGH",
+   "impact": "An attacker can send a frame with a large length field to cause the client to allocate excessive memory, leading to OutOfMemoryError and denial of service.",
+   "evidence": "The readBytes() method at line 83 reads a 32-bit length prefix (line 86) and allocates a byte array of that size without any sanity check on the length. The check 'contentLength < Integer.MAX_VALUE' is insufficient - it permits allocation of up to 2GB arrays. Similarly, readTable() at line 142 and readArray() at line 240 read length fields without validation against a reasonable limit."
+  },
+  {
+   "claim_id": "M08",
+   "title": "Unreliable Stream State Detection in Array Parsing",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 244,
+   "severity": "medium",
+   "impact": "The readArray() method at line 244 uses the same unreliable pattern: `while(arrayIn.available() > 0)`. This exposes the same risk as F-001\u2014incomplete array data may be silently truncated if the stream's available() reports 0 prematurely, potentially corrupting nested structures in AMQP messages.",
+   "evidence": "Line 244: `while(arrayIn.available() > 0)` \u2014 Identical pattern to readTable(); subject to the same unreliability of available() on wrapped streams and TruncatedInputStream."
+  },
+  {
+   "claim_id": "M09",
+   "title": "Missing Bounds Validation on Deserialized Collection Sizes",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 145,
+   "severity": "medium",
+   "impact": "When parsing tables (line 145: `new HashMap<String, Object>()`) and arrays (line 243: `new ArrayList<Object>()`), the code creates unbounded collections based on a length prefix read from untrusted input. While TruncatedInputStream limits total bytes read, it does not prevent an attacker from crafting many small entries (e.g., single-character keys with null values) to exhaust heap memory or trigger excessive GC. No validation of entry count or explicit size hints (e.g., HashMap initial capacity) are provided.",
+   "evidence": "Lines 145, 243: Collections are initialized with default capacity, then populated from a length-bounded stream. No explicit entry-count validation or capacity reservations. An attacker could send tableLength=2GB with thousands of tiny entries to consume memory."
+  },
+  {
+   "claim_id": "M10",
+   "title": "Silent Ignoring of Duplicate Table Keys",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 151,
+   "severity": "low",
+   "impact": "Duplicate keys in AMQP table messages are silently ignored, keeping only the first value. This could lead to data loss if the protocol or application expects all values to be preserved",
+   "evidence": "Lines 151-152: 'if(!table.containsKey(name)) table.put(name, value);' - The code explicitly checks for duplicate keys and ignores subsequent values with the same key name."
+  },
+  {
+   "claim_id": "M11",
+   "title": "Silent Duplicate Key Handling in Table Deserialization",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 151,
+   "severity": "low",
+   "impact": "When duplicate keys appear in a serialized AMQP table, the code silently keeps the first occurrence (line 151: `if(!table.containsKey(name)) table.put(name, value)`). This could mask data corruption, adversarial input manipulation, or protocol violations. An attacker sending duplicate keys might expect both values to be retained or merged, but instead only the first is kept, potentially breaking protocol assumptions in consuming code.",
+   "evidence": "Lines 151\u2013152: The if-guard silently discards duplicate key entries without logging, exception, or signal. No validation that the protocol enforces key uniqueness."
+  },
+  {
+   "claim_id": "M12",
+   "title": "Unbounded Recursion Depth in Table/Array Parsing",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 181,
+   "severity": "high",
+   "impact": "Malicious AMQP messages with deeply nested table or array structures can cause StackOverflowError, leading to denial of service",
+   "evidence": "Lines 139-155 (readTable) and 237-249 (readArray) recursively call readFieldValue without any depth limit. readFieldValue can call readTable or readArray, creating unlimited recursion depth."
+  },
+  {
+   "claim_id": "M13",
+   "title": "Insufficient Validation of Signed-to-Unsigned Integer Extension",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 86,
+   "severity": "medium",
+   "impact": "Malicious input with a negative length value (when interpreted as signed int) could bypass bounds checks, though the subsequent check limits the impact",
+   "evidence": "Line 86: 'long contentLength = unsignedExtend(in.readInt());' - The unsignedExtend function treats the signed int as unsigned by masking with 0xffffffffL. While the check at line 87 prevents values >= Integer.MAX_VALUE from allocating arrays, the unsigned interpretation could still lead to unexpected behavior if not carefully handled."
+  },
+  {
+   "claim_id": "M14",
+   "title": "End-of-Life Groovy Version in Build Pipeline",
+   "file": "pom.xml",
+   "line": 81,
+   "severity": "low",
+   "impact": "The build uses Groovy 2.4.21 (line 81: `<groovy.all.version>2.4.21</groovy.all.version>`), which reached end-of-life in 2015 and has not received security updates since 2016. While this is a test/build-time dependency and not shipped in the final JAR, it poses a supply-chain risk: any Groovy CVEs in the code generation scripts (lines 632\u2013634 use Groovy via groovy-maven-plugin) could be exploited during the build.",
+   "evidence": "Line 81: groovy.all.version=2.4.21 \u2014 Groovy 2.4.x is unsupported; current releases are 4.x. The pom.xml references this in generate_amqp_sources.groovy execution."
+  },
+  {
+   "claim_id": "M15",
+   "title": "Unbounded Recursion in readTable and readArray",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 139,
+   "severity": "HIGH",
+   "impact": "A maliciously crafted AMQP frame containing deeply nested tables or arrays could cause a stack overflow, leading to denial of service. An attacker who can send AMQP messages to the client could crash it.",
+   "evidence": "The readTable() method at line 139 recursively calls readFieldValue() which can call readTable() again (line 181). Similarly, readArray() at line 237 recursively calls readFieldValue() which can call readArray() again (line 184). No recursion depth limit is enforced. A frame with tables containing tables containing tables N levels deep will exhaust the stack."
+  },
+  {
+   "claim_id": "M16",
+   "title": "Weak Type Handling - Missing Validation for BigDecimal Scale",
+   "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+   "line": 172,
+   "severity": "MEDIUM",
+   "impact": "A malformed BigDecimal with an extreme scale value could cause problems in downstream code or resource exhaustion.",
+   "evidence": "At line 172-175, when reading a BigDecimal (type 'D'), the code reads an unsigned byte for scale without validation, then reads 4 bytes for the unscaled value. A scale of 255 combined with large unscaled values could create a BigDecimal with extreme precision requirements, consuming resources unexpectedly."
+  },
+  {
+   "claim_id": "M17",
+   "title": "Older Logback Version in Test Scope",
+   "file": "pom.xml",
+   "line": 64,
+   "severity": "low",
+   "impact": "Logback version 1.2.13 (line 64: `<logback.version>1.2.13</logback.version>`) is from the 1.2 branch, which is older and has received fewer security updates compared to Logback 1.4.x. While in test scope only (line 439: `<scope>test</scope>`), known CVEs in Logback 1.2 could potentially be triggered during test execution, affecting the CI/CD pipeline or local test environments.",
+   "evidence": "Line 64: logback.version=1.2.13 \u2014 Branch 1.2 is maintained but older than 1.4.x. Line 439 confirms test-only scope."
+  }
+ ]
+}
