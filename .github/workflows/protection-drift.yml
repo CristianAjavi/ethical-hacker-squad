@@ -1,0 +1,73 @@
+# Watches the LIVE branch protection against what scripts/gh/governance.json
+# declares. Read only, no secret, no personal access token.
+#
+# WHY IT EXISTS. apply-governance.sh compares the whole declared state against
+# the live repository and CANNOT run here: it demands that the active gh account
+# be the maintainer's and that the token hold admin, and the built-in token is
+# neither. So that comparison only ever happened when a person ran it by hand -
+# which is how `main` sat with NO protection at all while every gate was green,
+# and README-governance.md said so in prose that nothing executed.
+#
+# This runs the half a workflow can do, which is SHALLOW and says so. There is no
+# `administration` scope for a workflow token - actionlint refuted that design in
+# CI - so the protection BLOCK cannot be read here at all. What any token can
+# read is the branch's own `protected` boolean, and that answers the question
+# this repository got wrong: protected by nothing, or protected.
+#
+# The full field-by-field comparison needs admin, which means a personal access
+# token stored as a secret in a public security repository. That is a larger
+# surface than the problem it solves, and the maintainer running
+# apply-governance.sh by hand already does that comparison.
+#
+# It reports; it does not gate. Nothing here can fix a drift - applying needs
+# admin - so failing a pull request over it would block work nobody can unblock
+# from inside CI.
+name: Protection drift
+
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/gh/governance.json'
+      - 'scripts/gh/protection-check.sh'
+      - '.github/workflows/protection-drift.yml'
+
+permissions: {}
+
+jobs:
+  check:
+    name: protection-drift
+    runs-on: ubuntu-latest
+    # On a fork this says nothing: the protection lives in the target repository.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read        # checkout, and the branch's own `protected` boolean
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the live protection against the declared one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gh/protection-check.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Protection OK::Live protection matches governance.json." ;;
+            1) echo "::error title=Protection drift::The live protection does not match governance.json. Fix it with scripts/gh/apply-governance.sh --apply, from an account with admin." ;;
+            2) echo "::warning title=COULD NOT MEASURE::Part of the declared protection could not be read - a declared branch that does not exist yet reports this until the first promotion creates it." ;;
+            *) echo "::error title=Script broken::unexpected exit code $rc" ;;
+          esac
+          # rc=2 is expected while `stable` does not exist. It is surfaced as a
+          # warning above and does not fail the job, because a branch that has
+          # never been created is not a regression - and a job that is red every
+          # week for a known reason is a job nobody reads.
+          [ "$rc" -eq 2 ] && rc=0
+          exit "$rc"
