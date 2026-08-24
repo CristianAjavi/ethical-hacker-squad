@@ -259,7 +259,7 @@ This branch is additive over `main`: it only adds `.github/**`, `scripts/gates/*
 
 ## 8. The test bench
 
-The gates are tested too. `scripts/gh/tests/run-all.sh` runs 7 suites:
+The gates are tested too. `scripts/gh/tests/run-all.sh` runs 8 suites:
 
 ```bash
 scripts/gh/tests/run-all.sh
@@ -273,6 +273,36 @@ The suites are **negative**: they do not ask "do the gates pass?" but "can this 
 green without having looked?". `test-workflow-mutations.py` breaks the real workflow in 17
 different ways and requires the validator to return `1` on all 17; if any one stops being
 detected, the validator is worthless and the suite goes red.
+
+The runner keeps its list of suites by hand, because the title it prints is what names a
+red one — but it also **counts**: a `test-*` file sitting in that directory that no line
+invokes makes the runner exit `2` and prints its name. A suite that runs nowhere is not a
+test, and this repository has now found that shape twice.
+
+### `merge-preview.sh` — the combination CI never judges
+
+CI judges every pull request against `main` and can judge no combination of them, because
+no single branch carries both halves of one. That gap is not theoretical: one branch added
+a self-test battery that enumerated the eight files a gate reads, another split one of
+those files in two, **each was green on its own**, and merged the gate asked for a file the
+battery did not copy — twelve cases back as "could not measure", on a tree where nothing
+was wrong.
+
+```bash
+scripts/gh/merge-preview.sh                 # every open PR, oldest first
+scripts/gh/merge-preview.sh --union br1 br2 # keep both sides on a conflict
+scripts/gh/merge-preview.sh --list          # print the plan and measure nothing
+```
+
+It merges into a throwaway worktree and touches nothing. A conflict is **reported and the
+branch skipped**, never resolved by guesswork; `--union` retries with git's own union
+resolution, which keeps both sides of every conflicting hunk — right for a table two
+branches each append a row to, wrong for a real disagreement, which is why it is opt-in and
+prints every file it touched that way.
+
+`gate-tree-delta.sh` is skipped **by name and printed as skipped**: over a combined merge
+its delta is the sum of every branch's growth, a number nobody will ever ship, because pull
+requests land one at a time and the base moves under each.
 
 ---
 
