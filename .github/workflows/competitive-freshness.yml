@@ -1,0 +1,62 @@
+# Notices when a product this project measured itself against has moved.
+#
+# README.md carries the sentence the whole competitive position rests on - each
+# comparable product falls outside a band somewhere, this corpus falls outside
+# none - and names the commit each was measured at. It did not carry a date, and
+# nothing checked whether the subjects had moved. On 2026-08-24 two of the three
+# already had, both pushed that day.
+#
+# Read only, no secret: these are public repositories and the built-in token
+# reads them as any anonymous client would.
+#
+# It reports and does not gate. Nothing in CI can re-measure - that needs the
+# harness and model runs, and it is a decision about spend - so failing a pull
+# request over a competitor's commit would block work nobody can unblock here.
+name: Competitive freshness
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/competitive-baseline.json'
+      - 'scripts/gh/competitive-freshness.sh'
+      - '.github/workflows/competitive-freshness.yml'
+
+permissions: {}
+
+jobs:
+  freshness:
+    name: competitive-freshness
+    runs-on: ubuntu-latest
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ask each measured product whether it has moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gh/competitive-freshness.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Comparison current::Every measured pin is still its repository's tip." ;;
+            1) echo "::warning title=Comparison is a photograph::A product this project measured itself against has moved. The numbers are not wrong; they are dated. Re-measuring is a decision about spend." ;;
+            2) echo "::error title=COULD NOT MEASURE::A product could not be queried, or the baseline is unreadable." ;;
+            *) echo "::error title=Script broken::unexpected exit code $rc" ;;
+          esac
+          # rc=1 is information, not a regression: a competitor committing is not
+          # this project breaking. It is surfaced as a warning and does not fail
+          # the job, because a job that is red whenever someone else pushes is a
+          # job nobody reads. rc=2 does fail - not being able to ask is different
+          # from asking and being told no.
+          [ "$rc" -eq 1 ] && rc=0
+          exit "$rc"
