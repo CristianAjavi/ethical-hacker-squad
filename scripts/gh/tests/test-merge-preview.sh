@@ -102,6 +102,16 @@ G "$d" checkout -q main; G "$d" checkout -q -b feat/row3; printf 'row three\n' >
 G "$d" checkout -q main
 res "append-only conflict, no --union -> rc 2" "$(run_tool "$d" feat/row2 feat/row3)" 2 "CONFLICT"
 res "the same, with --union -> rc 0" "$(run_tool "$d" --union feat/row2 feat/row3)" 0 "union"
+# The disclosure is not decoration. A union verdict that does not say which files
+# it invented a resolution for reads as a verdict about the tree you will ship,
+# and it is not one - that misreading already happened once, on this repository.
+res "and it says which files it resolved for you" \
+    "$(grep -c 'RESOLVED BY UNION' "$LAB/out.txt")" 1
+res "and names the file on that very line" \
+    "$(grep -c 'RESOLVED BY UNION.*table\.md' "$LAB/out.txt")" 1
+# Without --union there is nothing to disclose, and it must not cry wolf.
+res "no --union, no disclosure" \
+    "$(run_tool "$d" feat/row2 >/dev/null; grep -c 'RESOLVED BY UNION' "$LAB/out.txt")" 0
 
 # 4. a ref that does not exist is not silently skipped
 d="$LAB/ghost"; build_repo "$d"

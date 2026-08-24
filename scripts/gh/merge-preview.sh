@@ -60,6 +60,7 @@ ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 BASE="origin/main"
 LIST_ONLY=0
 UNION=0
+UNIONED=""
 SKIP_GATES="gate-tree-delta.sh"
 SKIP_WHY="its delta over a combined merge is a number nobody ships"
 
@@ -149,6 +150,7 @@ for b in "${BRANCHES[@]}"; do
       cp "$WT/ours" "$WT/tree/$f"
       git -C "$WT/tree" add -- "$f" >/dev/null 2>&1 || union_ok=0
       printf '  union       %s :: %s\n' "$b" "$f"
+      UNIONED="$UNIONED $f"
     else
       union_ok=0; break
     fi
@@ -206,6 +208,22 @@ esac
 
 printf '\n== verdict\n'
 printf '  merged %d · conflicts %d · gates rc=%d · batteries worst=%d\n' "$MERGED" "$CONFLICTS" "$gates_rc" "$bat_worst"
+
+# A union resolution keeps BOTH sides of every conflicting hunk. That is what a
+# person would write when two branches each append a row to the same table, and
+# it is wrong when both carry the SAME row with different text - the result has
+# the row twice, saying two things. Nothing here can tell those apart, and a
+# green measured on such a tree is true about the gates and false about the tree
+# anybody will ship. Measured the hard way: this tool reported rc=0 on a tree
+# with two duplicated rows, and the report was read as "the combination is fine".
+if [ -n "$UNIONED" ]; then
+  printf '\n  RESOLVED BY UNION, and not by anybody: %s\n' "$(printf '%s' "$UNIONED" | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+  printf '  Every conflicting hunk in those files kept BOTH sides. Right where two\n'
+  printf '  branches each ADD something; wrong where both change the same line, which\n'
+  printf '  leaves it present twice. This verdict is about the GATES over that tree,\n'
+  printf '  not about those resolutions being the ones you would have written.\n'
+  printf '  Read the diff of those files before trusting a green here.\n'
+fi
 case "$RC" in
   0) printf '  0 (measured: the combination is green)\n' ;;
   1) printf '  1 (measured: the combination FAILS - and no single branch would have said so)\n' ;;
