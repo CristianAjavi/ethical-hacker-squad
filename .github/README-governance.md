@@ -259,7 +259,7 @@ This branch is additive over `main`: it only adds `.github/**`, `scripts/gates/*
 
 ## 8. The test bench
 
-The gates are tested too. `scripts/gh/tests/run-all.sh` runs 8 suites:
+The gates are tested too. `scripts/gh/tests/run-all.sh` runs 9 suites:
 
 ```bash
 scripts/gh/tests/run-all.sh
@@ -336,6 +336,40 @@ A hand-written mutant bank only ever proves what its author thought to break. Th
 instrument that does not share the author's blind spot, and it earned that description the
 day it was written: it found a hollow battery that a hand-written bank had already signed
 off, in the same session, by the same author.
+
+---
+
+### `protection-check.sh` — the half a workflow can actually run
+
+`apply-governance.sh` compares the whole declared state against the live repository and
+**cannot run in Actions**: it demands that the active `gh` account be the maintainer's and
+that the token hold admin, and the built-in `GITHUB_TOKEN` is neither. So that comparison
+only ever happened when a person ran it by hand — which is how `main` sat with **no
+protection at all** while every gate was green, and section 9 below said so in prose that
+nothing executed.
+
+```bash
+scripts/gh/protection-check.sh
+```
+
+It compares only the **protection block** of the branches declared under `branches`:
+required checks (context *and* app id), linear history, force pushes, deletions,
+conversation resolution, and whether a pull request is required. Repository settings,
+topics, labels and vulnerability alerts are not here — reading those needs admin, and a
+green about something never looked at is the failure this repository keeps finding.
+
+`administration: read` on the built-in token is enough, so it needs **no personal access
+token and no secret**. The other way to close this gap was an admin PAT stored in a public
+security repository, which is a larger surface than the problem it solves.
+
+`.github/workflows/protection-drift.yml` runs it weekly, on dispatch, and when the
+declaration or the script changes. It **reports and does not gate**: nothing in CI can fix
+a drift, because applying needs admin, so failing a pull request over it would block work
+nobody can unblock from inside CI.
+
+A declared branch that does not exist is `2`, never `0`. `stable` reports that until the
+first promotion creates it — surfaced as a warning rather than a weekly red, because a job
+that is red every week for a known reason is a job nobody reads.
 
 ---
 

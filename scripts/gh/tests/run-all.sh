@@ -89,6 +89,8 @@ suite "merge-preview: the combination CI never judges" \
   bash "$SP/test-merge-preview.sh"
 suite "battery-detects: a battery that proves nothing" \
   bash "$SP/test-battery-detects.sh"
+suite "protection-check: the live protection vs the declared one" \
+  bash "$SP/test-protection-check.sh"
 
 # The net, computed HERE and not where the last suite happened to be when it was
 # written: a `suite` line added below that point would be invoked and still
