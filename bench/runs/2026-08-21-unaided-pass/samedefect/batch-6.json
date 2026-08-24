@@ -1,0 +1,118 @@
+{
+ "list_one": [
+  {
+   "item_id": "L01",
+   "title": "No cap on table entries or array elements - small frames expand into large object graphs",
+   "location": "?:?",
+   "impact": "Independently of the 2 GiB path in F-001 and the recursion in F-002, the decoder never counts what it has produced. Every element is a live object plus a slot in a growing ArrayList or HashMap, and the cheapest encodings amplify heavily: a one-byte 'V' element becomes an eight-byte reference in an ArrayList that over-allocates, a three-byte 's' element becomes a boxed Short outside the small-value cache, and a six-byte empty nested table becomes a HashMap plus two stream wrappers plus a parent map entry. A single frame at the default frame max therefore turns into several megabytes of live objects, per frame and per connection, all of it reachable by whoever can publish a message. That is not by itself fatal, but it removes any relationship between an attacker's bandwidth cost and the victim's memory cost.",
+   "evidence": "List<Object> array = new ArrayList<Object>(); while(arrayIn.available() > 0) { Object value = readFieldValue(arrayIn); array.add(value); }  (lines 243-247), and the equivalent unbounded HashMap growth in readTable (lines 145-153). Neither method counts entries or consults any configured limit."
+  },
+  {
+   "item_id": "L02",
+   "title": "Unbounded recursion parsing nested field tables and arrays - StackOverflowError from a frame that fits inside the default frame max",
+   "location": "?:?",
+   "impact": "readFieldValue -> readTable -> readFieldValue and readFieldValue -> readArray -> readFieldValue recurse once per nesting level with no depth counter anywhere in the class. Each level costs only 5 bytes on the wire for an array ('A' plus a 4-byte length) or 6 for a table (zero-length name, 'F', 4-byte length), so roughly 50 KB of input encodes ~10,000 levels and a payload comfortably inside the default 128 KiB frame max encodes over 25,000 - well past what a default JVM thread stack survives. Because the input fits inside the negotiated frame limit, the usual frame-size defence does not help. The resulting StackOverflowError is an Error, not MalformedFrameException, so it bypasses the clean protocol-error path and kills the frame-handling thread. The same input is also a memory amplifier: every table level allocates a HashMap plus a DataInputStream plus a TruncatedInputStream, roughly 30 bytes of heap per wire byte. Reachable pre-authentication through the Connection.Start server-properties table and post-authentication through message headers set by any publisher.",
+   "evidence": "case 'F': value = readTable(in); break;  (line 181) and  case 'A': value = readArray(in); break;  (line 184), with readTable calling readFieldValue(tableIn) at line 150 and readArray calling readFieldValue(arrayIn) at line 245. No depth argument, no counter, no limit on any of the three methods."
+  },
+  {
+   "item_id": "L03",
+   "title": "Malformed-frame conditions surface as unchecked exceptions instead of MalformedFrameException",
+   "location": "?:?",
+   "impact": "A length of 2 GiB or more raises UnsupportedOperationException, and the allocation just above it can raise OutOfMemoryError or, on other code paths, NegativeArraySizeException. None of these is an IOException or MalformedFrameException, so callers that catch protocol errors in order to close the connection cleanly do not catch them: a purely remote-triggered condition propagates out of the frame loop through an unexpected path, tears the connection down without the AMQP-level close, and is reported as if the client had a bug rather than as if the peer sent a bad frame. The guard itself is also weaker than it looks - comparing against Integer.MAX_VALUE admits a 2147483646-byte allocation, which is the case most worth refusing.",
+   "evidence": "} else { throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\"); }  (lines 92-93), guarded by  if(contentLength < Integer.MAX_VALUE)  on line 87."
+  },
+  {
+   "item_id": "L04",
+   "title": "Table and array framing is driven by available() and silently accepts truncated input",
+   "location": "?:?",
+   "impact": "Both loops terminate on available() == 0 and neither method verifies afterwards that exactly the declared tableLength / length bytes were consumed. Two consequences. (a) A frame that declares a table longer than the bytes actually present is not rejected - parsing simply stops and a partial table is handed to the application as if it were complete, while the broker, reading the same bytes, sees something else. That is a parser differential: identical wire bytes mean different things on the two sides, which is exactly the primitive used to smuggle or hide a header. (b) InputStream.available() is documented as an estimate, not a length. The constructor is public API that accepts any DataInputStream, so pointing this class at a socket-backed or otherwise not-fully-buffered stream makes available() return 0 for data that has not arrived yet, and every table and array decodes as EMPTY with no exception at all - headers disappear silently, which matters whenever headers carry routing, tenant or authorization data. The correctness of the whole scheme rests on TruncatedInputStream returning an exact remaining count, and that class is outside the audited scope, so it is an unverified assumption rather than a guarantee.",
+   "evidence": "while(tableIn.available() > 0) { String name = readShortstr(tableIn); Object value = readFieldValue(tableIn); if(!table.containsKey(name)) table.put(name, value); }  (readTable, lines 148-153) and  while(arrayIn.available() > 0) { Object value = readFieldValue(arrayIn); array.add(value); }  (readArray, lines 244-247). Neither is followed by a check that the TruncatedInputStream was drained exactly."
+  },
+  {
+   "item_id": "L05",
+   "title": "Silent 64-bit overflow converting AMQP timestamps to java.util.Date",
+   "location": "?:?",
+   "impact": "The seconds value is fully attacker-controlled and is multiplied by 1000 with no range check, so the product wraps silently. An attacker can therefore pick a seconds value whose millisecond result is any value they want, including one in the past - the mapping is deterministic and trivial to invert. Applications that use the message timestamp for freshness, expiry, replay protection or ordering can be fed a message that looks recent when it is not, or ancient when it is not, without anything appearing malformed. Values near Long.MAX_VALUE produce a nonsensical Date instead of a rejected frame.",
+   "evidence": "return new Date(in.readLong()*1000);"
+  },
+  {
+   "item_id": "L06",
+   "title": "Mutability of the returned header map depends on remote input - empty tables come back immutable",
+   "location": "?:?",
+   "impact": "A table with zero length returns Collections.emptyMap(), which is immutable; every other table returns a mutable HashMap. The type of object handed to application code is thus chosen by the remote peer. Ordinary consumer code that enriches or re-publishes a message - getHeaders().put(...) - works for every message that carries headers and throws UnsupportedOperationException for messages whose header table is empty. A publisher can trigger that in every consumer at will, at zero cost, simply by sending an empty table; whether the result is a nuisance, a poison message that is redelivered forever, or an outage depends entirely on the consumer's error handling.",
+   "evidence": "if (tableLength == 0) return Collections.emptyMap();  (line 143) versus  Map<String, Object> table = new HashMap<String, Object>();  (line 145)."
+  },
+  {
+   "item_id": "L07",
+   "title": "Attacker-controlled 32-bit length prefix drives an unbounded heap allocation (up to ~2 GiB) before any payload is read",
+   "location": "?:?",
+   "impact": "readBytes() sizes a Java array from a value it just read off the wire and allocates it before confirming that many bytes actually exist. Five bytes on the wire ('S' plus the length 0x7FFFFFFE) make the JVM attempt a ~2 GiB allocation. The failure mode is OutOfMemoryError, which is an Error rather than an IOException/MalformedFrameException, so it escapes the connection's protocol-error handling: the frame-reading thread dies and, because the heap pressure is process-wide, unrelated threads and co-tenants in the same JVM are collateral. The path is reachable by a malicious or MITM-ed broker before authentication (the Connection.Start server-properties field table contains longstr values and is parsed before credentials are sent), and post-authentication by any publisher able to set a longstr header or a byte-array ('x') field, so a minimally privileged publisher can knock over every Java consumer of a queue. Nothing in this class bounds the value; any bound has to come from a caller (frame max / max inbound body size), and the class is public API that callers can drive directly.",
+   "evidence": "final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength]; in.readFully(buffer); return buffer; }  -- reached from readLongstr() (field type 'S', line 163), from field type 'x' (line 211), and from the public readLongstr(). unsignedExtend() deliberately widens the int to the full 0..4294967295 range, and the only guard compares against Integer.MAX_VALUE, i.e. it accepts 2147483646."
+  },
+  {
+   "item_id": "L08",
+   "title": "Duplicate field-table keys are silently dropped first-wins, and short strings are decoded leniently - both enable header shadowing",
+   "location": "?:?",
+   "impact": "The wire format allows a field name to appear more than once; this parser keeps the first occurrence and throws the rest away without an error. Other implementations - the broker itself, and clients in other languages - do not all resolve duplicates the same way, so the same frame can carry one value for the broker and a different value for a Java consumer. Wherever a header participates in a trust decision (an x-* attribute, a tenant or role tag, a value some upstream component validated and stamped), an attacker who can prepend a second copy of that key decides which value the Java side sees. Lenient UTF-8 decoding compounds it: new String(b, \"utf-8\") maps malformed byte sequences to U+FFFD instead of failing, so two distinct byte sequences on the wire can collapse into one Java String key and shadow each other. Neither behaviour is signalled to the caller.",
+   "evidence": "if(!table.containsKey(name)) table.put(name, value);  (lines 151-152) - later duplicates are discarded with no exception and no log. readShortstr (line 70) returns  new String(b, \"utf-8\")  which never throws on malformed input."
+  },
+  {
+   "item_id": "L09",
+   "title": "Build generates source code by executing a script over inputs that live outside the repository and are not integrity-checked",
+   "location": "?:?",
+   "impact": "The generate-sources phase runs a Groovy script that in turn executes codegen.py against a JSON specification taken from ${deps.dir}/rabbitmq_codegen, a path outside the module and overridable from the command line or by the in-umbrella profile, which silently redirects deps.dir to ${basedir}/.. when a file named UMBRELLA.md exists two levels up. The two largest generated classes in the shipped artifact (AMQP.java, AMQImpl.java) therefore come from content that is neither version-pinned nor checksum-verified here, and whoever controls that directory or that marker file controls code that ends up inside a signed, published jar. The build also has no dependency integrity gate (no enforcer rules, no checksum verification, no dependency locking), and some build/test-scope dependencies are on end-of-life lines - groovy-all 2.4.21 and jetty 9.4.58 - which no longer receive security fixes even though they run on developer and CI machines. Nothing here is exploitable by a remote peer at runtime; it is supply-chain surface.",
+   "evidence": "<script>${basedir}/codegen.py</script> with <spec>${codegen.dir}/amqp-rabbitmq-${codegen.spec_version}.json</spec> under the groovy-maven-plugin generate-amqp-sources execution (lines 613-636), <codegen.dir>${deps.dir}/rabbitmq_codegen</codegen.dir> (line 111), and the in-umbrella profile that rewrites deps.dir on the mere existence of ../../UMBRELLA.md (lines 133-141). Versions: <groovy.all.version>2.4.21</groovy.all.version> (line 81), <jetty.version>9.4.58.v20250814</jetty.version> (line 70)."
+  }
+ ],
+ "list_two": [
+  {
+   "item_id": "R01",
+   "title": "Timestamp field is multiplied by 1000 with no overflow check, yielding an attacker-chosen wrapped Date",
+   "location": "?:?",
+   "impact": "Silent integer overflow (CWE-190) lets a peer produce a Date whose value bears no relation to the seconds it sent. Applications that use the AMQP timestamp header for freshness, expiry or replay decisions can be made to accept a stale message or reject a fresh one; audit logs record a fabricated time.",
+   "evidence": "`private static Date readTimestamp(DataInputStream in) throws IOException { return new Date(in.readLong()*1000); }` -- the full 64-bit signed value is read straight off the wire and multiplied, so any |seconds| above ~9.22e15 wraps around silently. The attacker picks the seconds value, hence picks the post-wrap milliseconds value; there is no range validation and no use of Math.multiplyExact."
+  },
+  {
+   "item_id": "R02",
+   "title": "Unbounded recursion between readFieldValue, readTable and readArray allows StackOverflowError from a single small frame",
+   "location": "?:?",
+   "impact": "Remote, pre-authentication denial of service: a StackOverflowError is raised on the connection's frame-reading thread, tearing down the connection (and any Error thrown mid-parse leaves the reader in an undefined state). Cheap and repeatable.",
+   "evidence": "readFieldValue() dispatches 'F' to readTable() (line 181) and 'A' to readArray() (line 184); both call readFieldValue() again (lines 150 and 245) with no depth counter and no depth limit anywhere in the class. Each nesting level costs only 5 bytes on the wire for an array (type byte 'A' plus a 4-byte length) or 6 bytes for a table, while consuming two-plus JVM stack frames plus a new DataInputStream/TruncatedInputStream pair. With RabbitMQ's default 128 KiB frame-max that is roughly 26,000 achievable levels, well past the ~5,000-10,000 that fit in a default 512 KiB-1 MiB thread stack, so exhaustion is deterministic rather than probabilistic. Same exposure surface as F-001: the connection.start server-properties table (pre-auth) and message header tables (any publisher)."
+  },
+  {
+   "item_id": "R03",
+   "title": "Attacker-controlled 32-bit length prefix drives an eager ~2 GiB heap allocation before any data is read (readBytes)",
+   "location": "?:?",
+   "impact": "Remote, pre-authentication out-of-memory denial of service against the whole client JVM (not just the AMQP connection), with an amplification factor of roughly 200,000,000:1 between bytes sent and bytes allocated.",
+   "evidence": "readBytes() reads a 32-bit length from the wire, widens it to unsigned (0..4294967295), and allocates the entire buffer up front: `final long contentLength = unsignedExtend(in.readInt()); if(contentLength < Integer.MAX_VALUE) { final byte [] buffer = new byte[(int)contentLength]; in.readFully(buffer); ... }`. The declared length is never reconciled with the number of bytes actually available. It is reachable from readLongstr() (field type 'S', line 163) and from the 'x' byte-array field (line 211), both parsed from a TruncatedInputStream inside readTable()/readArray() -- so readFully() will certainly fail, but only AFTER `new byte[]` has already asked the JVM for up to 2,147,483,645 bytes. An 8-byte table entry (0x53 followed by 0x7FFFFFFE) suffices. readTable() is reached from the connection.start server-properties table, i.e. before the client has authenticated the peer, so a malicious or MITM'd broker can trigger it pre-auth; via message headers, any publisher able to set a header on a message the victim consumes can trigger it post-auth across tenants. The negotiated frame-max is no defence: the allocation size depends only on the declared prefix, not on the frame size."
+  },
+  {
+   "item_id": "R04",
+   "title": "Duplicate field-table keys are resolved first-wins and silently discarded",
+   "location": "?:?",
+   "impact": "Header desynchronisation. Any intermediary, broker plugin or language runtime in the path that resolves duplicates last-wins will disagree with this client about the value of a repeated header, which is the classic precondition for smuggling a security-relevant header (routing key, tenant id, signature, idempotency key) past a component that inspected the other copy.",
+   "evidence": "readTable() applies `if(!table.containsKey(name)) table.put(name, value);` -- the first occurrence wins and later occurrences are dropped with no error and no signal to the caller. The AMQP 0-9-1 field-table grammar does not forbid repeated keys on the wire, so the choice is this parser's, and it is not the choice every other AMQP implementation makes."
+  },
+  {
+   "item_id": "R05",
+   "title": "Short strings are decoded with the replacement-on-malformed charset overload, so distinct byte sequences collapse to the same String",
+   "location": "?:?",
+   "impact": "Invalid UTF-8 in a table key, queue name, exchange name or routing key is accepted and silently rewritten as U+FFFD rather than rejected, so several different wire encodings map to one identical Java String. Downstream code that compares, allowlists or authorises on those strings can be made to match a value the peer never actually sent.",
+   "evidence": "`private static String readShortstr(DataInputStream in) throws IOException { byte [] b = new byte[in.readUnsignedByte()]; in.readFully(b); return new String(b, \"utf-8\"); }`. The `String(byte[], String)` constructor is specified to replace malformed and unmappable input rather than throw, and there is no validation of the decoded result. The parser therefore never reports a malformed short string."
+  },
+  {
+   "item_id": "R06",
+   "title": "Declared table/array length is never reconciled with bytes consumed; parsing is driven by available() and can silently drop entries",
+   "location": "?:?",
+   "impact": "A malformed frame is accepted as well-formed. A nested table or array that overstates its length can swallow the sibling entries that follow it, so the header map the application sees differs from the bytes on the wire, without any error being raised.",
+   "evidence": "Both container readers loop on `while(tableIn.available() > 0)` (line 148) and `while(arrayIn.available() > 0)` (line 244) and then return, never asserting that exactly tableLength/length bytes were consumed. TruncatedInputStream caps available() at min(remaining budget, underlying available()), so when the declared length exceeds the bytes actually present the inner loop reads straight through the container boundary into whatever follows, and the enclosing loop then sees available()==0 and returns a silently short map. The class is also public and constructed from an arbitrary DataInputStream (line 57), so if it is ever fed a socket-backed stream rather than a fully-buffered frame payload, available() returning 0 mid-arrival truncates tables with no exception at all. Note that TruncatedInputStream itself is outside the reviewed scope; this analysis relies on its documented min(limit, available) semantics."
+  },
+  {
+   "item_id": "R07",
+   "title": "Untrusted input path throws an unchecked UnsupportedOperationException instead of MalformedFrameException",
+   "location": "?:?",
+   "impact": "A remote peer chooses which exception type the client's I/O thread sees. Callers that correctly handle the declared `throws IOException` contract (and the MalformedFrameException the same method family uses two dozen lines later) will not catch this one, so a protocol-level error escapes as an unexpected runtime failure on the connection thread.",
+   "evidence": "readBytes() rejects lengths >= Integer.MAX_VALUE with `throw new UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\")`, an unchecked exception raised on fully attacker-controlled input, while the analogous rejection in readFieldValue() (line 217) correctly uses `MalformedFrameException`, which is an IOException. The trigger is a single 4-byte length field of 0x7FFFFFFF or higher."
+  }
+ ]
+}

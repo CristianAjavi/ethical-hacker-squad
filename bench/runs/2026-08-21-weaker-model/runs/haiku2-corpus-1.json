@@ -1,0 +1,142 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku2",
+    "coverage_declaration": "Analyzed deserialization of AMQP wire protocol in ValueReader.java; examined recursive depth handling, array allocation bounds checking, overflow protections, and timestamp parsing. Did not examine external call sites, connection handling, or authentication layer due to single-file scope.",
+    "unaided_pass": {
+      "candidates": [
+        "Integer overflow in array allocation from network-supplied length",
+        "Stack overflow from unbounded recursive deserialization of nested tables/arrays",
+        "Infinite loop via unreliable available() check on TruncatedInputStream",
+        "Timestamp multiplication overflow without bounds checking"
+      ],
+      "reported": [
+        "Stack overflow from unbounded recursive deserialization of nested tables/arrays",
+        "Timestamp multiplication overflow without bounds checking"
+      ],
+      "dropped": [
+        {
+          "label": "Integer overflow in array allocation from network-supplied length",
+          "reason": "The check at line 87 correctly prevents allocation of arrays larger than Integer.MAX_VALUE by casting the long to int only when the value is strictly less than Integer.MAX_VALUE"
+        },
+        {
+          "label": "Infinite loop via unreliable available() check on TruncatedInputStream",
+          "reason": "Cannot definitively assess without examining TruncatedInputStream implementation; the pattern warrants investigation but the finding cannot be confirmed from ValueReader.java alone"
+        }
+      ]
+    },
+    "coverage": {
+      "inventoried": [
+        "Protocol parsing logic in ValueReader.java",
+        "Deserialization of AMQP wire protocol types (tables, arrays, primitives)",
+        "Array and table parsing with recursive depth",
+        "Timestamp parsing and conversion",
+        "String encoding handling"
+      ],
+      "read": [
+        "Protocol parsing logic in ValueReader.java",
+        "Deserialization of AMQP wire protocol types (tables, arrays, primitives)",
+        "Array and table parsing with recursive depth",
+        "Timestamp parsing and conversion",
+        "String encoding handling"
+      ],
+      "not_read": []
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Stack overflow from unbounded recursive deserialization of nested tables and arrays",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "readFieldValue()"
+      },
+      "evidence": "The readFieldValue() method at line 158 recursively deserializes untrusted AMQP protocol data. Case 'F' at line 181 calls readTable(), which at line 150 calls readFieldValue() again. Case 'A' at line 184 calls readArray(), which at line 245 calls readFieldValue() again. An attacker can craft a protocol message with deeply nested tables and arrays (e.g., table containing array containing table containing array...) to trigger unbounded recursion and exhaust stack memory, causing StackOverflowError.",
+      "impact": "A malicious AMQP server or a man-in-the-middle attacker can crash any client using this library by sending a crafted protocol message with deeply nested nested tables/arrays, causing denial of service.",
+      "preconditions": "The client connects to and receives protocol data from an untrusted AMQP server, or network traffic is vulnerable to interception.",
+      "recommendation": "Implement a recursion depth limit in the deserialization path. Track the current nesting depth as a parameter in readFieldValue(), readTable(), and readArray(). Reject messages that exceed a reasonable depth threshold (e.g., 100 levels). Add a constant MAX_NESTING_DEPTH and throw MalformedFrameException when depth is exceeded.",
+      "traceability": [
+        "CWE-674",
+        "CWE-20",
+        "WSTG-INPV-05"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control visible in the code to detect or reject deeply nested structures"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting structure comes directly from untrusted wire protocol data"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recursive function calls with untrusted depth parameter are dangerous regardless of format"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Client must trust server behavior but server is not necessarily trusted"
+        }
+      ],
+      "limits": "Finding assumes that table and array nesting is attacker-controllable at the protocol level. Does not assess whether upstream connection validation limits this exposure.",
+      "unaided_label": "Stack overflow from unbounded recursive deserialization of nested tables/arrays"
+    },
+    {
+      "id": "F-002",
+      "title": "Integer overflow in timestamp multiplication without bounds checking",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "readTimestamp()"
+      },
+      "evidence": "At line 269, the code reads an 8-byte long from the network and multiplies it by 1000 without overflow checking: `return new Date(in.readLong()*1000);`. If the long value read from the network is greater than Long.MAX_VALUE / 1000 (approximately 9223372036854775), the multiplication will silently overflow, wrapping to a negative value or causing unexpected behavior in Date constructor.",
+      "impact": "An attacker sending a malicious AMQP protocol message with a specially crafted timestamp value could cause integer overflow, resulting in a Date object with an incorrect time value. This could potentially be exploited in business logic that relies on timestamp ordering or validity, or could cause unexpected behavior in code that assumes timestamp validity.",
+      "preconditions": "The client receives a protocol message with a 'T' (timestamp) field from an untrusted AMQP server. The application logic relies on the timestamp value for security-sensitive operations.",
+      "recommendation": "Check for overflow before multiplication. Use `Math.multiplyExact(in.readLong(), 1000)` which throws ArithmeticException on overflow, or validate the range before multiplication: `long ts = in.readLong(); if (ts > Long.MAX_VALUE / 1000) throw new MalformedFrameException(\"timestamp overflow\"); return new Date(ts * 1000);`",
+      "inference": "That the overflow has security impact depends on how the timestamp value is used in the application; the finding is certain that overflow occurs, but the security consequence is inferred from typical Date usage patterns.",
+      "what_would_settle_it": "Examination of call sites that use the deserialized timestamp values to determine whether overflow leading to incorrect Date values can affect security decisions or business logic.",
+      "traceability": [
+        "CWE-190",
+        "CWE-197"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The 64-bit long value comes directly from untrusted network data"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Arithmetic overflow is dangerous regardless of the format"
+        }
+      ],
+      "limits": "Does not assess impact in specific call sites. Overflow severity depends on how the resulting Date object is used.",
+      "unaided_label": "Timestamp multiplication overflow without bounds checking"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unbounded memory allocation from network length field",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "The check at line 87 `if(contentLength < Integer.MAX_VALUE)` correctly prevents allocation of byte arrays larger than Integer.MAX_VALUE by only attempting allocation when contentLength is strictly less than this limit, preventing integer overflow during cast from long to int."
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+{"findings": [
+{
+ "id": "F-001",
+ "title": "Data-at-rest encryption key silently derived from the session-signing secret, with no validation of either",
+ "file": "common/init.go",
+ "line": 62,
+ "severity": "high",
+ "impact": "One value protects two unrelated trust boundaries. Whoever learns SESSION_SECRET (docker-compose file, process environment, CI variable, a crash dump, a container image layer) can both forge signed session cookies for the root administrator and decrypt everything the gateway encrypts at rest with CryptoSecret (upstream provider keys, 2FA/TOTP seeds, OAuth client secrets). Rotating the session secret after a suspected leak also silently invalidates every stored ciphertext, so operators cannot rotate one without destroying the other. Worse, if SESSION_SECRET is simply not set the process starts with no warning at all: CryptoSecret then inherits the compiled-in SessionSecret default, which is either a constant shared by every deployment of this image (global static key) or a per-process random value that makes all ciphertext unreadable after the next restart and different on every replica. There is no third possibility, so an unset SESSION_SECRET is never correct, yet it is the only case the code does not check.",
+ "evidence": "InitEnv only assigns SessionSecret inside `if os.Getenv(\"SESSION_SECRET\") != \"\"` (line 49-58); the unset branch does nothing. Immediately after, `if os.Getenv(\"CRYPTO_SECRET\") != \"\" { CryptoSecret = os.Getenv(\"CRYPTO_SECRET\") } else { CryptoSecret = SessionSecret }` (lines 59-63) makes the fallback unconditional. The only validation anywhere is an exact-string comparison against the placeholder `random_string` (line 51), which log.Fatal's. So a one-character secret passes, and an absent secret passes silently, while the well-known placeholder is fatal.",
+ "recommendation": "Require SESSION_SECRET explicitly: log.Fatal when it is empty, not only when it equals \"random_string\", and enforce a minimum entropy/length (e.g. >= 32 bytes). Stop deriving CryptoSecret from it: either require CRYPTO_SECRET as its own mandatory variable, or derive it with a domain-separated KDF (HKDF(SessionSecret, info=\"new-api/crypto\")) so the two keys are not interchangeable. If a random default is retained for dev convenience, gate it behind DEBUG and log loudly that all encrypted rows will be unreadable after restart."
+},
+{
+ "id": "F-002",
+ "title": "DIFY_DEBUG defaults to true, enabling verbose adapter logging in every default deployment",
+ "file": "common/init.go",
+ "line": 134,
+ "severity": "medium",
+ "impact": "Any operator who has not heard of DIFY_DEBUG runs the Dify relay path in debug mode. Debug logging on a relay adapter dumps upstream request/response bodies, which for an LLM gateway means end-user prompt content and model output (frequently customer PII or proprietary data) and commonly the outbound Authorization header carrying the upstream provider API key. That lands in plaintext log files, and those files sit in the world-writable directory created by F-003 and are readable through the root-only /api/performance/logs endpoint.",
+ "evidence": "`constant.DifyDebug = GetEnvOrDefaultBool(\"DIFY_DEBUG\", true)` (line 134). Every comparable switch initialised in the same function defaults to off: `DebugEnabled = os.Getenv(\"DEBUG\") == \"true\"` (line 82), `constant.ErrorLogEnabled = GetEnvOrDefaultBool(\"ERROR_LOG_ENABLED\", false)` (line 151), `constant.GetMediaTokenNotStream = GetEnvOrDefaultBool(\"GET_MEDIA_TOKEN_NOT_STREAM\", false)` (line 143), `constant.GenerateDefaultToken = GetEnvOrDefaultBool(\"GENERATE_DEFAULT_TOKEN\", false)` (line 149). DifyDebug is the lone true.",
+ "recommendation": "Change the default to false. If the Dify adapter needs diagnostics out of the box, tie it to the existing global `DebugEnabled` (`GetEnvOrDefaultBool(\"DIFY_DEBUG\", DebugEnabled)`) rather than to an unconditional true, and redact Authorization headers and message bodies at the logging call site regardless of the flag."
+},
+{
+ "id": "F-003",
+ "title": "Log directory created world-writable (mode 0777)",
+ "file": "common/init.go",
+ "line": 74,
+ "severity": "medium",
+ "impact": "Every local account, and every process in the container or on the shared host, can write, replace, rename and delete the gateway's log files. That destroys the audit trail an incident responder would rely on (an attacker who obtains any low-privileged local execution can erase or rewrite the record of the relay traffic and admin actions). It also opens a symlink/hardlink swap: an unprivileged user pre-creates a log filename as a symlink to a sensitive path, and the gateway, which in the common Docker deployment runs as root, follows it and writes attacker-influenced content there. The directory also has no execute-only or group restriction, so the logs' contents - which per F-002 can include prompts and upstream keys - are readable by everyone on the box.",
+ "evidence": "`err = os.Mkdir(*LogDir, 0777)` (line 74), inside the `if _, err := os.Stat(*LogDir); os.IsNotExist(err)` branch (line 73). The path is `filepath.Abs` of the `--log-dir` flag, default `./logs` (line 21, line 69). Nothing later tightens the mode, and the Stat-then-Mkdir sequence is itself a TOCTOU window on a shared directory.",
+ "recommendation": "Use 0750 (or 0700), and prefer `os.MkdirAll` so a nested --log-dir does not fail. Because the mode argument is filtered by the process umask, follow the create with an explicit `os.Chmod(*LogDir, 0o750)` so the intended mode is actually applied. Create the log files themselves with 0640 and `O_NOFOLLOW`."
+},
+{
+ "id": "F-004",
+ "title": "TLS_INSECURE_SKIP_VERIFY disables certificate validation process-wide by mutating http.DefaultTransport",
+ "file": "common/init.go",
+ "line": 86,
+ "severity": "medium",
+ "impact": "The option reads as though it loosens TLS for upstream model endpoints, but it is applied to the process-global default transport, so it disables certificate and hostname verification for every outbound HTTPS call in the binary that does not supply its own transport. That includes the security-critical ones this router depends on: OIDC/OAuth discovery and authorization-code exchange (controller.HandleOAuth, FetchCustomOAuthDiscovery), Turnstile verification, and the payment provider APIs behind /api/user/stripe/pay, /creem/pay, /waffo/pay and /waffo-pancake/pay. An attacker with any on-path position (hostile network, DNS or ARP spoofing, a compromised sidecar, a malicious egress proxy) can then present any certificate and impersonate the identity provider to mint sessions for arbitrary accounts, or impersonate the payment API. One operator turning this on to accommodate a single self-signed internal LLM host silently strips TLS authentication from account takeover and money paths.",
+ "evidence": "Lines 86-95: `TLSInsecureSkipVerify = GetEnvOrDefaultBool(\"TLS_INSECURE_SKIP_VERIFY\", false)` followed by a type assertion on the package-level singleton `http.DefaultTransport.(*http.Transport)` and `tr.TLSClientConfig.InsecureSkipVerify = true`. The scope is the whole process, not the relay client. Two secondary defects in the same block: when the assertion fails the flag is discarded with no log, so an operator can believe it is active when it is not; and the else branch assigns the shared `InsecureTLSConfig` pointer into the global transport, so any later mutation of that value propagates everywhere.",
+ "recommendation": "Never touch http.DefaultTransport. Build a dedicated `*http.Transport` (cloned from the default, with its own `TLSClientConfig`) and hand it only to the relay/channel HTTP client, leaving OAuth, payment, webhook and email clients on a verifying transport. Better still, replace the blanket switch with a per-channel setting plus a custom CA bundle (`RootCAs`) so self-signed upstreams are trusted by pinning rather than by disabling verification. Log a warning at startup whenever verification is off."
+},
+{
+ "id": "F-005",
+ "title": "Unauthenticated root-provisioning endpoint has no critical rate limit and no bot check, and its availability window is publicly advertised",
+ "file": "router/api-router.go",
+ "line": 22,
+ "severity": "medium",
+ "impact": "POST /api/setup is the endpoint that initialises the instance and creates the first administrator. It is registered with no auth middleware, no CriticalRateLimit and no TurnstileCheck, so it is protected only by the group-wide GlobalAPIRateLimit (180 requests per 180 seconds by default). GET /api/setup is likewise anonymous and tells any caller whether the window is still open, giving an attacker a reliable oracle to scan for. A freshly deployed instance that is reachable before its operator finishes the wizard can be claimed by whoever gets there first, yielding root over the gateway: all channel upstream keys, all user accounts, all quota and billing configuration.",
+ "evidence": "Lines 21-22: `apiRouter.GET(\"/setup\", controller.GetSetup)` and `apiRouter.POST(\"/setup\", controller.PostSetup)` carry no middleware. Contrast the far less sensitive account routes in the same file, which are hardened: `userRoute.POST(\"/register\", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.Register)` (line 68) and `userRoute.POST(\"/login\", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.Login)` (line 69). The default CriticalRateLimit budget those routes get is 20 requests per 20 minutes (common/init.go lines 122-124) versus 180/180s here.",
+ "recommendation": "Add `middleware.CriticalRateLimit()` and `middleware.TurnstileCheck()` to POST /api/setup so it is at least as protected as registration. Additionally bind the setup window to something the network attacker does not have: require a one-time token printed to the server log or read from a file on disk at first boot, or refuse setup from non-loopback source addresses unless that token is presented."
+},
+{
+ "id": "F-006",
+ "title": "API key disclosure endpoints omit the step-up verification the same file applies to channel keys",
+ "file": "router/api-router.go",
+ "line": 276,
+ "severity": "medium",
+ "impact": "POST /api/token/:id/key and POST /api/token/batch/keys return live API token secrets, and the batch variant returns many at once. They are gated by nothing but an ordinary user session. Anyone who obtains that session for even a moment - XSS on the console, a stolen or fixated cookie, a leftover session on a shared machine, a CSRF-capable browser flow - can exfiltrate every API key the account owns in a single request, then keep using those keys long after the session expires or the password is changed. Because the keys bill against the account's quota and reach the upstream providers directly, this converts a short-lived session compromise into durable, revocation-resistant access.",
+ "evidence": "Line 276 `tokenRoute.POST(\"/:id/key\", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKey)` and line 281 `tokenRoute.POST(\"/batch/keys\", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetTokenKeysBatch)`, under `tokenRoute.Use(middleware.UserAuth())` (line 271). The equivalent operation for channels is hardened one block earlier: line 235 `channelRoute.POST(\"/:id/key\", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)`. The step-up middleware and the endpoint that drives it already exist in this file - line 64 registers `apiRouter.POST(\"/verify\", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)` under the comment \"Universal secure verification routes\" - so the control is built and simply not wired here.",
+ "recommendation": "Add `middleware.SecureVerificationRequired()` to both token-key routes, exactly as on line 235. Given the blast radius, treat /batch/keys as the more sensitive of the two: require step-up per batch and cap the number of keys returned per call. Consider showing token secrets only once at creation and storing a hash thereafter, which removes the disclosure endpoint entirely."
+},
+{
+ "id": "F-007",
+ "title": "Endpoints that remove an authentication factor or delete the account require only a session - no step-up, no critical rate limit",
+ "file": "router/api-router.go",
+ "line": 114,
+ "severity": "medium",
+ "impact": "Disabling 2FA, deleting a registered passkey, regenerating backup codes and deleting the account are exactly the operations that should demand proof the operator is present, because each one strips a control that would otherwise stop a session thief. As registered, a single hijacked session lets an attacker turn off the victim's second factor, delete their passkey and mint fresh backup codes, converting a temporary foothold into permanent account ownership and locking the legitimate owner out - or simply delete the account. None of the four carries CriticalRateLimit either, so they are also not throttled.",
+ "evidence": "Under `selfRoute.Use(middleware.UserAuth())` (line 80) and nothing else: line 114 `selfRoute.POST(\"/2fa/disable\", controller.Disable2FA)`, line 115 `selfRoute.POST(\"/2fa/backup_codes\", controller.RegenerateBackupCodes)`, line 93 `selfRoute.DELETE(\"/passkey\", controller.PasskeyDelete)`, line 86 `selfRoute.DELETE(\"/self\", controller.DeleteSelf)`. `middleware.SecureVerificationRequired()` appears exactly once in the entire route table, on line 235, and is applied to none of these. Neighbouring, less consequential routes in the same block do get throttled - line 97 `selfRoute.POST(\"/topup\", middleware.CriticalRateLimit(), controller.TopUp)` - which shows the omission is not a house style.",
+ "recommendation": "Apply `middleware.SecureVerificationRequired()` plus `middleware.CriticalRateLimit()` to all four routes. If Disable2FA already demands a current TOTP or backup code inside the handler, move that requirement into the middleware so it is visible and uniform across the whole factor-removal family instead of being re-implemented per handler. Emit an audit-log entry and an out-of-band email notification whenever a factor is removed."
+},
+{
+ "id": "F-008",
+ "title": "GetUserGroups is mounted anonymously alongside its authenticated twin, making the auth on the authenticated copy meaningless",
+ "file": "router/api-router.go",
+ "line": 77,
+ "severity": "low",
+ "impact": "The same controller is reachable with and without a session, so any anonymous caller obtains the group configuration the product intends to show only to logged-in users - group names, availability and the billing multipliers attached to them. That leaks the operator's internal pricing tiers and group naming to competitors and scanners, and it means whatever per-user filtering GetUserGroups performs runs with no user in the request context. If the handler reads the caller's id or group from the context and dereferences it without a nil check, the anonymous path is also a trivial unauthenticated panic, i.e. a remote DoS.",
+ "evidence": "Line 77 `userRoute.GET(\"/groups\", controller.GetUserGroups)` sits directly on `userRoute`, which has no `.Use()` at all, while line 82 `selfRoute.GET(\"/self/groups\", controller.GetUserGroups)` routes the identical controller under `selfRoute.Use(middleware.UserAuth())` (line 80). Two paths, one handler, one of them unauthenticated.",
+ "recommendation": "Delete the line 77 registration and let the console call /api/user/self/groups, or, if a public groups list is genuinely required for the pricing page, split it into a separate controller that returns only the public subset and never consults the request context for a user identity. Either way the handler must tolerate an absent user rather than assuming one."
+},
+{
+ "id": "F-009",
+ "title": "Upstream provider safety filters disabled by default (Gemini BLOCK_NONE, Cohere NONE)",
+ "file": "common/init.go",
+ "line": 110,
+ "severity": "low",
+ "impact": "Out of the box the gateway instructs Google and Cohere to apply no content filtering to any request it relays. Every operator who deploys the default configuration therefore runs a service that will pass through content the upstream provider would otherwise have blocked, on the operator's own provider account and API key. For a public or multi-tenant deployment that is the operator's terms-of-service exposure and, in several jurisdictions, their legal exposure - and they have not been asked to accept it. It also silently overrides the safety posture a customer may believe they configured on the provider side.",
+ "evidence": "`GeminiSafetySetting = GetEnvOrDefaultString(\"GEMINI_SAFETY_SETTING\", \"BLOCK_NONE\")` (line 110) and `CohereSafetySetting = GetEnvOrDefaultString(\"COHERE_SAFETY_SETTING\", \"NONE\")` (line 111). Both defaults are the maximally permissive value the respective provider accepts.",
+ "recommendation": "Default to the providers' own defaults (for Gemini, BLOCK_MEDIUM_AND_ABOVE or simply omitting the safetySettings field so the upstream default applies) and let operators opt into BLOCK_NONE explicitly. At minimum, log a startup warning when the effective setting is the permissive one so the choice is visible in the deployment record."
+},
+{
+ "id": "F-010",
+ "title": "Master/slave node role fails open: anything that is not exactly the lowercase string \"slave\" becomes a master",
+ "file": "common/init.go",
+ "line": 84,
+ "severity": "low",
+ "impact": "The role that decides which replica runs privileged background work - option/channel sync, quota and billing batch updates, task polling and refunds - is selected by an exact-match negation, so it defaults to the privileged role and any deviation grants it. `NODE_TYPE=Slave`, `SLAVE`, `worker`, ` slave` with a stray space, or a variable that failed to propagate into the container all silently produce a master. In a horizontally scaled deployment every replica then runs the master-only jobs concurrently: duplicated quota deductions and refunds, concurrent writes racing on the same billing rows, and repeated task-timeout refunds against the same task. That is financial-integrity damage that appears as an intermittent accounting discrepancy rather than as an error.",
+ "evidence": "`IsMasterNode = os.Getenv(\"NODE_TYPE\") != \"slave\"` (line 84). There is no case folding, no trimming, and no validation that the value is one of a known set.",
+ "recommendation": "Parse the variable into an explicit enum: accept only `master` and `slave` case-insensitively after TrimSpace, log.Fatal on any other non-empty value, and keep the empty case defaulting to master for single-node compatibility. Better still, elect the master through the shared store (a Redis or database lease) so the role cannot be misconfigured into existing twice."
+},
+{
+ "id": "F-011",
+ "title": "Payment webhook selects its environment from an attacker-controlled URL path segment",
+ "file": "router/api-router.go",
+ "line": 61,
+ "severity": "low",
+ "impact": "The environment that governs how a payment notification is validated is taken from the request path, which the sender fully controls, rather than from the signed payload. If the handler uses :env to choose which secret verifies the signature or which credentials to trust, then anyone holding the test-environment secret - typically the weaker one, shared with staging, pasted in integration docs and known to more people - can POST to the production URL's /test variant and have the notification accepted, while the balance it credits lands in the same production database. That is a paid-balance forgery path that does not require breaking the production secret. Rated low only because the code comment asserts the handler re-checks the match; the assertion is not verifiable from the route table, and if it is wrong the finding is high.",
+ "evidence": "Lines 59-61: the comment `// :env separates test vs prod URLs so the operator can register each // in Pancake's matching webhook slot; handler enforces env match.` followed by `apiRouter.POST(\"/waffo-pancake/webhook/:env\", controller.WaffoPancakeWebhook)`. The route carries no auth and no rate limit, and the only stated control lives in prose rather than in the routing layer. The sibling webhooks on lines 56-58 take no such parameter.",
+ "recommendation": "Verify the signature first, derive the environment from the verified payload, and treat the path segment as a routing hint only - reject the request when the two disagree. Ensure test and production use distinct secrets and, ideally, distinct datastores so a test-signed event can never credit a production balance. Add `middleware.CriticalRateLimit()` to the webhook routes."
+},
+{
+ "id": "F-012",
+ "title": "Payment notification callbacks accept GET and carry no rate limit",
+ "file": "router/api-router.go",
+ "line": 76,
+ "severity": "low",
+ "impact": "Registering the payment notification handlers for GET means the entire notification - amount, order id and the signature that authenticates it - travels in the query string. Query strings are written verbatim into reverse-proxy and CDN access logs, retained in browser history, and forwarded in the Referer header of any page loaded afterwards, so the payment signature is persisted in several places that are not treated as secret and are routinely shipped to log aggregators. Separately, none of these unauthenticated money endpoints carries CriticalRateLimit, so an attacker can hammer signature verification (an MD5-based scheme in the epay protocol) at the full global budget while the server performs a database lookup per attempt.",
+ "evidence": "Line 76 `userRoute.GET(\"/epay/notify\", controller.EpayNotify)` duplicates the POST registration on line 75; the same doubling appears at lines 179-180 for SubscriptionEpayNotify and 181-182 for SubscriptionEpayReturn. None of the four, nor the webhooks on lines 56-58, is given `middleware.CriticalRateLimit()`, though every user-initiated payment route in the file is - for example line 98 `selfRoute.POST(\"/pay\", middleware.CriticalRateLimit(), controller.RequestEpay)`.",
+ "recommendation": "Keep GET only where the provider's protocol genuinely requires it (epay's browser return URL) and drop it from the server-to-server notify paths, which are POST. Add `middleware.CriticalRateLimit()` to all unauthenticated payment callbacks. Confirm the signature check is constant-time and that the notify handler is idempotent per order id so replays cannot double-credit."
+},
+{
+ "id": "F-013",
+ "title": "Trusted redirect domains are accepted without any hostname validation",
+ "file": "common/init.go",
+ "line": 171,
+ "severity": "low",
+ "impact": "The allowlist that backs redirect-URL validation is built by splitting a string on commas and lowercasing the pieces. Nothing checks that an entry is a bare hostname, so values such as `*`, `com`, `.example.com`, `https://example.com` or `example.com/callback` are stored verbatim and handed to a matcher that, per its own documentation, performs subdomain matching. Under that documented semantic an entry of `com` trusts every .com host on the internet, and a scheme- or path-bearing entry will never match anything, so the operator believes a domain is allowlisted when it is not. Both directions are silent: the first is an open redirect used to make phishing links carry the gateway's own domain and to smuggle OAuth authorization codes to an attacker-controlled host, the second a broken control nobody notices. Also note the variable defaults to empty, producing a nil slice, so the security of the default deployment rests entirely on the unseen matcher failing closed on an empty list.",
+ "evidence": "Lines 171-181 build the list with only `strings.Split(trustedDomainsStr, \",\")`, `strings.TrimSpace` and `strings.ToLower`, then assign it to `constant.TrustedRedirectDomains`. The intended semantic is stated in constant/env.go lines 24-26: \"Domains support subdomain matching (e.g., \\\"example.com\\\" matches \\\"sub.example.com\\\").\" There is no parsing, no rejection of wildcards or public-suffix-level entries, and no startup diagnostic.",
+ "recommendation": "Validate each entry at startup: parse it as a hostname, reject anything containing a scheme, path, port, wildcard or userinfo, reject entries that are a public suffix or a bare TLD, and log.Fatal on a malformed entry rather than silently keeping it. In the matcher, compare on labelwise boundaries (host == d || strings.HasSuffix(host, \".\"+d)) so \"example.com\" cannot match \"notexample.com\", and make an empty allowlist explicitly deny all external redirects."
+},
+{
+ "id": "F-014",
+ "title": "A UserAuth route and an AdminAuth route are mounted at paths differing only by a trailing slash",
+ "file": "router/api-router.go",
+ "line": 25,
+ "severity": "low",
+ "impact": "GET /api/models is the user-facing model list and GET /api/models/ is the admin model-metadata list; gin treats them as two distinct nodes, so today each keeps its own authorization and the arrangement is merely confusing. The hazard is that it is silently dependent on trailing-slash preservation across the whole request path. Reverse proxies, CDNs, service meshes and HTTP client libraries routinely normalise trailing slashes, and gin's own RedirectTrailingSlash would come into play the moment either route is removed. A normalisation anywhere in front of the service reroutes admin console calls into the user handler (a functional break that manifests as an empty or wrong model list rather than an error), and any future refactor that collapses the two paths silently merges an admin-only surface with a user-accessible one.",
+ "evidence": "Line 25 `apiRouter.GET(\"/models\", middleware.UserAuth(), controller.DashboardListModels)` resolves to /api/models. Line 360 opens `modelsRoute := apiRouter.Group(\"/models\")` with `modelsRoute.Use(middleware.AdminAuth())` (line 361), and line 366 `modelsRoute.GET(\"/\", controller.GetAllModelsMeta)`; gin's joinPaths preserves the trailing slash of the relative path, producing /api/models/. Two handlers, two different authorization levels, one character of separation.",
+ "recommendation": "Give the admin surface its own unambiguous prefix - /api/models_meta or /api/admin/models - and leave /api/models to the user-facing handler. Do not rely on a trailing slash to carry an authorization distinction. A startup assertion that no two registered paths are equal after trailing-slash normalisation would prevent this class from recurring."
+},
+{
+ "id": "F-015",
+ "title": "Response compression is enabled across the whole /api surface, including endpoints that return raw credentials",
+ "file": "router/api-router.go",
+ "line": 17,
+ "severity": "informational",
+ "impact": "gzip is applied at the group level to every /api response, among them the endpoints that return secrets verbatim in a JSON body: /api/token/:id/key, /api/token/batch/keys, /api/channel/:id/key and /api/option/ (which returns SMTP, OAuth and payment-provider configuration). Where such a response also reflects any attacker-influenced value, compressed response length becomes a side channel on the secret in the classic BREACH pattern, letting an off-path or cross-origin attacker recover it byte by byte from size measurements alone. Exploitation is demanding and requires a reflection point in the same response, which is why this is informational rather than a defect with a demonstrated path - but the authors already recognised that these particular responses need special handling.",
+ "evidence": "Line 17 `apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))` covers the entire group. The credential-returning routes were individually given `middleware.DisableCache()` (lines 235, 276, 281), showing awareness that these responses need transport-layer exceptions, yet none of them opts out of compression.",
+ "recommendation": "Exclude the credential-returning paths from compression, either via gzip.WithExcludedPaths or by adding a middleware that clears the writer for those routes. Length-masking the secret fields with random padding is a cheaper alternative if excluding them is inconvenient."
+},
+{
+ "id": "F-016",
+ "title": "Logout is a state-changing GET with no CSRF protection",
+ "file": "router/api-router.go",
+ "line": 74,
+ "severity": "informational",
+ "impact": "Any third-party page can terminate a visitor's gateway session with a bare image or link tag, since the request is a GET, carries no CSRF token and requires no auth middleware to reach the handler. The direct impact is nuisance-level denial of service, but forced logout is also a standard building block for session-fixation and re-authentication-phishing flows: log the victim out, then present a lookalike login prompt at the moment they expect one.",
+ "evidence": "Line 74 `userRoute.GET(\"/logout\", controller.Logout)` - a GET verb for an action that mutates server-side session state, registered on a group with no middleware.",
+ "recommendation": "Make logout a POST and require the same CSRF token the console already sends on other state-changing requests. If a GET form must be retained for compatibility, have it return a confirmation page rather than performing the logout."
+},
+{
+ "id": "F-017",
+ "title": "Token-counting toggle reads a camelCase environment variable while every other option uses SCREAMING_SNAKE_CASE",
+ "file": "common/init.go",
+ "line": 141,
+ "severity": "informational",
+ "impact": "Environment variable lookups are case-sensitive in Go, so an operator following the convention used by all forty-odd sibling options and setting COUNT_TOKEN gets no effect and no error - the value is silently ignored and the hardcoded true default stands. Since this flag governs whether the gateway counts tokens for billing, an operator who believes they disabled counting is still counting (or vice versa), and the misconfiguration is invisible because nothing validates or logs unknown option names. Several deployment guides and .env templates in the wild are likely to have normalised this name.",
+ "evidence": "`constant.CountToken = GetEnvOrDefaultBool(\"CountToken\", true)` (line 141). Every other lookup in the same two functions uses upper snake case, including the ones immediately adjacent: `GET_MEDIA_TOKEN` (line 142), `GET_MEDIA_TOKEN_NOT_STREAM` (line 143), `UPDATE_TASK` (line 144).",
+ "recommendation": "Read COUNT_TOKEN as the canonical name and keep CountToken as a deprecated fallback for one release cycle, logging a warning when the old spelling is what took effect. Longer term, centralise option registration so names are declared once and an unrecognised NEW_API_* variable produces a startup warning."
+}
+]}

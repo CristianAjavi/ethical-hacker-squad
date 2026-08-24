@@ -5,14 +5,19 @@
 # only push to the default branch plus schedule, minimal `permissions` raised per job,
 # checkout with persist-credentials: false and actions pinned by 40-character SHA.
 #
-# WHY IT DOES NOT BLOCK: the official action has no threshold input and never fails
-# the job over a low score (verified in its action.yaml: its only inputs are
-# results_file, results_format, repo_token, publish_results, file_mode and internal_*).
-# The CLI has no threshold flag either. On top of that, the aggregate score is a
-# risk-weighted average that EXCLUDES the checks returning "?", so it can GO DOWN for
-# doing things right (a check moves from "?" to scorable). Gating on the aggregate
-# would mean eternal red or a threshold that measures nothing.
-# The gate with teeth lives separately, per check, in scripts/gates/.
+# WHY THIS WORKFLOW DOES NOT BLOCK ON THE AGGREGATE: the official action has no
+# threshold input and never fails the job over a low score (verified in its
+# action.yaml: its only inputs are results_file, results_format, repo_token,
+# publish_results, file_mode and internal_*). The CLI has no threshold flag either.
+# On top of that, the aggregate score is a risk-weighted average that EXCLUDES the
+# checks returning "?", so it can GO DOWN for doing things right (a check moves from
+# "?" to scorable). Gating on the aggregate would mean eternal red or a threshold
+# that measures nothing.
+#
+# THE GATE WITH TEETH: the `threshold` job below runs
+# scripts/gates/gate-scorecard-threshold.sh over a SECOND, unpublished run in JSON
+# format. It gates the seven checks docs/gate-requirements.md declares, and judges
+# the aggregate by MOVEMENT against a hand-edited baseline rather than by level.
 #
 # ACCEPTED TRADE-OFF: publish_results: true sends the result to api.scorecard.dev,
 # that is, it is public. For a public MIT repo that is acceptable and it is what enables the badge.
@@ -63,3 +68,37 @@ jobs:
         uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: results.sarif
+
+  threshold:
+    name: G9 per-check thresholds (this one blocks)
+    runs-on: ubuntu-latest
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A second run, in JSON and unpublished: the SARIF the analysis job produces
+      # carries findings, not the per-check scores this gate needs.
+      - name: Run the analysis again, as JSON
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.json
+          results_format: json
+          publish_results: false
+
+      - name: Gate on the declared subset
+        run: |
+          set -uo pipefail
+          rc=0
+          ./scripts/gates/gate-scorecard-threshold.sh --results results.json || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Gate OK::Every gated check is at or above its declared minimum." ;;
+            1) echo "::error title=Gate FAILS::A gated Scorecard check is below the minimum docs/gate-requirements.md declares." ;;
+            2) echo "::error title=COULD NOT MEASURE::A gated check was inconclusive or absent. An rc=0 never means 'I did not review it'." ;;
+            *) echo "::error title=Gate broken::unexpected exit code $rc" ;;
+          esac
+          exit "$rc"

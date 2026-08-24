@@ -1,0 +1,140 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku6-corpus-5",
+    "coverage_declaration": "Audited: single Java file (ValueReader.java) containing AMQP protocol deserialization logic. Examined: binary wire-protocol field parsing, table and array deserialization, type-specific field value readers. Not examined: full source tree, integration with higher-level protocol handlers, TruncatedInputStream implementation (external), dependency security via pom.xml.",
+    "coverage": {
+      "inventoried": [
+        "AMQP protocol deserialization (ValueReader.java)",
+        "Field value type parsing (12 types: S/I/i/D/T/F/A/b/B/d/f/l/s/u/t/x/V)",
+        "Table and array parsing with stream truncation",
+        "Maven dependencies (pom.xml)"
+      ],
+      "read": [
+        "AMQP protocol deserialization (ValueReader.java)",
+        "Field value type parsing"
+      ],
+      "not_read": [
+        "Complete source tree and integration layer",
+        "TruncatedInputStream implementation",
+        "Maven dependency vulnerability scanning",
+        "Test coverage and usage patterns"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Timestamp multiplication overflow at line 269",
+        "Unreliable Stream.available() in table/array loops at lines 148, 244",
+        "Huge byte array allocation without actual size validation at lines 87-88",
+        "BigDecimal construction from 4-byte unscaled value at line 175"
+      ],
+      "reported": [
+        "Timestamp multiplication overflow at line 269",
+        "Unreliable Stream.available() in table/array loops at lines 148, 244"
+      ],
+      "dropped": [
+        {
+          "label": "Huge byte array allocation without actual size validation at lines 87-88",
+          "resolution": "refuted",
+          "reason": "Code validates contentLength < Integer.MAX_VALUE before allocation, and the resulting array allocation, while potentially large, is bounded and fails with OutOfMemoryError rather than arbitrary memory corruption. Resource exhaustion is a DOS concern, not a code-execution vulnerability.",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87"
+        },
+        {
+          "label": "BigDecimal construction from 4-byte unscaled value at line 175",
+          "resolution": "refuted",
+          "reason": "The 4-byte format matches the AMQP specification for decimal type encoding. The BigInteger and BigDecimal constructors correctly interpret the bytes as a big-endian signed integer with explicit scale factor. No evidence of format mismatch or incorrect interpretation.",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:173-175"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Integer overflow in timestamp multiplication allows arbitrary Date construction",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "ValueReader.readTimestamp()"
+      },
+      "evidence": "Line 269: `return new Date(in.readLong()*1000);` reads an untrusted 64-bit timestamp from the AMQP protocol stream and multiplies by 1000 without overflow checking. When the timestamp value exceeds Long.MAX_VALUE / 1000 (9,223,372,036,854,775), the multiplication wraps around, producing an incorrect Date object.",
+      "impact": "An attacker sending a crafted AMQP frame with a malformed timestamp field can cause integer overflow in the millisecond calculation, resulting in an incorrect Date object. This could affect timestamp-dependent logic such as message expiration checks, TTL validation, or audit log timestamps.",
+      "preconditions": "Attacker must be able to send crafted AMQP frames to the application. The timestamp field must be processed (type 'T' in a table or array).",
+      "recommendation": "Check for overflow before multiplication: `if (seconds > Long.MAX_VALUE / 1000) throw new MalformedFrameException(...)` or use safe multiplication methods that detect overflow. Alternatively, use BigDecimal or checked arithmetic.",
+      "traceability": [
+        "CWE-190"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The timestamp value is read directly from the untrusted AMQP protocol stream (in.readLong()) with no prior validation."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The Date constructor accepts the overflow-wrapped value without validation, and the resulting Date object will have incorrect temporal semantics."
+        }
+      ],
+      "limits": "Analysis assumes standard Java long arithmetic (64-bit two's complement). The actual impact depends on how the Date object is used downstream (e.g., whether TTL validation or expiration logic relies on its value).",
+      "unaided_label": "Timestamp multiplication overflow (readTimestamp line 269)"
+    },
+    {
+      "id": "F-002",
+      "title": "Reliance on InputStream.available() may cause premature loop termination and incomplete table/array parsing",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 148,
+        "component": "ValueReader.readTable() and readArray()"
+      },
+      "evidence": "Lines 148 and 244 use `while(tableIn.available() > 0)` and `while(arrayIn.available() > 0)` to control loop termination. The Java InputStream contract (Javadoc) states that available() returns 'an estimate' and may return 0 even when more data is available. If TruncatedInputStream's available() implementation is unreliable or if the wrapped stream does not accurately report available bytes, the loop may exit prematurely.",
+      "impact": "If a table or array field is truncated mid-parse due to available() returning 0, the loop exits without consuming all the intended data. Subsequent reads from the stream would start at an incorrect position, causing protocol deserialization failure. This could be exploited as a denial-of-service vector if an attacker crafts a frame designed to trigger premature loop termination.",
+      "preconditions": "Requires an AMQP frame with a table (type 'F') or array (type 'A') field. The TruncatedInputStream must not correctly report available bytes, or the underlying stream must have a bug.",
+      "recommendation": "Replace available()-based loop termination with either: (1) reading until EOFException, catching it and treating it as normal loop termination; (2) tracking bytes consumed against tableLength/length; or (3) using a bounded loop with a counter. The pattern `while(in.available() > 0)` is notoriously fragile across stream implementations.",
+      "inference": "The actual behavior depends on TruncatedInputStream's implementation, which was not provided in the target. If TruncatedInputStream correctly tracks consumed bytes, available() may work; if not, the loop may exit prematurely.",
+      "what_would_settle_it": "Provide the TruncatedInputStream source code, or execute a test that sends a table/array with known size and verifies all fields are consumed regardless of available() behavior.",
+      "traceability": [
+        "CWE-20"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Depends on the correctness of TruncatedInputStream.available(), which was not provided. If TruncatedInputStream is a proper implementation that tracks byte position against the truncated limit, this may be safe."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The safe behavior depends on external code (TruncatedInputStream) whose correctness cannot be verified from the provided target."
+        }
+      ],
+      "limits": "Analysis is bounded by the provided code. The actual exploitability depends on TruncatedInputStream's correctness and the behavior of the underlying DataInputStream.",
+      "unaided_label": "Unreliable Stream.available() in table/array loops at lines 148, 244"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Resource exhaustion via unbounded byte array allocation",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "readBytes() method at lines 86-88 validates contentLength < Integer.MAX_VALUE before allocation. While allocation of gigabyte-scale arrays is possible, the code does not attempt to allocate beyond Integer.MAX_VALUE bytes, and allocation failure results in OutOfMemoryError rather than memory corruption."
+    },
+    {
+      "class": "BigDecimal decimal type parsing error",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "readFieldValue() method at lines 173-175 correctly implements AMQP decimal type: one unsigned byte for scale, four bytes for unscaled value as signed big-endian integer. The BigInteger and BigDecimal constructors correctly interpret this encoding."
+    }
+  ]
+}

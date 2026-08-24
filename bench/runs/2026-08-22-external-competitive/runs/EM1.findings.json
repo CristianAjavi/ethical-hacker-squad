@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "HTTP Header Injection via Unvalidated Custom Claims",
+      "file": "handlers/validate.go",
+      "line": 104,
+      "severity": "High",
+      "impact": "An attacker who can control OAuth2 provider claims could inject arbitrary HTTP headers into responses via CRLF injection, potentially enabling header spoofing, cache poisoning, or XSS attacks.",
+      "evidence": "Lines 104 and 110 in generateCustomClaimsHeaders() add arbitrary claim values to HTTP response headers without validating that they don't contain newline characters. The code uses fmt.Sprint() and strings.Join() directly on untrusted claim data: w.Header().Add(header, val) where val could contain \\r\\n sequences.",
+      "recommendation": "Validate all claim values before adding them as HTTP headers. Strip or reject any values containing CR (\\r) or LF (\\n) characters. Consider using http.Header.Set() instead of Add() for single-valued headers, and sanitize multi-valued headers appropriately."
+    },
+    {
+      "id": "F-002",
+      "title": "Unguarded Type Assertion Causes Panic in OAuth State Handling",
+      "file": "handlers/auth.go",
+      "line": 111,
+      "severity": "Medium",
+      "impact": "A malicious actor who can tamper with session data or a bug in session management could cause the application to crash, resulting in denial of service. An attacker crafting a malicious session could bypass authentication or trigger unhandled exceptions.",
+      "evidence": "Line 111: requestedURL := session.Values[\"requestedURL\"].(string) performs an unchecked type assertion. If the session value is nil or not a string, this will panic. Similarly, lines 81-82 have unchecked assertions for codeChallenge and codeVerifier. No error handling is present.",
+      "recommendation": "Use safe type assertions with comma-ok pattern: if val, ok := session.Values[\"requestedURL\"].(string); ok { ... } instead of direct type assertion. Handle the error case explicitly before using the value."
+    },
+    {
+      "id": "F-003",
+      "title": "JWT Tokens Can Be Exposed via Query String",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 247,
+      "severity": "Medium",
+      "impact": "JWT tokens in query parameters can be leaked via HTTP Referer headers, server logs, proxy logs, browser history, and access logs. This exposes sensitive authentication tokens that could be used to impersonate users.",
+      "evidence": "FindJWT() function (line 247) extracts JWT from URL query string via r.URL.Query().Get(cfg.Cfg.Headers.QueryString). While documented as optional, this feature violates security best practices by allowing tokens in URLs where they can be logged/exposed.",
+      "recommendation": "Discourage or disable JWT extraction from query strings. Document in security guidelines that query string parameters are not suitable for sensitive tokens. If must be supported, add clear warnings and implement token rotation strategies."
+    },
+    {
+      "id": "F-004",
+      "title": "Insufficient Session State Validation in OAuth Flow",
+      "file": "handlers/auth.go",
+      "line": 67,
+      "severity": "Medium",
+      "impact": "Session fixation or CSRF attacks could be possible if an attacker can control the session state. The validation checks queryState != session.Values[\"state\"], but this relies on session integrity which may not be guaranteed.",
+      "evidence": "Line 67 in AuthStateHandler: if session.Values[\"state\"] != queryState { ... only performs equality check. No additional validation like HMAC verification or timestamp checking. Session implementation relies on gorilla/sessions which uses encrypted cookies, but stronger binding to user context would be preferable.",
+      "recommendation": "Implement additional CSRF protection mechanisms. Consider binding state to user context (IP address, User-Agent, etc. with caution). Use cryptographically secure state generation with HMAC verification. Consider using 'state' parameter with additional security properties per RFC 6819 Section 5.3.5."
+    },
+    {
+      "id": "F-005",
+      "title": "Type Assertion Without Guard in Login Handler",
+      "file": "handlers/login.go",
+      "line": 279,
+      "severity": "Medium",
+      "impact": "Application crash (denial of service) if session values are not of expected type. This could be triggered if session management is corrupted or by an attacker who can manipulate session storage.",
+      "evidence": "Line 279 in oauthLoginURL(): var state string = session.Values[\"state\"].(string) performs unchecked type assertion. No validation that the value exists or is actually a string before use.",
+      "recommendation": "Use safe type assertions with error handling: if state, ok := session.Values[\"state\"].(string); ok && state != \"\" { ... } else { return error }. Validate session state before proceeding with OAuth flow."
+    },
+    {
+      "id": "F-006",
+      "title": "Custom Claims Formatting May Leak Type Information",
+      "file": "handlers/validate.go",
+      "line": 101,
+      "severity": "Low",
+      "impact": "Information disclosure: array claims are formatted with quotes around each element (line 101: fmt.Sprintf(\"%s\", v)), which reveals array structure to downstream applications and could leak information about IdP attribute structure.",
+      "evidence": "Line 101: strs[i] = fmt.Sprintf(\"%s\", v) formats array elements with quotes, then joins them. This creates headers like 'group1\",\"group2\"' which reveals the array structure. A backend seeing this format knows the claim was originally an array.",
+      "recommendation": "Use consistent claim formatting. Consider JSON encoding for complex types if the consuming application supports it. Document the exact format expected by consuming applications. Consider a single value per header instead of comma-separated lists for better compatibility."
+    },
+    {
+      "id": "F-007",
+      "title": "No Panic Recovery Middleware in HTTP Handlers",
+      "file": "main.go",
+      "line": 160,
+      "severity": "Medium",
+      "impact": "Unrecovered panics in handler functions will crash the entire service, causing denial of service for all users. Error details might be exposed in logs.",
+      "evidence": "HTTP server setup in main.go (lines 160-208) does not use any middleware that recovers from panics. If any handler panics (e.g., from type assertions in handlers/auth.go), the entire process crashes.",
+      "recommendation": "Implement panic recovery middleware that catches panics, logs them with appropriate context, and returns a safe HTTP 500 response. Use a library like `github.com/urfave/negroni` or implement custom middleware wrapping all handlers."
+    }
+  ]
+}

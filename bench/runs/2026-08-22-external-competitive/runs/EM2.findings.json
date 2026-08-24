@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT Decompression Error Silently Drops Tokens",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 188,
+      "severity": "HIGH",
+      "impact": "When a compressed JWT fails to decompress due to data corruption or invalid gzip format, the function silently returns an empty string instead of an error. This causes invalid tokens to be silently treated as if they never existed, bypassing proper error handling and potentially masking attacks.",
+      "evidence": "In decodeAndDecompressTokenString() at line 188-207: (1) gzip reader is created at line 196, (2) reader is immediately closed at line 202 BEFORE reading data, (3) ReadAll is called on the closed reader at line 205, (4) the error from ReadAll is silently ignored with '_', causing malformed tokens to return empty string without error indication.",
+      "recommendation": "Fix the order: call io.ReadAll() before zr.Close(), and properly handle the error from ReadAll. Return a descriptive error instead of an empty string on decompression failure."
+    },
+    {
+      "id": "F-002",
+      "title": "HTTP Header Injection via Custom Claims",
+      "file": "handlers/validate.go",
+      "line": 88,
+      "severity": "MEDIUM",
+      "impact": "Custom claims from the IdP are added as HTTP response headers without sanitization. If an IdP returns a claim value containing newlines (CRLF), an attacker could inject arbitrary HTTP headers including Set-Cookie, modifying the response.",
+      "evidence": "In generateCustomClaimsHeaders() at line 88-121: (1) Custom claims are obtained from the JWT at line 92, (2) Claim values are converted to strings at line 107 and line 101, (3) These are added directly to headers via w.Header().Add() at lines 104 and 110 without any validation to reject newlines or CRLF sequences.",
+      "recommendation": "Validate and sanitize claim values before adding them as headers. Reject any claims containing CR (\\r) or LF (\\n) characters. Use a whitelist approach for claim names and values."
+    },
+    {
+      "id": "F-003",
+      "title": "Missing Host Header Validation in Validate Endpoint",
+      "file": "handlers/validate.go",
+      "line": 55,
+      "severity": "MEDIUM",
+      "impact": "The Host header is used directly from the request without prior validation. If Nginx fails to validate the Host header before proxying to Vouch, an attacker controlling the Host header can bypass domain restrictions.",
+      "evidence": "In ValidateRequestHandler() at line 55: (1) r.Host is used directly in SiteInAudience check, (2) If domains.Matches(r.Host) returns empty string and AllowAllUsers is true, the request proceeds without verification, (3) The check depends entirely on Nginx sending correct Host headers.",
+      "recommendation": "Validate the Host header matches expected values. Consider adding a configuration option to specify the expected Host header(s) that Vouch expects to receive from Nginx."
+    },
+    {
+      "id": "F-004",
+      "title": "Missing JWT Decryption Error Handling",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 145,
+      "severity": "MEDIUM",
+      "impact": "If the DecryptionKey() function returns an error (e.g., JWT public key file not found), the error is logged but not returned. The code continues with a potentially nil key, causing jwt.ParseWithClaims to fail later with a confusing error.",
+      "evidence": "In ParseTokenString() at line 145-147: (1) DecryptionKey() is called and may return an error, (2) The error is logged via log.Errorf() but execution continues, (3) The key is used in jwt.ParseWithClaims() at line 150 even if it failed to load, causing potential nil pointer or cryptographic errors.",
+      "recommendation": "Check the error returned by DecryptionKey() and return it immediately if it's not nil. This provides clearer error messages about configuration issues."
+    },
+    {
+      "id": "F-005",
+      "title": "Insufficient HTTPS Enforcement for Secure Cookies",
+      "file": "pkg/cookie/cookie.go",
+      "line": 60,
+      "severity": "MEDIUM",
+      "impact": "If cfg.Cfg.Cookie.Secure is set to false, the JWT cookie containing authentication credentials is transmitted over HTTP. This allows man-in-the-middle attackers to intercept and replay the cookie.",
+      "evidence": "In setCookie() at line 44-99: (1) The cookie Secure flag is set directly from cfg.Cfg.Cookie.Secure at line 60, (2) This is a configuration value that can be false, (3) No runtime check enforces HTTPS when Secure=true or HTTP when Secure=false.",
+      "recommendation": "Add validation in configuration initialization to warn or error if Secure is false in production. Consider making Secure=true mandatory for JWT cookies regardless of configuration."
+    },
+    {
+      "id": "F-006",
+      "title": "Potential Open Redirect via Incomplete URL Validation",
+      "file": "handlers/login.go",
+      "line": 222,
+      "severity": "MEDIUM",
+      "impact": "While domain validation is performed, the check for dangerous query parameter values at line 222-226 uses a blacklist approach with case-sensitive matching. Attackers could use mixed-case variations or unicode escapes to bypass the validation.",
+      "evidence": "In getValidRequestedURL() at line 199-246: (1) Query parameters are checked against badStrings at line 222-226, (2) The check uses strings.HasPrefix() with lowercase comparison of the value, (3) But the badStrings array contains lowercase entries, so mixed-case variants like 'JavaScript:' would bypass the check.",
+      "recommendation": "Normalize query parameter values to lowercase before checking against badStrings. Use a whitelist of allowed URL schemes instead of a blacklist of dangerous ones."
+    },
+    {
+      "id": "F-007",
+      "title": "Silent Error Handling in JWT Key Loading",
+      "file": "pkg/jwtmanager/jwtmanager.go",
+      "line": 106,
+      "severity": "LOW",
+      "impact": "Similar to F-004, if SigningKey() returns an error when creating a new JWT, the error is logged but not propagated, potentially returning an empty token string.",
+      "evidence": "In NewVPJWT() at line 106-109: (1) SigningKey() is called and may return an error, (2) The error is logged with log.Errorf() but execution continues, (3) The key might be nil when passed to token.SignedString() at line 111.",
+      "recommendation": "Return the error from SigningKey() immediately so callers know JWT creation failed due to configuration issues."
+    }
+  ]
+}

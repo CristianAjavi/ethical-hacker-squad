@@ -1,0 +1,116 @@
+{
+ "findings": [
+  {
+   "item_id": "N01",
+   "title": "readOnly/writeOnly enforcement and default injection are silently dropped for OpenAPI 3.1 documents",
+   "location": "openapi3/schema_jsonschema_validator.go:204",
+   "impact": "For any document declaring openapi 3.1.x/3.2.x, openapi3filter enables the JSON Schema 2020-12 path, which ignores the schemaValidationSettings entirely. Requests that set a property marked `readOnly: true` (typically server-managed fields such as id, role, owner, createdAt) are therefore accepted, whereas the identical 3.0 document rejects them. Applications that rely on readOnly as an input filter silently lose that control merely by bumping the spec version. Response-side writeOnly leakage checks and SkipSettingDefaults/DefaultsSet behaviour are lost the same way.",
+   "evidence": "openapi3/schema_jsonschema_validator.go:204-212 -- func (schema *Schema) useJSONSchema2020(settings *schemaValidationSettings, value any) error { validator, err := newJSONSchemaValidator(schema); if err != nil { return schema.visitJSON(settings, value) }; return validator.validate(value) } -- `settings` is only forwarded on the error path. schema.go:1942-1948 routes to it whenever settings.useJSONSchema2020 is set, and openapi3filter sets that flag on every request/response for 3.1+ (validate_request.go:243 and :355, validate_response.go:77). The readOnly/writeOnly assertions live only in visitJSONObject (schema.go:2838-2856) and the required-field exemptions in the \"required\" loop of visitJSONObject; readOnly is a pure annotation in JSON Schema 2020-12, so santhosh-tekuri/jsonschema does not enforce it."
+  },
+  {
+   "item_id": "N02",
+   "title": "multipleOf keyword can panic the validator with a division by zero on every request",
+   "location": "openapi3/schema.go:2568",
+   "impact": "A number-typed schema whose `multipleOf` is 0 -- or, more insidiously, any legitimate positive value smaller than 5e-11 -- makes big.Rat.Quo panic ('division by zero') the first time a client submits a number for that field. Because the panic is triggered by ordinary traffic against a spec that passes doc.Validate() without complaint, this is a self-inflicted remote DoS: the offending spec is accepted at load time and only fails, repeatedly, at request time.",
+   "evidence": "openapi3/schema.go:2563-2569 -- numRat, denRat := &big.Rat{}, &big.Rat{}; numRat.SetString(fmt.Sprintf(\"%.10f\", value)); denRat.SetString(fmt.Sprintf(\"%.10f\", *v)); if !(&big.Rat{}).Quo(numRat, denRat).IsInt() {...}. big.Rat.Quo panics when the divisor is zero. `%.10f` of 1e-11 renders as \"0.0000000000\", so denRat becomes exactly 0 even for a valid positive multipleOf. Nothing rejects multipleOf <= 0 anywhere: grepping MultipleOf across the tree shows it is only marshalled/copied (schema.go:116,561,852,1276; loader.go:1415; openapi2conv) and never range-checked in Schema.validate (openapi3/schema.go:1396-1900)."
+  },
+  {
+   "item_id": "N03",
+   "title": "Attacker-controlled array index in deepObject query parameters causes unbounded memory allocation (single-request memory-exhaustion DoS)",
+   "location": "openapi3filter/req_resp_decoder.go:953",
+   "impact": "For any operation that declares a `style: deepObject` query parameter whose object schema contains an array property, a single ~40-byte request such as `GET /x?filter[ids][2000000000]=1` makes the decoder materialise a slice with (index+1) elements before any schema validation (maxItems, etc.) runs. 2e9 `any` entries is >32 GB plus append growth, and the fill loop is O(index) even when memory holds. Unauthenticated, no body required, trivially repeatable -> process OOM/kill.",
+   "evidence": "openapi3filter/req_resp_decoder.go:936-962 sliceMapToSlice(): keys are parsed with strconv.Atoi from the *request* query string, `max` is the largest of them, and then `for i := 0; i <= max; i++ { result = append(result, nil) }` with no ceiling. Reached via urlValuesDecoder.DecodeObject (deepObject branch, lines 661-686) which builds props keyed by the bracket segments, -> makeObject() (line 911) -> deepSet() -> buildResObj() array branch (lines 972-988) which calls sliceMapToSlice(t) and then `resultArr := make([]any, len(arr))`. Nothing between the raw query values and this allocation bounds the index; schema keywords such as maxItems are only applied later, in Schema.VisitJSON, on the already-materialised slice."
+  },
+  {
+   "item_id": "N04",
+   "title": "Nil RegexMatcher dereference when a pattern fails to compile and MultiError is enabled",
+   "location": "openapi3/schema.go:2666",
+   "impact": "When pattern compilation fails and the caller asked for aggregated errors, the compile error is appended to the multi-error and execution continues with a nil matcher, panicking on the next line. Reachable whenever pattern validation was skipped or disabled at document load (DisableSchemaPatternValidation), or when a custom RegexCompiler rejects a pattern that Go's engine accepted, combined with openapi3filter Options.MultiError -- i.e. a request-time panic rather than a validation error.",
+   "evidence": "openapi3/schema.go:2653-2668 -- if cp == nil { if cp, err = schema.compilePattern(settings.regexCompiler); err != nil { if !settings.multiError { return err }; me = append(me, err) } }; if !cp.MatchString(value) { ... } -- on the multiError branch cp is still nil (compilePattern returns a nil RegexMatcher together with the error, schema_pattern.go:16-32) and MatchString is invoked on it."
+  },
+  {
+   "item_id": "N05",
+   "title": "CI executes unpinned third-party code with a job-wide GITHUB_TOKEN and no permissions restriction",
+   "location": ".github/workflows/go.yml:8",
+   "impact": "Every push and pull_request runs three `go run <module>@latest` invocations plus `go install ...@latest`, i.e. arbitrary third-party code fetched at HEAD, inside a job that exports GITHUB_TOKEN to all steps and declares no `permissions:` block (so the default, which is write on push events for repositories that have not tightened the org default). A compromised or hijacked upstream tag in modernize, nilness or goimports-reviser -- none of which are pinned to a version or checksum -- would execute with a token able to push to the repository. Actions are likewise referenced by mutable tags (actions/checkout@v6, actions/cache@v3, ludeeus/action-shellcheck@1.1.0) rather than commit SHAs.",
+   "evidence": ".github/workflows/go.yml:8-11 -- env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} declared at job level; no `permissions:` key anywhere in the file. Lines with unpinned execution: `go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -test -diff -fix ...`, `go run golang.org/x/tools/go/analysis/passes/nilness/cmd/nilness@latest ./...`, `go run -a github.com/getkin/kin-openapi/cmd/validate@latest -- ...`, and in the check-goimports job `go install github.com/incu6us/goimports-reviser/v3@latest`. .github/workflows/shellcheck.yml uses actions/checkout@v2 and ludeeus/action-shellcheck@1.1.0, also unpinned. Note `modernize ... -fix` rewrites the working tree with code fetched at HEAD."
+  },
+  {
+   "item_id": "N06",
+   "title": "OAS 3.1 $ref sibling keywords replace the referenced schema's keywords instead of intersecting with them, which can relax validation",
+   "location": "openapi3/loader.go:1364",
+   "impact": "JSON Schema 2020-12 treats `$ref` plus sibling keywords as a conjunction: both the referenced schema and the siblings must hold. This implementation overwrites the referenced value field-by-field, so whenever a sibling restates a keyword the referenced (often stricter) constraint is discarded. A spec that reads as `$ref: '#/components/schemas/Slug'` with a sibling `maxLength: 255` ends up enforcing only 255 even when Slug declares maxLength 32 and a tight pattern for the same keyword -- validation is weaker than the document says.",
+   "evidence": "openapi3/loader.go:1364-1483 applySiblingSchemaFields(dst, sibling, presentFields) assigns for every present field, e.g. `case \"maxLength\": dst.MaxLength = sibling.MaxLength`, `case \"pattern\": dst.Pattern = sibling.Pattern`, `case \"required\": dst.Required = sibling.Required`, `case \"additionalProperties\": dst.AdditionalProperties = sibling.AdditionalProperties`. Applied at openapi3/loader.go:966-971 (doc.IsOpenAPI31OrLater() && component.sibling != nil) onto a copy of the resolved schema."
+  },
+  {
+   "item_id": "N07",
+   "title": "format: int64 does not reject numbers outside the int64 range because of an overflowing float-to-int conversion",
+   "location": "openapi3/schema.go:2407",
+   "impact": "A JSON number such as 1e300 or 2^63 satisfies `type: integer, format: int64`. Go's conversion of an out-of-range float64 to int64 is implementation-defined; on amd64/arm64 it saturates to math.MinInt64, which then passes the [MinInt64, MaxInt64] range check. The API therefore accepts values it declares impossible, and any downstream consumer that parses the same body into an int64 will either error or see a completely different number than the validator approved.",
+   "evidence": "openapi3/schema.go:2372-2378 marks the value as an integer using big.Float.IsInt(), which is true for 1e300. openapi3/schema.go:2404-2410 -- f, ok := settings.integerFormats[format]; ... if err := f.Validate(int64(value)); err != nil -- the conversion int64(value) happens before the range validator sees it. openapi3/schema_formats.go:55-56 registers int64 as NewRangeFormatValidator(math.MinInt64, math.MaxInt64), a check that the saturated value trivially satisfies. (format int32 is caught only by accident, because the saturated value falls outside the int32 range.)"
+  },
+  {
+   "item_id": "N08",
+   "title": "Request and response bodies are buffered whole in memory with no size limit",
+   "location": "openapi3filter/validate_request.go:271",
+   "impact": "Validation reads the entire request body into memory before it can be rejected, and does so a second time when security requirements are present; the response middleware buffers the entire handler response. None of these paths applies a cap, so body-size limiting is entirely delegated to the caller. A deployment that wires ValidationHandler or Validator.Middleware without its own http.MaxBytesReader is exposed to straightforward memory-exhaustion by large uploads, including on endpoints whose schema would have rejected the body outright.",
+   "evidence": "openapi3filter/validate_request.go:271 -- if data, err = io.ReadAll(req.Body); err != nil (ValidateRequestBody). openapi3filter/validate_request.go:448 -- if data, err = io.ReadAll(input.Request.Body); err != nil (validateSecurityRequirement, a second full copy retained for the whole loop). openapi3filter/validate_response.go:131 -- data, err := io.ReadAll(body). openapi3filter/middleware.go:183-197 and 244-249 -- both response wrappers accumulate the full body in a bytes.Buffer before validation. openapi3filter/req_resp_decoder.go:1352 (PlainBodyDecoder), :1583 (FileBodyDecoder) and :1404 (UrlencodedBodyDecoder) each io.ReadAll again."
+  },
+  {
+   "item_id": "N09",
+   "title": "Global compiled-pattern cache is keyed only by the pattern string, so a custom RegexCompiler (a hardening control) is bypassed",
+   "location": "openapi3/schema_pattern.go:34",
+   "impact": "openapi3filter.Options.RegexCompiler / openapi3.SetSchemaRegexCompiler exist so an application can swap in a different regex engine -- typically one with a match timeout/step budget, or ECMA-262 semantics. Because the process-wide cache ignores which compiler produced the entry, whichever compiler ran first for a given pattern string wins for everything afterwards. In practice doc.Validate() compiles every pattern with the default Go engine at load time, so the custom compiler is never consulted at request time: the safety control the operator installed is silently inert. The converse is equally bad -- one document's custom matcher is applied to another document's identical pattern.",
+   "evidence": "openapi3/schema_pattern.go:16-35 -- compilePattern(c RegexCompilerFunc) uses `c` when non-nil, then unconditionally does compiledPatterns.Store(pattern, cp) with `pattern` (the regex text) as the only key. openapi3/schema.go:2654-2665 -- cpiface, _ := compiledPatterns.Load(schema.Pattern); cp, _ := cpiface.(RegexMatcher); if cp == nil { cp, err = schema.compilePattern(settings.regexCompiler) } -- the cache is consulted before, and independently of, settings.regexCompiler. openapi3/schema.go:1684-1687 shows Schema.validate() populating that same cache with validationOpts.regexCompilerFunc (nil by default) during doc.Validate()."
+  },
+  {
+   "item_id": "N10",
+   "title": "JSON Schema is recompiled from scratch on every request for OpenAPI 3.1 documents, and silently falls back to the legacy validator when compilation fails",
+   "location": "openapi3/schema_jsonschema_validator.go:19",
+   "impact": "Two problems from one function. (1) CPU amplification: each request/response validation of a 3.1 document marshals the whole schema to JSON, unmarshals it into a map, walks and rewrites the map, then builds a jsonschema.Compiler and compiles the resource -- work that is orders of magnitude more expensive than the validation itself and is fully attacker-triggerable at request rate; a large components schema turns every request into milliseconds of pure CPU. (2) Unpredictable enforcement: any compilation failure is swallowed and validation silently continues with a different engine, so which validator actually enforced a request is not observable. Since kin-openapi keeps internal $refs as `$ref` strings but registers only a single resource, schemas that reference components fail to compile and always take the fallback path.",
+   "evidence": "openapi3/schema_jsonschema_validator.go:19-54 newJSONSchemaValidator() does json.Marshal -> json.Unmarshal -> transformOpenAPIToJSONSchema -> jsonschema.NewCompiler() -> AddResource -> Compile on every call; there is no cache anywhere (no sync.Map / memoisation of *jsonSchemaValidator). It is called from useJSONSchema2020 (line 205), which schema.go:1942-1948 invokes per VisitJSON. Line 206-209: `if err != nil { return schema.visitJSON(settings, value) }` -- the compile error is discarded, not logged, not surfaced. Only one resource ('https://example.com/schema.json') is registered, so a marshalled `{\"$ref\":\"#/components/schemas/Foo\"}` cannot resolve."
+  },
+  {
+   "item_id": "N11",
+   "title": "Malformed server URL templates panic while building the gorilla/mux router",
+   "location": "routers/gorillamux/router.go:135",
+   "impact": "Building a router from a spec whose server URL references an undeclared variable, or contains ':{' with no closing brace, panics instead of returning an error. This matters for any service that loads OpenAPI documents supplied by users (API portals, gateways, linting/conversion services): an uploaded document crashes the handling goroutine rather than producing a validation error.",
+   "evidence": "routers/gorillamux/router.go:133-136 -- sVal := server.Variables[sVar].Default -- Variables is map[string]*ServerVariable, so an undeclared variable yields a nil pointer and an immediate dereference; the same pattern recurs at line 160. routers/gorillamux/router.go:156-160 -- rest := serverURL[lhs+len(\":{\"):]; rhs := strings.Index(rest, \"}\"); portVariable := rest[:rhs] -- rhs is -1 when '}' is absent, so the slice expression panics."
+  },
+  {
+   "item_id": "N12",
+   "title": "Encoding.Validate silently discards header validation errors",
+   "location": "openapi3/encoding.go:129",
+   "impact": "Both failure branches of the header loop `return nil` instead of returning the error, so an encoding object with an invalid header name or an invalid header definition is reported as valid. Callers that rely on doc.Validate() to reject malformed documents will accept them, and the invalid definitions are then used at request time.",
+   "evidence": "openapi3/encoding.go:126-134 -- for _, k := range componentNames(encoding.Headers) { v := encoding.Headers[k]; if err := ValidateIdentifier(k); err != nil { return nil }; if err := v.Validate(ctx); err != nil { return nil } } -- both `return nil` should be `return err`. It also short-circuits the rest of the loop and the serialization-method check below."
+  },
+  {
+   "item_id": "N13",
+   "title": "ZipFileBodyDecoder appends whole buffer regardless of bytes read, and has no decompression limit",
+   "location": "openapi3filter/req_resp_decoder.go:1639",
+   "impact": "The decoded content is corrupted: on every short read the full 256-byte scratch buffer is appended, so stale bytes from the previous read are injected into the value that is then schema-validated and handed to the application. Separately, the decoder buffers the entire compressed body and then the entire decompressed content in memory with no cap, so a zip bomb submitted to any endpoint using this decoder exhausts memory (the doc comment acknowledges the risk but nothing enforces a limit).",
+   "evidence": "openapi3filter/req_resp_decoder.go:1634-1643 -- n, err := rc.Read(buffer); if 0 < n { content = append(content, buffer...) } -- `n` is computed and then ignored; it must be `buffer[:n]`. Lines 1611-1617: io.Copy of the whole body into a bytes.Buffer, then `content := make([]byte, 0, bufferSize*len(zr.File))` grown without bound across all entries."
+  },
+  {
+   "item_id": "N14",
+   "title": "Default error path returns the full internal schema and the rejected value to the client, with HTTP 500",
+   "location": "openapi3/schema.go:3120",
+   "impact": "openapi3filter.ValidationHandler defaults its ErrorEncoder to DefaultErrorEncoder, which writes err.Error() straight into the response body. For a schema violation that string embeds the pretty-printed JSON of the failing schema (property names, patterns, enums, min/max, descriptions, examples) plus the offending input value. An unauthenticated client can therefore enumerate the internal API contract -- including fields and constraints that were never meant to be published -- by sending deliberately malformed requests, and can echo back submitted data. The same path returns 500 for what is a client error, since RequestError does not implement StatusCoder.",
+   "evidence": "openapi3/schema.go:33-34 -- SchemaErrorDetailsDisabled = false (opt-out, not opt-in). openapi3/schema.go:3119-3130 -- if !SchemaErrorDetailsDisabled { buf.WriteString(\"\\nSchema:\\n  \"); encoder.Encode(err.Schema); buf.WriteString(\"\\nValue:\\n  \"); encoder.Encode(err.Value) }. openapi3filter/validation_handler.go:50-52 sets h.ErrorEncoder = DefaultErrorEncoder when unset, and before() at line 79-82 passes the raw error to it. openapi3filter/validation_kit.go:64-84 DefaultErrorEncoder: body = []byte(err.Error()) and code = http.StatusInternalServerError unless the error implements StatusCoder -- *RequestError (openapi3filter/errors.go:13) does not. Note also the SchemaError.Reason doc comment at schema.go:3038 states the message 'should never include the original value', which the Value block contradicts."
+  },
+  {
+   "item_id": "N15",
+   "title": "Unauthenticated remote panic: legacy router calls PathItem.GetOperation() with the raw request method, which panics on any non-standard HTTP verb",
+   "location": "routers/legacy/router.go:150",
+   "impact": "Any client can crash the request-handling goroutine of a server using routers/legacy (including this library's own openapi3filter.ValidationHandler, whose Load() builds a legacyrouter) by sending a syntactically valid but non-standard HTTP method to a concrete (non-templated) path declared in the spec, e.g. 'PROPFIND /users HTTP/1.1'. Go's net/http accepts any RFC-7230 token as a method, so the request reaches FindRoute unfiltered. Under net/http the panic aborts the connection and floods logs (repeatable at will = availability impact); when validation is run outside a recovering handler (custom servers, worker goroutines, gRPC gateways, CLI tooling) it terminates the process.",
+   "evidence": "openapi3/path_item.go:153-176 -- func (pathItem *PathItem) GetOperation(method string) *Operation { switch method { case http.MethodConnect: ... default: panic(fmt.Errorf(\"unsupported HTTP method %q\", method)) } }. routers/legacy/router.go:141-153 -- node, paramValues := root.Match(method + \" \" + remainingPath); if node != nil { route, _ = node.Value.(*routers.Route) }; if route == nil { pathItem := doc.Paths.Value(remainingPath); if pathItem == nil { return ...ErrPathNotFound }; if pathItem.GetOperation(method) == nil { ... } }. `method` comes from `req.Method` (line 109) and is never validated against the 9 supported verbs. For 'PROPFIND /users', root.Match() fails (the trie only contains 'GET /users' etc.), Paths.Value(\"/users\") returns the real PathItem, and GetOperation(\"PROPFIND\") hits the default branch and panics. The same block also dereferences `node.VariableNames` at line 158 "
+  }
+ ],
+ "advisories_to_match": [
+  {
+   "advisory_id": "GHSA-xhj3-7xw9-vr34",
+   "summary": "kin-openapi has uncontrolled resource consumption in openapi3filter deepObject query parameter decoding",
+   "description": "### Summary\n\nAn uncontrolled resource consumption vulnerability in `openapi3filter` lets any unauthenticated client force multi-gigabyte heap allocation with a single, tiny HTTP request. When a spec declares a `deepObject`-style query parameter whose schema contains an array (a normal, documented pattern), the decoder reconstructs the array by reading the **largest attacker-supplied index** and allocating one slot for every position from `0` up to that index \u2014 *before* schema validation (including `maxItems`) ever runs. A request as small as 24 bytes (`?param[items][50000000]=x`) drives heap allocation to **~6.1 GiB**, reliably triggering an OOM kill / restart loop on memory-constrained services.\n\n### Details\n\nThe OpenAPI `style: deepObject` serialization lets clients express arrays in the query string using bracket notation, e.g. `param[items][0]=a&param[items][1]=b`. The decoder first collects these into an intermediate `map[string]any` keyed by the string of the index, then converts that sparse map into a real `[]any` in [`sliceMapToSlice`](https://github.com/getkin/kin-openapi/blob/master/openapi3filter/req_resp_decoder.go#L936):\n\n```go\n// req_resp_decoder.go (vulnerable versio"
+  }
+ ]
+}

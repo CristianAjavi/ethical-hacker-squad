@@ -1,0 +1,42 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Integer overflow in timestamp conversion calculation",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "An attacker can provide a timestamp value that causes integer overflow during the multiplication by 1000, resulting in a Date with an incorrect or negative millisecond value. This could cause incorrect time-based operations, logging anomalies, or business logic errors in code that relies on the timestamp. While not direct code execution, it can corrupt application state.",
+   "evidence": "readTimestamp() method at line 266 contains: return new Date(in.readLong()*1000). The long value read from the stream is multiplied by 1000 without overflow checking. If in.readLong() returns a value greater than Long.MAX_VALUE / 1000 (approximately 9,223,372,036,854), the multiplication wraps around, creating an incorrect timestamp."
+  },
+  {
+   "item_id": "F02",
+   "title": "Unbounded recursive parsing enables stack overflow denial of service",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:139",
+   "impact": "An attacker providing a malicious AMQP frame with deeply nested table or array structures can exhaust the stack, causing StackOverflowError and denial of service. Example: a table containing a field with type 'F' (another table), which itself contains a field with type 'F', nested to arbitrary depth.",
+   "evidence": "readTable() method at line 139 recursively calls readFieldValue() at line 150. readFieldValue() at line 158 switches on type byte and calls readTable() again at line 181 (case 'F') and readArray() at line 184 (case 'A'). readArray() at line 237 recursively calls readFieldValue() at line 245. No depth limit is enforced on recursion."
+  },
+  {
+   "item_id": "F03",
+   "title": "Inefficient BigInteger construction enables algorithmic complexity attack",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:175",
+   "impact": "While the current code is limited to 4-byte unscaled values for BigDecimal, the pattern of constructing BigInteger from untrusted byte arrays without length validation is problematic. In general, large BigInteger objects can consume significant CPU during arithmetic operations (CWE-407). An attacker providing large unscaled values (via extension of the protocol) could cause algorithmic complexity attacks.",
+   "evidence": "readFieldValue() method handles case 'D' (BigDecimal) at line 171. It reads a 1-byte scale at line 172, then reads 4 bytes into an array at line 173-174, and constructs: value = new BigInteger(unscaled), scale); at line 175. The byte array length is fixed at 4 bytes in this case, but the BigInteger constructor can be exploited if this pattern were used elsewhere with variable-length input."
+  },
+  {
+   "item_id": "F04",
+   "title": "Unbounded byte array allocation enables denial of service",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+   "impact": "An attacker can craft an AMQP frame with a contentLength value equal or close to Integer.MAX_VALUE (2,147,483,647). This causes immediate OutOfMemoryError when the JVM attempts to allocate the array, resulting in denial of service. The application crashes without processing the message.",
+   "evidence": "readBytes() method at line 83 reads an unsigned 32-bit integer at line 86: final long contentLength = unsignedExtend(in.readInt()). This value is then used directly to allocate a byte array at line 88: final byte[] buffer = new byte[(int)contentLength]. No bounds checking is performed on contentLength before allocation."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

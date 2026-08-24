@@ -1,0 +1,154 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku4-corpus-3",
+    "coverage_declaration": "Reviewed ValueReader.java for deserialization vulnerabilities including CWE-502 (unsafe deserialization), CWE-400 (resource exhaustion), and CWE-674 (uncontrolled recursion). Applied WEB-11 procedure for deserialization analysis. Did not review pom.xml for dependency vulnerabilities (supply-chain audit deferred). Did not analyze the surrounding Frame handling layer or the TruncatedInputStream implementation, which would be necessary to fully settle the probable findings.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (Deserialization logic)"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (Deserialization logic)"
+      ],
+      "not_read": [
+        "pom.xml (Maven dependencies)"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        {
+          "id": "UAC-001",
+          "title": "Unbounded memory allocation in readBytes() via large content length",
+          "severity": "high",
+          "confidence": "high"
+        },
+        {
+          "id": "UAC-002",
+          "title": "Unreliable EOF detection using DataInputStream.available() in readTable/readArray",
+          "severity": "medium",
+          "confidence": "high"
+        },
+        {
+          "id": "UAC-003",
+          "title": "Missing validation of scale parameter in BigDecimal deserialization",
+          "severity": "medium",
+          "confidence": "medium"
+        },
+        {
+          "id": "UAC-004",
+          "title": "Incomplete exception handling in readUnsignedInt() for EOF",
+          "severity": "low",
+          "confidence": "medium"
+        }
+      ],
+      "reported": [
+        "F-001",
+        "F-002"
+      ],
+      "dropped": [
+        {
+          "id": "UAC-001",
+          "title": "Unbounded memory allocation in readBytes() via large content length",
+          "resolution": "refuted",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87",
+          "reasoning": "Lines 87-94 include a bounds check: `if(contentLength < Integer.MAX_VALUE)` which prevents allocation of byte arrays >= 2GB. If contentLength is exactly Integer.MAX_VALUE, the condition evaluates to false and throws UnsupportedOperationException instead of allocating. Larger unsigned values similarly trigger the exception path."
+        },
+        {
+          "id": "UAC-003",
+          "title": "Missing validation of scale parameter in BigDecimal deserialization",
+          "resolution": "refuted",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:172-175",
+          "reasoning": "The BigDecimal constructor accepts scale values 0-255 without issue. The scale parameter is read as an unsigned byte and passed directly to BigDecimal(BigInteger, int scale) which is the correct usage. No validation is needed as BigDecimal's constructor handles all valid scale values correctly."
+        },
+        {
+          "id": "UAC-004",
+          "title": "Incomplete exception handling in readUnsignedInt() for EOF",
+          "resolution": "refuted",
+          "control_at": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:227-232",
+          "reasoning": "The readUnsignedInt() method correctly handles EOF: if any of the four read() calls returns -1, the bitwise OR `(ch1 | ch2 | ch3 | ch4) < 0` evaluates to true, triggering an EOFException. This is the correct pattern for reading exactly 4 bytes."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unreliable EOF detection using DataInputStream.available() in table and array parsing",
+      "procedure": "WEB-11",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148, 244",
+      "evidence": "Lines 148 and 244 use `while(arrayIn.available() > 0)` to determine when to stop reading table entries and array elements. The DataInputStream.available() method is documented to return only an estimate of available bytes and is not a reliable indicator of EOF.",
+      "impact": "If the stream implementation does not properly return 0 from available() at EOF, the while loop may terminate prematurely, leaving unread data, or may attempt to read past the intended boundary, causing incorrect deserialization or exceptions.",
+      "preconditions": "A malformed AMQP frame where the actual data boundary differs from what available() reports, or an InputStream implementation where available() does not reliably reflect remaining bytes in the TruncatedInputStream.",
+      "recommendation": "Replace the EOF detection pattern `while(arrayIn.available() > 0)` with try/catch EOFException or by checking the actual bytes read. For example: use a loop that continues until an exception is thrown, or read all remaining bytes at once with a known length.",
+      "inference": "The TruncatedInputStream is assumed to correctly implement available() to return remaining bytes, but this contract is not verified in the code review.",
+      "what_would_settle_it": "The implementation of TruncatedInputStream class showing how available() is implemented; or a test demonstrating actual malformation or incorrect parsing due to this pattern.",
+      "unaided_label": "UAC-002",
+      "traceability": "CWE-674 (Uncontrolled Recursion) · CWE-400 (Uncontrolled Resource Consumption) · WSTG-INPV-05",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reasoning": "There is no compensating control; the loop relies entirely on available() which is not guaranteed."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reasoning": "The table length and array length come from the wire protocol, which is attacker-controlled in the context of AMQP message parsing."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reasoning": "DataInputStream.available() does not parse safely; it is an unreliable EOF detector by design."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reasoning": "The TruncatedInputStream implementation is not in the provided scope, so whether it correctly implements available() cannot be verified. If it does not, this is exploitable."
+        }
+      ],
+      "limits": "The severity is not higher because the loop reads from a TruncatedInputStream that may enforce bounds; however, the pattern itself is a known anti-pattern and invites misuse or breaks if the stream implementation changes."
+    },
+    {
+      "id": "F-002",
+      "title": "Stack exhaustion via deeply nested AMQP table and array structures",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:139-155 (readTable), 237-249 (readArray)",
+      "evidence": "The readTable() and readArray() methods call each other recursively. A table (type 'F') contains field values, which can be arrays (type 'A'). An array contains field values, which can be tables. This creates mutual recursion with no depth limit enforced.",
+      "impact": "A specially crafted AMQP message with deeply nested tables and arrays can cause a StackOverflowError when deserializing, leading to a denial of service.",
+      "preconditions": "An attacker can send AMQP messages to the client; the messages contain alternating nested tables and arrays, e.g., table[array[table[array[...]]]]. With even moderate nesting (e.g., 1000 levels), stack exhaustion is likely on typical JVM stack sizes (1-8MB).",
+      "recommendation": "Implement a depth limit counter in readTable() and readArray(). Increment the counter when entering these methods, decrement when exiting. If depth exceeds a threshold (e.g., 100), throw an exception. Alternatively, implement these as iterative algorithms with an explicit stack rather than recursive calls.",
+      "inference": "The mutual recursion of readTable() and readArray() is inferred to cause stack growth; actual behavior depends on the AMQP message source and whether there is a depth limit applied at a higher level (not visible in the provided code).",
+      "what_would_settle_it": "A complete call trace showing how deeply nested AMQP messages are parsed in production; or the wrapping code that calls readTable() and readArray() to show if there is a depth limit applied before deserialization.",
+      "traceability": "CWE-674 (Uncontrolled Recursion) · CWE-400 (Uncontrolled Resource Consumption) · WSTG-INPV-07",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reasoning": "There is no compensating control such as a recursion depth limit or stack-safe implementation."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reasoning": "The nesting structure comes from the AMQP wire protocol, which is attacker-controlled."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reasoning": "There may be a depth limit enforced at a higher level (in the Frame handler or ConnectionFactory), but it is not visible in the ValueReader code itself."
+        }
+      ],
+      "limits": "The severity is `medium` rather than `high` because a StackOverflowError is a denial of service, not a compromise of data or access control. Stack size is a deployment-dependent configuration (JVM -Xss flag), so the actual exploitability varies."
+    }
+  ],
+  "ruled_out": []
+}

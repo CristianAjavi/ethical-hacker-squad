@@ -1,0 +1,149 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/leader (haiku-3)",
+    "coverage_declaration": "Audit focused on the single supplied Java source file (ValueReader.java) and its Maven configuration (pom.xml). Surfaces examined: binary protocol parsing (deserialization), input validation, integer arithmetic, and stream handling. Surfaces not examined: authentication, authorization, network security, cryptography (not present in the supplied code), and the full RabbitMQ client library context. The single-file scope limits findings to local code-level issues; integration-level and runtime issues cannot be assessed.",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven, v5.34.0-SNAPSHOT, RabbitMQ client library)",
+        "ValueReader.java (AMQP wire protocol value parser, com.rabbitmq.client.impl)"
+      ],
+      "read": [
+        "pom.xml (Maven, v5.34.0-SNAPSHOT, RabbitMQ client library)",
+        "ValueReader.java (AMQP wire protocol value parser, com.rabbitmq.client.impl)"
+      ],
+      "not_read": []
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Timestamp multiplication overflow in readTimestamp()",
+        "Stream.available() unreliable control flow in readTable() and readArray()",
+        "Integer overflow potential in readBytes() length check",
+        "Duplicate key silent replacement in readTable()",
+        "Hardcoded UTF-8 charset encoding in readShortstr()"
+      ],
+      "reported": [
+        "Timestamp multiplication overflow in readTimestamp()",
+        "Stream.available() unreliable control flow in readTable() and readArray()"
+      ],
+      "dropped": [
+        {
+          "label": "Integer overflow potential in readBytes() length check",
+          "reason": "The bounds check at line 87 is intentional and correct, preventing allocation of arrays larger than Integer.MAX_VALUE. This is appropriate validation."
+        },
+        {
+          "label": "Duplicate key silent replacement in readTable()",
+          "reason": "Appears to be intentional protocol behavior per AMQP specification; not a security vulnerability."
+        },
+        {
+          "label": "Hardcoded UTF-8 charset encoding in readShortstr()",
+          "reason": "AMQP protocol specifies UTF-8 encoding for short strings; hardcoding is correct per specification, not a security issue."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Integer overflow in timestamp conversion (line 269)",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 269,
+        "component": "readTimestamp() method"
+      },
+      "evidence": "Line 269: return new Date(in.readLong()*1000); reads a 64-bit long from untrusted AMQP wire protocol data, multiplies by 1000, and passes to Date constructor without overflow checking. A timestamp value greater than 9223372036854775L causes multiplication to overflow.",
+      "impact": "An attacker sending a crafted AMQP message with a malicious timestamp value causes integer overflow in the multiplication operation, resulting in a Date object with an incorrect wrapped-around time value. This could disrupt application logic dependent on message timestamps, including message expiration, scheduling, and time-based authorization.",
+      "preconditions": "Attacker can send AMQP messages to the broker, or an intermediate system forwards malicious messages. The application using the client must rely on timestamp values for security-relevant decisions.",
+      "recommendation": "Validate timestamp values before multiplication. Either reject values greater than Long.MAX_VALUE / 1000, or use checked multiplication that throws an exception on overflow (e.g., Math.multiplyExact).",
+      "traceability": [
+        "CWE-190",
+        "CWE-130",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The timestamp value is attacker-controlled; it originates from untrusted AMQP wire protocol data read via DataInputStream"
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control prevents the overflow; no validation occurs between reading the long and the multiplication"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink (Date constructor via multiplication) executes the dangerous operation; overflow in integer arithmetic is the vulnerability"
+        }
+      ],
+      "limits": "This analysis assumes the timestamp value is directly used in security-relevant operations by the application. If the timestamp is only used for display or logging, the impact is lower.",
+      "unaided_label": "Timestamp multiplication overflow in readTimestamp()"
+    },
+    {
+      "id": "F-002",
+      "title": "Unreliable stream parsing control using available() method (lines 148, 244)",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 148,
+        "component": "readTable() method"
+      },
+      "evidence": "Lines 148 and 244 use while(tableIn.available() > 0) and while(arrayIn.available() > 0) to control protocol message parsing loops. The available() method is documented as returning an estimate of bytes available without blocking, not as a reliable EOF indicator for bounded streams.",
+      "impact": "The available() method contract does not guarantee detection of stream end for all stream types. If TruncatedInputStream or the underlying stream has unexpected behavior, the parsing loop could exit prematurely while data remains unread. This causes incomplete deserialization of AMQP tables and arrays, leaving subsequent protocol data out of sync and causing parsing errors or data corruption.",
+      "preconditions": "The TruncatedInputStream wrapper must not reliably return 0 from available() when its byte limit is reached, OR malformed AMQP protocol data must contain incomplete table/array structures.",
+      "recommendation": "Replace available() checks with explicit byte-counting logic or use readFully()/readFully(byte[]) paired with EOFException handling. For example: maintain a byte counter and loop until all expected bytes are consumed.",
+      "inference": "TruncatedInputStream should enforce its length boundary, but the available() method is not the idiomatic way to detect end-of-stream in Java protocol parsing; the behavior depends on the wrapper's implementation which is not provided in this target.",
+      "what_would_settle_it": "Source code of TruncatedInputStream.available() method and integration tests demonstrating that the parsing loop correctly handles all valid and malformed AMQP protocol table/array formats.",
+      "traceability": [
+        "CWE-20",
+        "WSTG-INPV-05",
+        "ASVS 5.0 V1"
+      ],
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "The sink is a protocol parser that depends on TruncatedInputStream behavior; available() is unreliable for binary protocol parsing but may work if TruncatedInputStream is correctly implemented"
+        },
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control might exist in TruncatedInputStream implementation, but the source is not provided"
+        }
+      ],
+      "limits": "Without the TruncatedInputStream implementation, the severity cannot be elevated to confirmed. This may be a false positive if the stream wrapper correctly enforces boundaries.",
+      "unaided_label": "Stream.available() unreliable control flow in readTable() and readArray()"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Integer bounds check in readBytes() (line 87)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The check if(contentLength < Integer.MAX_VALUE) at line 87 intentionally prevents allocation of arrays larger than Integer.MAX_VALUE, throwing UnsupportedOperationException for oversized values. This is appropriate bounds validation."
+    },
+    {
+      "class": "Duplicate key silent handling in readTable() (line 151-152)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The code if(!table.containsKey(name)) table.put(name, value); keeps the first value for duplicate keys. This appears to be intentional protocol behavior consistent with AMQP table semantics."
+    },
+    {
+      "class": "Hardcoded UTF-8 charset encoding (line 70)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "AMQP protocol specification requires UTF-8 encoding for short strings. Hardcoding 'utf-8' is correct and intentional, not a security issue."
+    }
+  ]
+}

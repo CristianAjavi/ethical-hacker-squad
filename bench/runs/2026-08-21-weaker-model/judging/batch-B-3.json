@@ -1,0 +1,84 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Arbitrary HashMap growth from network data causes DoS via memory exhaustion",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:145",
+   "impact": "Table parsing (lines 139-155) creates a HashMap with no limit on key count. A single malicious frame can declare a table of 1000000+ entries, exhausting heap memory regardless of frame size declaration.",
+   "evidence": "Line 145: 'new HashMap<String, Object>()' with no capacity check. Line 151-152: silently ignores duplicate keys but adds all unique ones. No cardinality limit on table contents."
+  },
+  {
+   "item_id": "F02",
+   "title": "Missing array size validation allows large array allocations",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:68",
+   "impact": "Line 68 in readShortstr() allocates a byte array of size read from unsigned byte (0-255) without validation. While this specific case is bounded by 255 bytes, similar pattern in readBytes() (line 88) allocates up to Integer.MAX_VALUE. An attacker can declare a 2GB array to exhaust memory.",
+   "evidence": "Line 68: 'new byte[in.readUnsignedByte()]' - bounded by 255, acceptable. Line 88: 'new byte[(int)contentLength]' - can be up to 2^31-1 bytes (2GB). No sanity check on declared size vs. actual stream size."
+  },
+  {
+   "item_id": "F03",
+   "title": "Hard-coded UTF-8 string instead of StandardCharsets constant",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "Line 70 uses 'new String(b, \"utf-8\")' with hard-coded string. This re-parses the charset name on every call, incurring CPU overhead. If the string is misspelled, an UnsupportedEncodingException is thrown at runtime instead of compile-time.",
+   "evidence": "Line 70: 'return new String(b, \"utf-8\");' Hard-coded string literal."
+  },
+  {
+   "item_id": "F04",
+   "title": "Long multiplication overflow in timestamp conversion silently produces wrong dates",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "Line 269 multiplies readLong() by 1000 without overflow check. If the timestamp value > Long.MAX_VALUE/1000, multiplication silently wraps to a negative or incorrect value, producing a wrong Date object. Applications relying on timestamp correctness could accept stale/future-dated messages.",
+   "evidence": "Line 269: 'return new Date(in.readLong()*1000);'. No Math.multiplyExact() or bounds checking. Long.MAX_VALUE = 9223372036854775807; dividing by 1000 gives max safe input of 9223372036854775L."
+  },
+  {
+   "item_id": "F05",
+   "title": "Unbounded BigInteger/BigDecimal construction from network data",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:175",
+   "impact": "Line 175 constructs BigInteger and BigDecimal directly from 4-byte unsigned input without magnitude limits. While 4 bytes limits the exponent, the scale field at line 172 is also unchecked. A scale > Integer.MAX_VALUE or < Integer.MIN_VALUE passed to BigDecimal constructor could cause issues. No validation of numeric range.",
+   "evidence": "Line 172: 'int scale = in.readUnsignedByte();' - reads into int but should be 0-127. Line 175: 'new BigDecimal(new BigInteger(unscaled), scale)' with no bounds check on scale."
+  },
+  {
+   "item_id": "F06",
+   "title": "Available() loop condition unreliable for stream position determination",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:244",
+   "impact": "Lines 244 and 148 use 'while(.*In.available() > 0)' to detect end of stream. The available() method is not guaranteed to return exact byte counts and may return 0 even when data remains (e.g., after blocking reads or with certain stream implementations). This can cause premature loop exit, leaving data unread and corrupting subsequent frame parsing.",
+   "evidence": "Line 148: 'while(tableIn.available() > 0)' in readTable(). Line 244: 'while(arrayIn.available() > 0)' in readArray(). Both rely on TruncatedInputStream.available() being accurate after partial reads."
+  },
+  {
+   "item_id": "F07",
+   "title": "No timeout protection on stream I/O operations",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:89",
+   "impact": "readFully() calls (lines 69, 89, 174) will block indefinitely if the stream stalls or the peer never sends the declared number of bytes. A slow or malicious peer can cause thread deadlock. This is a thread-level DoS if connections are not bound to a timeout.",
+   "evidence": "Lines 69, 89, 174: 'in.readFully(...)' with no timeout. If stream is exhausted before expected bytes arrive, the thread hangs forever."
+  },
+  {
+   "item_id": "F08",
+   "title": "Unvalidated recursive table/array nesting allows stack exhaustion",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:139",
+   "impact": "Malicious AMQP frames with deeply nested tables (line 181: case 'F') and arrays (line 184: case 'A') can cause StackOverflowError. readFieldValue() calls readTable() which calls readFieldValue() recursively with no depth limit.",
+   "evidence": "Lines 139-155 (readTable), 158-221 (readFieldValue), 237-249 (readArray). No MAX_NESTING_DEPTH or depth counter. Recursive calls at lines 181 and 184 are unbounded."
+  },
+  {
+   "item_id": "F09",
+   "title": "Duplicate table keys silently discarded without error reporting",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Lines 151-152 check 'if(!table.containsKey(name))' and skip duplicate keys silently. Malformed or attack frames with duplicate keys will not raise an exception; the first value is retained and later values are discarded without trace. This can hide frame corruption or attacks.",
+   "evidence": "Line 151-152: conditional put() with no error case. No log, no exception, no counter when duplicates are skipped."
+  },
+  {
+   "item_id": "F10",
+   "title": "No validation of unsigned int bit shift positions in readUnsignedInt()",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:233",
+   "impact": "Line 233 performs bit shifts ('ch1 << 24', 'ch2 << 16', etc.) on long values read from individual bytes. While the logic is correct, it reinvents the wheel compared to DataInputStream.readInt(). The manual byte-by-byte reading is more error-prone and harder to audit than platform-provided methods.",
+   "evidence": "Lines 224-233: Manual unsigned int parsing via four read() calls and bit shifts. This is functionally equivalent to readInt() but obfuscates intent and audit surface."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

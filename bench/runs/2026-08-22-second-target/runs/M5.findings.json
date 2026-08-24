@@ -1,0 +1,64 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "JWT Token Not Verified - Uses jwt.decode() Instead of jwt.verify()",
+      "file": "lib/auth.js",
+      "line": 5,
+      "severity": "CRITICAL",
+      "impact": "An unauthenticated attacker can forge arbitrary JWT tokens without knowing the secret key. The currentUser() function uses jwt.decode() which only parses the token without validating the signature. An attacker can create any claims (id, role, tenant) and impersonate any user.",
+      "evidence": "const claims = jwt.decode(bearer); - Line 5. jwt.decode() is a parsing function that does NOT validate the signature. The jsonwebtoken library provides jwt.verify() for secure validation, which is not being used.",
+      "recommendation": "Replace jwt.decode() with jwt.verify(token, secret) for both currentUser() and tagRequest() functions. Verify the JWT signature against the application's secret key. Add error handling for verification failures. Ensure all token validation enforces expiration (exp claim) and issuer (iss claim) checks."
+    },
+    {
+      "id": "F-002",
+      "title": "SQL Injection via ORDER BY Parameter",
+      "file": "routes/invoices.js",
+      "line": 19,
+      "severity": "CRITICAL",
+      "impact": "The /invoices endpoint constructs a SQL query by directly interpolating the user-supplied req.query.order parameter into the ORDER BY clause. An attacker can provide a malicious ORDER BY clause that modifies the SQL statement, potentially exfiltrating sensitive data, modifying records, or executing arbitrary SQL code.",
+      "evidence": "const order = req.query.order || 'created_at'; ... ORDER BY ${order} at line 19. The order parameter is inserted directly into the query string without parameterization or validation. This violates SQL injection prevention best practices.",
+      "recommendation": "Use a whitelist of allowed column names (like SORTABLE in /payments). Create SORTABLE object: const SORTABLE = { 'created_at': 'created_at', 'amount': 'total_cents' }; then use: const column = SORTABLE[req.query.order] || SORTABLE['created_at']; Validate that only known columns are used in ORDER BY clauses."
+    },
+    {
+      "id": "F-003",
+      "title": "SSRF Vulnerability - Unvalidated URL Fetching with Redirect Following",
+      "file": "lib/remote.js",
+      "line": 5,
+      "severity": "HIGH",
+      "impact": "The fetchLogo() function accepts a user-provided URL and fetches it with redirect: 'follow'. An attacker can provide a URL that redirects to internal systems (127.0.0.1:8080, 169.254.169.254 AWS metadata, internal databases) to exfiltrate configuration, credentials, or trigger internal service attacks. The lack of validation allows any URL.",
+      "evidence": "async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); ... } at line 5. The url parameter is taken directly from req.body.logoUrl (routes/invoices.js line 37) with no validation. The redirect: 'follow' setting means an attacker-controlled initial URL can redirect to any target.",
+      "recommendation": "Implement URL validation: (1) Use URL.parse() to parse and validate the URL scheme (must be https). (2) Maintain a whitelist of allowed domains. (3) Block private IP ranges: 127.0.0.1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.x.x (AWS metadata). (4) Set redirect: 'error' to prevent open redirects. (5) Implement timeout and size limits on the response. (6) Use a DNS rebinding protection library."
+    },
+    {
+      "id": "F-004",
+      "title": "Reflected XSS in Invoice Note Rendering",
+      "file": "lib/render.js",
+      "line": 5,
+      "severity": "HIGH",
+      "impact": "The invoiceNote() function directly embeds user-provided note text into HTML without escaping, causing stored/reflected XSS. An attacker can inject JavaScript code that executes in the context of users viewing the invoice, stealing cookies, session tokens, or performing actions on their behalf.",
+      "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } at line 5. The note parameter is directly interpolated into the HTML template without using escapeHtml() (which is available as seen in customerName()). This allows injection of <script> tags and event handlers like onload.",
+      "recommendation": "Use escapeHtml() consistently: Replace return `<div class=\"note\">${note}</div>` with return `<div class=\"note\">${escapeHtml(note)}</div>` to encode HTML special characters. Validate that invoiceNote() is escaped in all rendering paths. Consider using a template engine with automatic escaping (e.g., nunjucks, EJS with autoescape enabled)."
+    },
+    {
+      "id": "F-005",
+      "title": "Missing Authorization Check on Invoice Retrieval",
+      "file": "routes/invoices.js",
+      "line": 7,
+      "severity": "HIGH",
+      "impact": "The GET /invoices/:id endpoint does not verify that the requesting user owns the invoice. An unauthenticated attacker or any authenticated user can retrieve any invoice by guessing or enumerating invoice IDs. This allows unauthorized access to sensitive billing data.",
+      "evidence": "router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }); at line 7. No check of req.user.id or req.user.role. Compare with /receipts/:id at line 12, which correctly includes AND owner_id = $2 in the query.",
+      "recommendation": "Add authorization check: const invoice = await db.query('SELECT * FROM invoices WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]); Ensure the current user is authenticated by checking req.user.id exists. Verify ownership before returning data. Add similar checks to other sensitive endpoints."
+    },
+    {
+      "id": "F-006",
+      "title": "Weak JWT Parsing Allows Null User Context",
+      "file": "lib/auth.js",
+      "line": 4,
+      "severity": "MEDIUM",
+      "impact": "When jwt.decode() fails (no Bearer token, invalid format), currentUser() returns { id: undefined, role: undefined }. This falsy user object may bypass authorization checks in downstream code if developers use if(req.user) instead of if(req.user?.id). The /receipts/:id endpoint checks owner_id but /invoices/:id endpoint trusts req.user.id being set.",
+      "evidence": "const claims = jwt.decode(bearer); return { id: claims && claims.sub, role: claims && claims.role }; at lines 5-6. When bearer token is empty or invalid, claims is null/undefined, resulting in { id: undefined, role: undefined }. This passes falsy checks but may not stop queries if not properly validated.",
+      "recommendation": "Implement explicit authentication middleware that rejects requests without valid JWTs. Use jwt.verify() with proper error handling. Ensure all protected endpoints check req.user.id !== undefined before processing. Add explicit authentication requirement: if (!req.user?.id) { return res.status(401).send('Unauthorized'); }"
+    }
+  ]
+}

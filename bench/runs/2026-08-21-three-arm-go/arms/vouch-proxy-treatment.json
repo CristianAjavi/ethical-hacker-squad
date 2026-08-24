@@ -1,0 +1,265 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern3/vouch-proxy/target - Go package pkg/cookie, single file pkg/cookie/cookie.go (213 lines), session-cookie handling of a reverse-proxy authentication service.",
+    "commit": "no VCS metadata in the delivered snapshot; sha256(pkg/cookie/cookie.go)=a43709b2f18ac6e9b5b5b4a0ef5a64416df149c05fcfdc86b04cd72908a6cb02",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus (extern3): coverage.md routing, web-api pack, triage.md FP-01..FP-10; manual reading, no scanner, no execution",
+    "coverage_declaration": "Exercised: the whole of pkg/cookie/cookie.go read end to end, both directions of the cookie flow (emission in SetCookie/setCookie/splitCookie, reading and reassembly in Cookie, deletion in ClearCookie, attribute selection in SameSite). Procedures applied: WEB-02 (session lifecycle and cookie attributes), WEB-18 (unbounded resource consumption from valid requests), WEB-22 (disclosure through logs). Not exercised, because it is outside the delivered scope and could not be read: the callers of Cookie()/ClearCookie() and therefore HTTP reachability and panic recovery; pkg/cfg (defaults for Cookie.Secure, Cookie.HTTPOnly, Cookie.Name, Cookie.Domain, Cookie.SameSite, Cookie.MaxAge and the zap log level); pkg/domains (what domains.Matches returns for an attacker-supplied Host); pkg/jwtmanager (token signing, expiry and any revocation). No dependency manifest, no git tree and no CI configuration were present, so the supply-chain and infra-cloud packs were not staffed and nothing about dependencies, secrets in history or pipelines is claimed either way. No network, no execution of the target and no remote test were performed."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Attacker-controlled multipart cookie count drives an unbounded slice allocation in Cookie()",
+      "procedure": "WEB-18",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "pkg/cookie/cookie.go",
+        "line": 126,
+        "component": "cookie.Cookie() multipart reassembly"
+      },
+      "evidence": "Cookie() derives the number of cookie parts from the cookie NAME sent by the client and allocates on it without any bound:\n\n  117  cookieUnder := fmt.Sprintf(\"%s_\", cfg.Cfg.Cookie.Name)\n  118  if strings.HasPrefix(cookie.Name, cookieUnder) {\n  123      xOFy := strings.Replace(cookie.Name, cookieUnder, \"\", 1)\n  124      xyArray := strings.Split(xOFy, \"of\")\n  125      if numParts == -1 {\n  126          if numParts, err = strconv.Atoi(xyArray[1]); err != nil { ... }\n  130          cookieParts = make([]string, numParts)\n\nThe only guard is that Atoi parses; any decimal integer is accepted. A request carrying the header `Cookie: <cookieName>_1of2000000000` reaches line 130 with numParts = 2e9, i.e. make([]string, 2e9) = 32 GB of zeroed string headers for one request, from a cookie name of about 30 bytes. Nothing upstream can bound it: the value is data in the request, not a body size.",
+      "impact": "One short request makes the authentication proxy allocate memory measured in tens of gigabytes. A Go runtime out-of-memory is a fatal error, not a recoverable panic, so the process dies rather than the request failing; a handful of concurrent requests makes it certain. Because every protected application depends on this service to authorize requests, its death is a full outage of everything behind the proxy, triggered without credentials and without a session.",
+      "preconditions": "The attacker can send an HTTP request carrying a Cookie header to an endpoint whose handler calls cookie.Cookie(). No authentication, no valid session and no user interaction are needed; a cookie name is enough, so the request can be made with any HTTP client.",
+      "recommendation": "Validate both integers before they are used, at the point they are parsed: reject the cookie part unless 1 <= x <= y and y <= a small constant derived from the design (the maximum number of parts the emitter can ever produce, which is bounded by the JWT size limit divided by maxCookieSize - a value in the low tens). Allocate only after y has passed that check, and treat a malformed part name as 'no cookie' rather than as an error worth allocating for. Keep the bound as a named constant next to maxCookieSize so the emitter and the reader cannot drift apart.",
+      "inference": "Reachability. The audited scope is one file, so the HTTP handler that calls Cookie() could not be read. That Cookie() runs on the request path is inferred from its exported signature Cookie(r *http.Request), from its use of r.Cookies(), and from the comment on line 112 calling it 'the hotpath'.",
+      "traceability": [
+        "CWE-770",
+        "CWE-789",
+        "CWE-20",
+        "WSTG-BUSL-*",
+        "ASVS 5.0 V2",
+        "A06:2025",
+        "API4:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control would have to reject cookie names matching <name>_<digits>of<digits> before Cookie() is called. The call sites are outside the delivered scope (only pkg/cookie/cookie.go was provided), so no such middleware could be observed or excluded. Per FP-08 doctrine this is UNKNOWN, not HOLDS."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "It does not establish that the process actually dies: no execution of the target was permitted, so the allocation was read in the source and not measured on a running service. It also does not establish which endpoints reach Cookie(), and it says nothing about the token's cryptographic handling, which lives outside this file."
+    },
+    {
+      "id": "F-002",
+      "title": "Unvalidated part indexes in Cookie() write outside the slice and panic on a crafted cookie name",
+      "procedure": "WEB-18",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "pkg/cookie/cookie.go",
+        "line": 136,
+        "component": "cookie.Cookie() multipart reassembly"
+      },
+      "evidence": "Three unchecked steps on the same attacker-supplied cookie name:\n\n  124  xyArray := strings.Split(xOFy, \"of\")\n  126  if numParts, err = strconv.Atoi(xyArray[1]); err != nil { ... }\n  133  if i, err = strconv.Atoi(xyArray[0]); err != nil { ... }\n  136  cookieParts[i-1] = cookie.Value\n\n1. Line 126 indexes xyArray[1] without checking the split produced two elements. A cookie named `<cookieName>_` or `<cookieName>_x` yields a one-element slice and panics with index out of range; `_` and letters are valid cookie-name token characters, so net/http parses such a name and hands it over.\n2. Line 136 indexes cookieParts[i-1] with i taken from the name and never compared against numParts: `<cookieName>_9of1` gives len(cookieParts)=1 and i=9, and `<cookieName>_0of1` gives i-1 = -1. Both panic.\n3. The same defect fires without an attacker. setCookie() never deletes stale parts when a token is re-issued smaller, so a browser holding `<cookieName>_3of3` from an earlier, larger token and `<cookieName>_1of2`/`_2of2` from the current one reaches line 136 with i=3 against a slice of length 2.",
+      "impact": "Any client can abort the handler that reads the session cookie, with no credentials: the request dies and the connection is closed. Where it crosses a trust boundary is the cookie store: this service sets its cookie on a parent domain, so any application behind the proxy - or anything able to write a cookie on that domain - can plant `<cookieName>_` in a victim's browser and make every subsequent authenticated request of that victim fail, a persistent lockout the victim can only clear by deleting cookies. Case 3 turns the same defect into a self-inflicted outage after a token shrinks below the split threshold.",
+      "preconditions": "For the remote case: the ability to send a Cookie header to an endpoint that calls cookie.Cookie(), or to set a cookie on the domain the proxy uses. For the self-inflicted case: a deployment where the token once exceeded maxCookieSize and later became smaller, leaving a stale higher-numbered part in the browser.",
+      "recommendation": "Parse the part name defensively in one place: require exactly two fields from the split, require both to parse as integers, and require 1 <= x <= y <= the emitter's maximum part count before any indexing happens; discard the cookie otherwise instead of erroring the request. Separately, make setCookie() authoritative about what the browser holds - when it writes n parts it should expire parts n+1..previousMax (or write a fixed, well-known set), so a shrinking token cannot leave a stale index behind.",
+      "inference": "Reachability and recovery. The handler that calls Cookie() is outside the delivered scope, so both the fact that this runs on an HTTP request path and the assumption that net/http's per-connection recover contains the panic (rather than the call happening in a goroutine, where it would kill the process) were reasoned from the exported signature and from Go's standard server behaviour, not observed.",
+      "traceability": [
+        "CWE-129",
+        "CWE-20",
+        "CWE-248",
+        "WSTG-BUSL-*",
+        "ASVS 5.0 V2",
+        "A06:2025",
+        "API4:2023"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Same bound as F-001: a caller-side filter on cookie names would rule it out, and the call sites were not delivered with the target (only pkg/cookie/cookie.go). Not observable, therefore UNKNOWN rather than HOLDS, per FP-08 doctrine."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "It does not establish process death: if the call happens inside a normal net/http handler the panic is recovered and the blast radius is one request plus log noise. It also does not establish that a sibling application can write cookies on the shared domain in any particular deployment - that depends on cfg.Cfg.Cookie.Domain and on pkg/domains, neither of which is in scope."
+    },
+    {
+      "id": "F-003",
+      "title": "The session token is written to the log in clear text on the cookie read path",
+      "procedure": "WEB-22",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "pkg/cookie/cookie.go",
+        "line": 119,
+        "component": "cookie.Cookie() debug logging"
+      },
+      "evidence": "The function whose own comment reads 'Cookie get the vouch jwt cookie' (line 102) logs the credential itself, twice - once per part and once reassembled:\n\n  119  log.Debugw(\"cookie\",\n  120      \"cookieName\", cookie.Name,\n  121      \"cookieValue\", cookie.Value,\n  122  )\n  ...\n  146  log.Debugw(\"combined cookie\",\n  147      \"cookieValue\", combinedCookieStr,\n  148  )\n\nNo redaction, truncation or hashing is applied at the call site, and the value passed is the whole cookie - i.e. the bearer credential a client presents to prove it is authenticated. The logger is the shared cfg.Logging.Logger (line 35), so these values follow whatever sinks are configured for the process.",
+      "impact": "Whoever can read the service log holds replayable sessions for every user whose request passed through while the level was debug: a log line is enough to impersonate them at the proxy, with no password, no MFA and no interaction. Logs routinely have a wider audience and a longer retention than the session lifetime - operators, aggregators, support tooling - so this converts read access to logs into authenticated access to every application behind the proxy.",
+      "preconditions": "The process runs at debug level - the setting operators most often turn on precisely while investigating an authentication problem, which is when real user traffic is flowing - and a second party can read the resulting log stream or files.",
+      "recommendation": "Never pass the token value to the logger. Log what makes the line useful for debugging and nothing more: the cookie name, the number of parts found, the total length, and at most a short irreversible fingerprint (for example the first bytes of a SHA-256 of the value) when correlation is genuinely needed. If the field must stay for compatibility, register a redaction processor on the shared zap logger and cover it with a test, so a future call site cannot reintroduce the value.",
+      "inference": "Whether a deployment actually runs at debug level, and whether the shared logger already applies a redaction processor, could not be observed: both live in pkg/cfg, which was not delivered with the target.",
+      "traceability": [
+        "CWE-532",
+        "CWE-200",
+        "WSTG-ERRH-*",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A redaction processor on cfg.Logging.Logger would rule this out; pkg/cfg is outside the delivered scope, so its presence could be neither seen nor excluded."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "The path is compiled in and not behind a build tag; whether production sets the debug level is decided in pkg/cfg, outside the delivered scope. FP-08 doctrine: absence of evidence is not HOLDS."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "It does not establish who can read the logs in any given deployment, nor the token's lifetime - the expiry is set from cfg.Cfg.Cookie.MaxAge and the token itself is validated elsewhere, both outside this file. It also does not claim the log is shipped to a third party; no destination is visible here."
+    },
+    {
+      "id": "F-004",
+      "title": "The logout cookie is emitted without the SameSite attribute the session cookie was set with",
+      "procedure": "WEB-02",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "pkg/cookie/cookie.go",
+        "line": 165,
+        "component": "cookie.ClearCookie()"
+      },
+      "evidence": "The emission path and the deletion path disagree on the attribute set. setCookie() writes every cookie with SameSite: sameSite (lines 62, 85, 97), the value SameSite() derives from configuration (lines 182-198, including the 'none' case at 191-194). ClearCookie() builds its expiring cookie without a SameSite field at all:\n\n  165  http.SetCookie(w, &http.Cookie{\n  166      Name:   cookie.Name,\n  167      Value:  \"delete\",\n  168      Path:   \"/\",\n  169      Domain: domain,\n  171      Expires:  time.Unix(0, 0),\n  172      Secure:   cfg.Cfg.Cookie.Secure,\n  173      HttpOnly: cfg.Cfg.Cookie.HTTPOnly,\n  174  })\n\nThe zero value of http.SameSite is not one of the cases net/http serialises, so the Set-Cookie header carries no SameSite attribute. In a deployment configured with sameSite=none - the setting this code documents for cross-site use, and the one it pairs with Secure at line 191 - the cookie is created as SameSite=None and deleted as an unspecified-SameSite cookie.",
+      "impact": "Logout can silently fail to remove the credential. Browsers that default an unspecified Set-Cookie to Lax reject it when the response arrives in a third-party context, which is exactly the context sameSite=none exists to serve; the expiring cookie is then dropped and the still-valid session cookie stays in the browser after the user asked to end the session. On a shared or borrowed machine the next person keeps the previous user's authenticated session until the token expires on its own.",
+      "preconditions": "A deployment that configures cookie.sameSite=none (or strict/lax) and a logout whose response is delivered in a cross-site context rather than as a top-level navigation. With sameSite unconfigured the two paths agree and nothing is wrong.",
+      "recommendation": "Build the deletion cookie from the same construction as the emission cookie instead of by hand: one helper that fills Name, Path, Domain, Secure, HttpOnly and SameSite from configuration, with only Value, Expires and MaxAge differing between set and clear. That removes the whole class - the attributes cannot drift again the next time one path is edited - and it also fixes the MaxAge/Expires asymmetry between the two.",
+      "inference": "Browser behaviour. That a given browser rejects an unspecified-SameSite Set-Cookie in a third-party context was reasoned from the documented default-Lax rule rather than observed here: no browser was driven, since the target may not be executed.",
+      "traceability": [
+        "CWE-1275",
+        "CWE-613",
+        "WSTG-SESS-*",
+        "ASVS 5.0 V7",
+        "A07:2025"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "A caller could emit its own correctly-attributed deletion header after calling ClearCookie(); the callers were not delivered with the target, so that cannot be excluded."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Whether any deployment actually sets cookie.sameSite=none is a configuration fact outside the repository, and no configuration export or written statement was provided; per FP-08 that is UNKNOWN, not HOLDS."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD"
+        }
+      ],
+      "limits": "It does not establish that the session itself survives logout at the server: this file only expires the browser copy, and whether the token is additionally revoked is decided outside the audited scope. It also does not claim the deletion fails on a normal top-level logout navigation, where the same-site context makes the header acceptable."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Response-header injection through the cookie value (CWE-113)",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The three http.SetCookie sinks at lines 77, 89 and 165 with a caller-supplied val. net/http sanitises cookie values before serialisation and drops CR and LF, so no newline reaches the Set-Cookie header regardless of what val contains (FP-03: the sink is not dangerous in the form it is reached)."
+    },
+    {
+      "class": "Log injection / forged log lines through the cookie name (CWE-117)",
+      "procedure": "WEB-22",
+      "outcome": "refuted",
+      "where": "Lines 119-122 and 164, which log an attacker-supplied cookie name. Cookie names are validated as HTTP tokens by net/http's request cookie parser before they reach this package, so a name containing CR, LF or a space never arrives."
+    },
+    {
+      "class": "Over-broad cookie deletion by prefix match",
+      "procedure": "WEB-02",
+      "outcome": "refuted",
+      "where": "Line 163 matches with strings.HasPrefix(cookie.Name, cfg.Cfg.Cookie.Name), so a co-resident cookie whose name merely starts with the configured name is expired too. Checked and dismissed as a security finding: it deletes more than intended, never less, so it fails safe and grants an attacker nothing (FP-07). Worth a line to the maintainer as a correctness nit, not as a risk."
+    },
+    {
+      "class": "Infinite loop and memory growth in splitCookie when the budget is non-positive (CWE-835)",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "Line 205: if maxCookieSize-emptyCookieSize (line 73) is <= 0, the loop advances by zero and appends empty strings without end. Reaching it requires the name plus the domain plus the fixed attributes to approach 4000 bytes; whether an attacker-supplied Host can inflate that depends on what domains.Matches (line 47) returns, and pkg/domains was not delivered with the target. Bound: the arithmetic was verified in this file, the reachability of a non-positive budget was not."
+    },
+    {
+      "class": "Session cookie attributes: Secure and HttpOnly missing in production (WEB-02)",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "Lines 60-61, 83-84, 95-96 and 172-173 read cfg.Cfg.Cookie.Secure and cfg.Cfg.Cookie.HTTPOnly faithfully into every cookie, so this file introduces no defect; whether the shipped defaults are true or false is decided in pkg/cfg, which is outside the delivered scope. FP-08: no configuration evidence arrived, so the answer is UNKNOWN and no claim is made in either direction."
+    },
+    {
+      "class": "Server-side session invalidation on logout (WEB-02)",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "ClearCookie() at lines 153-177 expires the browser copy only. Whether the token is also revoked server-side, or is a self-contained JWT valid until cfg.Cfg.Cookie.MaxAge, is decided in the token package, which is not in scope. Bound: the deletion path was read end to end; the validation path was never seen."
+    },
+    {
+      "class": "Cookie shadowing and first-match precedence on read",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "Lines 113-116 return the first cookie whose name matches exactly, with no preference for a host-only cookie over one set on a parent domain, and lines 125-136 accept a part count from whichever part arrives first. Exploiting either needs a second principal able to write cookies on the shared domain, which depends on cfg.Cfg.Cookie.Domain and on pkg/domains; neither was delivered, so no boundary crossing is claimed (FP-06 could not be answered)."
+    },
+    {
+      "class": "Host-header influence on the cookie Domain attribute",
+      "procedure": "ad-hoc",
+      "outcome": "inconclusive",
+      "where": "Lines 47 and 155 derive the cookie domain from r.Host via domains.Matches before the configuration override at 49-51. Whether Matches echoes an attacker-supplied Host or resolves it against a configured allowlist decides whether this is a finding, and pkg/domains is outside the delivered scope."
+    },
+    {
+      "class": "Injection and file-handling classes: SQL/ORM, OS command, template and expression, deserialization, path traversal (WEB-07..WEB-12)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "Whole file read: the only sinks are http.SetCookie, the zap logger and in-memory string operations. No database call, no process execution, no template or expression evaluation, no deserialisation and no filesystem access exists in the unit, so none of these classes has a construct to land on."
+    },
+    {
+      "class": "Token cryptography: signing, verification, expiry and encryption of the cookie value (WEB-19)",
+      "procedure": "WEB-19",
+      "outcome": "not executed",
+      "where": "Out of the delivered scope by construction: this package treats the token as an opaque string it stores and reassembles, and every cryptographic decision about that string is made in packages that were not provided. Declared uncovered rather than clean."
+    }
+  ]
+}

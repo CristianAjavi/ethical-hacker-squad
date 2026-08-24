@@ -1,0 +1,147 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku",
+    "coverage": {
+      "inventoried": [
+        "Maven Java project (pom.xml)",
+        "AMQP protocol deserialization (ValueReader.java)",
+        "Wire protocol value parsing"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java"
+      ],
+      "not_read": [
+        "Complete dependency analysis",
+        "Test files and configuration",
+        "Other classes in the library"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded memory allocation from wire protocol input",
+        "Stack overflow from uncontrolled recursion depth",
+        "Denial of service through large array/table deserialization"
+      ],
+      "reported": [
+        "Unbounded memory allocation from wire protocol input",
+        "Stack overflow from uncontrolled recursion depth"
+      ],
+      "dropped": [
+        {
+          "label": "Denial of service through large array/table deserialization",
+          "resolution": "merged",
+          "reason": "Merged with unbounded memory allocation finding as it is the same root cause (uncontrolled resource consumption)",
+          "merged_into": "F-001"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Uncontrolled memory allocation from wire protocol input",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 86,
+        "component": "readBytes"
+      },
+      "evidence": "readBytes method at line 86: `final long contentLength = unsignedExtend(in.readInt());` reads untrusted 32-bit length. Line 88 allocates: `new byte[(int)contentLength]` without size validation beyond Integer.MAX_VALUE check (2.1 GB). Similar pattern in readArray (line 240) and readTable (line 142) which read 32-bit length parameters and use them to create TruncatedInputStream.",
+      "impact": "An attacker who can send AMQP messages (rogue server, MITM, or compromised broker) can cause denial of service by sending messages with extremely large size parameters. This will cause OutOfMemoryError when the client attempts to allocate huge byte arrays or read massive amounts of data into memory, crashing the application.",
+      "preconditions": "Attacker must be able to send AMQP protocol messages to the client, either by hosting a rogue AMQP server, performing man-in-the-middle attack, or compromising the broker.",
+      "recommendation": "Add maximum size limits for deserialization: (1) Cap the maximum size of individual byte arrays/long strings (e.g., 100MB); (2) Cap the maximum size of arrays and tables (e.g., 100MB); (3) Enforce these limits in readBytes, readArray, and readTable methods. Reject messages that exceed these limits with a MalformedFrameException.",
+      "traceability": [
+        "CWE-130: Improper Handling of Length Parameters",
+        "CWE-400: Uncontrolled Resource Consumption",
+        "CWE-409: Improper Handling of Highly Compressed Data"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists. The library accepts any size up to Integer.MAX_VALUE (2GB) without upper limit."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The size parameter comes directly from untrusted wire protocol input (readInt) without any validation."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink (byte array allocation at line 88) is dangerous - allocating up to 2GB from untrusted input causes OutOfMemoryError."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is core library code in the shipped artifact, not debug-only or conditional code."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure is not intended or bounded - this is a vulnerability in the deserialization logic."
+        }
+      ],
+      "limits": "Analysis limited to code review without access to runtime configuration or broker security settings. The vulnerability exists at the protocol parsing layer regardless of higher-level security controls.",
+      "unaided_label": "Unbounded memory allocation from wire protocol input"
+    },
+    {
+      "id": "F-002",
+      "title": "Stack overflow from uncontrolled recursion in deserialization",
+      "procedure": "ad-hoc",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158,
+        "component": "readFieldValue"
+      },
+      "evidence": "readFieldValue method (lines 158-221) recursively calls itself through readTable (line 181) and readArray (line 184). The cases for 'F' (table) and 'A' (array) dispatch to readTable and readArray respectively, which call readFieldValue in a loop. readTable at line 150 calls readFieldValue, and readArray at line 245 calls readFieldValue. No recursion depth counter or limit is present. Stack depth is unbounded based on message nesting level.",
+      "impact": "An attacker can craft AMQP messages with deeply nested tables or arrays. When the client deserializes such a message, the stack will overflow, causing StackOverflowError and immediate application crash. This is a denial of service vulnerability.",
+      "preconditions": "Attacker must be able to send AMQP protocol messages with nested structures (tables containing tables, or arrays containing arrays) repeated to arbitrary depth.",
+      "recommendation": "Implement a recursion depth counter: (1) Add a depth parameter to readFieldValue and related methods; (2) Increment depth on entry, decrement on exit; (3) Throw MalformedFrameException if depth exceeds a maximum (e.g., 100 levels); (4) Check depth at the start of readFieldValue, readTable, and readArray methods.",
+      "traceability": [
+        "CWE-674: Uncontrolled Recursion",
+        "CWE-674: Infinite Recursion"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control enforces a maximum recursion depth. The JVM stack limit is the only bound, and that can be exceeded with sufficiently nested messages."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The nesting depth comes from untrusted wire protocol input. Each field type indicator byte is attacker-controlled."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The recursive function calls are dangerous - they directly consume stack space for each level of nesting."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is core library code in the shipped artifact, not conditional or debug-only."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not an intended or bounded exposure - it is a vulnerability in the parsing logic."
+        }
+      ],
+      "limits": "Analysis limited to code review. Runtime behavior would need to be tested with crafted AMQP messages to determine exact stack overflow trigger point.",
+      "unaided_label": "Stack overflow from uncontrolled recursion depth"
+    }
+  ],
+  "ruled_out": []
+}
