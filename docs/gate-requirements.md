@@ -24,6 +24,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
+| bench index | running | `gate-bench-index.sh` + self-test |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
@@ -217,6 +218,32 @@ That arrangement has one soft spot, and it is not in the copy: `python3 -c`, a h
 **A declared `PYTHONSAFEPATH` is not automatically a mitigation.** CPython acts on a **non-empty string**, so `'0'` and `'false'` switch it *on* — the value is not a boolean — and only an empty value leaves the interpreter prepending the working directory. `PYTHONSAFEPATH: ''` therefore mitigates nothing while reading in review exactly like a mitigation, and the gate reports that case with its own sentence.
 
 Proved in the negative twice: 14 fixtures under `scripts/gates/fixtures/safepath/` run on every invocation as the gate's own self-test, and a 7-case mutant bank over the live `release.yml`, recorded in `scripts/gates/fixtures/safepath/README.md`.
+
+## A run nobody can navigate to
+
+`bench/runs/` holds every measurement this project publishes, and the project's one
+**measured** advantage is not detection — eighteen blinded rounds say the corpus leads on
+none of that. It is that a reader can *check* the numbers: six of six on a published
+transparency rubric where no other product in the field exceeds one.
+
+A result that exists in the tree and that no document points at sits outside that claim.
+`gate-bench-index.sh` fails when a directory under `bench/runs/` is referenced by no
+document a reader arrives at — `bench/README.md`, `README.md`, `CHANGELOG.md`, `docs/*.md` —
+and when a `runs/` link in those points at a directory that is not there.
+
+**A run citing another run is not an index.** Runs pointing at each other is a graph with
+no entrance.
+
+**What it deliberately does not decide** is which *kind* each run is — measurement,
+pre-registration, retraction, patch bench. That taxonomy is what the project chooses to
+claim; it is not derivable from the tree, and a gate that invented it would be enforcing
+its author's opinion rather than the project's. So the top-level `README.md`'s *"eighteen
+blinded measurements"* is **not** checked here, and the gate prints that limit on every run
+— an unstated limit reads like coverage.
+
+It found two on the run it was written for. One was a superseded pre-registration reachable
+only from its own banner; the other had been added to this repository an hour earlier by
+the person writing the gate.
 
 ## The findings artifact
 
