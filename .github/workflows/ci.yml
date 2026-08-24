@@ -65,17 +65,32 @@ jobs:
       # A self-test battery that only ever runs on a maintainer's laptop is not a
       # monitored one, and two of them were in exactly that position. Discovered
       # rather than listed, so a new battery is covered the day it lands.
+      #
+      # Two globs was still a list: it named the two directories that existed
+      # when it was written, and scripts/gh/tests/ - seventeen negative cases
+      # against the release workflow validator - matched neither and ran
+      # nowhere. The rule is now the CONVENTION, over the whole scripts/ tree:
+      # anything named *.selftest.sh is a battery and gets run, wherever it
+      # lives. `find` is not filtered by depth for the same reason
+      # scripts/gates/run-all.sh is not.
       - name: Prove the gates in the negative
         run: |
           set -uo pipefail
           worst=0
           found=0
-          for t in scripts/gates/*.selftest.sh scripts/bench/*.selftest.sh; do
+          list="${RUNNER_TEMP:-/tmp}/batteries.txt"
+          find scripts -type f -name '*.selftest.sh' | LC_ALL=C sort > "$list"
+          while IFS= read -r t; do
             [ -e "$t" ] || continue
             found=$((found + 1))
             echo "::group::$t"
             rc=0
-            bash "$t" || rc=$?
+            # </dev/null is not decoration: the list of batteries is on this
+            # loop's stdin, and a battery that reads stdin (a `read`, a `cat`, a
+            # jq with no file) would swallow the rest of the list and the loop
+            # would end early, declaring green what it never ran. The same
+            # invariant scripts/gates/run-all.sh states for its own gates.
+            bash "$t" </dev/null || rc=$?
             echo "::endgroup::"
             case "$rc" in
               0) echo "ok        $t" ;;
@@ -83,7 +98,7 @@ jobs:
               *) echo "::error title=SELFTEST FAILED::$t did not behave as specified"
                  [ "$worst" -eq 2 ] || worst=1 ;;
             esac
-          done
+          done < "$list"
           if [ "$found" -eq 0 ]; then
             echo "::error title=COULD NOT MEASURE::no self-test battery was found"
             exit 2
