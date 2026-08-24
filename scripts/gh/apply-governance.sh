@@ -466,6 +466,32 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 4b) THE CONTRACT INSIDE THE FILE. DELEGATED, for the same reason as labels.
+#     promotion.required_contexts and branches.<source>.protection...checks are
+#     two lists in this repository's own governance.json that must name the same
+#     contexts. They did not, and nothing noticed: workflow-hardening was
+#     verified by the promotion and required by no protection, so a red result
+#     blocked no merge (issue #16). That comparison needs no network, so it lives
+#     in a gate that runs on every pull request instead of waiting for someone to
+#     run this script with admin credentials. Here it is only folded in, so a
+#     failure of the delegate can never be left as "I did not review it".
+# ---------------------------------------------------------------------------
+section "The contract inside governance.json (delegated to gate-governance-contract.sh)"
+CONTRACT_GATE="${REPO_ROOT:-$(cd -- "${SCRIPT_DIR}/../.." && pwd)}/scripts/gates/gate-governance-contract.sh"
+if [[ ! -x "$CONTRACT_GATE" ]]; then
+  unmeas "I cannot find an executable scripts/gates/gate-governance-contract.sh: the two lists have not been compared"
+else
+  contract_rc=0
+  contract_out="$("$CONTRACT_GATE" 2>&1)" || contract_rc=$?
+  printf '%s\n' "$contract_out" | sed 's/^/             /'
+  case "$contract_rc" in
+    0) ok "gate-governance-contract.sh: every declared required context is enforced by the protection" ;;
+    1) drift "gate-governance-contract.sh: a context is required by prose and by nothing else. Fix the JSON, then apply it" ;;
+    *) unmeas "gate-governance-contract.sh could not measure (rc=$contract_rc)" ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
 # 5) VULNERABILITY ALERTS (Dependabot)
 #    GET /vulnerability-alerts -> 204 enabled, 404 disabled.
 # ---------------------------------------------------------------------------

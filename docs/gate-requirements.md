@@ -32,6 +32,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
+| governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
@@ -339,6 +340,25 @@ Every label is prefixed. The single source of truth is `scripts/gh/labels.sh`; `
 Renaming a label moves historical issues, so `labels.sh` never deletes: surplus labels are listed as a warning. The Spanish-to-English rename was free because no taxonomy label had been created on GitHub yet - verified by a dry run reporting `create=35 update=0`.
 
 Applying labels to externally submitted issues must be **deterministic**, derived from the structured fields of the issue form. It must never come from a model's reading of free prose: that would be a language model taking a write action based on untrusted text, which is the exact chain this repository is built to avoid. If a routing decision cannot be made from the form's fields, the correct fix is to add a field to the form.
+
+## The contract inside governance.json
+
+`scripts/gh/governance.json` carries two lists that describe the same thing from two sides:
+
+| | Field | What it means |
+|---|---|---|
+| declared | `promotion.required_contexts` | the checks the weekly promotion verifies on the candidate commit |
+| enforced | `branches.<source_branch>.protection.required_status_checks.checks` | the checks GitHub actually requires before a merge |
+
+They must name the same contexts. They did not: `workflow-hardening` was in the first and absent from the second, so the job ran on every pull request and its red gated nothing — required by prose. That is `F-005` of the blinded self-audit, issue #16.
+
+`gate-governance-contract.sh` fails while the two disagree. It is a **separate gate rather than a block inside `apply-governance.sh`** because that script needs `gh`, admin credentials and a live repository, so it runs when a person runs it; comparing two lists inside one file needs no network and therefore runs on every pull request like everything else. `apply-governance.sh --check` folds the gate's exit code into its own verdict, the same way it delegates the label taxonomy to `labels.sh`.
+
+A context enforced by the protection and **not** declared as required is reported and does not fail: that direction is stricter than declared, not a hole.
+
+Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
+
+Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
 
 ## Branch naming
 
