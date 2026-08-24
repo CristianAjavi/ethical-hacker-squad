@@ -108,6 +108,14 @@ if [ "$LIST_ONLY" -eq 1 ]; then exit 0; fi
 git -C "$ROOT" rev-parse -q --verify "$BASE" >/dev/null 2>&1 || {
   printf 'COULD NOT MEASURE: the base %s does not resolve\n' "$BASE" >&2; exit 2; }
 
+# The throwaway worktree needs an identity of its own. A merge that has to
+# create a commit fails with "Please tell me who you are" wherever git has no
+# global user.name - which is every CI runner, and any laptop that only ever
+# configured identity per repository. This tool then reported that failure as a
+# CONFLICT, which is a lie about the branches. Measured: green on a machine with
+# a global identity, "merged 1 · conflicts 1" on a runner without one.
+GIT_ID=(-c "user.name=merge-preview" -c "user.email=merge-preview@localhost")
+
 WT="$(mktemp -d "${TMPDIR:-/tmp}/ehs-merge-preview-XXXXXX")"
 cleanup() { git -C "$ROOT" worktree remove --force "$WT/tree" >/dev/null 2>&1 || true; rm -rf "$WT"; }
 trap cleanup EXIT
@@ -122,7 +130,7 @@ for b in "${BRANCHES[@]}"; do
     printf '  UNRESOLVED  %-44s this ref does not exist\n' "$b"
     CONFLICTS=$((CONFLICTS + 1)); continue
   fi
-  if git -C "$WT/tree" merge --no-edit -q "$b" >"$WT/merge.log" 2>&1; then
+  if git -C "$WT/tree" "${GIT_ID[@]}" merge --no-edit -q "$b" >"$WT/merge.log" 2>&1; then
     printf '  merged      %s\n' "$b"
     MERGED=$((MERGED + 1))
     continue
@@ -156,7 +164,7 @@ for b in "${BRANCHES[@]}"; do
     fi
   done <<<"$conflicted"
 
-  if [ "$union_ok" -eq 1 ] && git -C "$WT/tree" commit --no-edit -q >/dev/null 2>&1; then
+  if [ "$union_ok" -eq 1 ] && git -C "$WT/tree" "${GIT_ID[@]}" commit --no-edit -q >/dev/null 2>&1; then
     printf '  merged      %s (union on %d file(s))\n' "$b" "$(grep -c . <<<"$conflicted")"
     MERGED=$((MERGED + 1))
   else
