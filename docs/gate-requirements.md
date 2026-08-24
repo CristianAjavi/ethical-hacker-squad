@@ -31,6 +31,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
+| contract inventory | running | `gate-contract-inventory.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -295,6 +296,23 @@ Every label is prefixed. The single source of truth is `scripts/gh/labels.sh`; `
 Renaming a label moves historical issues, so `labels.sh` never deletes: surplus labels are listed as a warning. The Spanish-to-English rename was free because no taxonomy label had been created on GitHub yet - verified by a dry run reporting `create=35 update=0`.
 
 Applying labels to externally submitted issues must be **deterministic**, derived from the structured fields of the issue form. It must never come from a model's reading of free prose: that would be a language model taking a write action based on untrusted text, which is the exact chain this repository is built to avoid. If a routing decision cannot be made from the form's fields, the correct fix is to add a field to the form.
+
+## The contract and the inventory name the same set
+
+This document opens with a rule about itself: *if a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.* Nothing executed that sentence, which is the shape issue #16 was about — a rule the repository states and does not enforce.
+
+`gate-contract-inventory.sh` enforces the half that is machine-checkable in both directions:
+
+- a gate the runner discovers and this document names nowhere is **a control nobody can find from the contract**;
+- a name this document carries that the runner does not discover is **a control the document promises and nobody runs**.
+
+The inventory comes from `run-all.sh --list`, never from a glob of `scripts/gates/`. The runner is the authority on what counts as a gate — it discovers recursively and is not filtered by extension — so the two cannot disagree about what exists. A gate the runner declares it will not run in this context still counts: *not run here* is not *does not exist*.
+
+Three things are deliberately **not** checked, because all three are a person's judgement: which row a gate belongs to, whether the row's status word is accurate, and whether the requirement text describes what the gate actually does.
+
+`*.selftest.sh` is excluded. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
+
+Proved in the negative by 6 fixtures — 2 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation.
 
 ## Branch naming
 
