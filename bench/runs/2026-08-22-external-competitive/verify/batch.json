@@ -1,0 +1,533 @@
+{
+ "claims": [
+  {
+   "claim_id": "R01",
+   "title": "No Panic Recovery Middleware in HTTP Handlers",
+   "file": "main.go",
+   "line": "160",
+   "severity": "Medium",
+   "impact": "Unrecovered panics in handler functions will crash the entire service, causing denial of service for all users. Error details might be exposed in logs.",
+   "evidence": "HTTP server setup in main.go (lines 160-208) does not use any middleware that recovers from panics. If any handler panics (e.g., from type assertions in handlers/auth.go), the entire process crashes."
+  },
+  {
+   "claim_id": "R02",
+   "title": "Critical Bug in JWT Token Decompression - Read After Close on Gzip Reader",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "202",
+   "severity": "high",
+   "impact": "Token decompression fails silently - gzip reader is closed before reading, causing empty token parsing or read-after-close error",
+   "evidence": "Line 202: `if err := zr.Close(); err != nil` closes the gzip reader BEFORE line 205 `ss, _ := io.ReadAll(zr)` tries to read from it. The order is wrong - reader is closed before it's read."
+  },
+  {
+   "claim_id": "R03",
+   "title": "PublicAccess Flag Bypasses All Authorization",
+   "file": "handlers/validate.go",
+   "line": "124",
+   "severity": "HIGH",
+   "impact": "The PublicAccess flag in configuration (line 124) allows bypassing all authorization if a JWT fails validation. If this is accidentally set to true in production, all protected sites become publicly accessible without authentication.",
+   "evidence": "send401or200PublicAccess function: if cfg.Cfg.PublicAccess is true, returns OK200 regardless of JWT validity. This is intended for testing but is a serious misconfiguration risk."
+  },
+  {
+   "claim_id": "R04",
+   "title": "Attacker-chosen cookie names cause unbounded allocation and panics (CWE-789, CWE-129)",
+   "file": "pkg/cookie/cookie.go",
+   "line": "117",
+   "severity": "critical",
+   "impact": "Unauthenticated denial of service. A handful of crafted HTTP requests OOM-kills Vouch and every site behind it, or panic-abort connections.",
+   "evidence": "Lines 117\u2013137 parse multipart cookies (VouchCookie_1of2, etc.) without bounds checking. Attacker sends VouchCookie_1of100000000=payload. Line 130: make([]string, 1e8) allocates 1.6 GB. Or VouchCookie_x=1 causes panic on xyArray[1]. Reachable from any internet user via /validate before authentication."
+  },
+  {
+   "claim_id": "R05",
+   "title": "Information Disclosure: Sensitive User Data Logged in Multiple OIDC Provider Implementations",
+   "file": "pkg/providers/openid/openid.go",
+   "line": "52",
+   "severity": "High",
+   "impact": "Sensitive personally identifiable information (PII) from OAuth2/OIDC provider userinfo responses is logged at INFO level in production code. This includes email addresses, user names, and potentially other user metadata. These logs are typically persisted in log aggregation systems, files, or centralized logging infrastructure. Any user or system with access to application logs can extract and exploit this PII for identity theft, targeted attacks, social engineering, or other malicious purposes. Affects 10+ provider implementations including Google, GitHub, Discord, Alibaba, Nextcloud, OpenID, IndieAuth, and others.",
+   "evidence": "Production code across multiple provider implementations systematically logs full OAuth userinfo response bodies:\n\n1. pkg/providers/openid/openid.go:52 - log.Infof(\"OpenID userinfo body: %s\", string(data))\n2. pkg/providers/discord/discord.go:57 - log.Infof(\"Discord userinfo body: %s\", string(data))\n3. pkg/providers/github/github.go:55 - log.Infof(\"github userinfo body: %s\", string(data))\n4. pkg/providers/github/github.go:165 - log.Infof(\"github team membership body: \", string(data))\n5. pkg/providers/google/google.go:52 - log.Infof(\"google userinfo body: \", string(data))\n6. pkg/providers/alibaba/alibaba.go:52 - log.Infof(\"Alibaba userinfo body: %s\", string(data))\n7. pkg/providers/nextcloud/nextcloud.go:52 - log.Infof(\"Ocs userinfo body: %s\", string(data))\n8. pkg/providers/openstax/openstax.go:52 - log.Infof(\"OpenStax userinfo body: %s\", string(data))\n9. pkg/providers/indieauth/indieauth.go:95 - log.Infof(\"indieauth userinfo body: %s\", string(data))\n10. pkg/providers/homeassistant/homeas"
+  },
+  {
+   "claim_id": "R06",
+   "title": "Unsafe Type Assertion for OAuth Token Extra Claims",
+   "file": "pkg/providers/common/common.go",
+   "line": "44",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion on OAuth token extra claims",
+   "evidence": "Line 44: `ptokens.PIdToken = providerToken.Extra(\"id_token\").(string)` performs unsafe type assertion without checking if Extra returns a string"
+  },
+  {
+   "claim_id": "R07",
+   "title": "nginx examples never clear client-supplied X-Vouch-* headers (CWE-290)",
+   "file": "examples/nginx/",
+   "line": "1",
+   "severity": "medium",
+   "impact": "Authorization bypass. Backend author gates on X-Vouch-Success or X-Vouch-IdP-Claims-Groups (both plausible) \u2014 any authenticated user can send them and spoof authorization.",
+   "evidence": "All nine nginx configs set proxy_set_header X-Vouch-User $auth_resp_x_vouch_user (correct); but they never clear X-Vouch-Success, X-Vouch-Error, X-Vouch-Token, X-Vouch-IdP-Claims-*, etc. nginx forwards unknown client headers by default. Attacker sends X-Vouch-Success: true and backend gates on it."
+  },
+  {
+   "claim_id": "R08",
+   "title": "/validate authorization cached without the Host header as key (CWE-524)",
+   "file": "pkg/jwtmanager/jwtcache.go",
+   "line": "54",
+   "severity": "high",
+   "impact": "Authorization bypass via Host spoofing. An attacker who can spoof/control the Host header (HTTP/1.1 request, DNS rebind, proxy misconfiguration) accesses an unmanaged backend that should have been refused.",
+   "evidence": "Lines 54\u201372 cache JWT validation results by JWT alone. ValidateRequestHandler (validate.go:54-60) gates on r.Host: domains.Matches(r.Host) must not be empty. But cache bypass on line 57 returns immediately on cache hit without re-checking Host. Attacker forges Host header or performs DNS rebind; subsequent request with same JWT but unmanaged Host bypasses domain check."
+  },
+  {
+   "claim_id": "R09",
+   "title": "Unsafe Type Assertion in Session Value Access (code challenge in login)",
+   "file": "handlers/login.go",
+   "line": "279",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion",
+   "evidence": "Line 279: `oauth2.SetAuthURLParam(\"code_challenge\", session.Values[\"codeChallenge\"].(string))` without checking if value exists or is string"
+  },
+  {
+   "claim_id": "R10",
+   "title": "Cookie Splitting Algorithm Can Cause Data Loss With UTF-8",
+   "file": "pkg/cookie/cookie.go",
+   "line": "168",
+   "severity": "HIGH",
+   "impact": "If a multi-byte UTF-8 sequence spans a cookie split boundary, the algorithm decrements 'r' without checking if it goes below 'l', potentially causing data loss or infinite loops when splitting large cookies containing non-ASCII characters.",
+   "evidence": "splitCookie function (lines 168-177): Inner loop `for !utf8.RuneStart(longString[r]) { r-- }` can decrement r below l if UTF-8 sequence is longer than maxLen, creating invalid slice [l:r]."
+  },
+  {
+   "claim_id": "R11",
+   "title": "Missing JWT Decryption Error Handling",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "145",
+   "severity": "MEDIUM",
+   "impact": "If the DecryptionKey() function returns an error (e.g., JWT public key file not found), the error is logged but not returned. The code continues with a potentially nil key, causing jwt.ParseWithClaims to fail later with a confusing error.",
+   "evidence": "In ParseTokenString() at line 145-147: (1) DecryptionKey() is called and may return an error, (2) The error is logged via log.Errorf() but execution continues, (3) The key is used in jwt.ParseWithClaims() at line 150 even if it failed to load, causing potential nil pointer or cryptographic errors."
+  },
+  {
+   "claim_id": "R12",
+   "title": "Unguarded Type Assertion Causes Panic in OAuth State Handling",
+   "file": "handlers/auth.go",
+   "line": "111",
+   "severity": "Medium",
+   "impact": "A malicious actor who can tamper with session data or a bug in session management could cause the application to crash, resulting in denial of service. An attacker crafting a malicious session could bypass authentication or trigger unhandled exceptions.",
+   "evidence": "Line 111: requestedURL := session.Values[\"requestedURL\"].(string) performs an unchecked type assertion. If the session value is nil or not a string, this will panic. Similarly, lines 81-82 have unchecked assertions for codeChallenge and codeVerifier. No error handling is present."
+  },
+  {
+   "claim_id": "R13",
+   "title": "JWT Decompression Logic Error - Reader Closed Before Read",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "200",
+   "severity": "CRITICAL",
+   "impact": "All compressed JWT tokens will fail to decompress, resulting in authentication bypass or 401 errors. The gzip reader is closed on line 202 before io.ReadAll() attempts to read from it on line 205, causing data loss.",
+   "evidence": "Function decodeAndDecompressTokenString (lines 188-207): zr.Close() called before io.ReadAll(zr), and error from Close() is logged but ignored, so function doesn't signal decompression failure."
+  },
+  {
+   "claim_id": "R14",
+   "title": "SigningKey Error Not Checked in NewVPJWT",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "106",
+   "severity": "MEDIUM",
+   "impact": "If SigningKey() returns an error (e.g., due to invalid private key file), the error is only logged but not returned. token.SignedString(key) could fail or use incorrect key material, leading to invalid tokens or security bypass.",
+   "evidence": "Lines 106-109: key, err := cfg.SigningKey(); if err != nil { log.Errorf(\"%s\", err) } - error is logged but execution continues with potentially nil/invalid key."
+  },
+  {
+   "claim_id": "R15",
+   "title": "Missing CSRF token validation on OAuth callback endpoint",
+   "file": "handlers/auth.go",
+   "line": "66",
+   "severity": "medium",
+   "impact": "A CSRF attack could trick a logged-in user into completing an OAuth flow with a different state value, potentially causing the user to authenticate as a different account or with different permissions if an attacker can predict or control the state.",
+   "evidence": "The /auth/{state}/ endpoint validates the state nonce (`if session.Values[\"state\"] != queryState` at line 67-68) but does not validate a CSRF token in the request. The state parameter itself serves as a CSRF protection, but it is extracted from the query string without additional CSRF token validation."
+  },
+  {
+   "claim_id": "R16",
+   "title": "Missing SameSite cookie attribute in default configuration",
+   "file": "defaults.yml",
+   "line": "40",
+   "severity": "medium",
+   "impact": "Without an explicit SameSite attribute, cookies are vulnerable to Cross-Site Request Forgery (CSRF) attacks. While modern browsers (Chrome 80+, Firefox 69+) default to 'Lax' mode when SameSite is missing, older browsers and clients do not enforce this protection. A malicious website could trigger requests that include the VouchCookie.",
+   "evidence": "Line 40 of .defaults.yml shows sameSite is commented out. When not configured, pkg/cookie/cookie.go line 183 defaults to http.SameSite(0), which sends no SameSite attribute to the browser."
+  },
+  {
+   "claim_id": "R17",
+   "title": "Custom Claims Formatting May Leak Type Information",
+   "file": "handlers/validate.go",
+   "line": "101",
+   "severity": "Low",
+   "impact": "Information disclosure: array claims are formatted with quotes around each element (line 101: fmt.Sprintf(\"%s\", v)), which reveals array structure to downstream applications and could leak information about IdP attribute structure.",
+   "evidence": "Line 101: strs[i] = fmt.Sprintf(\"%s\", v) formats array elements with quotes, then joins them. This creates headers like 'group1\",\"group2\"' which reveals the array structure. A backend seeing this format knows the claim was originally an array."
+  },
+  {
+   "claim_id": "R18",
+   "title": "Ignored Error from JSON Unmarshal",
+   "file": "pkg/providers/adfs/adfs.go",
+   "line": "106",
+   "severity": "medium",
+   "impact": "Silent failure - if JSON parsing fails, malformed data may be used for authentication",
+   "evidence": "Line 106: `json.Unmarshal([]byte(idToken), &adfsUser)` error is not checked. If parsing fails, adfsUser will be zero-valued and authentication may proceed incorrectly"
+  },
+  {
+   "claim_id": "R19",
+   "title": "Release Dockerfiles discard all dependency pinning (go get -u ./...)",
+   "file": "Dockerfile",
+   "line": "18",
+   "severity": "high",
+   "impact": "Supply-chain compromise. Attacker who compromises any of ~30 transitive dependencies publishes a malicious patch release; the next master push silently includes it. High-value targets: theckman/go-securerandom (generates JWT secret, session key) and nirasan/go-oauth-pkce-code-verifier (untagged 2022 pseudo-version, on PKCE path).",
+   "evidence": "Line 18: RUN ./do.sh goget. do.sh:112-116: go get -u -v ./... upgrades every dependency to latest and rewrites go.mod/go.sum. Every published image (quay.io/vouch/vouch-proxy, docker.io/voucher/vouch-proxy) discards checksum guarantees at build time. No commit history reflects the change; it is invisible to audit."
+  },
+  {
+   "claim_id": "R20",
+   "title": "Unsafe Type Assertion in Session Value Access (requestedURL)",
+   "file": "handlers/auth.go",
+   "line": "111",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion on requestedURL",
+   "evidence": "Line 111: `requestedURL := session.Values[\"requestedURL\"].(string)` performs type assertion without validation"
+  },
+  {
+   "claim_id": "R21",
+   "title": "Mutable tags in GitHub Actions workflows holding registry credentials (CWE-829)",
+   "file": "github/workflows/docker-release-arm.yml",
+   "line": "15",
+   "severity": "high",
+   "impact": "Registry credential theft. Attacker who controls the action repo (or a maintainer account) injects a step to ex-filtrate credentials and push trojaned images to quay.io and docker.io.",
+   "evidence": "Intended pins: docker/login-action@f054a8b5, docker/metadata-action@a67f45cb, docker/build-push-action@ad44023a (SHA pinned). But same jobs use: actions/checkout@v2, docker/setup-qemu-action@v3, docker/setup-buildx-action@v3, crazy-max/ghaction-docker-buildx@v1 (all mutable tags). A retagged v2/v3 at the action's repo means compromised step in the sequence holding QUAYIO_ROBOT_PASSWORD and DOCKER_PASSWORD."
+  },
+  {
+   "claim_id": "R22",
+   "title": "HTTP Header Injection via Custom Claims",
+   "file": "handlers/validate.go",
+   "line": "104",
+   "severity": "medium",
+   "impact": "HTTP Response Splitting / Header Injection - custom claims are added directly to HTTP headers without sanitization",
+   "evidence": "Line 104: `w.Header().Add(header, strings.Join(strs, \",\"))` adds arbitrary JWT claims to HTTP headers. Newlines in claims could inject headers."
+  },
+  {
+   "claim_id": "R23",
+   "title": "Full bearer JWTs and IdP payloads logged at default level (CWE-532)",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "235",
+   "severity": "high",
+   "impact": "Credential leakage. Anyone with log access (SIEM, sidecar, aggregation vendor) can impersonate users with the full JWT lifetime (default 240 min).",
+   "evidence": "Lines 235, 243, 249: complete JWT logged. openid.go:52, adfs.go:107, azure.go:92, and 8 others: full userinfo JSON logged at Info level (default). Email, phone_number, ou_name for Alibaba (structs.go:212-220) all exposed."
+  },
+  {
+   "claim_id": "R24",
+   "title": "Insufficient HTTPS Enforcement for Secure Cookies",
+   "file": "pkg/cookie/cookie.go",
+   "line": "60",
+   "severity": "MEDIUM",
+   "impact": "If cfg.Cfg.Cookie.Secure is set to false, the JWT cookie containing authentication credentials is transmitted over HTTP. This allows man-in-the-middle attackers to intercept and replay the cookie.",
+   "evidence": "In setCookie() at line 44-99: (1) The cookie Secure flag is set directly from cfg.Cfg.Cookie.Secure at line 60, (2) This is a configuration value that can be false, (3) No runtime check enforces HTTPS when Secure=true or HTTP when Secure=false."
+  },
+  {
+   "claim_id": "R25",
+   "title": "Missing SameSite cookie attribute in default configuration",
+   "file": "defaults.yml",
+   "line": "40",
+   "severity": "medium",
+   "impact": "Session cookies without SameSite attribute are vulnerable to cross-site request forgery (CSRF) attacks where an attacker can trick a user into making requests from another site that will include the session cookie. The impact is that an authenticated user visiting a malicious site could have their session used to perform actions without their knowledge.",
+   "evidence": "Default configuration at line 40 of .defaults.yml has `sameSite:` commented out (not set). When cfg.Cfg.Cookie.SameSite is empty string, the SameSite() function in cookie.go returns http.SameSite(0), which means no SameSite attribute is set on session cookies."
+  },
+  {
+   "claim_id": "R26",
+   "title": "HTTP Header Injection via Custom Claims",
+   "file": "handlers/validate.go",
+   "line": "88",
+   "severity": "MEDIUM",
+   "impact": "Custom claims from the IdP are added as HTTP response headers without sanitization. If an IdP returns a claim value containing newlines (CRLF), an attacker could inject arbitrary HTTP headers including Set-Cookie, modifying the response.",
+   "evidence": "In generateCustomClaimsHeaders() at line 88-121: (1) Custom claims are obtained from the JWT at line 92, (2) Claim values are converted to strings at line 107 and line 101, (3) These are added directly to headers via w.Header().Add() at lines 104 and 110 without any validation to reject newlines or CRLF sequences."
+  },
+  {
+   "claim_id": "R27",
+   "title": "Unsafe Type Assertion in Session Value Access (failcount)",
+   "file": "handlers/login.go",
+   "line": "80",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion on failcount value",
+   "evidence": "Line 80: `failcount = session.Values[requestedURL].(int)` without checking if value exists or is int type"
+  },
+  {
+   "claim_id": "R28",
+   "title": "Information Disclosure via UserInfo Logging in IndieAuth Provider",
+   "file": "pkg/providers/indieauth/indieauth.go",
+   "line": "95",
+   "severity": "Medium",
+   "impact": "Personally identifiable information (PII) from OAuth userinfo responses is logged at INFO level, making it visible in production log aggregation systems and monitoring dashboards. This exposes authenticated user details including email, name, and other profile information.",
+   "evidence": "Line 95: log.Infof(\"indieauth userinfo body: %s\", string(data)) - The entire userinfo response body is logged, which contains decoded user information from the IndieAuth provider. The INFO level ensures this logging occurs in production environments."
+  },
+  {
+   "claim_id": "R29",
+   "title": "Sensitive Tokens Exposed in Debug Logs",
+   "file": "handlers/validate.go",
+   "line": "76",
+   "severity": "medium",
+   "impact": "Information Disclosure - response headers including auth tokens logged at debug level",
+   "evidence": "Line 75-76: `fastlog.Debug(\"response header\", zap.Any(\"all headers\", w.Header()))` logs all headers which may contain access tokens and ID tokens (set at lines 67, 70)"
+  },
+  {
+   "claim_id": "R30",
+   "title": "/validate is not marked internal; same-origin XSS steals IdP tokens (CWE-200)",
+   "file": "examples/nginx/",
+   "line": "1",
+   "severity": "medium",
+   "impact": "IdP account compromise via XSS escalation. An XSS on the protected app does fetch('/validate') same-origin (CORS does not apply) and reads the token.",
+   "evidence": "No nginx config example has location = /validate { internal; }. /validate is therefore publicly fetchable. handlers/validate.go:62-71 returns IdP access and ID tokens in response headers."
+  },
+  {
+   "claim_id": "R31",
+   "title": "Host header not validated before using in authorization and cookie domain decisions",
+   "file": "handlers/validate.go",
+   "line": "55",
+   "severity": "high",
+   "impact": "An attacker can spoof the Host header to bypass domain authorization checks. If a reverse proxy is misconfigured or if vouch-proxy is exposed directly to the internet, an attacker could present a request with Host: attacker.com and access protected resources if that domain is in the JWT audience.",
+   "evidence": "ValidateRequestHandler uses r.Host directly without validation: `if !claims.SiteInAudience(r.Host) || domains.Matches(r.Host) == \"\"` (line 55). The Host header is attacker-controlled and can be spoofed in requests that reach vouch-proxy."
+  },
+  {
+   "claim_id": "R32",
+   "title": "HTTP Header Injection via Unvalidated Custom Claims",
+   "file": "handlers/validate.go",
+   "line": "104",
+   "severity": "High",
+   "impact": "An attacker who can control OAuth2 provider claims could inject arbitrary HTTP headers into responses via CRLF injection, potentially enabling header spoofing, cache poisoning, or XSS attacks.",
+   "evidence": "Lines 104 and 110 in generateCustomClaimsHeaders() add arbitrary claim values to HTTP response headers without validating that they don't contain newline characters. The code uses fmt.Sprint() and strings.Join() directly on untrusted claim data: w.Header().Add(header, val) where val could contain \\r\\n sequences."
+  },
+  {
+   "claim_id": "R33",
+   "title": "Unauthenticated gzip decompression bomb before signature verification (CWE-409, CWE-400)",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "140",
+   "severity": "critical",
+   "impact": "Unauthenticated denial of service via compression bomb. Go's default MaxHeaderBytes is 1 MB; gzip ratio is ~1032:1 \u2192 1 MB input \u2192 ~1 GB heap per request. Multi-part cookies (each cookie is separate header) let attacker fill budget from cookie header alone. OOMs the process.",
+   "evidence": "Lines 140\u2013143: gzip decompression happens before JWT signature check. Function decodeAndDecompressTokenString (lines 188\u2013207) calls io.ReadAll(zr) with no limit. Attacker sends GET /validate?access_token=base64url(gzip(770MB of zeros)). No size check, no io.LimitReader."
+  },
+  {
+   "claim_id": "R34",
+   "title": "Insufficient Session State Validation in OAuth Flow",
+   "file": "handlers/auth.go",
+   "line": "67",
+   "severity": "Medium",
+   "impact": "Session fixation or CSRF attacks could be possible if an attacker can control the session state. The validation checks queryState != session.Values[\"state\"], but this relies on session integrity which may not be guaranteed.",
+   "evidence": "Line 67 in AuthStateHandler: if session.Values[\"state\"] != queryState { ... only performs equality check. No additional validation like HMAC verification or timestamp checking. Session implementation relies on gorilla/sessions which uses encrypted cookies, but stronger binding to user context would be preferable."
+  },
+  {
+   "claim_id": "R35",
+   "title": "Silent Error Handling in JWT Key Loading",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "106",
+   "severity": "LOW",
+   "impact": "Similar to F-004, if SigningKey() returns an error when creating a new JWT, the error is logged but not propagated, potentially returning an empty token string.",
+   "evidence": "In NewVPJWT() at line 106-109: (1) SigningKey() is called and may return an error, (2) The error is logged with log.Errorf() but execution continues, (3) The key might be nil when passed to token.SignedString() at line 111."
+  },
+  {
+   "claim_id": "R36",
+   "title": "GitHub org-membership check leaks response body and nil-deref panic (CWE-772, CWE-476)",
+   "file": "pkg/providers/github/github.go",
+   "line": "120",
+   "severity": "medium",
+   "impact": "Resource leak and denial of service (fd exhaustion, panic). SSRF via token leakage if IdP redirects to attacker host.",
+   "evidence": "Lines 120\u2013149: orgMembershipResp.Body never closed (no defer). Line 128-136: if Get on line 130 fails, no return, so line 139 nil-deref panics. Also: oauth2 transport injects Authorization header below http.Client's cross-host stripping, so manual 302 follow sends user's GitHub token to attacker-controlled Location."
+  },
+  {
+   "claim_id": "R37",
+   "title": "Potential Out-of-Bounds Access in Multipart Cookie Reassembly",
+   "file": "pkg/cookie/cookie.go",
+   "line": "136",
+   "severity": "medium",
+   "impact": "Denial of Service (panic) - malformed cookie parts can cause array index out of bounds",
+   "evidence": "Line 136: `cookieParts[i-1] = cookie.Value` assigns to array without bounds checking. If cookie name is '3of2', the index would be 2 but array size is only 2 (indices 0-1)"
+  },
+  {
+   "claim_id": "R38",
+   "title": "JWT Decompression Error Silently Drops Tokens",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "188",
+   "severity": "HIGH",
+   "impact": "When a compressed JWT fails to decompress due to data corruption or invalid gzip format, the function silently returns an empty string instead of an error. This causes invalid tokens to be silently treated as if they never existed, bypassing proper error handling and potentially masking attacks.",
+   "evidence": "In decodeAndDecompressTokenString() at line 188-207: (1) gzip reader is created at line 196, (2) reader is immediately closed at line 202 BEFORE reading data, (3) ReadAll is called on the closed reader at line 205, (4) the error from ReadAll is silently ignored with '_', causing malformed tokens to return empty string without error indication."
+  },
+  {
+   "claim_id": "R39",
+   "title": "email_verified flag parsed and discarded by all providers; unverified email authorizes (CWE-345)",
+   "file": "pkg/structs/structs.go",
+   "line": "88",
+   "severity": "high",
+   "impact": "Authorization bypass. Against any IdP allowing self-asserted email (generic OIDC, self-hosted Nextcloud, Discord), attacker registers attacker@managed-domain.com and is authorized into every site behind Vouch.",
+   "evidence": "Field declared at line 88, never read. Eleven provider implementations (discord.go:82, openid.go:57, google.go:57, github.go, nextcloud.go:64, alibaba.go:64, adfs.go:125, openstax.go:42, indieauth.go, homeassistant.go) unmarshal email_verified then ignore it. handlers/auth.go:164-169 authorizes on email domain via IsUnderManagement() without checking the flag."
+  },
+  {
+   "claim_id": "R40",
+   "title": "Azure identity derived from unvalidated token with no tenant/audience binding (CWE-347, CWE-290)",
+   "file": "pkg/providers/azure/azure.go",
+   "line": "52",
+   "severity": "high",
+   "impact": "Authentication bypass in multi-tenant Azure deployments. Attacker from any Entra tenant can claim to be anyone@managed-domain.com and gain access.",
+   "evidence": "Lines 52\u201395 base64-decode the JWT payload and unmarshal into structs.AzureUser without verifying the signature, iss, aud, exp, or tid. No JWKS fetch, no tenant binding. config/config.yml_example_azure:18-19 leaves tenant as '...' (multi-tenant enabled). If multi-tenant, attacker registers victim@managed-domain.com in their own Entra tenant, signs in, and is authorized into the managed domain via email domain check."
+  },
+  {
+   "claim_id": "R41",
+   "title": "No HTTP status code check on userinfo responses; 401/500 parsed as valid user (CWE-754)",
+   "file": "pkg/providers/openid/openid.go",
+   "line": "42",
+   "severity": "medium",
+   "impact": "Authorization bypass or denial of service. An IdP outage or token revocation returns an error body that gets parsed as an anonymous user, authorizing access.",
+   "evidence": "Nine provider implementations (openid.go:42-51, google.go:42-51, github.go, etc.) call io.ReadAll on userinfo.Body without checking userinfo.StatusCode. A 401/403/429/500 body is parsed as if it were a user record. Empty {} unmarshal to User{} yielding empty Username/Email."
+  },
+  {
+   "claim_id": "R42",
+   "title": "Unsafe Type Assertion in Session Value Access (codeVerifier)",
+   "file": "handlers/auth.go",
+   "line": "82",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion causes panic if session value is missing or wrong type",
+   "evidence": "Line 82: `oauth2.SetAuthURLParam(\"code_verifier\", session.Values[\"codeVerifier\"].(string))` performs unsafe type assertion without checking if codeVerifier exists or is a string"
+  },
+  {
+   "claim_id": "R43",
+   "title": "Missing Host Header Validation in Validate Endpoint",
+   "file": "handlers/validate.go",
+   "line": "55",
+   "severity": "MEDIUM",
+   "impact": "The Host header is used directly from the request without prior validation. If Nginx fails to validate the Host header before proxying to Vouch, an attacker controlling the Host header can bypass domain restrictions.",
+   "evidence": "In ValidateRequestHandler() at line 55: (1) r.Host is used directly in SiteInAudience check, (2) If domains.Matches(r.Host) returns empty string and AllowAllUsers is true, the request proceeds without verification, (3) The check depends entirely on Nginx sending correct Host headers."
+  },
+  {
+   "claim_id": "R44",
+   "title": "Session Key Not Validated for Sufficient Length",
+   "file": "handlers/handlers.go",
+   "line": "59",
+   "severity": "MEDIUM",
+   "impact": "The session store is initialized with cfg.Cfg.Session.Key (line 59) without validation that the key has sufficient entropy. If a user provides a short session key in config, it could be brute-forced to forge session cookies.",
+   "evidence": "Line 59: sessstore = sessions.NewCookieStore([]byte(cfg.Cfg.Session.Key)) - no validation of key length or entropy. Gorilla sessions recommends keys >= 32 bytes."
+  },
+  {
+   "claim_id": "R45",
+   "title": "Unchecked type assertions on IdP responses cause remote panics (CWE-754)",
+   "file": "pkg/providers/common/common.go",
+   "line": "63",
+   "severity": "medium",
+   "impact": "Denial of service. IdP outage or a network error returning null body causes Vouch to panic and abort the request.",
+   "evidence": "Lines 38\u201344, 63: json.Unmarshal into interface{} succeeds for null, leaving nil interface. Assertion f.(map[string]interface{}) panics. Reachable from every provider via MapClaims. A userinfo endpoint returning literal null crashes the auth request."
+  },
+  {
+   "claim_id": "R46",
+   "title": "JWT token exposed in query string leaks authentication credentials to logs and referrer headers",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "247",
+   "severity": "high",
+   "impact": "A valid JWT token can be captured from logs, browser history, or transmitted via Referer header to unrelated sites, allowing token replay and unauthorized access to protected resources.",
+   "evidence": "The FindJWT() function extracts JWT from query string: `jwt = r.URL.Query().Get(cfg.Cfg.Headers.QueryString)` (line 247-250). When JWT is passed as query parameter, it appears in HTTP logs, browser history, referrer headers, and reverse proxy logs."
+  },
+  {
+   "claim_id": "R47",
+   "title": "Expired JWT cached indefinitely if expiration time crosses current second (CWE-613)",
+   "file": "pkg/jwtmanager/jwtcache.go",
+   "line": "91",
+   "severity": "high",
+   "impact": "Privilege escalation via cache poisoning. A token that is only expired by milliseconds (or during a GC pause) is cached as valid for 20 minutes (or indefinitely). An attacker with a token about to expire can exploit the race window.",
+   "evidence": "getCacheExpirationDuration (lines 91-112) returns Duration based on token.ExpiresAt.Unix() - now.Unix(). If d == 0 (expires within current second), go-cache treats it as DefaultExpiration (20 minutes) and caches the expired token. If d < 0 (GC pause between verification and this line), go-cache.Set ignores Expiration == 0 and never expires the entry \u2014 it lives until process restart."
+  },
+  {
+   "claim_id": "R48",
+   "title": "Potential Open Redirect via Incomplete URL Validation",
+   "file": "handlers/login.go",
+   "line": "222",
+   "severity": "MEDIUM",
+   "impact": "While domain validation is performed, the check for dangerous query parameter values at line 222-226 uses a blacklist approach with case-sensitive matching. Attackers could use mixed-case variations or unicode escapes to bypass the validation.",
+   "evidence": "In getValidRequestedURL() at line 199-246: (1) Query parameters are checked against badStrings at line 222-226, (2) The check uses strings.HasPrefix() with lowercase comparison of the value, (3) But the badStrings array contains lowercase entries, so mixed-case variants like 'JavaScript:' would bypass the check."
+  },
+  {
+   "claim_id": "R49",
+   "title": "Unsafe Type Assertion in Session Value Access (codeChallenge)",
+   "file": "handlers/auth.go",
+   "line": "82",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion",
+   "evidence": "Line 82: `oauth2.SetAuthURLParam(\"code_challenge\", session.Values[\"codeChallenge\"].(string))` without checking if value exists or is correct type"
+  },
+  {
+   "claim_id": "R50",
+   "title": "JWT Tokens Can Be Exposed via Query String",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "247",
+   "severity": "Medium",
+   "impact": "JWT tokens in query parameters can be leaked via HTTP Referer headers, server logs, proxy logs, browser history, and access logs. This exposes sensitive authentication tokens that could be used to impersonate users.",
+   "evidence": "FindJWT() function (line 247) extracts JWT from URL query string via r.URL.Query().Get(cfg.Cfg.Headers.QueryString). While documented as optional, this feature violates security best practices by allowing tokens in URLs where they can be logged/exposed."
+  },
+  {
+   "claim_id": "R51",
+   "title": "Weak jwt.secret and session.key only warned, never rejected (CWE-326)",
+   "file": "pkg/cfg/cfg.go",
+   "line": "444",
+   "severity": "medium",
+   "impact": "Authentication bypass via weak secret. Forged JWTs mean full access across every site if the secret is too short.",
+   "evidence": "Lines 444-449 and 467-471 log.Errorf() if secrets are too short, then execution continues. A one-character HMAC secret starts successfully. Every other config error returns an error and triggers logger.Fatal (main.go:125-127); these two are exceptions."
+  },
+  {
+   "claim_id": "R52",
+   "title": "Unsafe Type Assertion in Session Value Access (state)",
+   "file": "handlers/login.go",
+   "line": "251",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion on state value",
+   "evidence": "Line 251: `var state string = session.Values[\"state\"].(string)` without validation"
+  },
+  {
+   "claim_id": "R53",
+   "title": "DecryptionKey Error Not Checked in ParseTokenString",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "145",
+   "severity": "MEDIUM",
+   "impact": "If DecryptionKey() returns an error (invalid private key file or RSA key parsing failure), the error is logged but execution continues with potentially nil key, causing ParseWithClaims to fail or use wrong key.",
+   "evidence": "Lines 145-148: key, err := cfg.DecryptionKey(); if err != nil { log.Errorf(\"%s\", err) } - error ignored and execution continues."
+  },
+  {
+   "claim_id": "R54",
+   "title": "Unsafe Type Assertion for OAuth Token Extra Claims (HomeAssistant)",
+   "file": "pkg/providers/homeassistant/homeassistant.go",
+   "line": "39",
+   "severity": "high",
+   "impact": "Denial of Service (panic) - unchecked type assertion",
+   "evidence": "Line 39: `ptokens.PAccessToken = providerToken.Extra(\"access_token\").(string)` without checking if value is string type"
+  },
+  {
+   "claim_id": "R55",
+   "title": "OAuth State Parameter Not Time-Bound",
+   "file": "handlers/auth.go",
+   "line": "67",
+   "severity": "MEDIUM",
+   "impact": "OAuth state parameter is validated but has no expiration check. If a session cookie persists beyond reasonable timeout, an attacker could replay old state values to perform CSRF attacks against the OAuth flow.",
+   "evidence": "AuthStateHandler (lines 55-127): state validation on line 67 only checks if session.Values[\"state\"] == queryState, with no timestamp validation or maximum age check."
+  },
+  {
+   "claim_id": "R56",
+   "title": "JWT Decompression Logic Error: Reader Closed Before Read Operation",
+   "file": "pkg/jwtmanager/jwtmanager.go",
+   "line": "203",
+   "severity": "Medium",
+   "impact": "When JWT compression is enabled (jwt.compress: true in configuration), the token decompression function contains a logic error that causes it to close the gzip reader before attempting to read from it. This results in empty or unreadable decompressed data being returned. When a compressed JWT token arrives for validation, it will fail to decompress correctly, causing the JWT validation to fail. In authentication scenarios where proper error handling sends a 401, this could cause all users with compressed tokens to be denied access. In scenarios with poor error handling, this could potentially be exploited to bypass authentication checks. The default configuration in .defaults.yml has compress: true, so any deployment that accepts this default will be affected.",
+   "evidence": "File: pkg/jwtmanager/jwtmanager.go, function decodeAndDecompressTokenString(), lines 187-210:\n\n```go\nfunc decodeAndDecompressTokenString(encgzipss string) string {\n    var gzipss []byte\n    gzipss, err := base64.URLEncoding.DecodeString(encgzipss)\n    if err != nil {\n        log.Debugf(\"Error in Base64decode: %v\", err)\n    }\n\n    breader := bytes.NewReader(gzipss)\n    zr, err := gzip.NewReader(breader)\n    if err != nil {\n        log.Debugf(\"Error reading gzip data: %v\", err)\n        return \"\"\n    }\n    if err := zr.Close(); err != nil {  // <-- WRONG: zr.Close() called here\n        log.Debugf(\"Error decoding token: %v\", err)\n    }\n    ss, _ := io.ReadAll(zr)  // <-- WRONG: Reading from closed reader\n    return string(ss)\n}\n```\n\nThe issue is on lines 203-206: zr.Close() is called BEFORE io.ReadAll(zr). This means io.ReadAll() attempts to read from an already-closed reader, which will return empty bytes or an error. The decompressed token data is never actually read, causing the functio"
+  },
+  {
+   "claim_id": "R57",
+   "title": "Potential Denial of Service via Large JWT Token",
+   "file": "pkg/jwtmanager/jwtcache.go",
+   "line": "58",
+   "severity": "LOW",
+   "impact": "The JWT cache stores entire response headers without size limits. An attacker could potentially create a very large JWT with many claims/headers to consume memory. No maximum JWT size is enforced.",
+   "evidence": "JWTCacheHandler (line 92): Cache.Set(jwt, w.Header().Clone(), cacheExp) - no size validation on jwt parameter before caching."
+  },
+  {
+   "claim_id": "R58",
+   "title": "Type Assertion Without Guard in Login Handler",
+   "file": "handlers/login.go",
+   "line": "279",
+   "severity": "Medium",
+   "impact": "Application crash (denial of service) if session values are not of expected type. This could be triggered if session management is corrupted or by an attacker who can manipulate session storage.",
+   "evidence": "Line 279 in oauthLoginURL(): var state string = session.Values[\"state\"].(string) performs unchecked type assertion. No validation that the value exists or is actually a string before use."
+  }
+ ],
+ "advisories_to_match": [
+  {
+   "advisory_id": "GHSA-qqff-5854-px68",
+   "summary": "vouch-proxy has an Unbounded Multipart Cookie Allocation DoS",
+   "description": "## Unbounded Multipart Cookie Allocation DoS in vouch-proxy\n\n### Summary\n\nvouch-proxy v0.47.2 contains an unauthenticated remote denial-of-service vulnerability in its multipart cookie reassembly logic. The `/validate` endpoint parses the total cookie part count directly from the attacker-controlled cookie name (e.g., `VouchCookie_1of<N>`) and passes it without any bounds check to `make([]string, N)`. A single HTTP request with `N=10000000000` causes the Go runtime to attempt a ~160 GB heap allocation, triggering a fatal out-of-memory error that crashes the server process immediately. No authentication or prior session is required.\n\n### Details\n\nThe vulnerability exists in `pkg/cookie/cookie.go`. The `Cookie()` function iterates over all cookies in the request, identifies multipart cookies by the `_NofM` suffix in their name, and initializes the reassembly slice on the first matching cookie:\n\n```go\n// pkg/cookie/cookie.go:123\u2013130\nxOFy := strings.Replace(cookie.Name, cookieUnder, \"\", 1)\nxyArray := strings.Split(xOFy, \"of\")\nif numParts == -1 {\n    if numParts, err = strconv.Atoi(xyArray[1]); err != nil {\n        return \"\", fmt.Errorf(\"multipart cookie fail: %s\", err)\n    }\n    cookie"
+  }
+ ]
+}

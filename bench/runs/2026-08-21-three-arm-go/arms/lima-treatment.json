@@ -1,0 +1,192 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern3/lima/target - three files: cmd/lima-guestagent/daemon_linux.go, cmd/lima-guestagent/install_systemd_linux.go, pkg/cidata/cidata.TEMPLATE.d/boot.Linux/25-guestagent-base.sh",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad knowledge corpus (extern3 snapshot); no version stamp is present in the provided corpus",
+    "coverage_declaration": "Static, read-only review of the three files provided. Nothing was executed, no runtime observation was made and no network was used. Packs opened: local-app.md §0-§4 and §7-§9 (LOC-01..LOC-09, LOC-13..LOC-15), plus web-api.md §3 for the injection classes that transfer unchanged to a local process (WEB-08, WEB-09). Not exercised, and not to be read as clean: the guest agent API itself (pkg/guestagent, pkg/guestagent/api/server, pkg/portfwdserver, pkg/guestagent/serialport, pkg/guestagent/ticker), the embedded unit template cmd/lima-guestagent/lima-guestagent.TEMPLATE.service and the generated lima.env, none of which are in the provided scope; the virtio serial transport, whose device permissions are set by udev outside this scope; and the eBPF ticker path. supply-chain.md was not staffed because the scope carries no manifest, no lockfile and no VCS metadata - which also means no commit could be recorded for this engagement. Per traceability.md, native memory safety, anything requiring a debugger or a fuzzer, and kernel-side behaviour are outside every pack in this corpus."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Guest agent UNIX socket is widened to 0777 and the daemon performs no peer authentication",
+      "procedure": "LOC-13",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "cmd/lima-guestagent/daemon_linux.go",
+        "line": 141,
+        "component": "lima-guestagent daemon, default UNIX socket transport"
+      },
+      "evidence": "daemon_linux.go:88-90 refuses to start unless euid is 0, so the daemon is a root process. On the default transport (neither --vsock-port nor --virtio-port given) it binds /run/lima-guestagent.sock and immediately widens it: `socketL, err := lc.Listen(ctx, \"unix\", socket)` at line 137 is followed by `os.Chmod(socket, 0o777)` at line 141. The listener is then handed straight to `server.StartServer(ctx, l, &server.GuestServer{Agent: agent, TunnelS: portfwdserver.NewTunnelServer()})` at line 148, with no peer-credential check anywhere between Accept and the server. The sibling vsock transport in the same file does make an authorization decision on the same server: cidFilteredListener (lines 27-48) rejects any connection whose remote ContextID is not the host CID 2. The UNIX transport has no equivalent.",
+      "impact": "Any local account or process inside the guest - an unprivileged service account, a container user, a second interactive user - can connect to the API of a daemon running as root and drive the port-forwarding tunnel server and the agent's inspection surface without authenticating. This crosses a privilege boundary inside the VM: a non-root principal acquires the ability to act through a root process.",
+      "preconditions": "The guest runs the daemon on its default UNIX-socket transport. That is the shipped default: the third branch of 25-guestagent-base.sh (lines 81-83) installs the systemd unit with no transport flag, and the daemon's flag defaults are vsock-port 0 and virtio-port empty, which selects the UNIX socket branch. A second local principal besides root must exist in the guest.",
+      "recommendation": "Do not widen the socket. Create it inside a directory whose mode expresses the intended audience and leave the socket at 0600, or 0660 with a dedicated group, then authenticate the peer in the server: read SO_PEERCRED on the accepted connection and reject uids that are not authorized, mirroring the authorization decision the vsock transport already makes with its CID filter. If some host-side channel genuinely needs wider access to the socket, give that channel a transport that carries an identity instead of relaxing the file mode.",
+      "inference": "The absence of an application-layer authentication step on an accepted connection was inferred rather than observed: pkg/guestagent/api/server and pkg/portfwdserver are outside the provided scope. The inference rests on the same file adding a transport-level CID filter for vsock, which would be redundant if the server authenticated its peers.",
+      "traceability": [
+        "CWE-732",
+        "CWE-276",
+        "CWE-668",
+        "CWE-346",
+        "ASVS 5.0 V4"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Whether server.StartServer or portfwdserver.TunnelServer authenticate the peer could not be established: pkg/guestagent/api/server and pkg/portfwdserver are not in the provided scope. Absence of evidence is not HOLDS, so this rule caps the status at probable rather than ruling the finding out."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The branch is not debug-only or test scaffolding. 25-guestagent-base.sh:81-83 is the fall-through case of the shipped provisioning script and installs the unit with no transport flag, which selects exactly this branch of daemon_linux.go."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The crossing is named: daemon_linux.go:88-90 establishes root and non-root as distinct principals on the same machine, and mode 0777 grants the 'other' class explicitly - a mode that means nothing unless a second principal exists. A Lima guest is a general-purpose multi-user Linux VM, and the provisioning script itself creates a separate LIMA_CIDATA_USER account with its own uid."
+        }
+      ],
+      "limits": "This finding establishes the socket's mode and the absence of any peer check in the code that is in scope. It does not establish what the API reachable over the socket permits: the request surface of server.GuestServer and portfwdserver.TunnelServer was not read, so the severity rests on an unauthenticated transport into a root process rather than on a demonstrated action. Nothing was executed and no live socket was inspected."
+    },
+    {
+      "id": "F-002",
+      "title": "Provisioning script chowns mount points without refusing symlinks, following any link a local user planted",
+      "procedure": "LOC-02",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "pkg/cidata/cidata.TEMPLATE.d/boot.Linux/25-guestagent-base.sh",
+        "line": 16,
+        "component": "boot provisioning, reverse-sshfs mount point creation"
+      },
+      "evidence": "Lines 11-17 iterate the configured mount points and run `mkdir -p \"${mountpoint}\"` (line 14) followed by `gid=$(id -g \"${LIMA_CIDATA_USER}\")` and `chown \"${LIMA_CIDATA_UID}:${gid}\" \"${mountpoint}\"` (lines 15-16). Neither call refuses a symbolic link: `mkdir -p` returns success without complaint when the path already resolves to a directory through a link, and `chown` without `-h` / `--no-dereference` changes the ownership of the link's target rather than of the link. The script runs as root at every boot and the mount points are paths it neither owns nor creates exclusively; there is no `[ -L ]` test, no `O_NOFOLLOW` equivalent and no ownership check anywhere in the block.",
+      "impact": "A local user who can create a name on some component of a mount-point path that does not yet exist - the classic case being a mount point under a world-writable directory such as /tmp - can point it at a directory of their choosing and have the next boot hand ownership of that directory to the Lima user's uid. The Lima user is the account the same script drives through passwordless sudo (lines 78-82), so ownership of a sensitive directory converts into root in the guest.",
+      "preconditions": "LIMA_CIDATA_MOUNTTYPE is reverse-sshfs (line 8 gates the whole block), a second local account exists in the guest, that account can create a name on a component of a configured mount-point path, and the VM is booted or re-provisioned afterwards.",
+      "recommendation": "Refuse to follow links on both operations. Create each mount point only after verifying that no component is a symlink, or create it relative to a directory file descriptor; then use `chown -h` together with a check that the final path is a real directory the script itself created. The robust form is to create the directory exclusively and abort when the name already exists as something the script did not make, rather than to repair ownership on whatever the path happens to resolve to.",
+      "inference": "Whether any configured mount-point path actually has a component writable by a second principal was not observed: the mounts are declared in host-side configuration that is outside the provided scope. What is observed in scope is the pattern itself - an unowned path, a link-following mkdir and a link-following chown, all as root.",
+      "traceability": [
+        "CWE-59",
+        "CWE-61",
+        "CAPEC-27",
+        "ASVS 5.0 V5"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists in the block: no -h on chown, no test on the path type, no ownership check before the change, and no confinement to a directory the script created in this run."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The block is not debug or test scaffolding: it is the first thing the shipped boot script does whenever the mount type is reverse-sshfs, under `set -eux` (line 6)."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The crossing is user to user: an unprivileged local account influences a filesystem operation performed by root. The script itself provisions a distinct LIMA_CIDATA_USER account with its own uid and gid (lines 15-16), so a second principal is part of the design rather than hypothetical."
+        }
+      ],
+      "limits": "Which mount-point paths are configured, what their components resolve to at runtime, and whether a given guest has a second account all depend on configuration outside the provided scope. Nothing was executed and no race was demonstrated; per LOC-02 the finding is a property of the two calls and the ownership of the directories they touch, which could only be read from the source here."
+    },
+    {
+      "id": "F-003",
+      "title": "The vsock CID authorization filter falls open when either type assertion does not match",
+      "procedure": "LOC-13",
+      "status": "hardening",
+      "severity": "informational",
+      "confidence": "high",
+      "location": {
+        "path": "cmd/lima-guestagent/daemon_linux.go",
+        "line": 37,
+        "component": "cidFilteredListener.Accept, vsock transport"
+      },
+      "evidence": "cidFilteredListener.Accept (lines 31-48) enforces the host-CID rule only inside two nested type assertions: `if vsockConn, ok := conn.(*vsock.Conn); ok {` at line 37 and `if addr, ok := vsockConn.RemoteAddr().(*vsock.Addr); ok {` at line 38. Neither has an else branch. The rejection at lines 39-43 is therefore reachable only when both assertions succeed; a connection whose concrete type or whose address type is not the expected one falls through both guards and reaches `return conn, nil` at line 46 as an accepted, unfiltered connection.",
+      "impact": "No exploit path is claimed. With the listener actually in use the accepted connection is of the asserted types, so the rule holds as written today. What is recorded is the direction of the default: the only authorization decision in this file is structured so that an unexpected input shape produces allow rather than reject, which is the shape that stops enforcing silently when a dependency changes its return type, and it does so without any log line to show that it stopped.",
+      "preconditions": "None. This is a property of the control's structure, not of a reachable input.",
+      "recommendation": "Invert the default so that only a connection positively identified as coming from the host CID is returned: close the connection and continue the loop in the else branch of both assertions, logging the rejection the same way line 40 already does for a wrong CID. An authorization filter should reject what it cannot classify.",
+      "traceability": [
+        "CWE-636",
+        "CWE-346",
+        "ASVS 5.0 V4"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "Whether anything above the listener re-checks the peer could not be established: server.StartServer and the guest agent API are outside the provided scope. The status is hardening regardless, so this does not gate a claim."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The vsock branch ships and is selected whenever LIMA_CIDATA_VSOCK_PORT is non-zero (25-guestagent-base.sh:77-78), which is the normal configuration on hypervisors that expose vsock."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A second principal is what the control exists for: a context ID other than the host's CID 2, which is precisely what lines 39-43 reject. The boundary is named; what is absent is a demonstration that the fall-through is reachable."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "Bounded to informational and written down rather than deleted: the two assertions hold for the listener in use, so no attacker reaches line 46 through this path today. The item is defence in depth - the default direction of an authorization decision - not a reachable bypass."
+        }
+      ],
+      "limits": "Whether any vsock listener implementation can return a connection that fails either assertion was not tested. The dependency's behaviour was read from the call site, not from its source, which is outside the provided scope; no runtime observation was made."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Command substitution injection through the eval-based variable indirection in the boot script",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "25-guestagent-base.sh:12-13 builds each mount point with mountpointvar=\"LIMA_CIDATA_MOUNTS_${f}_MOUNTPOINT\" and mountpoint=\"$(eval echo \\$\"$mountpointvar\")\". Read against bash's expansion order: the argument expands to the literal name $LIMA_CIDATA_MOUNTS_N_MOUNTPOINT before eval runs, and eval then performs one parameter expansion. The result of a parameter expansion is subject to word splitting and pathname expansion but is not re-scanned for command substitution, so a value containing $(...) or backticks is not executed. What remains is unquoted word splitting on the value, a correctness defect rather than an injection. Bound: reasoned from the language's expansion rules on the three files read; nothing was executed."
+    },
+    {
+      "class": "Argument injection into the systemctl invocations",
+      "procedure": "LOC-05",
+      "outcome": "refuted",
+      "where": "install_systemd_linux.go:82-95 builds every argument vector from literals - {\"daemon-reload\"}, {\"enable\",\"lima-guestagent.service\"}, {\"try-restart\",...}, {\"start\",...} - prefixes them with \"--system\" and passes them to exec.CommandContext without a shell. No flag value, file name or environment value from outside the program reaches the vector, so the leading-dash shape LOC-05 looks for has no source here."
+    },
+    {
+      "class": "Untrusted search-path resolution of the systemctl binary",
+      "procedure": "LOC-06",
+      "outcome": "inconclusive",
+      "where": "install_systemd_linux.go:95 invokes systemctl by bare name, resolved through the inherited PATH while running as root. The only invocation in scope reaches it through sudo (25-guestagent-base.sh:78-82), whose secure_path normally rewrites PATH, but neither the sudoers policy nor the runtime PATH is observable in the provided scope. LOC-06 requires checking each directory on the search path for writability with ls -ld rather than assuming it, and that check could not be run against a target that must not be executed."
+    },
+    {
+      "class": "Template injection into the generated systemd unit through --virtio-port",
+      "procedure": "WEB-09",
+      "outcome": "inconclusive",
+      "where": "generateSystemdUnit (install_systemd_linux.go:110-131) interpolates the flag with fmt.Sprintf(\"--virtio-port %s\", virtioPort), joins it into an Args string and renders it into an embedded unit template with no escaping and no rejection of newlines; a newline in the value would place arbitrary text in /etc/systemd/system/lima-guestagent.service, which lines 84-99 then daemon-reload and start as root. Two things stopped this from being reported. The embedded template lima-guestagent.TEMPLATE.service is not present in the provided scope, so where Args lands in the unit could not be read. And the only value source in scope is host-side cloud-init configuration reaching a command that already requires root to write /etc/systemd/system, so no second principal could be named as local-app.md §0 requires. The same shape appears at 25-guestagent-base.sh:35, where a sed wraps lima.env values in double quotes and writes them to /etc/conf.d/lima-guestagent, which openrc sources as shell."
+    },
+    {
+      "class": "Predictable path or pre-creation attack on the daemon's socket and runtime directory",
+      "procedure": "LOC-03",
+      "outcome": "refuted",
+      "where": "daemon_linux.go:69, 72 and 115 use the fixed paths /run/lima-guestagent and /run/lima-guestagent.sock and call os.RemoveAll on the socket before binding it. The names are entirely predictable, but /run is root-owned and not writable by another principal, so the pre-creation and link-swap shapes LOC-03 and LOC-02 describe have nowhere to start. The mode the socket is given after it is bound is a separate defect and is reported as F-001."
+    },
+    {
+      "class": "Time-of-check to time-of-use on the systemd unit file",
+      "procedure": "LOC-04",
+      "outcome": "refuted",
+      "where": "install_systemd_linux.go:59-75 stats /etc/systemd/system/lima-guestagent.service, reads and compares its bytes, then writes it back by name - a check and a use on the same name, two syscalls apart. Every path in the sequence lives in /etc/systemd/system, which only root can write, so no second principal can replace the name inside the window."
+    },
+    {
+      "class": "Executable content arriving at runtime without integrity verification",
+      "procedure": "LOC-14",
+      "outcome": "refuted",
+      "where": "25-guestagent-base.sh:21-28 installs the guest agent binary with install -m 755 from ${LIMA_CIDATA_MNT}/lima-guestagent, comparing sha256 sums only to decide whether an install is needed - a freshness check, not a signature. The channel is the host-supplied cidata mount rather than a network feed: there is no URL, no download, no feed configuration and no external update endpoint anywhere in the provided scope, and the host is the guest's root of trust in this architecture, which is FP-05. Bound: the mount options for LIMA_CIDATA_MNT are set outside this scope, so whether a guest principal can write to that mount was not established."
+    },
+    {
+      "class": "Credentials left on the machine by the files the provisioning script writes",
+      "procedure": "LOC-15",
+      "outcome": "inconclusive",
+      "where": "25-guestagent-base.sh:32-36 and 66 convert ${LIMA_CIDATA_MNT}/lima.env into /etc/conf.d/lima-guestagent under the script's default umask on the openrc path, and line 67-68 writes /etc/init.d/lima-guestagent chmod 755. None of the LIMA_CIDATA_* variables referenced across the three files in scope carries a credential - they are mount points, ports, a uid, a user name and a debug flag - but lima.env is generated outside the provided scope and its full contents could not be read, so the mode of the file it lands in could not be judged against what it actually holds."
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern5/jsonrpc/target - one Java class, com/rabbitmq/tools/jsonrpc/ProcedureDescription.java (174 lines), delivered as a source snapshot.",
+    "commit": "No VCS metadata was delivered with the snapshot. Identity anchor of what was actually read: sha256(src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java) = c2ff25ad559d56512e2bdc03711201b3c0f9f4932382d529928b3e865818244e",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad corpus, extern5 snapshot: coverage.md routing, knowledge/web-api.md SS3+SS5, knowledge/local-app.md SS0+SS5, triage.md, findings-artifact.md. No skill version string is carried in this corpus snapshot; the pass was performed manually against those files.",
+    "coverage_declaration": "Exercised: static reading of the single delivered file, end to end, twice - once for the data path from the parsed JSON document into the bean, once for the exported surface. Procedures applied: WEB-11 and WEB-12 (web-api.md SS5), WEB-07 to WEB-09 (SS3), WEB-10 (SS4, reached through the SS5 read), WEB-06 (SS2, opened only to rule the class out), LOC-10 with LOC SS0 for the attacker model. Partial coverage is declared per coverage.md row 53: for a published library this corpus covers injection, deserialization and file handling and has no procedure for argument and environment parsing, temp-file races or symlink traversal - none of which this class touches. NOT exercised: no build, no execution, no test, no network, no dynamic analysis; JSONUtil, ParameterDescription and the JsonRpcClient caller were not delivered and were not read, so every claim about how the map reaches this constructor is bounded by that; no dependency manifest and no VCS history were delivered, so supply-chain.md SS1-SS4 and supply-chain-secrets-malware.md SS8 (history secret scanning) were not exercised; the rest of the library outside this file is unmeasured, and unmeasured is not clean.",
+    "authorization": "Read-only source review of the delivered snapshot, authorized by the engagement brief. No remote, active or destructive test was run, and none was proposed against a live system."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "A return-type name taken from the JSON procedure description reaches Class.forName with no allowlist, initializing an attacker-named class",
+      "procedure": "WEB-11",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern5/jsonrpc/target/src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+        "line": 122,
+        "component": "com.rabbitmq.tools.jsonrpc.ProcedureDescription#computeReturnTypeAsJavaClass"
+      },
+      "evidence": "Source: the constructor that builds the object from a parsed JSON document, ProcedureDescription(Map<String, Object> pm) at line 48, whose first statement is JSONUtil.tryFill(this, pm) (line 49) - a reflective bean fill executed before anything in the document is validated. Transformation: the bean property javaReturnType is public and its setter carries a side effect - setJavaReturnType(String) assigns the field and immediately calls computeReturnTypeAsJavaClass() (lines 92-95). Sink: that method compares the string against nine primitive names and, for every other value, falls through to Class.forName(javaReturnType) at line 122. There is no allowlist, no package restriction, no asSubclass constraint and no use of the three-argument form with initialize=false. The intended origin of this value is visible in the sibling constructor, which derives it locally by reflection: this.javaReturnType = m.getReturnType().getName() (line 73). That the setters are driven reflectively while parsing is stated by the file itself, on the neighbouring property: '/** Private API - used via reflection during parsing/loading */ public void setReturn(String value)' (lines 82-83).",
+      "impact": "The party that authors the procedure description chooses a class name that the consumer's JVM loads. Class.forName(String) is the one-argument form, defined as Class.forName(name, true, callerLoader): it resolves and *initializes* the class, so the static initializer of any class on the consumer's classpath runs while the description is being parsed, before the application ever invokes a procedure. The attacker therefore gets (a) execution of whatever static-initializer side effects exist on that classpath - the standard precondition for turning unsafe reflection into code execution, (b) forced loading of classes the application never intended to touch, and (c) a remotely triggered IllegalStateException thrown from inside a setter (lines 124-126), aborting the parse. Boundary crossed: author of the JSON service description -> the JVM of the library's consumer.",
+      "preconditions": "The consumer builds a ProcedureDescription from a document it did not author - for a JSON-RPC client, the service description obtained from the remote endpoint, or any JSON the application feeds to this public constructor or to the public setter. Escalation from class initialization to code execution additionally requires a class with exploitable static-initializer side effects on the consumer's classpath; no such class was demonstrated here, and that classpath belongs to the consumer, not to the library.",
+      "recommendation": "Stop resolving arbitrary names. Resolve the return type against a closed allowlist of the types the service is allowed to declare, or defer resolution to the point of use and perform it with Class.forName(name, false, loader) followed by an explicit asSubclass or package check, so that parsing a document never initializes a class. Apply the control where the string becomes a Class, not only inside setJavaReturnType: the reflected-Method constructor writes the field directly (line 73) and bypasses the setter, so a fix installed only in the setter leaves the two population paths inconsistent - which is also why getReturnType() returns null today on that path, since _javaReturnTypeAsClass is only ever assigned from the setter. Treat the root cause as an insecure default in exported API: a public bean property whose assignment loads a class is exactly the defect local-app.md SS5 (LOC-10) describes as landing in the consumer's CVE rather than in the library's.",
+      "inference": "The single inferred link: JSONUtil.tryFill was not delivered and was not read, so that the document key 'javaReturnType' is the one routed to setJavaReturnType is taken from the Java bean-property naming convention plus the file's own javadoc that these setters are invoked 'via reflection during parsing/loading' (line 82), not from the filler's code. Everything after the setter was read directly (lines 92-127).",
+      "traceability": ["CWE-470", "CWE-502", "WSTG-INPV-*", "ASVS 5.0 V15", "A08:2025"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No control stands between the string and the sink inside the audited unit: computeReturnTypeAsJavaClass (lines 101-127) constrains nothing beyond the nine primitive names. Both entry points - the public constructor at line 48 and the public setter at line 92 - are exported API of a published library, so any validation a particular caller performs is validation another caller can skip, and FP-01 explicitly excludes a control a caller may forget."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Traced backwards, the value is never a literal, a constant or an allowlisted enum on this path: it arrives either in the caller-supplied Map (line 48) or through the public setter (line 92), and in both cases its origin lies outside the class. The only origin that is not externally supplied is the reflected-Method constructor at line 73, which does not reach the sink."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink at line 122 is Class.forName(String) - the one-argument overload, contractually equivalent to Class.forName(name, true, callerLoader), so it initializes the class it resolves and runs its static initializer. It is not the three-argument form with initialize=false, the result is not narrowed by asSubclass, and it is not a parse-only lookup. The sink is dangerous in exactly the form it is reached."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The code sits in the production source set (src/main/java/...), on a public constructor and a public setter, with no debug flag, test fixture or environment guard anywhere on the path. No built artifact was delivered, so this is read from source - which is why the answer is a negative rather than an exculpating HOLDS, since FP-04 would require the shipped artifact as evidence."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The crossing is nameable, as local-app.md SS0 requires: the author of the JSON procedure description on one side, the JVM of the library's consumer on the other. Two of that section's principals apply at once - 'a file the tool is pointed at' (the description document) and 'a consumer of the library' (the application that inherits this default). This is not a single principal acting on its own data."
+        }
+      ],
+      "limits": "Does not establish code execution: no gadget class with an exploitable static initializer was identified, and none could be from here, because the classpath belongs to the consumer. Does not establish who supplies the document at runtime - JsonRpcClient and the transport were not delivered. Does not establish what JSONUtil.tryFill does with keys it cannot match. Nothing was built, run or reproduced: the finding rests on reading the delivered source."
+    },
+    {
+      "id": "F-002",
+      "title": "The params member of the JSON document is cast and dereferenced unchecked, so a malformed description escapes the constructor as an unchecked exception",
+      "procedure": "ad-hoc",
+      "status": "probable",
+      "severity": "low",
+      "confidence": "medium",
+      "location": {
+        "path": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/extern5/jsonrpc/target/src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+        "line": 52,
+        "component": "com.rabbitmq.tools.jsonrpc.ProcedureDescription#<init>(java.util.Map)"
+      },
+      "evidence": "Lines 51-58: the map member is cast with the warning silenced - @SuppressWarnings(\"unchecked\") followed by List<Map<String, Object>> p = (List<Map<String, Object>>) pm.get(\"params\") - and the result is dereferenced on the very next line, params = new ParameterDescription[p.size()]. Three shapes of document break it, all of them shapes the sender chooses: a document with no 'params' member makes pm.get return null and p.size() throw NullPointerException at line 53; a document whose 'params' is a string, a number or an object throws ClassCastException at line 52; a document whose 'params' is a list of non-objects throws ClassCastException at the loop's implicit checkcast, line 55. The sibling constructor cannot fail this way: it takes the array length from m.getParameterTypes() (lines 67-68). The class's own accessor already tolerates the absent case - arity() returns 0 when params is null (line 136) - so the contract admits a description the constructor refuses to survive.",
+      "impact": "A malformed or hostile procedure description becomes an unchecked exception thrown out of a public constructor during parsing, instead of a typed parse error the caller can handle. The gain over simply not answering is marginal - the caller ends up handling a RuntimeException on its parse path rather than a declared protocol failure - and no memory or state corruption follows. It also breaks interoperability with any legitimate peer that omits 'params' for a zero-argument procedure.",
+      "preconditions": "The consumer parses a description document it did not author, and does not wrap this constructor in a catch for RuntimeException.",
+      "recommendation": "Validate the document's shape before casting: require 'params' to be present and to be a List, check each element is a Map, and raise a declared parse exception that names the offending member. Where a missing 'params' is legitimate, initialize the array empty rather than throwing - arity() (line 136) already expects that state.",
+      "inference": "The same single gap as F-001: the caller that supplies the map was not delivered, so that this constructor is reached with a document from a party other than the application itself is read from the class's declared purpose ('Description of a single JSON-RPC procedure', line 26) and from its Map-based constructor, not observed in the caller.",
+      "traceability": ["CWE-20", "CWE-476"],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No unskippable layer validates the document first: the constructor is the exported entry point and its first shape check is the cast itself. A caller that validates the JSON beforehand is a control the next caller can omit, which FP-01 excludes."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The shape of the map is chosen entirely by whoever authored the document; nothing in this class constrains it, and the value is not a constant or an allowlisted structure anywhere on the path."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Same crossing as F-001, named per local-app.md SS0: author of the description document -> the consumer's JVM. It is not the application failing on its own input."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a redundant layer with an equivalent elsewhere: the constructor is the only place the document's shape is examined, and the exception escapes into consumer code. Severity is held at low rather than raised, because a party able to send this document can already deny the client its answer; what it gains is an unchecked exception on a path expecting a typed error, which is marginal but real."
+        }
+      ],
+      "limits": "Does not establish availability impact beyond the aborted parse: whether the exception terminates a connection or consumer thread depends on JsonRpcClient, which was not delivered. Not reproduced - nothing was built or executed - so the three failure shapes are read from the Java semantics of the cast and the dereference, not from a run."
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Mass assignment reaching an unintended property through the reflective bean fill",
+      "procedure": "WEB-06",
+      "outcome": "refuted",
+      "where": "The settable surface was enumerated against the field list (lines 29-46) and each property weighed one by one: name, summary, help, idempotent, returnType via setReturn, and javaReturnType. The two fields that carry security weight cannot be assigned from a document - the reflected Method (line 46 declaration) and the resolved _javaReturnTypeAsClass (line 43) have no setter. The one property with semantics beyond text is idempotent, documented at line 35 as 'can be accessed via HTTP GET': a hostile description can flip it, but the only party that receives the resulting GET is the same party that authored the description, so it gains nothing and no finding is claimed. The only settable property with a side effect is javaReturnType, reported as F-001. Bound: this class only; ParameterDescription and JSONUtil were not delivered, so what they expose was not measured."
+    },
+    {
+      "class": "Exposure of internal mutable state through the accessors",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "getParams() and internal_getParams() (lines 130-141) hand back the internal ParameterDescription array without copying, and internal_getMethod() (line 86) hands back the reflected Method. Checked against local-app.md SS0 rule 2: caller and object live inside the same principal's process, no second principal is reachable through them, so the pattern is a hygiene item and not a vulnerability here. It would change only if a consumer shared one description across trust domains, which is outside the delivered code."
+    },
+    {
+      "class": "Operating system command execution",
+      "procedure": "WEB-08",
+      "outcome": "refuted",
+      "where": "The whole delivered file (174 lines) was read: no Runtime.exec, no ProcessBuilder, no shell string. Its only outbound calls are JSONUtil.tryFill, java.lang.reflect.Method accessors and Class.forName."
+    },
+    {
+      "class": "Data-layer injection (SQL, ORM, NoSQL)",
+      "procedure": "WEB-07",
+      "outcome": "refuted",
+      "where": "No query, statement, connection or query-builder API appears anywhere in the delivered file; the class holds no persistence surface at all."
+    },
+    {
+      "class": "Path traversal and file handling",
+      "procedure": "WEB-12",
+      "outcome": "refuted",
+      "where": "No java.io or java.nio API, no path assembly, no upload, download or archive extraction in the delivered file. Its imports are java.lang.reflect.Method, java.util.List and java.util.Map (lines 19-21)."
+    },
+    {
+      "class": "SSRF and outbound network access",
+      "procedure": "WEB-10",
+      "outcome": "refuted",
+      "where": "No HTTP client, URL, URI or socket is constructed in the delivered file. The class describes a procedure; it does not transport one. Bound: the transport that fetches the description was not delivered and was not examined."
+    },
+    {
+      "class": "Java native deserialization through ObjectInputStream",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "The class does not implement Serializable, declares no readObject, readResolve or readExternal, and never touches ObjectInputStream. The deserialization defect it does carry is the reflective one reported as F-001, not the native one."
+    },
+    {
+      "class": "Unbounded allocation driven by an attacker-declared length",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "new ParameterDescription[p.size()] (line 53) sizes the array from a list the parser has already materialized, not from a declared count field, so the document cannot request an array larger than the document itself. No procedure in the loaded packs covers this class, hence ad-hoc. Bound: allocation inside ParameterDescription was not examined, because that class was not delivered."
+    },
+    {
+      "class": "Hardcoded credentials or secret material",
+      "procedure": "ad-hoc",
+      "outcome": "refuted",
+      "where": "The delivered file was read in full: it contains no credential, key, token, hostname or URL - only the licence header and the class. Bound: one file, and no VCS history was delivered, so history-based secret scanning (supply-chain-secrets-malware.md SS8) was not exercised and nothing is claimed about it."
+    },
+    {
+      "class": "Insecure-by-default parameter in the published API, other than the return-type resolution",
+      "procedure": "LOC-10",
+      "outcome": "refuted",
+      "where": "The exported surface of this class was enumerated: three constructors (lines 48, 61, 76), six setters and the getters. None of them toggles a security control or defaults one to the permissive option, and none accepts a callable, deserializer or loader. The single dangerous default is the unbounded class resolution reported as F-001. Bound: the rest of the library's exported surface was not delivered."
+    }
+  ]
+}

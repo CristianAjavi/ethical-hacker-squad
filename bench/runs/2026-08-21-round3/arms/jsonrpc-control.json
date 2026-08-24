@@ -1,0 +1,42 @@
+{"findings": [
+  {
+    "id": "F-001",
+    "title": "Class.forName() on a string taken from the remote service description: the RPC peer picks which class the client loads and initializes",
+    "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+    "line": 122,
+    "severity": "high",
+    "impact": "Whoever answers the 'system.describe' call (a malicious or compromised JSON-RPC service, or anyone able to land a reply on the client's reply queue) fully controls the string reaching Class.forName(). Class.forName(String) resolves AND initializes the class, so the attacker can force the client JVM to run the static initializer of any class on its classpath, chosen by name, with no allowlist - a well-known primitive for triggering side effects (thread/process start, file or socket access, JNDI/LDAP-style bootstrapping, memory exhaustion) and for probing which libraries the client has. The resulting Class object is then handed to callers through getReturnType() (line 97) as the declared return type of the procedure, i.e. as the target type the RPC response is converted into - so the same untrusted input also selects the deserialization target type, which turns any gadget-shaped class present on the classpath into remote code execution. Nothing in this class constrains the name: array descriptors ('[L...;') and any package are accepted.",
+    "evidence": "Line 48-49: `public ProcedureDescription(Map<String, Object> pm) { JSONUtil.tryFill(this, pm); ... }` - the object is populated reflectively from the parsed JSON document. The bean setter at line 92-95, `public void setJavaReturnType(String javaReturnType) { this.javaReturnType = javaReturnType; this._javaReturnTypeAsClass = computeReturnTypeAsJavaClass(); }`, is the only reason that setter exists, and the matching getter at line 88 puts 'javaReturnType' on the wire, so the field is part of the protocol. computeReturnTypeAsJavaClass() special-cases the nine primitive names and then falls through to line 122: `return Class.forName(javaReturnType);` with no allowlist, no ClassLoader restriction, and initialize=true.",
+    "recommendation": "Never resolve an arbitrary class name received over the wire. Restrict resolution to a caller-supplied allowlist of permitted return types (the types the client actually expects for the service interface it is calling), and reject anything else with a protocol error instead of loading it. If a name must still be resolved, use Class.forName(name, false, loader) so the class is not initialized, with an explicitly scoped ClassLoader. Better: derive the return type from the local Java interface the client was constructed with, and treat the server-declared javaReturnType as advisory only."
+  },
+  {
+    "id": "F-002",
+    "title": "The 'params' entry of the JSON description is used without any validation - a missing or wrongly typed value crashes the client with NPE/ClassCastException",
+    "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+    "line": 53,
+    "severity": "medium",
+    "impact": "A malformed or hostile service description reliably throws an unchecked exception out of the constructor, aborting whatever was building the service description (client bootstrap / RPC dispatch) rather than failing as a protocol error. A remote peer that omits 'params' gets a NullPointerException; one that sends `\"params\": \"x\"` or `\"params\": 3` gets a ClassCastException on the cast; one that sends `\"params\": [1,2]` gets a ClassCastException inside the loop when each element is assigned to Map<String,Object>. Cheap remote denial of service against every client that describes the service, and an unhelpful failure mode for merely buggy peers.",
+    "evidence": "Lines 51-58: `List<Map<String, Object>> p = (List<Map<String, Object>>) pm.get(\"params\"); params = new ParameterDescription[p.size()];` followed by `for (Map<String, Object> param_map: p)`. There is no null check on pm.get(\"params\") and no instanceof check; the @SuppressWarnings(\"unchecked\") at line 51 hides only the element type - the erased cast to List and the per-element cast still fail at runtime on hostile input. Note also that the sibling constructors can leave `params` null, and internal_getParams()/getParams() (lines 130, 139) return it unguarded even though arity() (line 136) does guard against null.",
+    "recommendation": "Validate before use: treat a missing 'params' as an empty parameter list, check `instanceof List` and `instanceof Map` per element, bound the accepted size, and throw a checked/protocol-level exception (e.g. an IllegalArgumentException carrying the procedure name, caught by the description parser) instead of letting NPE/CCE escape. Same treatment for the other fields tryFill() writes, whose types are equally attacker-chosen."
+  },
+  {
+    "id": "F-003",
+    "title": "getReturnType() silently returns null for descriptions built from a Method, because the Method constructor writes the field directly and skips the setter that computes the class",
+    "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+    "line": 73,
+    "severity": "low",
+    "impact": "The two constructors leave the object in inconsistent states: a ProcedureDescription built from JSON has _javaReturnTypeAsClass populated, one built by reflection from a local Method has it null. Any code that obtains a description the server-side way (or via the no-arg constructor at line 76 followed by partial filling) and then calls getReturnType() gets null, producing a NullPointerException at a distance in the caller instead of at the point of the mistake. It is a latent correctness trap for any future use of the class on the server or in tests.",
+    "evidence": "Line 73 sets the backing field directly - `this.javaReturnType = m.getReturnType().getName();` - bypassing setJavaReturnType() (line 92), which is the only place _javaReturnTypeAsClass is ever assigned (line 94). The no-arg constructor at line 76-78 has the same effect. getReturnType() at line 97-99 just returns the field, with no lazy compute and no null guard.",
+    "recommendation": "Have the Method constructor set the type through the same path (e.g. `this._javaReturnTypeAsClass = m.getReturnType();` alongside the name, or route both constructors through one private initializer), or make getReturnType() compute lazily from javaReturnType when the cached class is null. Making the class immutable - final fields set once in a static factory that validates the JSON map - removes this whole family of half-initialized states."
+  },
+  {
+    "id": "F-004",
+    "title": "Class resolution runs eagerly inside a bean setter and only ClassNotFoundException is handled, so parsing a description can throw IllegalStateException or an Error",
+    "file": "src/main/java/com/rabbitmq/tools/jsonrpc/ProcedureDescription.java",
+    "line": 124,
+    "severity": "low",
+    "impact": "Resolution happens while the JSON document is being unpacked, not when the return type is first needed, so one procedure whose declared return class is simply absent from the client's classpath (a version skew between server and client, no attacker required) aborts the parse of the entire service description with an unchecked IllegalStateException. Worse, only ClassNotFoundException is caught: ExceptionInInitializerError, NoClassDefFoundError, LinkageError and anything a static initializer throws propagate out of a setter invoked reflectively by tryFill(), where callers have no reason to expect them - which is also how F-001's static-initializer side effects surface.",
+    "evidence": "Lines 92-95 call computeReturnTypeAsJavaClass() from the setter, and lines 124-126 catch only `ClassNotFoundException e` and rethrow as `new IllegalStateException(\"Unable to load class: \" + javaReturnType, e)`. Errors thrown by class initialization are not subclasses of ClassNotFoundException and are not caught anywhere in this class.",
+    "recommendation": "Resolve lazily in getReturnType() (after the allowlist check from F-001), keep the raw name until it is actually needed, and report an unresolvable return type as a per-procedure protocol failure rather than by throwing out of the parser. Avoid echoing the attacker-supplied name verbatim into the exception message if that message reaches a log or a client-facing error."
+  }
+]}

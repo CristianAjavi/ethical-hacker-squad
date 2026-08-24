@@ -1,0 +1,165 @@
+{
+  "coverage": "TARGET: Unleash 8.0.1 monorepo. INVENTORY: 6,490 files total; Express/TypeScript backend in src/lib (945 non-test .ts + 384 test files across 50 feature modules), React SPA in frontend/src (~4,138 .ts/.tsx), ~90 db migrations in src/migrations, 15 mail templates in src/mailtemplates, Dockerfile + 3 docker-compose files, .github/workflows. METHOD: I did not sample uniformly. I picked the surfaces where a defect is reachable by an attacker rather than merely ugly, and I read those end to end: the request pipeline (app.ts), every file in src/lib/middleware (14 non-test files: auth, api-token, pat, rbac, cors, secure-headers, session-db, bearer-token, origin, authorization, no/oss/demo-authentication, content-type), the whole auth surface (routes/auth/*, routes/index.ts route mounting, routes/controller.ts permission wiring, public-invite.ts, user-service.ts, reset-token-service.ts, public-signup-token-service.ts, access-service.ts permission evaluation), all credential-issuing code (api-token-service.ts, pat-service.ts + pat-store.ts, edgetokens/*, edge-service.ts, routes/edge-api, admin-api/api-token.ts, admin-api/project/api-token.ts, admin-api/user/pat.ts, db/api-token-store.ts, db/reset-token-store.ts), the crypto helpers (util/anonymise, constantTimeCompare, escape-regex, random-id), feature-naming-pattern/*, and the outbound-request layer (addons/webhook.ts, addon-service.ts, feature-event-formatter-md.ts, routes/admin-api/addon.ts, email-service.ts + all 15 mustache templates). I ran targeted greps repo-wide for the classes that do not need a file-by-file read: child_process/eval/new Function (zero hits), path traversal into fs (zero hits), dynamic RegExp (2 hits, both followed up), crypto primitives (all 40 call sites triaged), rateLimit call sites (8, all traced), and `permission: NONE` route declarations (~110, tabulated per controller and the auth model behind them established). I fanned out three read-only subagents. TWO REPORTED: a frontend sweep (grep-led across all ~4,100 frontend files for XSS sinks, javascript:/data: URL sinks, open redirect, client-side secrets, postMessage) and an addons/SSRF sweep. I independently re-verified every addons-lane claim I carried forward (F-010, F-011, F-012) against the source before including it, and dropped the rest of that lane's output rather than pass on claims I could no longer restate. The frontend lane's findings (F-004, F-013, F-014, F-016) are reported as it substantiated them, with its own caveats preserved in the evidence text. DELIBERATELY NOT COVERED — treat these as silence, not a clean bill: (1) THE ENTIRE DATA-ACCESS LAYER. My third subagent, tasked with SQL-injection and query-construction review over src/lib/db/*.ts and every *-store.ts / *-read-model.ts, never returned. I had grepped 17 `.raw(` and 39 raw-builder call sites and hand-triaged only three of them (feature-search-store.ts:543 sort-order interpolation, metrics stores' INTERVAL interpolation, group-store.ts jsonb operators) before handing off; the remaining ~50 sites, and every question about missing project/tenant scoping predicates in queries, are UNEXAMINED. feature-search-store.ts (1,000+ lines of user-driven filter/sort SQL) is the single highest-risk file I did not finish. (2) src/migrations — not read at all beyond one grep for role grants. (3) The change-request, playground/feature-evaluator, export-import-toggles, segment/constraints, events/event-search, project-insights, personal-dashboard, traffic-data-usage, scheduler and instance-stats modules — I established their route permissions from the `permission: NONE` tabulation but read no handler bodies; authorization logic inside them is unreviewed. (4) frontend/cypress, frontend/scripts, vite config, and util/rewriteHTML.ts. (5) Dependency/supply-chain: pnpm-lock.yaml, patches/, and .github/workflows were not reviewed, and I did not look up advisories for any dependency (out of scope per instructions). (6) I executed nothing — no tests, no server, no browser — so every behavioral claim here is read from source, and the two library-behavior assumptions in F-013/F-016 are flagged inline as unconfirmed.",
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Global `trust proxy: true` makes req.ip attacker-controlled, defeating every rate limiter (login, password reset, user creation)",
+      "file": "src/lib/app.ts",
+      "line": 54,
+      "severity": "high",
+      "impact": "An unauthenticated attacker bypasses brute-force protection on POST /auth/simple/login, POST /auth/reset/password-email and POST /api/admin/user-admin by sending a fresh spoofed X-Forwarded-For value on each request, enabling unlimited password guessing and reset-mail flooding.",
+      "evidence": "app.ts:54 `app.set('trust proxy', true)` trusts the entire forwarded chain unconditionally, so Express derives req.ip from the leftmost, client-supplied X-Forwarded-For entry. Every express-rate-limit instance relies on the default keyGenerator (req.ip) and additionally passes `validate: false`, which switches off express-rate-limit's own permissive-trust-proxy detection: src/lib/routes/index.ts:46-52 (simpleLoginMaxPerMinute), src/lib/routes/auth/reset-password-controller.ts:132-138 (passwordResetMaxPerMinute), src/lib/routes/admin-api/user-admin.ts:360 (createUserMaxPerMinute).",
+      "recommendation": "Make the trust-proxy setting configurable and default it to a specific hop count or CIDR list (`app.set('trust proxy', config.server.trustProxy ?? false)`), and drop `validate: false` so express-rate-limit's trust-proxy validator can fire. Where a proxy really is in front, key the limiters on a header the proxy sets and clients cannot forge."
+    },
+    {
+      "id": "F-002",
+      "title": "Project feature-naming pattern is compiled and executed as an unbounded user-supplied regex (ReDoS)",
+      "file": "src/lib/features/feature-naming-pattern/feature-naming-validation.ts",
+      "line": 3,
+      "severity": "high",
+      "impact": "Any user who can update a project's settings (project owner/editor; in OSS any Editor can create a project and own it) can hang the single-threaded Node event loop indefinitely with one request, taking the whole Unleash server — including flag delivery to every SDK — offline. A stored pattern also poisons every later feature-creation and import request in that project.",
+      "evidence": "`const compileRegex = (pattern: string) => new RegExp(`^${pattern}$`)` compiles the raw project setting. `checkFeatureNamingData` runs `compileRegex(pattern).test(example)` (line 27) on the caller's own pattern+example at save time; the only input filter is `disallowedStrings` (line 5), which rejects whitespace and nothing else. `checkFeatureFlagNamesAgainstPattern` (lines 54-62) re-runs the stored pattern against every submitted flag name (src/lib/features/feature-toggle/feature-toggle-service.ts:1227 and 1318, plus the export-import validator). createFeatureNamingPatternSchema (src/lib/openapi/spec/create-feature-naming-pattern-schema.ts:9-22) sets no maxLength on `pattern` or `example`, so a payload such as pattern `(a+)+c` with a long non-matching example blocks the process. Neither call site wraps `new RegExp` in try/catch, so an unparsable pattern is also an unhandled 500 rather than a 400.",
+      "recommendation": "Run untrusted patterns through a non-backtracking engine (RE2) or a complexity check before storing, cap pattern and example length in the OpenAPI schema, wrap `new RegExp` in try/catch and return 400 on SyntaxError, and evaluate matching under a timeout or in a worker."
+    },
+    {
+      "id": "F-003",
+      "title": "Stored `javascript:` URL on an application record yields XSS in the Unleash origin",
+      "file": "frontend/src/component/application/Application.tsx",
+      "line": 153,
+      "severity": "high",
+      "impact": "A non-admin Editor stores a `javascript:` payload as an application's URL; any user who later opens that application page and clicks the link icon executes attacker script in the Unleash origin with their own session — including an Admin, giving full account takeover of the instance.",
+      "evidence": "Lines 150-157 render `<IconButton component={Link} nativeButton={false} href={url} size='large'>` where `Link` is @mui/material's Link (imported line 8), so this is a bare `<a href={url}>` with no `target`, i.e. a same-tab navigation. `url` is destructured from the API response at line 73 and originates from POST /api/admin/metrics/applications/:appName, which requires only UPDATE_APPLICATION (src/lib/routes/admin-api/metrics.ts:78,100) — a permission granted to the built-in Editor role (src/migrations/20231123155649-favor-permission-name-over-id.js:151). The value is stored raw: createApplicationSchema declares `url` as a plain `type: 'string'` with no format or pattern (src/lib/openapi/spec/create-application-schema.ts:17-22) and instance-service.ts:333 upserts it unmodified. CAVEAT, stated because nothing was executed: this assumes react-dom 19 still only warns on `javascript:` hrefs rather than stripping them — React's documented behaviour since 16.9, but worth a one-line browser check before assigning the final severity.",
+      "recommendation": "Add a central `safeHref` helper that returns undefined unless the value matches `^https?://`, and use it at this render site and every other href fed from API data; additionally reject non-http(s) schemes server-side in createApplication."
+    },
+    {
+      "id": "F-004",
+      "title": "Unauthenticated user enumeration via password-reset endpoint",
+      "file": "src/lib/services/user-service.ts",
+      "line": 719,
+      "severity": "medium",
+      "impact": "Anyone who can reach the instance can test whether an email address belongs to a registered user and harvest the user directory as a target list for password spraying or phishing.",
+      "evidence": "`createResetPasswordEmail` throws `new NotFoundError(`Could not find ${receiverEmail}`)` when the address is unknown, while a known address returns 200 (or 429 'You can only send one new reset password email per minute, per user' from the per-user timeout at lines 721-725). The route POST /auth/reset/password-email (src/lib/routes/auth/reset-password-controller.ts:113-140) is `permission: NONE` and lets the error propagate, so status code and body distinguish existing from non-existing accounts. Combined with F-001 the per-IP limiter does not slow the sweep down.",
+      "recommendation": "Always return 200 with a generic body from `sendResetPasswordEmail` regardless of whether the address resolves, and give the per-user throttle the same response shape; record the miss server-side instead of surfacing it."
+    },
+    {
+      "id": "F-005",
+      "title": "Bootstrap admin password is written to the application log in cleartext",
+      "file": "src/lib/services/user-service.ts",
+      "line": 204,
+      "severity": "medium",
+      "impact": "Anyone with read access to server logs (log aggregator, container stdout, support bundle, CI output) recovers the initial Unleash administrator password and can log in as admin.",
+      "evidence": "`initAdminUsernameUser` builds `const password = usernameAdminUser?.password || 'unleash4all'` (line 197) and then logs `this.logger.info(`Creating default admin user, with username '${username}' and password '${password}'`)` at lines 204-206. The value is not only the well-known default: `parseEnvVarInitialAdminUser` feeds it from `process.env.UNLEASH_DEFAULT_ADMIN_PASSWORD` (src/lib/create-config.ts:338-339, 355-356), so a deployment-specific secret is logged verbatim.",
+      "recommendation": "Log only the username and whether a custom password was supplied; never interpolate the password. If the built-in default is used, log a warning telling the operator to change it rather than echoing it."
+    },
+    {
+      "id": "F-006",
+      "title": "Updating an integration returns the stored secret the caller never supplied",
+      "file": "src/lib/services/addon-service.ts",
+      "line": 279,
+      "severity": "medium",
+      "impact": "A user holding only the fine-grained UPDATE_ADDON permission — not ADMIN, and with no prior knowledge of the credential — extracts the plaintext Slack bot token, Datadog API key or webhook Authorization header of any configured integration by issuing a no-op update and reading the response.",
+      "evidence": "Reads are masked (`filterSensitiveFields` replaces sensitive params with MASKED_VALUE for getAddons/getAddon, lines 185-207), and `updateAddon` correctly restores the stored value when the client echoes the mask back: `if (addonConfig.parameters[key] === MASKED_VALUE) { o[key] = existingConfig.parameters[key]; }` (line 279). But the restored, unmasked object is what is persisted and returned — `const result = await this.addonStore.update(id, addonConfig); ... return result;` (lines 288-297) — and the controller serialises it straight to the client: `this.openApiService.respondWithValidation(200, res, addonSchema.$id, serializeDates(addon))` (src/lib/routes/admin-api/addon.ts:248-253). addonSchema declares `parameters` as `type: 'object', additionalProperties: {}` (src/lib/openapi/spec/addon-schema.ts:39-47), so nothing filters it on the way out. The route requires only UPDATE_ADDON (addon.ts:143).",
+      "recommendation": "Return `this.filterSensitiveFields(result)` from `updateAddon` and `createAddon`, matching what the read paths already do."
+    },
+    {
+      "id": "F-007",
+      "title": "Webhook and Datadog/Teams/Slack integrations perform fully attacker-directed outbound requests (SSRF) with arbitrary headers",
+      "file": "src/lib/addons/webhook.ts",
+      "line": 91,
+      "severity": "medium",
+      "impact": "A user with CREATE_ADDON/UPDATE_ADDON (a fine-grained root permission, not necessarily ADMIN) makes the Unleash server issue POSTs to any address reachable from inside the deployment network — cloud instance-metadata endpoints (169.254.169.254), localhost admin ports, internal service APIs — with a body and headers they fully control, and reads back the outcome via the response status recorded in the integration event.",
+      "evidence": "`const res = await this.fetchRetry(url, requestOpts)` at line 91, where `url` comes straight from the addon's stored `parameters` (line 47) with no scheme, host or IP-range validation anywhere: a repo-wide grep for 169.254, metadata hosts, isPrivate, blocklist/allowlist over src/lib returns zero hits. `customHeaders` is `JSON.parse`d from a free-text parameter and spread into the request headers (lines 71-88), after `Authorization`, so any header including Authorization can be forged. The webhook parameter definition (src/lib/addons/webhook-definition.ts) applies no URL constraint, and the outcome is persisted per-integration for the caller to read (src/lib/features/integration-events).",
+      "recommendation": "Validate the configured URL at save time: require http(s), resolve the host and reject loopback, link-local, and RFC1918 ranges, re-check after DNS resolution at request time, and disable redirect following. Restrict which headers an addon may set, and never allow it to override Authorization implicitly."
+    },
+    {
+      "id": "F-008",
+      "title": "Addon event formatter disables Mustache HTML escaping process-wide, including for outbound emails",
+      "file": "src/lib/addons/feature-event-formatter-md.ts",
+      "line": 355,
+      "severity": "medium",
+      "impact": "Once any integration formats a single event, HTML escaping silently becomes a no-op for every other Mustache consumer in the process — notably the HTML email renderer — so user-controlled values such as flag names, change-request titles and user names are injected unescaped into mail sent to other users. The defect is non-deterministic: the same mail is escaped or not depending on whether an integration happened to fire first in that process.",
+      "evidence": "`Mustache.escape = (text) => text;` at line 355 mutates the shared module export of the `mustache` package inside `format()`, and never restores it. The same module instance renders every HTML mail template: `return await Promise.resolve(Mustache.render(template, context))` (src/lib/services/email-service.ts:643). The templates rely on double-stache escaping for attacker-influenced fields — e.g. `{{name}}`, `{{type}}`, `{{ changeRequestTitle }}` and `{{ conflictScope }}` in src/mailtemplates/scheduled-change-conflict/scheduled-change-conflict.html.mustache:344-350. Separately and unconditionally, several templates already opt out of escaping for user-controlled values with triple-stache: `{{{ changeRequestTitle }}} by {{{ requesterName }}} ({{{ requesterEmail }}})` (src/mailtemplates/requested-cr-approval/requested-cr-approval.html.mustache:20) and `{{{ userEmail }}}` (order-environments.html.mustache:341).",
+      "recommendation": "Never mutate the shared Mustache export; pass a local renderer or restore the previous escape function in a finally block. Independently, replace the triple-stache tags around user-controlled values with escaped tags, keeping `{{{ }}}` only for values the server itself constructs."
+    },
+    {
+      "id": "F-009",
+      "title": "Edge HMAC replay-nonce is persisted before the signature is verified",
+      "file": "src/lib/features/edgetokens/edge-hmac-verifier.ts",
+      "line": 38,
+      "severity": "medium",
+      "impact": "An unauthenticated attacker forces unbounded INSERTs into `edge_hmac_nonces` with arbitrary client_id/nonce values — rows only reaped by a scheduled job — and can pre-burn an observed nonce so the legitimate Edge request is rejected as 'Replay detected'.",
+      "evidence": "In `hmacSignatureVerifyTokenRequest` the call `await edgeService.notSeenBefore({ clientId, nonce, expiresAt })` at line 38 runs before the client is even loaded (line 48) and long before the HMAC comparison (line 84). `EdgeService.notSeenBefore` (src/lib/services/edge-service.ts:103-113) unconditionally calls `edgeTokenStore.registerNonce`, a plain INSERT (src/lib/features/edgetokens/edge-token-store.ts:50-62). POST /edge/issue-token is declared `permission: NONE` (src/lib/routes/edge-api/index.ts:66-70) with no rate limiter, and `clientId` is taken straight from the Authorization header regex at line 14 with no format validation.",
+      "recommendation": "Verify the HMAC signature first and register the nonce only after the signature is proven valid; rate-limit /edge/issue-token and cap stored nonces per client."
+    },
+    {
+      "id": "F-010",
+      "title": "Multi-project API token secrets are exposed to holders of read rights on only one of its projects",
+      "file": "src/lib/routes/admin-api/project/api-token.ts",
+      "line": 240,
+      "severity": "medium",
+      "impact": "A user whose access is limited to project A obtains the full secret of a client/backend token scoped to projects [A, B] and can then read project B's flag configuration through the client API — a lateral move past the project boundary.",
+      "evidence": "`accessibleTokens(user, project)` filters only on `token.type !== ApiTokenType.ADMIN && (token.project === project || token.projects.includes(project))` (lines 240-244), so any token whose project list merely *contains* the caller's project is returned. `getProjectApiTokens` (lines 155-161) serialises those rows through `apiTokensSchema`, which carries the `secret` field, and the route requires only READ_PROJECT_API_TOKEN on the requested project (line 84). Multi-project tokens are creatable through the admin endpoint (src/lib/routes/admin-api/api-token.ts:307-337 via `createApiTokenWithProjects`), so the [A,B] shape is reachable.",
+      "recommendation": "Return the secret only when the caller's project access covers every project the token is scoped to; otherwise return the metadata with the secret masked."
+    },
+    {
+      "id": "F-011",
+      "title": "API token secret is accepted and retained in the browser URL query string",
+      "file": "frontend/src/component/playground/Playground/AdvancedPlayground.tsx",
+      "line": 188,
+      "severity": "medium",
+      "impact": "A live API token secret is placed in the address bar and left there: it is written to browser history, sent in the request line to every reverse proxy and CDN in front of Unleash (where it lands in access logs), and leaked outright by anyone who shares 'the playground link'.",
+      "evidence": "`let tokenFromUrl = searchParams.get('token');` in `resolveTokenFromUrl` (lines 187-194). The value is a token *secret*, not a name — it is matched with `tokens.find(({ secret }) => secret === tempToken)` in PlaygroundConnectionFieldset.tsx:155. `setURLParameters()` (lines 285-311) mutates and re-submits the same `searchParams` object through `setSearchParams(searchParams)` without ever deleting `token`, so the secret persists in the URL for the rest of the session. `defaultSettings` (line 91) additionally reserves a `token?: string` slot in `createLocalStorage('AdvancedPlayground:v1', …)` and line 108 still reads `value.token`, so any previously persisted secret keeps being rehydrated.",
+      "recommendation": "Read the token once, then `searchParams.delete('token')` and `setSearchParams(searchParams, { replace: true })` so it never survives in history; drop `token` from the persisted localStorage shape and remove the `value.token` read."
+    },
+    {
+      "id": "F-012",
+      "title": "Feature-link URLs reach an href with no scheme allowlist on either side",
+      "file": "frontend/src/component/feature/FeatureView/FeatureOverview/FeatureOverviewMetaData/FeatureOverviewMetaData.tsx",
+      "line": 166,
+      "severity": "medium",
+      "impact": "Any user who can edit a flag stores a `javascript:` or `data:` URL that is rendered as a clickable link on the flag's overview page for every other user. Today `target='_blank'` makes it largely inert, because browsers refuse to run a javascript: URL in a new browsing context — the exposure is one attribute removal away from being equivalent to F-003.",
+      "evidence": "`<ListItemButton component='a' nativeButton={false} href={link.url} target='_blank' rel='noopener noreferrer'>` at lines 163-169. `link.url` is free text: LinkDialogue.tsx:107 `onChange={(e) => setUrl(e.target.value)}` with only a non-empty check at line 96, and linkSchema imposes no URL format (src/lib/openapi/spec/link-schema.ts:8-12). The backend's sole guard is `normalizeUrl(url, { defaultProtocol: 'https' })` (src/lib/features/feature-links/feature-link-service.ts:56-62), and normalize-url v9 deliberately returns URLs with a custom protocol unchanged — its `hasCustomProtocol()` short-circuits for any parseable scheme outside http/https/file — so `javascript:…` is stored verbatim.",
+      "recommendation": "Reject anything whose `new URL(...).protocol` is not `http:` or `https:` in `feature-link-service.normalize()`, and apply the same `safeHref` allowlist at the render site rather than relying on normalize-url or on `target='_blank'`."
+    },
+    {
+      "id": "F-013",
+      "title": "Password-reset token is derived from a lossy UTF-8 decode of random bytes and stored unhashed",
+      "file": "src/lib/services/reset-token-service.ts",
+      "line": 126,
+      "severity": "low",
+      "impact": "Entropy of the reset-token input is silently reduced well below the intended 256 bits, and the token is stored in the database in the same form it is mailed. It is not currently guessable because the bcrypt salt supplies its own randomness, but the construction is fragile: replacing the bcrypt wrapper with any deterministic hash would turn it into a predictable token, and a database read discloses live reset tokens directly.",
+      "evidence": "`return bcrypt.hash(crypto.randomBytes(32).toString(), 10)` — `Buffer.prototype.toString()` defaults to 'utf8', so every byte >= 0x80 that is not part of a valid UTF-8 sequence collapses to U+FFFD before hashing, discarding roughly half the generated bytes. The resulting bcrypt string is then persisted verbatim as the token (src/lib/db/reset-token-store.ts:71-84, column `reset_token`) and looked up by equality (getActive, lines 49-60).",
+      "recommendation": "Use `crypto.randomBytes(32).toString('base64url')` as the token directly, store only its SHA-256, and compare in constant time on redemption."
+    },
+    {
+      "id": "F-014",
+      "title": "Login `redirect` parameter is sanitized on only one branch, enabling an open redirect",
+      "file": "frontend/src/component/user/SimpleAuth/SimpleAuth.tsx",
+      "line": 37,
+      "severity": "low",
+      "impact": "A phishing link of the form /login?redirect=//evil.com sends the user to an attacker-controlled origin immediately after they authenticate, at the moment they are most likely to trust what they are shown.",
+      "evidence": "Login.tsx:26-27 reads `query.get('redirect')` and correctly launders it through `parseRedirectParam()` at line 31 — which rebuilds it against the current origin and keeps only `{pathname, search}` — but only on the already-authenticated branch. The raw string is passed on as `<Authentication redirect={redirect}>` (line 58) and reaches `navigate(redirect)` unmodified at SimpleAuth.tsx:37, and `navigate(redirect, { replace: true })` at PasswordAuth.tsx:90, HostedAuth.tsx:88 and DemoAuth/DemoAuth.tsx:42. CAVEAT, stated because nothing was executed: the SimpleAuth path is the exploitable one on the reasoning that react-router v7's `push` catches the cross-origin `pushState` SecurityError and falls back to `window.location.assign`, while the three `replace: true` call sites use `replaceState`, which has no such fallback and fails loudly. That library behaviour was read from documentation, not observed.",
+      "recommendation": "Call `parseRedirectParam` once in Login.tsx and pass the parsed `{pathname, search}` down to `<Authentication>`, so all four components navigate to an already-laundered value; additionally have `parseRedirectParam` reject a pathname beginning with `//`."
+    },
+    {
+      "id": "F-015",
+      "title": "Deleting a personal access token writes another user's PAT metadata into the audit log",
+      "file": "src/lib/features/pat/pat-service.ts",
+      "line": 67,
+      "severity": "low",
+      "impact": "Any authenticated user can cause an arbitrary other user's PAT record (id, description, expiry, owning user id) to be copied into the shared event log by calling DELETE with an id they do not own; readers of the event feed then see PAT metadata they were never granted.",
+      "evidence": "`deletePat` calls `const pat = await this.patStore.get(id)` — an unscoped lookup (`this.db(TABLE).where({ id }).first()`, src/lib/features/pat/pat-store.ts:104-105) — and stores it in a `PatDeletedEvent` before the correctly scoped `this.patStore.deleteForUser(id, forUserId)` runs at line 76. The route (src/lib/routes/admin-api/user/pat.ts:97-129, handler at line 173-180) is `permission: NONE` and passes `req.params.id` through unchecked. The deletion itself is properly scoped, so this is disclosure, not destruction.",
+      "recommendation": "Fetch the PAT with the owner filter applied (a `getForUser(id, userId)` helper) and return 404 when it does not belong to the caller, before emitting any event."
+    },
+    {
+      "id": "F-016",
+      "title": "Dead project comparison in project API-token deletion authorization",
+      "file": "src/lib/routes/admin-api/project/api-token.ts",
+      "line": 209,
+      "severity": "informational",
+      "impact": "No exploit path found, but a branch that exists to authorize a deletion never evaluates as intended, so the check silently does nothing and would mask a regression in the sibling condition it sits beside.",
+      "evidence": "`storedToken.projects.length === 1 && storedToken.project[0] === projectId` indexes `project`, which is a *string* (`currentToken.project = currentToken.projects.join(',')`, src/lib/db/api-token-store.ts:66), so `project[0]` is a single character and can only match a one-character project id. `storedToken.projects[0]` was clearly intended.",
+      "recommendation": "Change to `storedToken.projects[0] === projectId`, or delete the branch since the preceding `storedToken.project === projectId` already covers the single-project case."
+    }
+  ]
+}

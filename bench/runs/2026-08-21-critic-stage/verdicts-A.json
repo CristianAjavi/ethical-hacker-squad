@@ -1,0 +1,40 @@
+{
+  "verdicts": [
+    {
+      "claim_id": "V01",
+      "verdict": "supported",
+      "why": "readFieldValue dispatches 'F' to readTable (line 181) and 'A' to readArray (line 184), and both re-enter readFieldValue (lines 150 and 245), with no depth counter or nesting guard anywhere in the file; each nesting level costs ~5-6 wire bytes, so a single frame can drive tens of thousands of frames of mutual recursion.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181"
+    },
+    {
+      "claim_id": "V02",
+      "verdict": "supported",
+      "why": "Lines 86-89 allocate `new byte[(int)contentLength]` from a wire-supplied 32-bit length guarded only by `contentLength < Integer.MAX_VALUE`, and the allocation happens BEFORE `in.readFully(buffer)`, so no upstream frame-size bound can prevent a ~2GB allocation from a few bytes of input.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88"
+    },
+    {
+      "claim_id": "V03",
+      "verdict": "supported",
+      "why": "Same code as V02: the only check at line 87 is `< Integer.MAX_VALUE`, so a declared length of 0x7FFFFFFE allocates ~2GB at line 88 before any byte is read; the only imprecision is that readTable/readArray reach readBytes through readFieldValue -> readLongstr (line 163), not directly at lines 142/240.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86"
+    },
+    {
+      "claim_id": "V04",
+      "verdict": "refuted",
+      "why": "Nothing is allocated in proportion to tableLength: lines 145-147 create only an empty HashMap and a TruncatedInputStream wrapper (a counter), and the loop at line 148 is driven by `tableIn.available()`, i.e. by bytes actually present, so a huge declared length allocates nothing and reads nothing extra — the claimed 'unbounded memory allocation via table length' mechanism does not exist in this code.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:145"
+    },
+    {
+      "claim_id": "V05",
+      "verdict": "undecidable",
+      "why": "Whether `available()` at lines 148 and 244 is a sound EOF test depends entirely on TruncatedInputStream.available() and on which stream the callers hand to ValueReader; neither TruncatedInputStream nor any caller exists under the target path (only ValueReader.java and pom.xml), so the answer lives outside these files.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148"
+    },
+    {
+      "claim_id": "V06",
+      "verdict": "refuted",
+      "why": "Lines 240-243 allocate only a stream wrapper and an empty ArrayList; the wire-supplied `length` is used solely as a truncation limit, never as an allocation size, and the ArrayList grows one element per value actually parsed from real bytes at line 245 — so a declared 4GB length consumes no memory by itself.",
+      "line": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:241"
+    }
+  ]
+}

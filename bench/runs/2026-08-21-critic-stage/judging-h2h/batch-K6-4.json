@@ -1,0 +1,35 @@
+{
+ "findings": [
+  {
+   "item_id": "F01",
+   "title": "Stack overflow from unbounded recursion in field/table/array parsing",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "Denial of service through stack overflow. An attacker can craft an AMQP message with deeply nested table and array structures (e.g., a table containing an array containing a table containing an array, etc.) that trigger recursive calls. Each recursion consumes stack frames until StackOverflowError is thrown, crashing the thread or the entire JVM.",
+   "evidence": "readFieldValue() (line 158-221) recursively calls itself indirectly through: (1) case 'F' \u2192 readTable() (line 181), which calls readFieldValue() in a loop (line 150), and (2) case 'A' \u2192 readArray() (line 184), which calls readFieldValue() in a loop (line 245). There is no recursion depth limit or stack depth check anywhere in this chain."
+  },
+  {
+   "item_id": "F02",
+   "title": "Integer overflow in timestamp multiplication",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:269",
+   "impact": "Incorrect timestamp representation, potential for time-based logic bypass or incorrect chronological ordering of events. The Date constructor will receive a negative or wrapped millisecond value, causing the timestamp to represent an incorrect date (potentially in 1969 or other erroneous year). This could bypass time-based security checks or cause confusion in logging and audit trails.",
+   "evidence": "readTimestamp() (line 266-270) reads an 8-byte long value from the stream via in.readLong() and multiplies it by 1000 without overflow checking: `return new Date(in.readLong()*1000);`. If the input value is Long.MAX_VALUE (9,223,372,036,854,775,807), the multiplication overflows to a negative number due to Java's signed long wraparound."
+  },
+  {
+   "item_id": "F03",
+   "title": "Unbounded memory allocation from attacker-controlled content length",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+   "impact": "Denial of service through memory exhaustion. An attacker controlling the AMQP wire protocol data can trigger allocation of large byte arrays (up to 2GB each) from within readBytes() calls nested in readTable(), readArray(), and readFieldValue(). Multiple fields in a single message could allocate multiple 2GB+ arrays, exhausting heap memory and crashing the JVM.",
+   "evidence": "readBytes() at line 83-95 reads a 32-bit length prefix from untrusted network input via in.readInt(), sign-extends it to a long via unsignedExtend(), and allocates a byte array of that size. Line 87 checks `if(contentLength < Integer.MAX_VALUE)` before allocation, permitting allocations up to 2,147,483,647 bytes (~2GB) per invocation."
+  }
+ ],
+ "defects_to_look_for": [
+  {
+   "defect_id": "D1",
+   "mechanism": "A length field read from untrusted input decides the size of a buffer, and that buffer is created before the corresponding payload has been shown to exist."
+  },
+  {
+   "defect_id": "D2",
+   "mechanism": "Decoding routines call one another in a cycle with nothing counting how deep the cycle has gone, so nesting in the input controls the depth."
+  }
+ ]
+}

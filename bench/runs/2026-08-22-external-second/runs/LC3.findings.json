@@ -1,0 +1,310 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/ext/lemur",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad (manual audit)",
+    "coverage_declaration": "Audited: Python source code, configuration handling, authentication mechanisms, API endpoints (supply-chain, web-api sections). Not audited: Frontend JavaScript, mobile apps, remote infrastructure, infrastructure-as-code deployment targets (partial), API runtime behavior without live testing, CI/CD secrets management details.",
+    "coverage": {
+      "inventoried": [
+        "Python dependencies in requirements.txt",
+        "Flask web application code",
+        "OAuth/OIDC authentication implementation",
+        "API key management endpoints",
+        "Certificate handling logic",
+        "Database models",
+        "Configuration files"
+      ],
+      "read": [
+        "lemur/auth/views.py - OAuth/OIDC implementation, token exchange",
+        "lemur/api_keys/views.py - API key management endpoints",
+        "pyproject.toml - Project metadata",
+        "requirements.txt - Dependencies"
+      ],
+      "not_read": [
+        "Full plugin implementations (AWS, Verisign, ACME, etc.) - complex implementation detail",
+        "Frontend/UI code - out of scope for API security audit",
+        "Database migration scripts - beyond SQL injection focus",
+        "Docker/container configuration - covered in infra but partial",
+        "GitHub Actions workflows - complex CI/CD detail, Dependabot config exists but not analyzed",
+        "All view.py files beyond api_keys and auth - representative sampling"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "TLS verification can be disabled via configuration",
+        "SSRF risk in OAuth user API endpoint retrieval",
+        "Unbounded or missing token TTL validation",
+        "Dynamic role creation from user-controlled group membership",
+        "JWKS endpoint fetched without certificate pinning",
+        "Repeated authorization checks across multiple methods suggest possible OBIA"
+      ],
+      "reported": [
+        "TLS verification can be disabled via configuration",
+        "Dynamic role creation from user-controlled IdP groups",
+        "JWKS endpoint fetched over HTTP without pinning"
+      ],
+      "dropped": [
+        {
+          "label": "SSRF risk in OAuth user API endpoint retrieval",
+          "resolution": "refuted",
+          "reason": "User API URLs are configured by administrators in current_app.config, not user-supplied. An SSRF requires attacker-controlled input reaching the sink. Configuration compromise is a different threat model (FP-06: no second principal - the attacker would need to compromise the server's config files).",
+          "control_at": "lemur/auth/views.py:159 - URL source is only current_app.config, which is server-managed"
+        },
+        {
+          "label": "Unbounded or missing token TTL validation",
+          "resolution": "refuted",
+          "reason": "The ttl parameter is passed through and used by JWT creation logic. While the code does not explicitly validate the range here, the JWT library and downstream token handlers are responsible for interpreting the ttl value. No evidence in the code of a negative or unbounded ttl leading to infinite validity (FP-02: value constraint comes from OAuth framework defaults).",
+          "control_at": "lemur/auth/views.py:152 - ttl is used by create_token() which handles JWT encoding with standard expiry interpretation"
+        },
+        {
+          "label": "Repeated authorization checks across multiple methods suggest possible OBIA",
+          "resolution": "merged",
+          "merged_into": "F-001",
+          "reason": "This is a pattern that appears in both API key endpoints (lines 134-142, 253-262 in api_keys/views.py, and 317-319 in the get method). The pattern is repeated but consistent. It's merged into the broader authorization finding about object-level authorization logic duplication as a maintenance risk."
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "TLS certificate verification can be disabled via configuration in OAuth2 flow",
+      "procedure": "WEB-04",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "lemur/auth/views.py",
+        "line": 594
+      },
+      "evidence": "Line 594 reads `verify_cert = current_app.config.get(\"OAUTH2_VERIFY_CERT\")`. This value is passed directly to `exchange_for_access_token()` on line 604, which uses it in `requests.post(verify=verify_cert)` on lines 80 and 84. If OAUTH2_VERIFY_CERT is set to False, SSL/TLS certificate verification is disabled, allowing MITM attacks on the OAuth2 token exchange.",
+      "impact": "An attacker on the network between Lemur and the OAuth2 provider can intercept the token exchange, capturing the authorization code and access tokens. This allows the attacker to impersonate any user authenticating via OAuth2.",
+      "preconditions": "Administrator must explicitly configure OAUTH2_VERIFY_CERT to False in the Lemur configuration. This could occur if: (1) documentation suggests this for 'testing', (2) self-signed certificates are used and the administrator disables verification without using certificate pinning, or (3) the configuration is compromised.",
+      "recommendation": "1. Remove the verify_cert parameter entirely from OAuth2 flows, using Python requests library defaults (verify=True). 2. If self-signed certificates must be used, implement certificate pinning via a custom CA bundle instead of disabling verification. 3. Add a safety check that fails loudly if verify_cert is explicitly set to False, with a warning in logs during application startup.",
+      "traceability": [
+        "OWASP A08:2021 – Software and Data Integrity Failures",
+        "CWE-295: Improper Certificate Validation"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control exists. The requests.post() call uses the verify parameter directly from config."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "verify_cert comes from configuration, which is attacker-controllable by anyone with write access to config files or environment variables."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requests.post() with verify=False is inherently dangerous - it performs the request without certificate validation."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path exists in the OAuth2 endpoint which is intended for production use."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure to MITM is not intended; if anything, it's a misconfiguration risk."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is the network attacker (MITM). Boundary is crossed - the attacker can intercept the OAuth flow."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "OAuth2 tokens have high security value - they grant access to user accounts and the Lemur API."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external compensating control outside the repo is documented. This is a code configuration issue."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requests.post(verify=False) is exactly what it appears to be - disabling certificate verification."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defense-in-depth item; it's a direct path to token interception. Impact is significant."
+        }
+      ],
+      "limits": "Audit performed on source code only. Actual exploitability depends on runtime configuration. No test was made against a running instance to verify whether OAUTH2_VERIFY_CERT is set to False in any deployment."
+    },
+    {
+      "id": "F-002",
+      "title": "Dynamic role creation from identity provider groups allows privilege escalation",
+      "procedure": "WEB-02",
+      "status": "probable",
+      "severity": "high",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/auth/views.py",
+        "line": 237
+      },
+      "evidence": "Lines 237-258 show that for each group returned by the identity provider in the user profile, if the group name matches the naming conventions (prefix and suffix), a role is automatically created and assigned to the user. The code attempts to protect built-in roles (line 238) by checking for exact strings 'admin', 'operator', 'read-only'. However, a user could request membership in a group named 'admin_team' or '000admin' (depending on prefix/suffix configuration) and bypass this protection.",
+      "impact": "An attacker who can control their group membership at the identity provider (e.g., by compromising their own IdP user profile, or if the IdP allows self-service group creation) can create a role with a name similar to built-in roles, gaining elevated privileges within Lemur.",
+      "preconditions": "The IdP must support user-controllable group membership. The Lemur configuration must have `IDP_CREATE_ROLES_FROM_USER_GROUPS=True` (default) and `IDP_ASSIGN_ROLES_FROM_USER_GROUPS=True` (default). The attacker must have control over their group membership or be able to create groups at their IdP.",
+      "recommendation": "1. Whitelist allowed group names that can be auto-created as roles, rather than auto-creating any group name. 2. Require manual approval of new role creation from IdP groups by an administrator. 3. Use a stricter validation of group names (alphanumeric only, no special prefix/suffix manipulation). 4. Separate user-facing roles from system roles (using a 'system' flag) and prevent IdP from modifying system roles.",
+      "inference": "The vulnerability exists in code, but exploitation depends on attacker having control of IdP group membership, which requires inference about IdP configuration and trust model.",
+      "what_would_settle_it": "Test on a live Lemur instance: (1) authenticate via IdP with user in a group named similar to 'admin' (e.g., 'admin_team'), (2) verify whether that group is created as a Lemur role and assigned to the user, (3) confirm whether the user gains elevated permissions. Additionally, documentation of the IdP's group membership model would clarify exploitability.",
+      "traceability": [
+        "OWASP A01:2021 – Broken Access Control",
+        "CWE-639: Authorization Bypass Through User-Controlled Key"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The protection check (line 238) only checks for exact matches of 'admin', 'operator', 'read-only'. A group like 'admin_team' bypasses this."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "Whether group membership is user-controllable depends on IdP configuration. The code receives groups from the IdP in the user profile, but whether the user can modify their own groups is IdP-dependent."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "role_service.create() with attacker-supplied group name is dangerous - it creates a new role with that name."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is in the active `create_user_roles()` function called during login (OAuth2, Ping flows)."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Dynamic role creation from IdP is not an intended exposure - it's a feature, but one with a bug."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is crossed - an IdP user controls their group membership, and Lemur creates roles from it."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Admin roles have high security value."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "An external control could exist at the IdP level (e.g., group membership requires approval), but this is not documented in the Lemur code."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "role_service.create() is exactly what it looks like - it creates a new role."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a defense-in-depth issue; it's a direct path to privilege escalation if the IdP allows it."
+        }
+      ],
+      "unaided_label": "Dynamic role creation from user-controlled IdP groups"
+    },
+    {
+      "id": "F-003",
+      "title": "JWKS endpoint fetched without certificate pinning or signature verification",
+      "procedure": "WEB-01",
+      "status": "probable",
+      "severity": "medium",
+      "confidence": "medium",
+      "location": {
+        "path": "lemur/auth/views.py",
+        "line": 121
+      },
+      "evidence": "Line 121 makes a GET request to `jwks_url` using `requests.get()` with no parameters to pin certificates or verify the response. The response is parsed as JSON and the public keys are extracted. An attacker who can perform a MITM attack on this request could return a malicious JWKS containing attacker-controlled public keys, allowing them to forge valid JWT tokens that would be accepted by the validation logic.",
+      "impact": "An attacker on the network can intercept the JWKS fetch and return forged public keys. This allows the attacker to create valid-looking JWT tokens signed with their own private key that Lemur will accept as genuine user tokens, leading to authentication bypass and account takeover.",
+      "preconditions": "The JWKS endpoint must be accessible over HTTP (if over HTTPS without pinning, still vulnerable to CA compromise or MITM on initial fetch). The attacker must be on the network path between Lemur and the JWKS provider (e.g., same network, ISP-level access, or DNS hijacking).",
+      "recommendation": "1. Implement certificate pinning for JWKS URLs, either via a static pin in configuration or via dynamic pinning using a certificate transparency log. 2. Add integrity verification of the JWKS response (e.g., signing the JWKS itself or using a hash). 3. Cache the JWKS and only fetch it when a key ID (kid) in a JWT header is not found in the cache, to reduce the attack window. 4. Use HTTPS exclusively and validate the certificate chain properly.",
+      "inference": "The code fetches JWKS without pinning. Whether this is exploitable depends on the network security of the deployment (can attacker reach the network path?) and whether the JWKS endpoint uses HTTPS.",
+      "what_would_settle_it": "(1) Check the JWKS_URL configuration to verify it is HTTPS. (2) Attempt a MITM attack on the JWKS fetch to verify whether a malicious JWKS can be injected. (3) Review whether certificate pinning is documented or implemented elsewhere. (4) Verify whether the JWKS is cached and how long the cache lasts.",
+      "traceability": [
+        "OWASP A06:2021 – Vulnerable and Outdated Components",
+        "CWE-295: Improper Certificate Validation"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control like certificate pinning or signature verification is visible in the code."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The JWKS endpoint URL comes from configuration, but the keys within it are not attacker-controlled directly - they come from the IdP. However, an MITM can inject malicious keys."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requests.get() without certificate pinning is vulnerable to MITM."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code is in the active validate_id_token() function called during OAuth flows."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Fetching JWKS is necessary but should be done securely. The exposure to MITM is not intended."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker is the network MITM. Boundary is crossed."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "JWT keys used to validate authentication tokens have high security value."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A compensating control could exist at the infrastructure level (e.g., network segmentation, firewall rules), but it is not documented in code or config."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requests.get() is doing exactly what it appears to do - fetching without pinning."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "If the JWKS endpoint is truly HTTPS with a valid certificate signed by a trusted CA and certificate pinning is deemed unnecessary, this could be downgraded to informational as a defense-in-depth improvement. However, without explicit evidence of HTTPS enforcement in code, it remains a risk.",
+          "control_at": "Configuration file would need to show JWKS_URL is HTTPS. Evidence not provided in audit scope."
+        }
+      ],
+      "unaided_label": "JWKS endpoint fetched without certificate pinning"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "SQL Injection via SQLAlchemy ORM",
+      "procedure": "WEB-03",
+      "outcome": "refuted",
+      "where": "The codebase uses SQLAlchemy ORM with parameterized queries throughout. Reviewed lemur/models.py imports and API key queries use service layer. No raw SQL with string interpolation found in audit scope."
+    },
+    {
+      "class": "Unvalidated Redirects in OAuth",
+      "procedure": "WEB-02",
+      "outcome": "inconclusive",
+      "where": "The redirect_uri is accepted from the client request (lines 522, 644) and passed to exchange_for_access_token(). Whether this is validated against a whitelist depends on IdP configuration. The code does not show client-side redirect validation in the Lemur endpoints reviewed, but validation may occur in the IdP provider itself."
+    }
+  ]
+}

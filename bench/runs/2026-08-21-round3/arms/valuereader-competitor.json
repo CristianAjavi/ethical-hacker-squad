@@ -1,0 +1,216 @@
+{
+  "findings": [
+    {
+      "id": "M-001",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 88,
+      "title": "Peer-declared 32-bit length allocates up to 2 GiB in readBytes before any payload byte is read",
+      "impact": "A peer able to place ~5 bytes into any header table forces a multi-hundred-megabyte to 2 GiB heap allocation per field on the client's decode thread, with no proportional cost to itself. Per the threat model that peer is actor A1 (hostile or MITM'd broker, EXTERNAL, no credentials on the client) or A3 (frame injection on an unencrypted link); actor A2 (a publisher whose headers a benign broker relays verbatim) reaches the same code with only publish rights and no broker compromise. The realistic outcome is OutOfMemoryError on the connection thread; because the JVM heap is process-wide, that degrades or kills unrelated work in the same process, not just message consumption. A declared length at the top of the accepted range additionally trips HotSpot's 'Requested array size exceeds VM limit' immediately, independent of configured heap size. Availability only \u2014 this class holds no secret and makes no authorization decision, so no confidentiality or auth claim is made. Rated HIGH, not CRITICAL, per the threat model's STANDARD availability tier for this component.",
+      "evidence": "ValueReader.java:86-89 in order: `contentLength = unsignedExtend(in.readInt())` (0..4294967295); `if(contentLength < Integer.MAX_VALUE)`; `new byte[(int)contentLength]`; THEN `in.readFully(buffer)`. The array is sized and allocated one statement before the first payload byte is read, and the only test is a cast-safety guard, so 4 declared bytes commit up to 2,147,483,646 bytes of heap. Reachable from readLongstr (:103) and the 'S' (:163) and 'x' (:211) field arms.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "c2305d2f-ca7e-42e0-8de5-dcc20ca1d3ff",
+        "cwe": "CWE-789",
+        "signature": "33eca5118d186145",
+        "risk_score": 4.48,
+        "priority": "MEDIUM",
+        "researcher_severity": "HIGH",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:89"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Static Confirmation"
+      }
+    },
+    {
+      "id": "M-002",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 181,
+      "title": "Unbounded mutual recursion between readFieldValue and readArray/readTable turns five peer bytes into two stack frames",
+      "impact": "A peer that can put bytes on the decode path drives the decoder to arbitrary recursion depth at 5 bytes per level. Once the thread's stack is exhausted the decode fails with StackOverflowError, an unchecked java.lang.Error that escapes methods declared 'throws IOException' and is not caught by the connection's IOException handler. The expected outcomes are loss of the connection's decode thread without the orderly shutdown path the IOException channel would have triggered, or -- if a broad catch(Throwable) exists upstream -- resumption on a stream whose parse offset is no longer known. Availability of the client's message consumption is the asset; per the threat model this asset is STANDARD tier and recoverable by reconnect, which is why this is not rated higher. Whether the byte budget N is large enough in a given deployment is UNKNOWN in this scope (no caller, no frame-size ceiling observable), and that uncertainty -- not the presence of the recursion -- is the reason for MEDIUM rather than HIGH.",
+      "evidence": "ValueReader.java:161 switches on one peer byte; :181 case 'F' calls readTable(:139) whose loop calls readFieldValue at :150; :184 case 'A' calls readArray(:237) whose loop calls readFieldValue at :245. The cycle is closed and none of the three signatures (:139, :158, :237) carries a depth parameter -- there is no depth counter or ceiling anywhere in the 280-line file. One 'A' level costs 5 wire bytes (tag at :161 + 4-byte length at :240) and 2 retained stack frames.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "aa587a58-218d-450b-9471-2eb69fcd1073",
+        "cwe": "CWE-674",
+        "signature": "4054d0eeaa5c2a27",
+        "risk_score": 3.84,
+        "priority": "MEDIUM",
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:181",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:184",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:161",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:150",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:245"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Static Confirmation"
+      }
+    },
+    {
+      "id": "M-003",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 92,
+      "title": "readBytes answers a peer-declared length with an unchecked UnsupportedOperationException, bypassing the MalformedFrameException error channel",
+      "impact": "Five unauthenticated bytes on the decode path force the decoder off its declared error contract. Instead of the MalformedFrameException the class raises for every other rejected input (:217), the peer gets an unchecked UnsupportedOperationException out of methods that declare only IOException. Any handler written to the declared contract is bypassed, so hostile input reaches whatever generic or absent handling sits above -- at best an equivalent shutdown, at worst a decode thread that dies without running the connection's error and shutdown notification path, stalling consumers with no exception surfaced to the application. Availability tier is STANDARD and the exact caller behaviour is UNKNOWN in this scope, which bounds this at MEDIUM.",
+      "evidence": "ValueReader.java:84 declares `throws IOException`; :92 throws `UnsupportedOperationException` (a RuntimeException); :217 shows the class's designed hostile-input channel is MalformedFrameException, an IOException. The guard at :87 is a strict `<`, so every declared length in [0x7FFFFFFF, 0xFFFFFFFF] takes the unchecked throw. A caller's `catch (IOException e)` -- the declared contract -- does not catch it.",
+      "severity": "MEDIUM",
+      "_mantis": {
+        "uuid": "7ac64bca-cd0f-4fd8-8b7a-f7221140ad0f",
+        "cwe": "CWE-248",
+        "signature": "2da0aeec69aa7678",
+        "risk_score": 3.2,
+        "priority": "MEDIUM",
+        "researcher_severity": "MEDIUM",
+        "status": "VALID",
+        "production_viability": "VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:87",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:84"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Static Confirmation"
+      }
+    },
+    {
+      "id": "M-004",
+      "file": "pom.xml",
+      "line": 136,
+      "title": "Build profile auto-activated by an out-of-tree marker file redirects the code-generation input compiled into the shipped jar",
+      "impact": "An actor with write access to the directory two levels above the checkout -- on a typical hosted CI runner the shared workspace root, writable by any earlier workflow step, any third-party action, or any restored cache in the same job -- flips the build to read its code-generation input from a directory that actor also controls, silently and on every subsequent build. The generated Java is compiled into a widely consumed AMQP client library, and under the `release` / `snapshots` profiles the resulting artifact is then GPG-signed at `package` (`pom.xml:282`, `pom.xml:330`) and published, so the tampering is laundered into an authentically signed release. The blast radius is every downstream consumer of the jar. No release-engineer action beyond running an ordinary build is required, and the activation leaves no explicit signal in the build invocation.",
+      "evidence": "pom.xml:136 `<exists>../../UMBRELLA.md</exists>` auto-activates the in-umbrella profile, whose :140 sets `deps.dir` to `${basedir}/..`; :111 derives `codegen.dir` from deps.dir; :623 is the spec path consumed by the generate-sources codegen (:614, :621), and :653 adds the generated tree to the compile source root. File existence outside the project therefore selects an input that reaches the shipped jar. (deps.dir is also an ordinary property, so -Ddeps.dir achieves the same redirect.)",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "b0cc803d-d178-4a70-9661-3fd987d4a5fc",
+        "cwe": "CWE-426",
+        "signature": "a9cc727ea02c3252",
+        "risk_score": 2.24,
+        "priority": "LOW",
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "CONDITIONAL_VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "pom.xml:136",
+          "pom.xml:140",
+          "pom.xml:111",
+          "pom.xml:623"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Static Confirmation; Supply-Chain Prerequisites; Non-Default Configurations; Internal/Nested"
+      }
+    },
+    {
+      "id": "M-005",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 70,
+      "title": "Silent header-table key collapse: malformed UTF-8 is replaced with U+FFFD and the resulting duplicate key is dropped without error",
+      "impact": "Integrity of the decoded header table. An attacker who can place a header on the wire ahead of a legitimate one can suppress the legitimate value while the application still sees a well-formed Map with the expected key present -- the application cannot distinguish a faithfully decoded table from a collapsed one. Conversely, distinct headers the sender believed were separate silently become one. Any per-header logic (routing, filtering, de-duplication, audit logging of headers) operates on a table that differs from what was actually transmitted.",
+      "evidence": "ValueReader.java:70 `new String(b, \"utf-8\")` -- the charset-NAME constructor, specified to substitute U+FFFD rather than throw, so wire keys 0xFF and 0xFE both decode to the same one-char String. :151-152 `if(!table.containsKey(name)) table.put(name, value)` then drops the later value with no exception, no log and no return signal (the value is consumed at :150 first, so framing stays aligned). Distinct wire keys collapse to one map key and wire order picks the winner.",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "91e7930c-b31f-4c2b-a0b6-1e421958ca7e",
+        "cwe": "CWE-172",
+        "signature": "8fa086d2156fe60a",
+        "risk_score": 2.0,
+        "priority": "LOW",
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Vague Code Paths; Static Confirmation"
+      }
+    },
+    {
+      "id": "M-006",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 142,
+      "title": "Table and array declared extents are never bounded or reconciled with the enclosing stream",
+      "impact": "Integrity of the decoded object graph \u2014 the threat model's second high-value asset. A peer that controls one nested `'F'` or `'A'` field can over-declare its extent so that sibling entries of the enclosing table are absorbed into it and never surface to the application. Where some of those siblings originate with a trusted party rather than the attacker \u2014 broker- or plugin-inserted headers, reachable by threat-model actor A2, a publisher with only publish rights whose headers a benign broker relays \u2014 that is silent suppression of trusted metadata rather than mere self-corruption of the attacker's own fields. In the early-termination direction the enclosing stream is left misaligned and subsequent decoding proceeds from a wrong offset. Neither direction raises an error: the methods return normally and the mismatch becomes application truth. No memory-exhaustion claim is made here. Rated MEDIUM because the concrete integrity gain depends on a decoding context that cannot be verified in this scope (no caller, no TruncatedInputStream); privileges are rated LOW because a fully hostile peer (A1) already controls every byte and gains nothing from swallowing its own siblings, so the meaningful vector is the partially-trusted A2 case.",
+      "evidence": "ValueReader.java:142 widens tableLength to 0..4294967295 and the ONLY test is `== 0` at :143; :240 applies no test at all -- readArray lacks even the range check readBytes has at :87. Both pass the raw value to TruncatedInputStream (:146, :241). Neither :154 nor :248 compares bytes consumed against the declared extent before returning, so a short or over-declared container returns normally with no error.",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "fd91e8e5-ffb3-431d-98fa-1a7a5355b63b",
+        "cwe": "CWE-130",
+        "signature": "36c0d5a0a0c0cc61",
+        "risk_score": 2.0,
+        "priority": "LOW",
+        "researcher_severity": "MEDIUM",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "CONDITIONAL_VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:142",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:240",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:154",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:248"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Vague Code Paths; Static Confirmation"
+      }
+    },
+    {
+      "id": "M-007",
+      "file": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+      "line": 143,
+      "title": "readTable returns an immutable empty map or a mutable HashMap depending on a peer-supplied length, so the peer chooses the returned object's contract",
+      "impact": "A peer decides, per table and with four bytes at :142, whether the caller receives a mutable or an immutable collection through a single declared return type. A caller that enriches or normalises decoded headers -- adding a default, stamping a received-at value, removing an internal key -- works for every non-empty table and throws an unchecked UnsupportedOperationException the first time a peer sends a zero-length table, on a path a catch (IOException e) will not intercept. The related 'V' nullability facet (:214) lets a peer make a header read as absent to get()-based checks while still occupying its key and shadowing a later duplicate (:151). Both are integrity-of-the-decoded-object-graph issues against a STANDARD-tier asset, and both require caller behaviour that is UNKNOWN in this scope, so this is rated LOW.",
+      "evidence": "ValueReader.java:143 returns `Collections.emptyMap()` (immutable; put throws UnsupportedOperationException) while :145/:154 return a mutable HashMap -- both through the single declared `Map<String,Object>` return type, with the peer selecting via the 4-byte tableLength read at :142. readArray is consistent by contrast, always returning a mutable ArrayList (:243, :248).",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "3fa92794-f8a9-4084-a6a8-c29c51f2606f",
+        "cwe": "CWE-1076",
+        "signature": "f2f74a2c5ab9fd64",
+        "risk_score": 2.0,
+        "priority": "LOW",
+        "researcher_severity": "LOW",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "CONDITIONAL_VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:143",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:145",
+          "src/main/java/com/rabbitmq/client/impl/ValueReader.java:154"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Vague Code Paths; Static Confirmation"
+      }
+    },
+    {
+      "id": "M-008",
+      "file": "pom.xml",
+      "line": 124,
+      "title": "GPG release signing selects the signing key by a 32-bit short key ID",
+      "impact": "An actor who can place a secret key in the keyring used for releases -- a compromised release workstation, a shared or injected `GPG_HOME` on a build agent, or a keyring restored from a poisoned CI cache -- can make the build sign with a key of their choosing without editing the pom, because the manifest identifies the key only by a 32-bit value they can collide at will. Artifacts then carry a signature that the project's own manifest considers correct, while chaining to a key the project does not control; downstream verifiers who trust the short ID (as the pom implicitly does) accept it. The prerequisite is high -- write access to the signing keyring on the release host, which already implies substantial compromise -- which bounds this well below the code-injection path, but the pom-side defect is real and independently fixable.",
+      "evidence": "pom.xml:124 `<gpg.keyname>6026DFCA</gpg.keyname>` -- eight hex characters, a 32-bit OpenPGP short key ID -- is consumed as `<keyname>` by maven-gpg-plugin in both signing profiles at :287 and :335. 32-bit key IDs are not collision-resistant, so key selection resolves against local keyring state instead of binding to a unique key.",
+      "severity": "LOW",
+      "_mantis": {
+        "uuid": "eb436e48-e4a5-440d-8805-b7edee89fc77",
+        "cwe": "CWE-345",
+        "signature": "cd60c796fa93e19b",
+        "risk_score": 1.34,
+        "priority": "LOW",
+        "researcher_severity": "LOW",
+        "status": "PROVISIONALLY_VALID",
+        "production_viability": "CONDITIONAL_VIABLE",
+        "repro_status": null,
+        "all_code_paths": [
+          "pom.xml:124",
+          "pom.xml:287",
+          "pom.xml:335"
+        ],
+        "sanity_triage_applied": "Incomplete Calibration (UNKNOWN: repro_failure); Equivalent Primitives; Supply-Chain Prerequisites; Static Confirmation; Internal/Nested"
+      }
+    }
+  ]
+}

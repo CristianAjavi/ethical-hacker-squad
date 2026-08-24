@@ -1,0 +1,159 @@
+{
+  "schema_version": "ehs.findings/v1",
+  "engagement": {
+    "scope": "/private/tmp/claude-501/-Users-cristianajavi/ddae72cd-6c1e-4c0c-be51-8f91cd87d164/scratchpad/variance/target",
+    "mode": "audit",
+    "language": "en",
+    "generated_by": "ethical-hacker-squad/haiku3-corpus-1",
+    "coverage": {
+      "inventoried": [
+        "pom.xml (Maven dependencies and configuration)",
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP protocol parser)"
+      ],
+      "read": [
+        "src/main/java/com/rabbitmq/client/impl/ValueReader.java (AMQP protocol parser)"
+      ],
+      "not_read": [
+        "pom.xml (Maven dependencies and configuration) - supply-chain specialist required for full coverage"
+      ]
+    },
+    "unaided_pass": {
+      "candidates": [
+        "Unbounded memory allocation via readBytes() with large protocol-specified lengths",
+        "Stack exhaustion risk from recursive readFieldValue() calls with deeply nested structures",
+        "Potential DoS via table/array nesting without depth limits"
+      ],
+      "reported": [
+        "Unbounded memory allocation via readBytes() with large protocol-specified lengths",
+        "Stack exhaustion risk from recursive readFieldValue() calls with deeply nested structures"
+      ],
+      "dropped": [
+        {
+          "label": "Inadequate EOF handling in readUnsignedInt()",
+          "reason": "The EOF check using (ch1 | ch2 | ch3 | ch4) < 0 correctly identifies any -1 value from .read() on EOF; this is proper error handling."
+        }
+      ]
+    },
+    "coverage_declaration": "Single-file audit of ValueReader.java using WEB-11 procedure for deserialization analysis. No static analysis tooling invoked. Supply-chain analysis of pom.xml deferred. No remote testing performed. Analysis scope limited to AMQP protocol parsing logic; broader RabbitMQ client integration not examined."
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Unbounded memory allocation in readBytes() enables denial of service",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 83
+      },
+      "evidence": "Method readBytes() reads a 32-bit unsigned integer as length (line 86), then allocates a byte array without size validation: `byte [] buffer = new byte[(int)contentLength];` (line 88). The condition `contentLength < Integer.MAX_VALUE` (line 87) allows allocation up to 2,147,483,646 bytes.",
+      "impact": "An attacker who controls the AMQP broker or intercepts protocol data can cause the client to attempt allocation of gigabytes of contiguous memory, triggering OutOfMemoryError and denial of service. Applies to long strings (type 'S'), byte arrays (type 'x'), and table/array payloads.",
+      "preconditions": "The application uses RabbitMQ client to connect to a broker. The broker or network path is untrusted or can be controlled by an attacker.",
+      "recommendation": "Implement a maximum buffer size limit for readBytes(). Proposed: add a static final MAX_CONTENT_LENGTH constant (e.g., 128 MB) and throw an exception if contentLength exceeds it before allocation. Example: `if (contentLength > MAX_CONTENT_LENGTH) throw new MalformedFrameException(\"Content length exceeds limit\");`",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-20",
+        "CWE-770",
+        "WSTG-INPV-08"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control prevents unbounded allocation. The code does not validate against a downstream limit."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The length is read directly from untrusted AMQP protocol data (DataInputStream) with no prior constraint."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Byte array allocation itself is the dangerous sink; the format does not make it safe."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path exists in shipped production code."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external control (e.g., JVM heap limit) reliably bounds this. Heap exhaustion is not a substitute for application-level limits."
+        }
+      ],
+      "limits": "The finding assumes AMQP brokers or protocol data can be untrusted. If the client only connects to known-good, internal brokers over trusted channels, the attack surface is reduced but not eliminated (broker compromise remains a risk).",
+      "what_would_settle_it": "Presence of an explicit MAX_CONTENT_LENGTH constant and validation that throws before allocation.",
+      "unaided_label": "Unbounded memory allocation via readBytes() with large protocol-specified lengths"
+    },
+    {
+      "id": "F-002",
+      "title": "Unbounded recursion in readFieldValue() enables stack exhaustion denial of service",
+      "procedure": "WEB-11",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "location": {
+        "path": "src/main/java/com/rabbitmq/client/impl/ValueReader.java",
+        "line": 158
+      },
+      "evidence": "Method readFieldValue() (line 158) recursively calls itself indirectly: case 'F' (line 181) calls readTable() which calls readFieldValue() (line 150); case 'A' (line 184) calls readArray() which calls readFieldValue() (line 245). No recursion depth limit is enforced. A protocol message with deeply nested table→array→table→... structures will exhaust stack space.",
+      "impact": "An attacker can craft an AMQP message with nested tables and arrays to a depth exceeding available stack frames (typically 500-1000 on Java), causing StackOverflowError and denial of service. The recursion depth is unbounded and depends only on payload construction.",
+      "preconditions": "The application parses an AMQP message containing table ('F') and/or array ('A') types nested to deep levels. The message originates from an untrusted or compromised broker.",
+      "recommendation": "Implement a recursion depth counter in readFieldValue(). Add a parameter tracking current depth and throw MalformedFrameException if depth exceeds a safe limit (e.g., 100 levels). Example: `private static Object readFieldValue(DataInputStream in, int depth) throws IOException { if (depth > MAX_DEPTH) throw new MalformedFrameException(\"Nesting too deep\"); ... readTable(in, depth+1) ... }`",
+      "verification": "not executed",
+      "traceability": [
+        "CWE-674",
+        "CWE-770",
+        "WSTG-INPV-08"
+      ],
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No compensating control limits recursion depth."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The structure (nesting depth) is determined by untrusted AMQP protocol data."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Recursive method calls are inherently stack-consuming; the format enables arbitrary depth."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This code path is in production."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "JVM stack size is configurable but not a security boundary for application-level DoS."
+        }
+      ],
+      "limits": "This finding assumes AMQP protocol messages are untrusted. It does not assess whether the AMQP protocol itself constrains nesting depth (protocol version 0.9.1 should be reviewed separately). The issue is exploitable without accessing broker internals; any client-side parser that receives a crafted message is at risk.",
+      "what_would_settle_it": "Code adding a depth counter parameter to readFieldValue() and related methods, with a checked MAX_NESTING_DEPTH constant and throwing on overflow.",
+      "unaided_label": "Stack exhaustion risk from recursive readFieldValue() calls with deeply nested structures"
+    }
+  ],
+  "ruled_out": [
+    {
+      "class": "Unsafe encoding in readShortstr()",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "readShortstr() (line 65) correctly uses DataInputStream.readFully() which throws EOFException if insufficient bytes are available, and String constructor with \"utf-8\" charset is standard. No encoding bypass."
+    },
+    {
+      "class": "Inadequate EOF handling in readUnsignedInt()",
+      "procedure": "WEB-11",
+      "outcome": "refuted",
+      "where": "readUnsignedInt() (line 224) correctly checks `(ch1 | ch2 | ch3 | ch4) < 0` to detect -1 (EOF) from any read() call. Throws EOFException on EOF. Proper error handling."
+    }
+  ]
+}

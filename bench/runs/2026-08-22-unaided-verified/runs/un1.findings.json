@@ -1,0 +1,174 @@
+{
+ "findings": [
+  {
+   "id": "F-001",
+   "title": "Unbounded slice allocation from attacker-controlled deepObject array index (remote memory exhaustion)",
+   "file": "openapi3filter/req_resp_decoder.go",
+   "line": 953,
+   "severity": "critical",
+   "impact": "A single small unauthenticated HTTP request can force a multi-gigabyte allocation and OOM-kill the process. Any operation that declares a query parameter with style deepObject whose object schema contains an array property is affected. The array index in the query string is used directly as the length of a Go slice before any schema constraint (maxItems and friends) is applied, so no spec-level limit mitigates it.",
+   "evidence": "sliceMapToSlice (openapi3filter/req_resp_decoder.go:936-962) turns the map keys of a decoded deepObject into a dense slice:\n    for k := range m { key, err := strconv.Atoi(k); ...; keys = append(keys, key) }\n    max := -1\n    for _, k := range keys { if k > max { max = k } }\n    for i := 0; i <= max; i++ { ... result = append(result, ...) }\nmax comes straight from the request. buildResObj (line 972-996) then does `resultArr := make([]any, len(arr))`, doubling it.\nReachability: urlValuesDecoder.DecodeObject case \"deepObject\" (line 661-687) builds props from the bracketed key segments -> makeObject (line 911) -> deepSet -> buildResObj -> array branch -> sliceMapToSlice.\nPoC: for a parameter `p` (in: query, style: deepObject, explode: true) whose schema is `type: object` with a property `a` of `type: array`, the request `GET /x?p[a][2000000000]=y` drives max=2000000000 and allocates ~32 GB across the two slices. `?p[a][9223372036854775807]=y` never terminates. Neither maxItems nor maxLength is consulted, because decoding happens before openapi3.Schema.VisitJSON.",
+   "recommendation": "Bound the reconstructed array: reject indexes above a configurable ceiling (and above schema.MaxItems when set), require the index set to be dense/contiguous, or build the value as a map and let schema validation reject it. At minimum cap `max` and return a ParseError instead of allocating."
+  },
+  {
+   "id": "F-002",
+   "title": "Nil-pointer panic in visitJSONString when a schema pattern fails to compile and MultiError is enabled",
+   "file": "openapi3/schema.go",
+   "line": 2666,
+   "severity": "high",
+   "impact": "Any request reaching a string field whose schema carries a regex Go's RE2 cannot compile (lookahead/backreference, e.g. the very common password rule \"^(?=.*[A-Z]).*$\") panics the validating goroutine when validation runs with MultiError. Remotely triggerable by any unauthenticated client that can reach the endpoint; in code paths without a per-request recover it takes the process down.",
+   "evidence": "openapi3/schema.go:2654-2666:\n  if !settings.patternValidationDisabled && schema.Pattern != \"\" {\n      cpiface, _ := compiledPatterns.Load(schema.Pattern)\n      cp, _ := cpiface.(RegexMatcher)\n      if cp == nil {\n          var err error\n          if cp, err = schema.compilePattern(settings.regexCompiler); err != nil {\n              if !settings.multiError { return err }\n              me = append(me, err)      // error recorded, cp stays nil, execution continues\n          }\n      }\n      if !cp.MatchString(value) {      // nil interface dereference\ncompilePattern (openapi3/schema_pattern.go:16-32) returns a nil RegexMatcher on failure. openapi3filter/options.go:26 MultiError is translated into openapi3.MultiErrors() at openapi3filter/validate_request.go:341 and validate_response.go:65, so the panicking combination is reachable through the standard filter and middleware entry points. The uncompilable pattern reaches request time either because doc.Validate was never called, or because it was called with openapi3.DisablePatternValidation() (openapi3/schema.go:1684 skips the compile check), which is the documented workaround for exactly these patterns.",
+   "recommendation": "Guard the match: `if cp != nil { if !cp.MatchString(value) { ... } }`, or have compilePattern return a never-matching matcher alongside the error. Add a regression test with pattern \"^(?=.*[A-Z]).*$\" validated with MultiErrors()."
+  },
+  {
+   "id": "F-003",
+   "title": "Division-by-zero panic on multipleOf: the value is never validated to be greater than zero",
+   "file": "openapi3/schema.go",
+   "line": 2569,
+   "severity": "high",
+   "impact": "A document containing `multipleOf: 0` — or any positive multipleOf smaller than 5e-11, which rounds to zero under the %.10f formatting — passes doc.Validate() and then panics with \"division by zero\" on every request that carries a number for that field. Denial of service driven by the specification rather than the request, so it fires on the first legitimate call and keeps firing.",
+   "evidence": "openapi3/schema.go:2563-2569:\n  if v := schema.MultipleOf; v != nil {\n      numRat, denRat := &big.Rat{}, &big.Rat{}\n      numRat.SetString(fmt.Sprintf(\"%.10f\", value))\n      denRat.SetString(fmt.Sprintf(\"%.10f\", *v))\n      if !(&big.Rat{}).Quo(numRat, denRat).IsInt() {\nbig.Rat.Quo panics when the divisor is zero. Grep for MultipleOf across openapi3/*.go (excluding tests) shows it only in the struct field (schema.go:116), marshalling (561), JSONLookup (852), IsEmpty (1276) and this check (2563) — Schema.validate (openapi3/schema.go:1396-1900) never rejects a non-positive multipleOf, even though JSON Schema requires it to be strictly greater than zero. The %.10f rounding is also a silent correctness bug: multipleOf 0.0000000001234 is evaluated as 0.0000000001.",
+   "recommendation": "Reject multipleOf <= 0 in Schema.validate, and guard the runtime check with `if *v == 0 { return error }`. Replace the %.10f round-trip with big.Rat.SetFloat64 so small factors are not silently truncated."
+  },
+  {
+   "id": "F-004",
+   "title": "Nil-pointer panic decoding a content-typed parameter whose media type declares no schema",
+   "file": "openapi3filter/req_resp_decoder.go",
+   "line": 195,
+   "severity": "high",
+   "impact": "A specification that is fully valid per doc.Validate() causes a nil dereference on the first request that supplies the parameter, crashing the request goroutine. Attacker-triggerable without authentication once such a parameter exists.",
+   "evidence": "openapi3filter/req_resp_decoder.go:190-195:\n  mt := content.Get(\"application/json\")\n  if mt == nil { err = ...; return }\n  outSchema = mt.Schema.Value        // mt.Schema may be nil\nMediaType.Validate (openapi3/media_type.go:119-166) only descends when `schema := mediaType.Schema; schema != nil`, so a media type without a schema is legal. Parameter.Validate (openapi3/parameter.go:364-378) requires exactly one of schema/content and at most one content entry, but never requires that entry to carry a schema. Therefore:\n  parameters:\n    - {name: filter, in: query, content: {application/json: {}}}\npasses validation, and a request with `?filter=x` reaches decodeContentParameter -> defaultContentParameterDecoder -> mt.Schema.Value -> panic. The same nil is dereferenced again at line 199 (`paramSchema.Value.Type.Is(\"object\")`) for the unresolved-ref case.",
+   "recommendation": "Return a descriptive error when mt.Schema or mt.Schema.Value is nil, and mirror that with a spec-time check that a parameter's content entry declares a schema."
+  },
+  {
+   "id": "F-005",
+   "title": "Two regular expressions compiled per query parameter, per request, for deepObject decoding",
+   "file": "openapi3filter/req_resp_decoder.go",
+   "line": 665,
+   "severity": "medium",
+   "impact": "CPU-exhaustion amplification: the cost of a request grows with the number of query parameters an attacker supplies, multiplied by two regexp compilations each. A ~1 MB query string (within the default 1 MB net/http header limit) carries on the order of 10^5 parameters, so one request forces ~2x10^5 regexp compilations — seconds of CPU per request, per deepObject parameter in the spec.",
+   "evidence": "openapi3filter/req_resp_decoder.go:662-681, inside the loop over every query parameter of the request:\n  for key, values := range params {\n      if !regexp.MustCompile(fmt.Sprintf(`^%s\\[`, regexp.QuoteMeta(param))).MatchString(key) { continue }\n      matches := regexp.MustCompile(`\\[(.*?)\\]`).FindAllStringSubmatch(key, -1)\nNeither pattern depends on `key`, so both are recompiled for every iteration. The second is a constant. The follow-on loop at lines 704-719 is additionally O(len(schema.Properties) x len(props) x path depth) over the same attacker-sized input.",
+   "recommendation": "Hoist `\\[(.*?)\\]` into a package-level var compiled once, build the per-parameter prefix matcher once outside the loop (or replace it with strings.HasPrefix(key, param+\"[\")), and cap the number of query parameters considered."
+  },
+  {
+   "id": "F-006",
+   "title": "OpenAPI 3.1 / JSON Schema 2020-12 keywords are silently dropped when the 2020-12 compile fails",
+   "file": "openapi3/schema_jsonschema_validator.go",
+   "line": 204,
+   "severity": "medium",
+   "impact": "Constraints the API author believes are enforced are not. When newJSONSchemaValidator fails, validation silently degrades to the built-in visitor, which implements none of prefixItems, contains/minContains/maxContains, patternProperties, propertyNames, dependentSchemas, unevaluatedItems, unevaluatedProperties or if/then/else. A body that violates, say, `unevaluatedProperties: false` or a `patternProperties` restriction is accepted. Nothing is logged, so the downgrade is invisible.",
+   "evidence": "openapi3/schema_jsonschema_validator.go:204-212:\n  func (schema *Schema) useJSONSchema2020(settings *schemaValidationSettings, value any) error {\n      validator, err := newJSONSchemaValidator(schema)\n      if err != nil {\n          // Fall back to built-in validator if compilation fails\n          return schema.visitJSON(settings, value)\n      }\nThe compile input is json.Marshal(schema) (line 21). SchemaRef.MarshalYAML (openapi3/refs.go:1049-1054) emits `{\"$ref\": ...}` whenever Ref is non-empty, and the loader keeps Ref populated after resolution. The marshalled fragment is registered standalone as \"https://example.com/schema.json\" (lines 39-45), so an internal pointer such as \"#/components/schemas/Node\" has no target inside the resource and Compile returns an error — i.e. the fallback fires for ordinary 3.1 documents that use $ref. Confirming the built-in validator's gap: grepping schema.go shows PrefixItems/Contains/PatternProperties/DependentSchemas/PropertyNames/UnevaluatedProperties/If/Then/Else appear only in the struct, marshalling, JSONLookup, IsEmpty and the OAS-3.0 rejection list; visitJSONObject (2831-2998) checks only properties, min/maxProperties, additionalProperties, required, and visitJSONArray (2732-2824) only min/maxItems, uniqueItems, items. No test under openapi3/ exercises 2020-12 validation against a schema containing a $ref.",
+   "recommendation": "Do not swallow the compile error — surface it (or fail closed) so operators learn their 3.1 keywords are unenforced. Register the whole document (or at least components) as a resource so internal $refs resolve, and add tests covering a 3.1 schema with $ref plus unevaluatedProperties/patternProperties."
+  },
+  {
+   "id": "F-007",
+   "title": "The JSON Schema 2020-12 validator is rebuilt from scratch on every validation call",
+   "file": "openapi3/schema_jsonschema_validator.go",
+   "line": 205,
+   "severity": "medium",
+   "impact": "For every OpenAPI 3.1 document, each request (and each parameter and each response) re-marshals the entire resolved schema to JSON, unmarshals it into a map, walks it recursively, and runs a full JSON Schema compile. On a large schema this is orders of magnitude more expensive than the validation itself and turns ordinary traffic into a CPU/allocation amplifier.",
+   "evidence": "useJSONSchema2020 (openapi3/schema_jsonschema_validator.go:204-211) calls newJSONSchemaValidator(schema) per invocation; newJSONSchemaValidator (lines 19-54) performs json.Marshal + json.Unmarshal + transformOpenAPIToJSONSchema + jsonschema.NewCompiler + AddResource + Compile. There is no cache anywhere (nothing analogous to the compiledPatterns sync.Map used for regexes). openapi3filter appends openapi3.EnableJSONSchema2020() automatically for 3.1 documents at openapi3filter/validate_request.go:242-244 and :354-356 and validate_response.go:76-78, so the whole pipeline runs on every request. When the compile fails (F-006) the cost is paid and then the built-in validator runs as well.",
+   "recommendation": "Cache the compiled *jsonschema.Schema per *Schema (sync.Map keyed by the schema pointer, or build it once at load time), the same way compiled regex patterns are cached."
+  },
+  {
+   "id": "F-008",
+   "title": "ValidationHandler defaults authentication to allow-everything",
+   "file": "openapi3filter/validation_handler.go",
+   "line": 47,
+   "severity": "medium",
+   "impact": "The library's ready-to-use HTTP middleware silently satisfies every securityScheme in the document when the integrator does not set AuthenticationFunc. A spec that declares bearer/apiKey/oauth2 requirements produces a handler that enforces none of them, while appearing to validate the request. The core API deliberately fails closed here, so the middleware inverts the safe default.",
+   "evidence": "openapi3filter/validation_handler.go:47-49, inside Load():\n  if h.AuthenticationFunc == nil {\n      h.AuthenticationFunc = NoopAuthenticationFunc\n  }\nNoopAuthenticationFunc (openapi3filter/validation_handler.go:18) is `func(context.Context, *AuthenticationInput) error { return nil }`. Contrast openapi3filter/validate_request.go:431-434, where the same missing function yields ErrAuthenticationServiceMissing and the request is rejected. Load() also silently substitutes http.DefaultServeMux for a nil Handler (lines 44-46).",
+   "recommendation": "Make AuthenticationFunc mandatory: return an error from Load() when it is nil, or require the caller to opt into NoopAuthenticationFunc explicitly."
+  },
+  {
+   "id": "F-009",
+   "title": "Default error encoder returns the full JSON schema and the submitted value to the client, with status 500",
+   "file": "openapi3/schema.go",
+   "line": 3120,
+   "severity": "medium",
+   "impact": "Information disclosure. Any client that sends a request failing validation gets back the complete JSON schema of the offending sub-object — internal field names, descriptions, formats, enum members, examples — plus its own submitted value echoed back, as a text/plain body. The response status is 500, so client errors also look like server faults and are apt to be alert-noise rather than 4xx.",
+   "evidence": "openapi3/schema.go:3120-3131 (SchemaErrorDetailsDisabled defaults to false):\n  if !SchemaErrorDetailsDisabled {\n      buf.WriteString(\"\\nSchema:\\n  \")\n      encoder.Encode(err.Schema)\n      buf.WriteString(\"\\nValue:\\n  \")\n      encoder.Encode(err.Value)\n  }\nThat string propagates through RequestError.Error() (openapi3filter/errors.go:23-38) into DefaultErrorEncoder (openapi3filter/validation_kit.go:64-85), which writes `[]byte(err.Error())` to the ResponseWriter. ValidationHandler installs DefaultErrorEncoder by default (openapi3filter/validation_handler.go:50-52). *RequestError does not implement StatusCoder, so the status falls through to http.StatusInternalServerError at validation_kit.go:79-83.",
+   "recommendation": "Have ValidationHandler route errors through ConvertErrors/ValidationError (which carries a proper 4xx status and a terse title), default SchemaErrorDetailsDisabled to true for the HTTP path, and document that raw SchemaError text is for logs, not responses."
+  },
+  {
+   "id": "F-010",
+   "title": "Panic while formatting a schema error for a YAML body containing non-string map keys",
+   "file": "openapi3/schema.go",
+   "line": 3128,
+   "severity": "medium",
+   "impact": "A request body that decodes to map[any]any produces a SchemaError whose Value cannot be JSON-encoded; formatting that error — which every logger and error encoder does — panics. The crash happens while handling the error, so it is reachable from any endpoint that accepts YAML (or declares */* content, which matches any Content-Type).",
+   "evidence": "openapi3/schema.go:3127-3130:\n  buf.WriteString(\"\\nValue:\\n  \")\n  if err := encoder.Encode(err.Value); err != nil { panic(err) }\nvisitJSON (openapi3/schema.go:2023-2033) explicitly handles `case map[any]any` (added for issue 444) and only converts it when every key is a string; otherwise it falls through to the terminal SchemaError at line 2045 with `Value: value` still typed map[any]any. json.Encoder.Encode returns UnsupportedTypeError for that type, so the panic fires. YamlBodyDecoder is registered for application/yaml and application/x-yaml (openapi3filter/req_resp_decoder.go:1344-1345); yaml decoding into `any` yields map[any]any as soon as a mapping key is not a string, e.g. body `{1: a}` or `{\"a\": {1: b}}`. The error is then rendered by RequestError.Error() and by the middleware's logFunc (openapi3filter/middleware.go:135).",
+   "recommendation": "Never panic while formatting an error: fall back to fmt.Sprintf(\"%v\") when encoding fails. Separately, normalise map[any]any to map[string]any (or reject it with a typed ParseError) in the YAML decoder."
+  },
+  {
+   "id": "F-011",
+   "title": "gorillamux NewRouter leaks a path item's servers into every subsequent path",
+   "file": "routers/gorillamux/router.go",
+   "line": 62,
+   "severity": "medium",
+   "impact": "Once any path item declares its own `servers`, every path processed afterwards is registered under that path item's base path instead of the document's. Legitimate requests to those routes stop matching (ErrPathNotFound), and routes intended to live only under one server prefix become reachable under another. In a validating gateway this is an availability failure and a routing-scope surprise.",
+   "evidence": "routers/gorillamux/router.go:52-75:\n  servers, err := makeServers(doc.Servers)\n  ...\n  for _, path := range doc.Paths.InMatchingOrder() {\n      pathItem := doc.Paths.Value(path)\n      if len(pathItem.Servers) > 0 {\n          if servers, err = makeServers(pathItem.Servers); err != nil { ... }   // assigns the OUTER servers\n      }\n      ...\n      for _, s := range servers { muxRoute := muxRouter.Path(s.base + path)... }\nThe assignment targets the loop-invariant variable, so the override is never restored. Paths are iterated in a deterministic order (InMatchingOrder), so the corruption is stable rather than intermittent. Separately, makeServers dereferences `server.Variables[sVar]` and `server.Variables[portVariable]` (lines 135 and 160) without checking the map entry exists; NewRouter's doc comment assumes a .Validate()d document, but a caller who skips validation gets a nil-map-entry panic here.",
+   "recommendation": "Use a per-iteration variable: `srvs := servers; if len(pathItem.Servers) > 0 { srvs, err = makeServers(pathItem.Servers) }` and register with srvs. Also nil-check the Variables lookups in makeServers."
+  },
+  {
+   "id": "F-012",
+   "title": "legacy Router.AddRoute stores the router instead of the route, so FindRoute returns a nil route with a nil error",
+   "file": "routers/legacy/router.go",
+   "line": 95,
+   "severity": "medium",
+   "impact": "Routes registered through AddRoute can never be resolved: the type assertion in FindRoute fails and the function returns (nil, params, nil). Callers such as openapi3filter.ValidateRequest immediately dereference route.Operation and panic. The same function has a second unguarded nil dereference on the node it just failed to find.",
+   "evidence": "routers/legacy/router.go:95 registers the wrong value:\n  return router.node().Add(method+\" \"+path, router, nil)     // `router`, not the *routers.Route\nFindRoute then does `route, _ = node.Value.(*routers.Route)` (line 143); the assertion fails and route stays nil. The nil-route branch (lines 145-153) only returns an error when the path is absent from doc.Paths or the method is undefined — if both are present it falls through and returns route == nil with err == nil.\nSecond defect, same block: when root.Match misses, `node` is nil, yet line 158 unconditionally executes `paramKeys := node.VariableNames` after that branch, so any fall-through dereferences nil.",
+   "recommendation": "Pass the route value: `router.node().Add(method+\" \"+path, route, nil)`. Restructure the nil-route branch so it always returns an error, and never touch `node` unless it is non-nil."
+  },
+  {
+   "id": "F-013",
+   "title": "format: int64 does not bound the value; large JSON numbers pass validation and overflow downstream",
+   "file": "openapi3/schema.go",
+   "line": 2407,
+   "severity": "medium",
+   "impact": "A field declared `{type: integer, format: int64}` accepts values far outside the int64 range (e.g. 1e30). Application code that then converts the validated value to int64 receives an implementation-defined result — commonly math.MinInt64 — so an attacker can push a value through validation that becomes a wildly different (often negative) number in business logic: quantity, price, offset, id.",
+   "evidence": "openapi3/schema.go:2400-2407:\n  if requireInteger {\n      f, ok := settings.integerFormats[format]\n      if !ok { f, ok = SchemaIntegerFormats[format] }\n      if ok { if err := f.Validate(int64(value)); err != nil {\nvalue is a float64. The conversion int64(value) is performed BEFORE the range check, and Go leaves out-of-range float-to-int conversions implementation-defined; on amd64 1e30 becomes math.MinInt64. The int64 validator registered at openapi3/schema_formats.go:56 is NewRangeFormatValidator(math.MinInt64, math.MaxInt64) — the full domain — so the clamped value always passes. The integer-ness gate ahead of it (line 2375, big.NewFloat(value).IsInt()) is satisfied because 1e30 is an exact float64 integer. Related precision loss: JSONBodyDecoder uses json.Number (req_resp_decoder.go:1363-1364) but visitJSON converts it via value.Float64() (schema.go:1997), so ids above 2^53 are silently rounded before any check runs.",
+   "recommendation": "Range-check in float64 space before converting (reject value < math.MinInt64 || value > math.MaxInt64, and the int32 bounds for format int32), and validate json.Number against its decimal text rather than a lossy float64."
+  },
+  {
+   "id": "F-014",
+   "title": "Request and response bodies are read fully into memory, twice, with no size limit",
+   "file": "openapi3filter/validate_request.go",
+   "line": 271,
+   "severity": "medium",
+   "impact": "The validator buffers the entire request body in memory before applying any constraint, and buffers it a second time when a security requirement is present — so peak memory is roughly twice the largest body a client chooses to send, per concurrent request. Nothing in the library caps it; maxLength/maxItems are applied only after the whole payload is materialised and decoded. Combined with the response-side buffering in the middleware this makes memory exhaustion cheap for an attacker.",
+   "evidence": "openapi3filter/validate_request.go:271 `if data, err = io.ReadAll(req.Body); err != nil` in ValidateRequestBody, and again at line 448 `if data, err = io.ReadAll(input.Request.Body); err != nil` in validateSecurityRequirement (which runs first). Neither wraps the reader in an io.LimitReader or checks req.ContentLength. Body decoders compound it: PlainBodyDecoder/FileBodyDecoder do their own io.ReadAll (lines 1352, 1601); MultipartBodyDecoder loops over parts with no cap on part count or aggregate size (lines 1489-1565); ZipFileBodyDecoder copies the whole archive and then expands it (lines 1610-1656, whose own doc comment concedes it may be susceptible to a zip bomb). openapi3filter/middleware.go:140-153 buffers the full response body as well.\nSecondary defect in ZipFileBodyDecoder at line 1639: `content = append(content, buffer...)` appends the entire 256-byte scratch buffer regardless of the n bytes actually read, so decoded output is padded with stale bytes from previous reads and inflated.",
+   "recommendation": "Document that callers must wrap Body in http.MaxBytesReader, and add an explicit MaxRequestBodySize/MaxPartCount option enforced with io.LimitReader before each ReadAll. Fix the zip append to `buffer[:n]`."
+  },
+  {
+   "id": "F-015",
+   "title": "Validation cost is superlinear on nested oneOf/anyOf because the whole value is deep-copied per branch",
+   "file": "openapi3/schema.go",
+   "line": 2215,
+   "severity": "low",
+   "impact": "During request validation (asreq) every oneOf and anyOf node deep-copies the entire remaining value once per branch, then re-validates the winning branch against the original. For a recursive schema with a oneOf at each level, validating a deeply nested body costs O(body size x nesting depth) copies, letting a modest body consume disproportionate CPU and allocations.",
+   "evidence": "openapi3/schema.go:2213-2216 and 2276-2279:\n  if settings.asreq || settings.asrep { tempValue = deepCopyJSONValue(value) }\ninside the per-branch loops, with deepCopyJSONValue (schema.go:3171-3190) recursively duplicating maps and slices. oneOf cannot short-circuit (it must count matches, lines 2203-2227) so it always pays k copies plus k traversals, then re-runs the matched branch on the original value at line 2250. anyOf repeats the matched branch at line 2299. No depth or node-count limit exists anywhere in visitJSON.",
+   "recommendation": "Copy only the sub-values a branch may mutate (defaults are injected only into objects), or snapshot-and-restore instead of deep-copying, and add a configurable maximum nesting depth / node count for VisitJSON."
+  },
+  {
+   "id": "F-016",
+   "title": "CI runs unpinned @latest tooling that rewrites the source tree, with GITHUB_TOKEN in scope and no permissions block",
+   "file": ".github/workflows/go.yml",
+   "line": 1,
+   "severity": "low",
+   "impact": "Supply-chain exposure for the project itself. Two jobs download and execute Go programs resolved at run time (`@latest`), one of which is invoked with -fix and modifies the checked-out sources before the tests run. The build job exports GITHUB_TOKEN as a job-level env var visible to every step, and no workflow declares a `permissions:` block, so the token carries the repository default scope. A compromised upstream release of either tool executes with that token and can alter the code under test.",
+   "evidence": ".github/workflows/go.yml declares `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` at job level, then runs `go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -test -diff -fix ... ./...`; the check-goimports job runs `go install github.com/incu6us/goimports-reviser/v3@latest` and executes it over every .go file. Every action is referenced by a mutable tag rather than a commit SHA (actions/checkout@v6, actions/setup-go@v6, actions/cache@v3, and actions/checkout@v2 plus ludeeus/action-shellcheck@1.1.0 in .github/workflows/shellcheck.yml). `grep -n permissions .github/workflows/*.yml` returns nothing.",
+   "recommendation": "Pin third-party actions by commit SHA and the Go tools to explicit versions; add a least-privilege `permissions:` block (contents: read) to both workflows; scope GITHUB_TOKEN to the single step that needs it rather than the whole job; and drop -fix from CI in favour of -diff only."
+  },
+  {
+   "id": "F-017",
+   "title": "External $ref resolution reads arbitrary files and URLs, over an HTTP client with no timeout",
+   "file": "openapi3/loader.go",
+   "line": 46,
+   "severity": "low",
+   "impact": "With IsExternalRefsAllowed enabled — or with any custom ReadFromURIFunc, for which the flag is not enforced at all — loading an untrusted document yields arbitrary local file reads (`$ref: \"/etc/passwd\"`) and SSRF (`$ref: \"http://169.254.169.254/...\"`). There is no scheme, host, or path allowlist, and the default HTTP client has no timeout, so a hostile or unresponsive $ref host can hang a loading goroutine indefinitely.",
+   "evidence": "The risk is already documented on the ReadFromURIFunc field (openapi3/loader.go:41-48), and the flag is only consulted when no custom reader is installed (loader.go:118-122 and 348-352). ReadFromFile (openapi3/loader_uri_reader.go:79-84) does `os.ReadFile(path.Clean(filepath.FromSlash(location.Path)))` with no confinement to a root directory, and resolvePath (loader.go:307-319) returns absolute component paths verbatim. DefaultReadFromURI is built on http.DefaultClient (loader_uri_reader.go:46), which has no Timeout; ReadFromHTTP (lines 51-69) sets no context deadline and io.ReadAll's the response with no size cap. URIMapCache (lines 90-116) retains every fetched document for the process lifetime.",
+   "recommendation": "For any workflow that loads third-party documents, install a ReadFromURIFunc with an explicit scheme/host allowlist, a filesystem root confinement check (filepath.Rel against the root, rejecting '..'), an http.Client with a timeout, and a response size limit. Consider shipping such a hardened reader in the library and referencing it from the field comment."
+  }
+ ]
+}

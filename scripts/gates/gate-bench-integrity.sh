@@ -31,6 +31,9 @@ gate_out_of_scope "whether a planted defect is realistic, and whether the bench 
 
 command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not installed"; gate_verdict "$GATE_UNMEASURABLE"; exit "$GATE_UNMEASURABLE"; }
 
+# NOTE: this heredoc sits inside "$( ... )", so a bare apostrophe in a COMMENT
+# opens a shell quote and breaks the whole script. Newer gates keep their core
+# in scripts/gates/lib/ for exactly this reason. Do not write "bench's" here.
 out="$(EHS_ROOT="$ROOT" python3 - <<'PY' 2>&1
 import json, os, re, sys
 from pathlib import Path
@@ -114,6 +117,26 @@ for kind in ("planted", "decoys"):
             findings.append(
                 f"{item['id']} points at `{item['symbol']}` in {item['path']}, and `{needle}` does not "
                 "appear there: the case was edited and the key was not")
+        # The symbol must appear INSIDE the declared line span, not merely
+        # somewhere in the file. This is the third defect of one kind in this
+        # short history of this bench: spans typed by eye, each one off by a line or
+        # running past its construct into the neighbouring one, and each one
+        # scoring a correct finding as a miss. A span that does not contain its
+        # own symbol is not a range, it is a guess.
+        span = item.get("lines")
+        if present and isinstance(span, list) and len(span) == 2:
+            checks += 1
+            lines = body.splitlines()
+            a, b = span
+            window = "\n".join(lines[max(0, a - 1):b])
+            inside = (re.search(rf"\b{re.escape(needle)}\b", window) is not None
+                      if re.fullmatch(r"\w+", needle) else needle in window)
+            if not inside:
+                where = [i + 1 for i, ln in enumerate(lines) if needle in ln]
+                findings.append(
+                    f"{item['id']} declares lines {a}-{b} of {item['path']}, and `{needle}` is not "
+                    f"in that span (it is on {where or 'no line'}): a finding at the right place "
+                    "would be scored as a miss")
         for extra in item.get("also_at", []):
             checks += 2
             extra_path = root / case["path"] / extra["path"]
@@ -188,6 +211,67 @@ if tracked is not None:
                     f"{item['id']} points at {rel}, which git does not track: it exists here "
                     "and nowhere else, and any run elsewhere scores against a file that is missing")
 
+# A planted defect and a decoy that share lines in the same file cannot be told
+# apart by any scorer: a finding at that line is simultaneously a detection and a
+# false positive. It happened on `pipelines-migration`: decoy D-33 was declared
+# over lines 6-13 of a Jenkinsfile whose planted defect sits at line 12, so the
+# one correct finding was counted as reporting the decoy. The key is what has to
+# be precise here, not the auditor.
+def _spans(item):
+    out = []
+    if isinstance(item.get("lines"), list) and len(item["lines"]) == 2:
+        out.append((item["path"], item["lines"][0], item["lines"][1]))
+    for extra in item.get("also_at", []):
+        if isinstance(extra.get("lines"), list) and len(extra["lines"]) == 2:
+            out.append((extra["path"], extra["lines"][0], extra["lines"][1]))
+    return out
+
+for name in cases:
+    planted_spans = [(p["id"], s) for p in key.get("planted", []) if p["case"] == name for s in _spans(p)]
+    decoy_spans = [(d["id"], s) for d in key.get("decoys", []) if d["case"] == name for s in _spans(d)]
+    for pid, (ppath, pa, pb) in planted_spans:
+        for did, (dpath, da, db) in decoy_spans:
+            checks += 1
+            if ppath == dpath and pa <= db and da <= pb:
+                findings.append(
+                    f"{pid} (lines {pa}-{pb}) and {did} (lines {da}-{db}) overlap in {ppath}: "
+                    "a finding there is a detection and a false positive at the same time, so "
+                    "neither number means anything")
+
+# A README that says which packs the bench exercises is making a coverage claim,
+# and that claim rots the moment a case is added. It rotted once already: the
+# sentence still said "web-api and local-app only" four cases after the six-pack
+# run. So it lives in a marked region and is measured against the key.
+COVERAGE = re.compile(r"<!--\s*bench:packs\s*-->(.*?)<!--\s*/bench:packs\s*-->", re.S)
+bench_readme = root / "bench" / "README.md"
+packs_json = root / "scripts" / "meter" / "packs.json"
+checks += 1
+if not bench_readme.is_file() or not packs_json.is_file():
+    findings.append("bench/README.md or scripts/meter/packs.json is missing: the coverage claim cannot be measured")
+else:
+    m = COVERAGE.search(bench_readme.read_text(encoding="utf-8"))
+    if not m:
+        findings.append(
+            "bench/README.md states which packs the bench exercises and the claim is not inside a "
+            "`bench:packs` region, so nothing can check it against the key")
+    else:
+        payload = m.group(1)
+        head, _, tail = payload.partition("silent about")
+        said_exercised = set(re.findall(r"`([a-z-]+)`", head))
+        said_silent = set(re.findall(r"`([a-z-]+)`", tail))
+        all_packs = {p["pack"] for p in json.loads(packs_json.read_text(encoding="utf-8"))["packs"]}
+        real_exercised = {p for c in cases.values() for p in c.get("packs", [])}
+        checks += 2
+        if said_exercised != real_exercised:
+            findings.append(
+                f"bench/README.md says the bench exercises {sorted(said_exercised)}; the key says "
+                f"{sorted(real_exercised)} - a coverage claim wider than the cases is the one lie "
+                "a bench cannot afford")
+        if said_silent != all_packs - real_exercised:
+            findings.append(
+                f"bench/README.md says the score is silent about {sorted(said_silent)}; measured "
+                f"{sorted(all_packs - real_exercised)}")
+
 # ---- the patch bench -------------------------------------------------
 # A patch that no longer applies, claims a defect nobody planted, or expects a
 # verdict the vocabulary does not declare, turns a verification score into
@@ -255,6 +339,62 @@ if patch_key_path.is_file():
                 f"case `{case_name}` has no patch that must fail verification: a set where every patch is a "
                 "correct fix measures agreement, not judgement")
     print(f"patch bench: {len(pkey.get('patches', []))} patch(es) over {len(by_case)} case(s)")
+
+# ---- a published comparison must be reproducible, or say it is not -----
+# Measured, not hypothesised: the unaided arm scored 0.81 in one sitting and
+# 0.60 in the next, on the same target with the same blind instrument, because
+# the first sitting did not keep its run prompt and the second had to write a
+# new one. Twenty-one points from the prompt alone is larger than any
+# corpus-versus-no-corpus difference this bench has produced. A run that puts
+# two arms in a table is therefore making a claim it cannot support unless the
+# prompts travelled with it - or unless it tells the reader they did not.
+#
+# NOTE FOR ANYONE EDITING THIS FILE: this heredoc is inside a "$( ... )", so an
+# apostrophe anywhere here, comments included, breaks the shell quoting.
+# Outside information has to be settled the same way for every arm, or a recall
+# number measures library familiarity as much as review. Measured: one unaided
+# run diffed the target against its upstream branch, one corpus run cited CVE
+# identifiers, and no prompt in this bench had ever said whether either was
+# allowed. A round either carries the policy in its prompts or says out loud
+# that it did not.
+SOURCES_WORDS = ("external-sources", "Outside information", "OUTSIDE INFORMATION")
+
+ARM_WORDS = ("with the corpus", "Without it", "without it", "no corpus", "No corpus")
+DISCLOSURE = "run prompts for this round were not kept"
+runs_dir = root / "bench" / "runs"
+if runs_dir.is_dir():
+    for run in sorted(runs_dir.iterdir()):
+        readme = run / "README.md"
+        if not readme.is_file():
+            continue
+        text = readme.read_text(encoding="utf-8")
+        if not any(w in text for w in ARM_WORDS):
+            continue
+        checks += 1
+        prompt_text = ""
+        pdir = run / "prompts"
+        if pdir.is_dir():
+            for f in sorted(pdir.iterdir()):
+                if f.is_file():
+                    prompt_text += f.read_text(encoding="utf-8", errors="replace")
+        # Second question, asked for EVERY comparison round and not only for the
+        # ones that archived prompts. An earlier version of this check sat after
+        # the reproducibility `continue` and was unreachable for precisely the
+        # rounds it existed to catch - it passed the suite while enforcing
+        # nothing, which is the failure mode this whole gate is about.
+        if not any(w in (prompt_text + text) for w in SOURCES_WORDS):
+            findings.append(
+                f"bench/runs/{run.name}/ compares arms and nothing in its prompts or its README settles "
+                "whether sources outside the target may be consulted - a recall number from such a pair "
+                "measures library familiarity as much as review")
+        if pdir.is_dir():
+            continue
+        if DISCLOSURE in text:
+            continue
+        findings.append(
+            f"bench/runs/{run.name}/README.md compares arms with neither a prompts/ directory nor the "
+            "disclosure that the prompts were not kept - a reader cannot tell whether the difference is "
+            "the arms or the wording, and this bench has measured the wording at 21 points")
 
 print(f"measured: {len(cases)} case(s), {len(key.get('planted', []))} planted, "
       f"{len(key.get('decoys', []))} decoys, {checks} checks")

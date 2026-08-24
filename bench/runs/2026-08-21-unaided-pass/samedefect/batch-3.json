@@ -1,0 +1,104 @@
+{
+ "list_one": [
+  {
+   "item_id": "L01",
+   "title": "Mutual recursion between readFieldValue, readTable and readArray carries no depth counter: 43 KB of nested arrays overflows the stack",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:158",
+   "impact": "A peer can raise StackOverflowError inside the client's frame-decoding path with a single well-formed frame of about 43 KB. StackOverflowError is an Error, not the IOException the decoder's callers are written around, so it unwinds past the protocol error handling: the connection is left in an undefined state and the thread that was decoding dies. Repeatable at will and for a few kilobytes per attempt.",
+   "evidence": "None of the three signatures carries a depth parameter: `static Object readFieldValue(DataInputStream in)`, `private static Map<String,Object> readTable(DataInputStream in)`, `private static List<Object> readArray(DataInputStream in)`. Case 'F' (line 181) and case 'A' (line 184) call back into the pair unconditionally, and each nesting level costs the attacker 5 bytes for an array ('A' plus a 4-byte length) or 6 for a table. Reproduced locally against an unmodified copy of this file, JDK 17, default thread stack: depth 50000 (250000 bytes) raised StackOverflowError, and a binary search over the depth put the smallest overflowing input at depth 8593, i.e. 42965 bytes - comfortably inside a single frame at the AMQP default frame maximum of 131072 bytes, so no oversized frame is needed."
+  },
+  {
+   "item_id": "L02",
+   "title": "A peer-controlled length raises UnsupportedOperationException, an unchecked exception, out of the wire decoder",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "A remote peer selects which exception type leaves the decoder. Callers written around IOException - which MalformedFrameException extends and UnsupportedOperationException does not - will not treat this as a protocol error, so it escapes as an unchecked exception on whichever thread is decoding. No attacker gain is demonstrated beyond a different and less predictable error path.",
+   "evidence": "Lines 91-94 throw `UnsupportedOperationException(\"Very long byte vectors and strings not currently supported\")` when the declared length is >= Integer.MAX_VALUE. Reproduced: a 4-byte length prefix of 0xFFFFFFFF through the public `readLongstr()` returned `java.lang.UnsupportedOperationException: Very long byte vectors and strings not currently supported`. The class already imports and uses `MalformedFrameException` for the analogous case on line 217 (unrecognised type in table), so the codebase's own convention for peer-supplied nonsense is a checked protocol exception."
+  },
+  {
+   "item_id": "L03",
+   "title": "The public decoder is correct only over a fully buffered stream: table and array loops terminate on available()",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:148",
+   "impact": "A consumer that builds a ValueReader over a network stream - which the exported signature invites - gets silently truncated tables instead of an exception, and a decoder desynchronised against the wire. Inside the library's own shipped call path the streams are frame-backed and the defect does not fire, so what this grants an attacker today is nothing; the exposure is the default the next consumer inherits.",
+   "evidence": "`while(tableIn.available() > 0)` on line 148 and `while(arrayIn.available() > 0)` on line 244 use the loop terminator that InputStream documents as an estimate of what can be read without blocking, not as a count of what remains. The class's public constructor at line 57 accepts any DataInputStream, its class javadoc says only 'Helper class to read AMQP wire-protocol encoded values', and nothing in the file states the precondition that the stream must already hold the whole frame. Handed a socket-backed stream, a table whose bytes have not all arrived terminates early and returns a partial Map with no error, and the caller resumes decoding at an offset that is now wrong."
+  },
+  {
+   "item_id": "L04",
+   "title": "A peer-declared 32-bit length sizes a byte[] before any payload is read, committing up to ~2 GiB from 4 bytes on the wire",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:86",
+   "impact": "Any peer that supplies the byte stream this class decodes can make the client JVM commit up to about 2 GiB of heap per declared value while sending only four bytes - an amplification of roughly 5x10^8. A single frame carrying a field table can repeat the trick per field. The result is OutOfMemoryError, which in a JVM is not confined to the connection that caused it: it lands on whichever thread allocates next and takes down unrelated work in the same process, including other tenants of that application.",
+   "evidence": "Lines 86-89: `final long contentLength = unsignedExtend(in.readInt());` then `if(contentLength < Integer.MAX_VALUE) { final byte[] buffer = new byte[(int)contentLength]; in.readFully(buffer); }`. The guard on line 87 is a cast-safety test, not a limit: it only stops the narrowing to int from wrapping and admits every value below 2147483647. The array on line 88 exists before line 89 ever asks the stream for a byte. Reproduced locally against an unmodified copy of this file, compiled with JDK 17 and run with -Xmx64m: (a) 5 bytes on the wire - field-value type 'x' plus the four length bytes 0x40000000 and no payload - produced `OutOfMemoryError: Java heap space` inside readFieldValue; (b) the public API path, `new ValueReader(in).readLongstr()` over exactly 4 bytes declaring 2147483632 and no payload, produced the same. Both times the stream contained no data at all beyond the length prefix, which is what shows the allocation precedes the read."
+  },
+  {
+   "item_id": "L05",
+   "title": "Source code for the published jar is generated from an unpinned checkout outside the repository, and a file two levels up can repoint it",
+   "location": "pom.xml:615",
+   "impact": "Whoever can write to the codegen checkout - or place an UMBRELLA.md and a matching tree above the build directory, which is the shape of a hostile working directory rather than a remote attack - chooses Java source that ships inside com.rabbitmq:amqp-client. Nothing in the build would flag it: there is no digest to compare and no signature to fail.",
+   "evidence": "At `generate-sources`, org.codehaus.gmaven:groovy-maven-plugin runs `${groovy-scripts.dir}/generate_amqp_sources.groovy`, which the pom's own comment describes as a proxy for executing the Python script `${basedir}/codegen.py` against the spec `${codegen.dir}/amqp-rabbitmq-${codegen.spec_version}.json`. `codegen.dir` defaults to `${deps.dir}/rabbitmq_codegen` and `deps.dir` to `${basedir}/deps` - a checkout that the pom never pins by commit, tag or digest and never verifies by hash or signature. build-helper-maven-plugin then adds `${project.build.directory}/generated-sources/src/main/java` as a compile source root, so AMQP.java and AMQImpl.java, produced from that unverified input, are compiled into the published artifact. Separately, the profile `in-umbrella` is activated by `<file><exists>../../UMBRELLA.md</exists></file>` and rewrites `deps.dir` to `${basedir}/..`: the mere presence of a file two directories above the repository silently changes where the build's source of truth comes from."
+  },
+  {
+   "item_id": "L06",
+   "title": "Duplicate field names in a table are resolved first-wins and the later value is dropped without error",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Where two AMQP implementations disagree on which duplicate wins - first, last, or reject - the same bytes carry two meanings. An application that routes or authorizes on a message header would then see a different value from whatever component validated it. No such second implementation was examined, so nothing is granted here today.",
+   "evidence": "Lines 151-152: `if(!table.containsKey(name)) table.put(name, value);` - the second and later occurrences of a name are read off the wire, decoded into an Object, and then discarded silently. Reproduced through the public readTable() in the same run as F-005: the table decoded to a single entry holding the FIRST value (true), with the second (false) gone and no exception raised."
+  },
+  {
+   "item_id": "L07",
+   "title": "Table keys are decoded with lenient UTF-8, so distinct wire names collapse onto one String key",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:70",
+   "impact": "The decoder is not injective from wire bytes to table keys: an attacker who controls the bytes of a field name can produce a key that is indistinguishable, after decoding, from a different name. Nothing in scope makes a decision on a header, so this grants nothing on its own; it is the precondition that a smuggling differential would need.",
+   "evidence": "Line 70 is `return new String(b, \"utf-8\");`, the constructor that replaces malformed input with U+FFFD instead of rejecting it. Reproduced through the public readTable(): a table containing two entries whose names on the wire are the byte pairs C0 80 and C1 80 - two different, both invalid, sequences - produced a single map entry, because both names decoded to the same two replacement characters."
+  }
+ ],
+ "list_two": [
+  {
+   "item_id": "R01",
+   "title": "Mutual recursion between readFieldValue, readTable and readArray with no depth counter",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:183",
+   "impact": "About 25 KB of crafted bytes turn the decode into a StackOverflowError. An Error thrown from the frame-reading loop is not the ordinary protocol-error path: at best the connection is torn down, at worst it unwinds through code that was not written to expect it, and the state of a half-parsed header table is discarded mid-flight. Where the bytes originate from a third-party publisher whose headers the broker relays, this is a capability that publisher does not otherwise have - it reaches into another client's process.",
+   "evidence": "None of the three signatures carries a depth or budget parameter: `readFieldValue(DataInputStream)` (line 158), `readTable(DataInputStream)` (139), `readArray(DataInputStream)` (237). The cycle costs the attacker five wire bytes per level through the array type - one type byte 'A' plus a four-byte length - and seven through the table type. Reproduction (treatment-7/repro, the target file compiled unmodified against a faithful TruncatedInputStream and LongStringHelper): nesting arrays 1,000 deep parses fine, 5,000 deep raises StackOverflowError on a default JVM thread stack, and it still does with an explicit -Xss1m. The threshold sits between 4,000 and 5,000 levels, i.e. 20-25 KB of wire bytes - comfortably inside a single AMQP frame, whose server-side default maximum is 131,072 bytes. Each level also allocates a DataInputStream and a TruncatedInputStream, so the heap cost tracks the stack cost."
+  },
+  {
+   "item_id": "R02",
+   "title": "Code generation on the build path runs from an external tree the manifest pins by nothing",
+   "location": "pom.xml:595",
+   "impact": "Whoever controls the codegen tree the developer or the CI runner checked out - or, through the auto-activating profile, the directory two levels above the checkout - influences the sources that get compiled into a library published to Maven Central. This is the xz-utils shape at a smaller scale: the interesting content is not in the audited repository, it is in what the build reaches for.",
+   "evidence": "The default build - not a profile - binds groovy-maven-plugin to generate-sources (lines 595-638): it executes ${groovy-scripts.dir}/generate_amqp_sources.groovy (line 633), which runs ${basedir}/codegen.py (line 621) against a JSON specification read from ${codegen.dir} (line 111), whose default is ${basedir}/deps/rabbitmq_codegen (line 110). build-helper-maven-plugin then adds the generated directory to the compiled sources (lines 640-658), so whatever that step emits is compiled into the published jar. The pom pins no revision, tag or hash for the rabbitmq_codegen tree; ${codegen.spec_version} (line 112) selects a filename, not a source. And the in-umbrella profile (lines 128-142) auto-activates on the mere existence of ../../UMBRELLA.md - a file two levels above the project root - and redirects deps.dir to ${basedir}/.. , so the directory the generator reads from is chosen by the layout of the parent filesystem."
+  },
+  {
+   "item_id": "R03",
+   "title": "Duplicate field-table keys are resolved first-wins and silently, which can differ from the peer that wrote them",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:151",
+   "impact": "Where another component reading the same bytes resolves duplicates last-wins - a broker plugin, a client in another language, an authorization or routing filter that inspects headers - the two disagree about the value of a header while both consider the frame well-formed. That is the ordinary shape of a header-smuggling differential; nothing here demonstrates one, because no second reader of these bytes is in scope.",
+   "evidence": "Line 151-152: `if(!table.containsKey(name)) table.put(name, value);`. A table that carries the same key twice keeps the first occurrence and discards the second with no error and no record. The AMQP 0-9-1 field table is a sequence of name/value pairs on the wire, so a duplicate is representable, and nothing in the decoder rejects it."
+  },
+  {
+   "item_id": "R04",
+   "title": "Dependency risk is unmeasured, and three declared branches may be past end of support",
+   "location": "pom.xml:53",
+   "impact": "No attacker capability is claimed here. The point is what the reader must not conclude: this report contains zero dependency findings because none were looked for, not because none exist. Past end of support the silence of a scanner is not a measurement either, since advisory feeds track supported branches, and for such a branch no fixed version will ever appear - the remedy is a migration, not an upgrade.",
+   "evidence": "Versions are declared as fixed literals through properties (lines 58-94), which is good practice and rules out floating ranges. Three of them sit on branches whose support status decides whether an advisory feed covers them at all: jetty 9.4.58.v20250814 (line 70, test scope), logback 1.2.13 (line 64, test scope), groovy-all 2.4.21 (line 81, a dependency of groovy-maven-plugin, so build path). The build target is Java 8 (`<source>1.8</source>`, `<target>1.8</target>`, lines 664-665). No advisory feed was consulted for any of these, or for the shipped dependencies (slf4j 1.7.36, netty 4.2.15.Final, jackson-databind 2.21.3, micrometer 1.17.0, metrics 4.2.39, opentelemetry 1.63.0): the engagement is offline and no authorization for network use or database download was given. The pom also wires no dependency-vulnerability gate of any kind - grep for dependency-check, enforcer, cyclonedx, spdx and sbom over pom.xml returns nothing."
+  },
+  {
+   "item_id": "R05",
+   "title": "The published library is built with no SBOM and no dependency-vulnerability gate",
+   "location": "pom.xml:571",
+   "impact": "Every application that consumes com.rabbitmq:amqp-client has to reconstruct the component list of what it ships from the pom's transitive closure instead of receiving it. When the next advisory lands in a transitive dependency, the answer to 'are we affected' is recomputed downstream by each consumer rather than published once by the producer.",
+   "evidence": "The build declares eighteen plugins (resources, dependency, groovy, build-helper, compiler, surefire, jar, bundle, versions, release, source, javadoc, jshell, spotless, gpg, sonar, central-publishing) and none of them produces a bill of materials: grep over pom.xml for cyclonedx, spdx and sbom returns nothing, as does grep for dependency-check and enforcer. Artifact signing is present - maven-gpg-plugin signs at package in both the release (lines 323-338) and snapshots (lines 275-290) profiles - so the gap is provenance of contents, not of the artifact itself."
+  },
+  {
+   "item_id": "R06",
+   "title": "Over-long byte vectors are refused with an unchecked UnsupportedOperationException instead of a protocol error",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:92",
+   "impact": "Code that guards the decode loop with `catch (IOException)` - the natural handler for a protocol error - does not catch this one. Whether that ends in a clean connection shutdown or in an unhandled exception on the reading thread is decided outside this file. There is no memory effect and nothing is disclosed; the fault is that a peer-selectable input escapes the error channel the rest of the class uses.",
+   "evidence": "Lines 91-94 throw UnsupportedOperationException, a RuntimeException, for any declared length in [2^31-1, 2^32-1]. Every other rejection in this decoder is a MalformedFrameException, which extends IOException (line 217). Observed in the harness of F-001: a declared length of 0x7fffffff produced `java.lang.UnsupportedOperationException: Very long byte vectors and strings not currently supported` while every smaller length produced an allocation. So the peer chooses, with four bytes, which of two very different exception types comes out of the decode."
+  },
+  {
+   "item_id": "R07",
+   "title": "A 32-bit length from the wire sizes a byte array before any payload is read (readBytes)",
+   "location": "src/main/java/com/rabbitmq/client/impl/ValueReader.java:88",
+   "impact": "A peer that can place bytes in a field-table value, a long string or a byte vector makes the decoding process commit an arbitrary amount of heap up to about 2 GiB per value, with no matching cost to itself. The error raised is OutOfMemoryError, which is process-wide rather than connection-scoped: it lands on whatever thread happens to be allocating, so the denial of service reaches the application embedding the library, not just the AMQP connection. The interesting position is before authentication - the server-properties table of the protocol greeting is a field table, so a hostile or man-in-the-middled peer does not need credentials.",
+   "evidence": "Lines 86-89: contentLength is four bytes taken straight off the stream and widened with unsignedExtend; the only test on it, `if(contentLength < Integer.MAX_VALUE)` (line 87), is a cast-safety test, not a limit - it stops the int cast from wrapping and lets every value below 2 GiB through. `new byte[(int)contentLength]` (line 88) commits the memory, and `in.readFully(buffer)` (line 89) is the first line that can notice the payload is not there. Reproduction, compiling the method body verbatim into a scratch harness (treatment-7/repro/AllocRepro.java) and feeding it four bytes and nothing else: with -Xmx64m, declared 128 MiB -> `OutOfMemoryError: Java heap space`; declared 512 MiB -> `OutOfMemoryError: Java heap space`. With -Xmx2g the same four bytes allocate 128 MiB and 512 MiB successfully and only then raise EOFException, which is the direct proof that the array exists before a single payload byte has arrived. Four bytes of attacker input against hundreds of megabytes of victim heap."
+  }
+ ]
+}
