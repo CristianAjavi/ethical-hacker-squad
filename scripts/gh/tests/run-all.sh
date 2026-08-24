@@ -88,7 +88,10 @@ suite "NEGATIVE: no declared protection field is left unwatched" \
 suite "merge-preview: the combination CI never judges" \
   bash "$SP/test-merge-preview.sh"
 
-# The net: a suite file that exists here and is invoked by nobody.
+# The net, computed HERE and not where the last suite happened to be when it was
+# written: a `suite` line added below that point would be invoked and still
+# counted as never invoked. Measured - merging two branches that each add a
+# suite put one of them after the loop, and the net reported a file that runs.
 NOT_INVOKED=""
 for f in "$SP"/test-*.sh "$SP"/test-*.py; do
   [ -e "$f" ] || continue
