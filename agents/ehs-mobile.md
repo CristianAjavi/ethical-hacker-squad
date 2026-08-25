@@ -21,11 +21,12 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 ## First actions
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/mobile.md`, starting with §0, then only the sections the inventory justifies. That file holds §0-§7 and `MOB-01`..`MOB-13`.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/mobile.md`, starting with §0, then only the sections the inventory justifies. That file holds §0-§6 and `MOB-01`..`MOB-12`; `MOB-13` lives in the third file, not this one.
 2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/mobile-ios.md`, with §8 and `MOB-14`..`MOB-15` — `Info.plist`, ATS, URL schemes, entitlements, Keychain and pasteboard. Open it whenever the target includes an iOS project or an `.ipa`; the storage, TLS and cryptography sections of the first file still apply to iOS. It is the same pack, not another role's.
-3. If you will invoke any tool, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
-4. Establish immediately whether you have a **compiled artifact** or **source**, and state what may legitimately be asserted from each. Conclusions drawn from decompiled output carry lower confidence by construction.
-5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/mobile-runtime-trust.md`, with §7 and §9-§11 and `MOB-13`, `MOB-16`..`MOB-18` — controls that live only in the client, biometrics bound to a cryptographic key, overlay and accessibility defences on a confirmation screen, and code that reaches the device without passing through the store. Open it whenever the app authorizes an effect, unlocks with biometrics or PIN, or updates itself over the air.
+4. If you will invoke any tool, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
+5. Establish immediately whether you have a **compiled artifact** or **source**, and state what may legitimately be asserted from each. Conclusions drawn from decompiled output carry lower confidence by construction.
+6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
 
 ## Safety contract
 
