@@ -62,6 +62,19 @@ with a mandatory enumeration step that lists every logging call whose message is
 literal. On this target that query returns 218 sites and the advisory is one of them.
 Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
 
+## The same advisory, with the step where the agent starts — pre-registered, not yet run
+
+[2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **the third round on
+this target, and the last one for this intervention.** The multiplicity is on the page rather
+than in a footnote: running until a band lands is fishing, so if this refutes, the position
+already published stands and the next attempt changes the target instead of retrying the
+measurement.
+
+The previous round showed *where* the failure sits — two of three auditors read the mandatory
+enumeration step and did not run it. So it moved out of the pack and into
+`agents/ehs-web-api.md`, where the agent starts. Every other first action is *read this file*;
+this is the only one that is *run this*. Band: at least 3 of 4.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an

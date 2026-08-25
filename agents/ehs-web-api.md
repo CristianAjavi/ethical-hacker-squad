@@ -21,6 +21,30 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 ## First actions
 
+**0. Enumerate before you read anything.** Every step below this one costs budget you then
+do not have for the target — the note above measures that, and a second measurement found
+the cost lands on *where you look* rather than on *what you know*. A blinded round on a
+569-file repository reported a published log-injection advisory in **0 of 4** runs while the
+same procedures found the same class in 6 of 6 runs on a seventeen-file tree, and adding a
+mandatory enumeration step *inside the pack* moved it only to 1 of 3: two auditors read the
+step, had it marked mandatory, and did not run it. A step that competes with prose for
+attention is a step that does not happen, so it lives here instead.
+
+So before opening any pack, produce the lists a machine can produce. They are cheap, they
+are exhaustive where judgement is not, and they turn "which of 569 files do I read" into "here
+are the call sites". At minimum, for the languages in front of you:
+
+- **Sinks that log** — every logging call whose message is not a plain literal, deferred
+  placeholders included, because deferring changes when the string is built and nothing
+  about what ends up in it. `web-api-logging.md` carries the query.
+- **Sinks that execute or interpolate** — `eval`, `exec`, template construction, subprocess
+  argv assembly, and query strings built by concatenation or f-string rather than binding.
+- **The boundary** — every route, handler or RPC entry point, and every place a request
+  header, body field or path parameter is first read.
+
+Report the size of each list in your coverage declaration. A list you did not work through
+is scope you did not cover, and saying so is cheaper than being found out by a round.
+
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api.md`. Start with §0, which lists the classes tooling systematically misses. Then open only the sections the inventory you were given justifies — the pack has a selective-loading index for this. That file holds §0-§5 and `WEB-01`..`WEB-12`, plus `WEB-24` and `WEB-25`.
 2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-clientside-logic.md`, with §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it has its own index. It is the same pack, not another role's.
 3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-logging.md`, with §11 and `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence, which is almost always.
