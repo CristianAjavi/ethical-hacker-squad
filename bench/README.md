@@ -86,22 +86,19 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
-## Running now: does an instrument move what four procedures could not?
+## The round that could not answer its own question
 
-[2026-08-26, instrument hypothesis](runs/2026-08-26-instrument-hypothesis/) — **the arms are
-running; there is no result on this page and there will not be one until the scorer has read
-them.** What is published is everything that has to exist beforehand: the
-[pre-registration](runs/2026-08-26-instrument-hypothesis/PREREGISTRATION.md) with a band that
-constrains *both* arms, the [key](runs/2026-08-26-instrument-hypothesis/key.json) derived from
-CKAN's public fix commit, the [scorer](runs/2026-08-26-instrument-hypothesis/score.py) exercised
-on synthetic reports before it saw a real one, and the
-[limits](runs/2026-08-26-instrument-hypothesis/LIMITS.md) — including the fact that the blind is
-structural, not perfect.
+[2026-08-26, instrument hypothesis](runs/2026-08-26-instrument-hypothesis/) — **arm A 4 of 4,
+arm B 4 of 4.** The band required arm B at ≥ 3 *and arm A at ≤ 1*, so this is the target
+failing to discriminate, not a result about the hypothesis. Both arms found `CVE-2024-27097` in
+every run.
 
-Four rounds moved describing, enumerating, delivering and ranking, and all four kept the
-auditor's judgement as the thing that decides. This one hands the agent a deterministic
-instrument instead. Target: `ckan/ckan` at the parent of its `CVE-2024-27097` fix, unused, and
-retired for this intervention whatever the outcome.
+The reason was written down before the arms started: the defect sits in an authentication
+route, which is where auditors gravitate, where `pyload`'s sat in the RPC layer. The
+pre-registration called the target *"if anything, easier for the arm without the instrument"* —
+and it was. **The fifth lever is neither supported nor refuted**, CKAN is retired for it, and
+the next round needs a target whose defect sits away from the surfaces an auditor already
+looks at.
 
 ## A check that does not look at the idiom
 
