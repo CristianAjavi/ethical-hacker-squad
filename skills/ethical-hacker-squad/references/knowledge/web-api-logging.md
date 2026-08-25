@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target logs anything an outside caller can influence, returns errors to a client, ships traces to a third party, or renders logs in a viewer.
 > **Do not load it if:** the audit has no application code, or you are only looking at routes and authorization (`web-api.md`) or at client-side sinks, CSRF, CORS, business logic and cryptography (`web-api-clientside-logic.md`).
-> **Cost:** ~66 lines. Two procedures that face in opposite directions and are read together.
+> **Cost:** ~97 lines. Two procedures that face in opposite directions and are read together.
 > **Third file of this pack.** `web-api.md` is the entry point and holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; `web-api-clientside-logic.md` holds §6-§10 with `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27`. This file exists because those two are at the per-file size budget, and a pack file that cannot grow stops being where the next procedure goes.
 
 ## Selective loading index
@@ -42,7 +42,38 @@ Rules: FP-01, FP-04.
 
 `WEB-22` covers what leaks **out through** the log. This is the opposite direction: what an attacker writes **into** it. `CWE-117` appears in no other traceability line in this corpus, and of the **four** CWEs Veracode measured in 2025 it is the one model-generated code resolves worst: a 12.03% security pass rate, below the 13.53% of cross-site scripting. Four measured classes are not all the classes there are, and the claim is worth no more than its scope.
 
-**Where to look**
+**Enumerate before you read.** This step is not optional and it is not stylistic: without
+it this procedure scored **0 of 4** against a published advisory in a 569-file repository
+(`bench/runs/2026-08-25-external-log-injection/`), while scoring 6 of 6 on a seventeen-file
+tree. The procedure was never the problem. Reading a large repository by judgement means the
+file holding the defect is one an auditor never opens, and no amount of knowing what to look
+for fixes that. So list the call sites mechanically first, then apply judgement to the list:
+
+```
+python3 - "$TARGET" <<'PY'
+import ast, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+LOG = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
+for f in root.rglob("*.py"):
+    try:
+        tree = ast.parse(f.read_text(errors="ignore"))
+    except SyntaxError:
+        continue
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr in LOG and n.args
+                and (not isinstance(n.args[0], ast.Constant) or len(n.args) > 1)):
+            print(f"{f.relative_to(root)}:{n.lineno}")
+PY
+```
+
+It lists every logging call whose message is not a plain literal — deferred `%s` included,
+because deferring changes when the string is built and nothing about what ends up in it. On
+the 569-file repository above it returns **218** sites, one of which is the advisory. 218 is
+a list a reviewer works through; 569 files is not. Adapt the accessor names for the language
+in front of you; the shape of the query is what carries over.
+
+**Where to look**, once the list exists
 - Logger calls interpolating request data: `logger.info(f"... {value}")`, `log.Printf("%s", value)`, `console.log(\`... ${value}\`)`, `String.format` into a logger, and structured fields whose value is a raw string.
 - The **format**: line-oriented text is where a newline forges a record. A logger that emits one JSON object per event does not have this defect in the same way, and that distinction is the whole triage.
 - The **consumer**: a file read by an agent that splits on newlines, a syslog line, an aggregator with a line-based parser, an alerting rule that matches on a prefix — and, worst of all, a log viewer that renders the line as HTML, where this becomes stored cross-site scripting reached without touching the application.

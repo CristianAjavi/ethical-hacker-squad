@@ -36,7 +36,14 @@ GROUND_TRUTH = ROOT / "bench" / "ground-truth.json"
 # The primary metric's subject, named in the pre-registration rather than picked
 # out of the results.
 HIDING_CLASS = "a control that runs and cannot fail"
-MIN_VALID_RUNS = 5
+
+# The floor below which a round reports that it could not measure. It is a
+# PARAMETER and not a constant because it belongs to a round's pre-registration
+# rather than to this file: the 2026-08-25 blind round fixed five for its single
+# arm, and the comparative round that followed fixed three for each competitor
+# arm. Baking one round's number in here silently applied it to the other, which
+# is what happened the first time this was run.
+DEFAULT_MIN_VALID_RUNS = 5
 
 
 def matches(finding: dict, entry: dict) -> bool:
@@ -63,6 +70,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--reports", type=Path, required=True, help="directory of run-*.findings.json")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--min-valid-runs", type=int, default=DEFAULT_MIN_VALID_RUNS,
+                    help="the floor this ROUND pre-registered, not a number chosen here")
     args = ap.parse_args(argv)
 
     try:
@@ -111,6 +120,7 @@ def main(argv=None) -> int:
         "hiding_class": sorted(p["id"] for p in hiding),
         "runs": runs,
         "valid_runs": len(valid),
+        "min_valid_runs": None,  # filled from the argument below
     }
     if valid:
         report["recall_mean"] = sum(len(r["matched"]) for r in valid) / (len(valid) * len(planted))
@@ -132,9 +142,9 @@ def main(argv=None) -> int:
         else:
             print(f"  {r['run']}: INVALID - {r['why']}")
 
-    if len(valid) < MIN_VALID_RUNS:
+    if len(valid) < args.min_valid_runs:
         print(f"UNMEASURED only {len(valid)} valid run(s); the pre-registration requires "
-              f"{MIN_VALID_RUNS} and forbids reporting a number from what is left")
+              f"{args.min_valid_runs} and forbids reporting a number from what is left")
         return 2
 
     print(f"  recall {report['recall_mean']:.2f} · hiding-class recall "

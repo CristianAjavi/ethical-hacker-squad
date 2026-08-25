@@ -26,6 +26,54 @@ deferred `%s` idiom, and the probe shows one call still emits two lines in a lin
 log. Six auditors held up a planted defect as the benign twin of the planted defect beside
 it — a false negative measured against a prediction that predates it.
 
+## Three arms on the vibecoding case — pre-registered, competitors not yet run
+
+[2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — three arms
+on the same blinded tree. **`P-52` is zero in all fourteen runs, and the round still cannot
+say the class is a field-wide blind spot.** The pre-registration fixed an engagement test
+in advance: an arm that reports neither half of the pair did not reach the file, and its
+zero is silence rather than agreement. `AI-Infra-Guard` reported the concatenated neighbour
+in 0 of 4 runs and `mantis` in 1 of 4, so both zeros are silence. The question stays open.
+
+Recall on this case came out 0.83 for this corpus against 0.48 and 0.20 — **reported as
+weak and claimed as nothing**, because the case was planted here. The round that speaks to
+detection ran against code nobody here wrote, and every arm scored 0 of 4 there.
+
+## A published advisory, on code nobody here wrote — pre-registered, not yet run
+
+[2026-08-25, external log injection](runs/2026-08-25-external-log-injection/) — three arms
+on `pyload/pyload` at the parent of its own fix commit, 569 Python files, key read from the
+public commit. **The prediction is refuted: 0 of 4 in every arm.** `WEB-28`, the `CWE-117`
+procedure added the same day, does not survive contact with a repository of that size — on
+17 files this corpus reported the neighbouring half of the pair in 6 of 6 runs, and on 569
+it reported neither half in any run.
+
+**This is the round with the strong evidence, and it says no.** The favourable numbers
+elsewhere are all from a case planted here, and each of those pages says a pass there is
+weak. Recorded there too: a competitor found that `UnTar.py`'s guard against `CVE-2007-4559`
+is broken by a `commonprefix` check — *a control that runs and cannot fail*, in real code,
+found by somebody else. The class this project named is not one it has to itself.
+
+## The same advisory, after the procedure changed — pre-registered, not yet run
+
+[2026-08-25, external retest](runs/2026-08-25-external-retest/) — an A/B with one variable.
+Same target, same key, same scoring, same arm; the only change is that `WEB-28` now opens
+with a mandatory enumeration step that lists every logging call whose message is not a plain
+literal. On this target that query returns 218 sites and the advisory is one of them.
+Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
+
+## The same advisory, with the step where the agent starts — pre-registered, not yet run
+
+[2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **refuted, 0 of 4
+against a band of 3 of 4.** Three rounds have failed to move this and the target is retired
+for the intervention, as the pre-registration committed before the run.
+
+What the three together diagnose is that the failure is **neither describing nor
+enumerating — it is ranking**. The list contains the site; every arm in every round walks
+past it toward the web UI, while the advisory sits in the RPC layer behind the base
+permission for adding a download. That hypothesis has three rounds behind it and **no
+pre-registration**, so it is the next round's question, on a different target.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
