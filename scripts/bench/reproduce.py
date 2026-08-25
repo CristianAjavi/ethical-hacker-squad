@@ -49,6 +49,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import environments as envs  # noqa: E402  - a sibling, not a package
+
 DEFAULT_ROOT = Path(os.environ.get("EHS_REPO_ROOT") or Path(__file__).resolve().parents[2])
 CASE = "cli-packer"
 
@@ -120,21 +123,19 @@ def variant(work: Path, diff: Path | None, label: str, SOURCE: Path) -> Path:
     return copy
 
 
-def run_probe(fn, module, work: Path, tag: str):
+def run_probe(env, probes_path: Path, case_path: Path, defect: str, work: Path, tag: str) -> dict:
+    """One probe, in the environment chosen for this run. Returns the observation."""
     room = work / "run" / tag
     room.mkdir(parents=True)
-    cwd = Path.cwd()
-    try:
-        os.chdir(room)
-        return fn(module, room)
-    finally:
-        os.chdir(cwd)
+    return env.run(probes_path, case_path, defect, room).observation
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="emit the observations as JSON")
     ap.add_argument("--root", default=None, help="measure this tree instead of the repository")
+    ap.add_argument("--environment", default=None, choices=envs.ORDER,
+                    help="force one environment instead of the strongest available")
     args = ap.parse_args(argv)
 
     tree = Tree(Path(args.root).resolve() if args.root else DEFAULT_ROOT)
@@ -162,6 +163,29 @@ def main(argv=None) -> int:
         print(f"UNMEASURED the key names probes that do not exist: {', '.join(missing_probe)}")
         return UNMEASURED
 
+    # ---- where the probes will run, and whether that is strong enough -------
+    if args.environment:
+        env = envs.REGISTRY[args.environment]()
+        ok, why = env.available()
+        if not ok:
+            print(f"UNMEASURED the {env.name} environment does not run here: {why}")
+            return UNMEASURED
+        ruled_out = []
+    else:
+        env, ruled_out = envs.strongest_available()
+
+    minimum = key.get("minimum_isolation", "subprocess")
+    if minimum not in envs.ORDER:
+        print(f"UNMEASURED the key asks for an environment nobody offers: {minimum!r}")
+        return UNMEASURED
+    if not envs.at_least(env.name, minimum):
+        print(
+            f"UNMEASURED the probes would run under `{env.name}` and the key requires at least "
+            f"`{minimum}`: a weaker sandbox than the one declared is not a pass"
+            + (f" ({'; '.join(ruled_out)})" if ruled_out else "")
+        )
+        return UNMEASURED
+
     patches = [p for p in patch_truth.get("patches", []) if p.get("case") == CASE]
     findings: list[str] = []
     notes: list[str] = []
@@ -171,26 +195,33 @@ def main(argv=None) -> int:
     # exists to prevent, and this harness shipped it until its own battery
     # replaced a patch with a line of prose and watched the run come back green.
     unmeasured_variants: list[str] = []
-    observations: dict = {"case": CASE, "base": {}, "patched": {}}
+    observations: dict = {
+        "case": CASE,
+        "environment": env.name,
+        "minimum_isolation": minimum,
+        "environments_ruled_out": ruled_out,
+        "base": {},
+        "patched": {},
+    }
 
     work = Path(tempfile.mkdtemp(prefix="ehs-reproduce-"))
     try:
         # ---- 1. the unpatched case: every probe must reproduce ---------------
         try:
-            base = load_case(variant(work, None, "base", tree.source), "packer_base")
+            base_path = variant(work, None, "base", tree.source)
         except Unmeasurable as exc:
             print(f"UNMEASURED {exc}")
             return UNMEASURED
 
         for defect in sorted(covered):
-            obs = run_probe(probes[defect], base, work, f"base-{defect}")
-            observations["base"][defect] = obs.as_dict()
-            if obs.reproduces is None:
-                notes.append(f"{defect} on the unpatched case: NOT MEASURED - {obs.unmeasurable}")
-            elif obs.reproduces is False:
+            obs = run_probe(env, tree.probes, base_path, defect, work, f"base-{defect}")
+            observations["base"][defect] = obs
+            if obs["reproduces"] is None:
+                notes.append(f"{defect} on the unpatched case: NOT MEASURED - {obs['unmeasurable']}")
+            elif obs["reproduces"] is False:
                 findings.append(
                     f"{defect} did not reproduce on the unpatched case. Either the probe is wrong "
-                    f"or the planted key is: {obs.evidence}"
+                    f"or the planted key is: {obs['evidence']}"
                 )
 
         # ---- 2. each patch, against the contract its key row states ----------
@@ -201,26 +232,26 @@ def main(argv=None) -> int:
                 continue
             diff = PATCHES / entry["diff"]
             try:
-                mod = load_case(variant(work, diff, pid, tree.source), f"packer_{pid.replace('-', '_')}")
+                patched_path = variant(work, diff, pid, tree.source)
             except Unmeasurable as exc:
                 notes.append(f"{pid}: NOT MEASURED - {exc}")
                 unmeasured_variants.append(pid)
                 continue
-            obs = run_probe(probes[fixes], mod, work, f"{pid}-{fixes}")
-            observations["patched"][pid] = {"fixes": fixes, "expected": expected, **obs.as_dict()}
+            obs = run_probe(env, tree.probes, patched_path, fixes, work, f"{pid}-{fixes}")
+            observations["patched"][pid] = {"fixes": fixes, "expected": expected, **obs}
 
-            if obs.reproduces is None:
-                notes.append(f"{pid} against {fixes}: NOT MEASURED - {obs.unmeasurable}")
+            if obs["reproduces"] is None:
+                notes.append(f"{pid} against {fixes}: NOT MEASURED - {obs['unmeasurable']}")
                 unmeasured_variants.append(pid)
-            elif expected == "not fixed" and obs.reproduces is False:
+            elif expected == "not fixed" and obs["reproduces"] is False:
                 findings.append(
                     f"{pid} is declared `not fixed` for {fixes}, yet the probe stopped reproducing. "
-                    f"Either the probe is too narrow or the patch key is wrong: {obs.evidence}"
+                    f"Either the probe is too narrow or the patch key is wrong: {obs['evidence']}"
                 )
-            elif expected == "verified" and obs.reproduces is True:
+            elif expected == "verified" and obs["reproduces"] is True:
                 findings.append(
                     f"{pid} is declared `verified` for {fixes}, yet the probe still reproduces: "
-                    f"{obs.evidence}"
+                    f"{obs['evidence']}"
                 )
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -237,6 +268,7 @@ def main(argv=None) -> int:
     for line in findings:
         print(f"  FINDING: {line}", file=out)
 
+    print(f"  environment: {env.name} (the key requires at least `{minimum}`)", file=out)
     unmeasured = [d for d, o in observations["base"].items() if o["reproduces"] is None]
     print(
         f"  probes {len(covered)} of {len(ours)} planted defect(s) in {CASE}; "
