@@ -12,6 +12,20 @@ a ceiling was followed and no difference is reported. What the round did establi
 hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
 other one is what both arms actually did.
 
+## A blinded audit of the vibecoding case — pre-registered, not yet run
+
+[2026-08-25, vibecoding blind](runs/2026-08-25-vibecoding-blind/) — six blinded runs, the
+criteria committed before the first. The hiding class was reported 4 of 4 in every run and
+the decoy rate was 0.02, so the prediction held — and the pre-registration says a pass here
+is **weak evidence**, because the procedure written against that class shipped the same day
+the case was planted.
+
+**The finding is the miss.** `P-52` was matched in **0 of 6** runs, and not by oversight:
+every run found its neighbour and named `P-52` as the example of doing it right. It is the
+deferred `%s` idiom, and the probe shows one call still emits two lines in a line-oriented
+log. Six auditors held up a planted defect as the benign twin of the planted defect beside
+it — a false negative measured against a prediction that predates it.
+
 ## Reproduction
 
 All ten planted defects that were reproducible without installing anything now carry an
