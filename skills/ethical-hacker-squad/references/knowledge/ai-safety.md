@@ -2,15 +2,15 @@
 
 > **When to load this file:** when the inventory contains calls to a language model, an agent with tools, an MCP client or server, a RAG pipeline, persistent memory, or a chatbot exposed to users.
 > **Do not load it if:** the project only uses a model for offline classification, with no tools, no retrieval and no output reaching an executable sink; the web/API coverage is enough there.
-> **Cost:** ~308 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
-> **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§12 and `AI-25`..`AI-28` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, and attribution of what the agent did. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three.
+> **Cost:** ~337 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
+> **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§12 and `AI-25`..`AI-28` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, and attribution of what the agent did. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three. `AI-29` sits in §1 of this file and is the one procedure here whose subject is the auditor's own machine as well as the target's.
 
 ## Selective loading index
 
 | Section | Load it if the inventory has | Procedures |
 |---|---|---|
 | §0 Lethal trifecta | any agent with two or more tools | AI-01 |
-| §1 Instruction/data boundary | prompts built from external content (web, email, files, tickets, RAG) | AI-02, AI-03, AI-04 |
+| §1 Instruction/data boundary | prompts built from external content (web, email, files, tickets, RAG); any repository-scoped agent or editor configuration | AI-02, AI-03, AI-04, AI-29 |
 | §2 Tool authorization | the model decides which function runs | AI-05, AI-06, AI-07 |
 | §3 MCP and tool chain | `.mcp.json`, `mcp_servers`, MCP SDK, first- or third-party servers | AI-08, AI-09, AI-10, AI-11 |
 
@@ -126,6 +126,35 @@ Rules: FP-01, FP-04.
 
 **Traceability**: `LLM01:2026` · `LLM04:2026` · `ASI04` · `ASI06` · `AML.T0051.001` · `CWE-829`
 **Tooling**: `git log --format='%h %an %s' -- CLAUDE.md AGENTS.md .mcp.json` → history. An external author is not a finding in itself; the finding is the absence of security-minded review over a file that steers an agent with tools.
+
+### AI-29 Configuration in the repository that runs, or overrides, on the machine that opens it
+
+`AI-04` asks who wrote and who reviewed the files that steer an assistant. This asks a different question about the same directory, and the answer does not depend on anybody reading anything: **what executes, and whose settings stop applying, the moment this tree is opened in an editor with an agent?** The victim is not the product's user. It is the next contributor who clones the repository, and it is you.
+
+**Where to look**
+- Repository-scoped agent configuration: `.cursor/mcp.json`, `.cursor/cli.json`, `.mcp.json`, `.claude/settings.json`, `.windsurf/**`, `.continue/**` — and inside each, the fields that name a program: `command`, `args`, `env`, a base-URL override.
+- Editor automation that fires without a keystroke: `.vscode/tasks.json` with `runOptions.runOn: folderOpen`, `.devcontainer/devcontainer.json` with `initializeCommand`, `postCreateCommand` or `postStartCommand`, `.envrc` for `direnv`, and a `core.hooksPath` in a committed git configuration pointing at a hook directory that **is** tracked.
+- **Precedence**, which is the half nobody checks: does a file in this tree win over the setting the person already had? That is a different finding from execution and it needs naming separately.
+- The coding agent itself as a declared dependency of the project — a pinned version in `package.json`, a lockfile entry, a version in a container image or a setup script.
+
+**Vulnerable pattern** — a file committed to the repository that names a program, and a trigger that is not a decision. Cloning is the delivery; opening is the execution.
+```json
+// .cursor/mcp.json, tracked, arrived in a fork's pull request
+{ "mcpServers": { "helper": { "command": "npx", "args": ["-y", "some-helper"] } } }
+```
+Five published records fix the shape rather than the speculation: **CVE-2025-64109** (**Cursor CLI Beta** before 2025.09.17-25b418f, `CWE-78`, CVSS 8.8) — a `.cursor/mcp.json` in the repository executes commands, with no warning, once the project is cloned and opened **with that CLI**; read the record's own scope before widening it to editors in general; **CVE-2025-59536** (Claude Code before 1.0.111, `CWE-94`, CVSS 8.8) — project code runs before the startup trust dialog is accepted; **CVE-2025-61592** (Cursor 1.7 and earlier) — a repository `.cursor/cli.json` takes precedence over the user's global configuration; plus **CVE-2026-21852** (Claude Code before 2.0.65) and **CVE-2026-30615** (Windsurf 1.9544.26). The class is older than the tooling — a folder-open task and a container `postCreateCommand` are the same mechanism — and the agentic editors made it common and gave it identifiers.
+
+**What rules it out (false positive)**
+- The file declares data only: no `command`, no `args`, no shell string, no setting that overrides the reader's own, and no automation trigger. A repository-scoped configuration is not a finding for existing.
+- The referenced program is a path **inside** the repository, already reviewed, and pinned — then the question moves to `AI-09` and `AI-25`, not away.
+- Every tool the project documents is at or past the fixed version, and the pin is in the tree where you can read it. A claim about which version colleagues run is `FP-08`: **without the exported policy or a written statement the answer is `UNKNOWN`, never `HOLDS`.**
+- There is genuinely no second principal — a private repository, no external contributions, no clones. Name the boundary explicitly, the way `local-app.md` §0 requires, or this is a hardening note.
+
+Rules: FP-06, FP-08, FP-09.
+
+**Minimal test** — read-only, and the restriction is the test. Enumerate with `rg --files -uu --hidden -g '**/{mcp,cli,tasks,devcontainer,settings}.json' -g '**/.envrc' <target>`. **The `-uu --hidden` is the test, not decoration**: every path this procedure looks for is a dotted directory, and `rg` skips hidden files and honours `.gitignore` by default — the caveat `references/tooling.md` already records — so the plain invocation returns nothing and reads as an absence, and for each one write down three things: **the trigger** (clone, open the folder, start a session, run the task), **what it names** (a program, or a setting that displaces the reader's), and **whether a human confirmation stands in between**. Then `git log --follow` each file, as in `AI-04`, and run the `AI-20` sweep over it. **Do not open the target in an agentic editor to find out what happens**: that is the exploit, executed against your own machine, and `AI-22` rule 4 already forbids it.\
+**Traceability**: `CWE-94` · `CWE-78` · `CWE-829` · `CWE-1188` · `LLM01:2026` · `LLM04:2026` · `ASI04` · `ASI05` · `A03:2025` · `A08:2025`
+**Tooling**: `rg` for the inventory and `git log` for the history — and never the default invocation, for the reason in the minimal test; there is no scanner, because every one of these files is a legitimate feature of a legitimate tool and the finding is the **combination** of a trigger nobody chose with a program nobody reviewed. Two habits close it in practice and belong in the report even when nothing is found: put these paths under `CODEOWNERS` with security review, since a pull request from a fork is the delivery route the published research used; and record the tool versions the team runs, because this class is fixed in the tool and reappears with every tool that has not been updated.
 
 ## §2 Tool authorization
 

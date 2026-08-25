@@ -1,8 +1,8 @@
 # Knowledge pack — Web and API AppSec (client surface, business logic, crypto and protocols)
 
-> **When to load this file:** second half of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or error and log output a user can reach.
-> **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5.
-> **Cost:** ~297 lines. Load by section using the index. The other half of the pack, `web-api.md`, holds §0-§5 and `WEB-01`..`WEB-12`; its §0 lists the classes tooling systematically misses and is worth reading first.
+> **When to load this file:** second file of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or any control whose presence is being taken as proof that it works.
+> **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5 — or to errors and logs, which are §11 in `web-api-logging.md`.
+> **Cost:** ~306 lines. Load by section using the index. The entry point of the pack, `web-api.md`, holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; its §0 lists the classes tooling systematically misses and is worth reading first. The third file, `web-api-logging.md`, holds §11 with `WEB-22` and `WEB-28`.
 
 ## Selective loading index
 
@@ -11,9 +11,10 @@
 | §6 XSS and client-side sinks | HTML templates, React/Vue, Markdown, postMessage | WEB-13..WEB-14 |
 | §7 CSRF, CORS and caching | cookies, `Access-Control-*`, CDN or proxy | WEB-15..WEB-16 |
 | §8 Business logic, rate limiting and idempotency | payments, balances, coupons, retries, queues | WEB-17..WEB-18 |
-| §9 Crypto and secrets | hashing, homegrown encryption, `.env`, TLS | WEB-19 |
+| §9 Crypto, secrets and the controls that are only apparent | hashing, homegrown encryption, `.env`, TLS; declared limits, validators, verifiers | WEB-19, WEB-23, WEB-26, WEB-27 |
 | §10 GraphQL and persistent channels | `/graphql`, WebSocket, SSE | WEB-20..WEB-21 |
-| §11 Errors and logs | exception handlers, logging, stack traces | WEB-22 |
+
+Section §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`. Open it whenever the target logs anything an outside caller can influence.
 
 ## How to use a procedure
 
@@ -182,6 +183,37 @@ Rules: FP-08, FP-09.
 **Traceability**: `CWE-400` · `CWE-770` · `CWE-1188` · `A04:2025` · `A05:2025` · `ASVS 5.0 V11` · `NIST 800-53 SC`\
 **Tooling**: no scanner reports this, and the reason is worth knowing: dead-code analysis flags **unused** symbols, and a package variable that is assigned at start-up is used — `staticcheck`'s `U1000` and its equivalents stay quiet on exactly this shape. `rg` and the question *who reads this* are the tool. This procedure exists because a blinded three-arm run — the corpus, an unaided senior engineer and a competing product — **all three missed** a published advisory of exactly this shape, and one of them read the declaration as proof the control was present (`bench/runs/2026-08-21-three-arm-go/`).
 
+### WEB-27 A control that runs, and cannot fail
+
+`WEB-23` finds the control that never runs. This finds the one that runs: registered, called, returning — with no path in its body that says no. The two are not the same axis, and this one is the more expensive, because an **absent control adds a finding while an inert control deletes them**. Taint analysers model a sanitiser by name or by configured signature, so a function called `sanitize_input()` that returns its argument unchanged **clears the taint** and removes every downstream finding. In this corpus's own triage it is the canonical way to answer `FP-01` wrongly: a compensating control is named, and it compensates nothing.
+
+**Where to look**
+- Predicates whose name promises a decision — `is_valid`, `check_*`, `verify_*`, `validate_*`, `authorize`, `has_permission`, `sanitize_*`, `escape_*` — whose body has **no branch that returns the negative**: a single `return True`, a body that only logs, a `pass` in the failure arm, a `TODO` where the comparison belongs.
+- Comparisons that read one operand: `if token:` where a value should be compared, an equality against something derived from the same input, `hmac.compare_digest(a, a)`.
+- The exception that swallows the decision: `try: verify(...) except Exception: pass`, `except: return True`, `.catch(() => true)`.
+- `assert` used as the control where the interpreter can be run with assertions disabled; a check behind a debug-only flag.
+- **The caller.** `validate(x)` on a line of its own, with nothing branching on the result, is a control nobody consults — and it is the variant that reads best in review.
+
+**Vulnerable pattern**
+```python
+def verify_signature(payload, signature):
+    expected = hmac.new(KEY, payload, hashlib.sha256).hexdigest()
+    if not signature:                 # the only rejection
+        return False
+    return True                       # expected is computed and never compared
+```
+**What rules it out (false positive)**
+- The framework performs the real check and this function is a hook it wraps. Name the framework call and the version.
+- It is a base-class default that every subclass in use overrides. Show the subclasses, not the base.
+- The real control is elsewhere and this is defence in depth: that is `FP-10` — the severity drops, the finding is still written.
+- The permissive arm does not exist in what ships: a test double, a development branch, a path behind a flag production does not set (`FP-04`).
+
+Rules: FP-01, FP-04, FP-09, FP-10.
+
+**Minimal test** — one test per candidate, and it is a *negative* test: feed the control a value that **must** be rejected and assert the rejection. A control that cannot be made to fail is the finding, and the failing test is the evidence. Then check the callers with `rg -n 'validate\(|verify_|is_valid' .` and mark every call whose result is not branched on. Do this **before** trusting any clean analyser result over the same code: a green scan downstream of an inert sanitiser is the scan agreeing with the defect.\
+**Traceability**: `CWE-754` · `CWE-390` · `CWE-697` · `CWE-345` · `CWE-20` · `WSTG-BUSL-*` · `ASVS 5.0 V1` · `A04:2025`
+**Tooling**: no scanner reports it and several are actively silenced by it. The nearest published mechanism is Veracode's own explanation of why generated code resolves output encoding so poorly — sanitisation appearing as a reaction to a **common variable name** rather than to a dataflow fact — which is exactly a control placed by resemblance instead of by need. **State the limit out loud when you report this class: nobody has published a prevalence figure for it.** The procedure stands on its mechanism and on its cost, not on a rate, and `bench/cases/` is where this repository measures it rather than asserting it. `SUP-22` is the same axis in the supply chain, where the verification accepts any signer; treat both as failed controls, never as hardening suggestions, because the project already believes it holds them.
+
 ### WEB-26 A length from the wire decides the size of an allocation
 **Where to look**
 - Any decoder that reads a **count or a length from untrusted input and uses it to size something** before the payload arrives: `new byte[len]`, `make([]T, n)`, `new T[count]`, `ByteBuffer.allocate(len)`, `malloc(n)`, `Array.new(n)`, a pre-sized list from a declared element count.
@@ -272,26 +304,3 @@ Rules: FP-01.
 
 **Traceability**: `CWE-346` · `CWE-862` · `CWE-770` · `WSTG-CLNT-*` · `ASVS 5.0 V4` · `A01:2025` · `API2:2023`
 **Tooling**: `grep -rn "new WebSocket\|socket.io\|AsyncWebsocketConsumer\|ActionCable" .` → locate the handshake and read the authorization there, not in the HTTP router.
-
-## §11 Errors, logs and information disclosure
-
-### WEB-22 Disclosure through errors, traces and logs
-
-**Where to look**
-- Configuration: `DEBUG=True` in Django, `app.debug`, `ASPNETCORE_ENVIRONMENT=Development`, `server.error.include-stacktrace=always`, `consider_all_requests_local` in Rails, `APP_DEBUG=true` in Laravel.
-- Handlers that serialize the whole exception: `catch (e) { res.status(500).json(e) }`, `except Exception as e: return str(e)`.
-- Logging of `request.body`, tokens, `Authorization` headers, webhook bodies with personal data, traces shipped to third parties with full context; and the **absence** of logging on failed login, permission changes, bulk deletion or use of administrative credentials.
-
-**Vulnerable pattern** — the error returns paths, versions, SQL queries or internal class names, which lowers the cost of reconnaissance and, in debug mode, may expose configuration. At the other extreme, the log stores tokens or personal data in clear text and whoever reaches the logs escalates privilege; missing logging prevents detecting and reconstructing an incident.
-
-**What rules it out (false positive)**
-- A generic error with a correlation identifier and the detail only in the server log.
-- A sensitive-field filter in the logger (Rails `filter_parameters`, redaction processors) verified by a test.
-- Debug mode gated by environment and disabled in the real production configuration.
-
-Rules: FP-01, FP-04.
-
-**Minimal test** — local: trigger a controlled error (an unexpected data type) and inspect the response body; run a login with synthetic credentials and check whether the password or token appears in the log.
-
-**Traceability**: `CWE-209` · `CWE-532` · `CWE-200` · `CWE-778` · `WSTG-ERRH-*` · `WSTG-INFO-02` · `ASVS 5.0 V16` · `ASVS 5.0 V14` · `A09:2025` · `A10:2025`
-**Tooling**: `grep -rn "DEBUG = True\|APP_DEBUG=true\|include-stacktrace" .` and review the log from a local run; do not publish log excerpts containing real data.

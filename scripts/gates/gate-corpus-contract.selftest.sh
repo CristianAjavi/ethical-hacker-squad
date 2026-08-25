@@ -76,10 +76,18 @@ import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/knowledge/README.md"
 p.write_text(re.sub(r"\d+ numbered procedures","999 numbered procedures",p.read_text(),count=1))'
 
+# The mutation is DERIVED from the file, never pinned to a literal upper bound.
+# Pinned to `AI-28` it silently stopped biting the day the corpus reached AI-29:
+# the replace matched nothing, the gate correctly returned 0, and the case read
+# as a gate failure instead of as a rotten mutant. The assert is the fix - a
+# mutant that can no longer reach its target says so instead of going quiet.
 case_run declared-range-drift 1 "the highest that exists" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/team.md"
-p.write_text(p.read_text().replace("`AI-01`..`AI-28`","`AI-01`..`AI-40`",1))'
+t=p.read_text()
+m=re.search(r"`AI-01`\.\.`AI-(\d+)`",t)
+assert m, "the AI range row is gone from team.md: this mutant no longer bites"
+p.write_text(t[:m.start()]+"`AI-01`..`AI-%d`"%(int(m.group(1))+12)+t[m.end():])'
 
 case_run pack-cost-header-drift 1 "header declares" '
 import os,re,pathlib

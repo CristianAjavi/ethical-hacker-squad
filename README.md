@@ -49,7 +49,7 @@ The second dimension is not capability at all.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,238 lines of corpus across eight role packs, with 164 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,396 lines of corpus across eight role packs, with 169 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -79,17 +79,18 @@ Eight packs, one per role. Five of them are stored as **more than one file** (`m
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
 | web-api | `web-api.md` | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | authn and sessions, object- and function-level authorization, injection, SSRF, deserialization and upload |
-| | `web-api-clientside-logic.md` | `WEB-13`..`WEB-23`, `WEB-26` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, error and log leakage |
+| | `web-api-clientside-logic.md` | `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`..`WEB-27` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, and a control that runs without being able to fail |
+| | `web-api-logging.md` | `WEB-22`, `WEB-28` | what leaks out through the log, and what an attacker writes into it |
 | mobile | `mobile.md` | `MOB-01`..`MOB-12` | manifest and exported surface, storage and logs, WebViews and bridges, deep links and intents, TLS and pinning, crypto and embedded secrets |
 | | `mobile-runtime-trust.md` | `MOB-13`, `MOB-16`..`MOB-18` | client-only controls, biometrics bound to a key, overlay and accessibility defenses on confirmation screens, code loaded after the store |
 | | `mobile-ios.md` | `MOB-14`..`MOB-15` | iOS specifics: `Info.plist`, ATS, URL schemes, entitlements, Keychain, pasteboard |
 | infra-cloud | `infra-cloud.md` | `INF-01`..`INF-12` | Terraform and IaC, containers, Kubernetes |
-| | `infra-cloud-cicd-exposure.md` | `INF-13`..`INF-18` | CI/CD and GitHub Actions, environment separation and deployment secrets, remote exposure |
+| | `infra-cloud-cicd-exposure.md` | `INF-13`..`INF-18`, `INF-24` | CI/CD and GitHub Actions, environment separation and deployment secrets, remote exposure |
 | | `infra-cloud-cicd-platforms.md` | `INF-19`..`INF-23` | GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket: untrusted-contributor pipelines, metadata in a shell step, credential scope, moving pipeline imports, the runner as a machine |
 | supply-chain | `supply-chain.md` | `SUP-01`..`SUP-15` | manifests and locks, install scripts, dependency confusion, typosquatting and slopsquatting, pipeline integrity, provenance and SBOM, reachability-aware triage |
 | | `supply-chain-secrets-malware.md` | `SUP-16`..`SUP-20` | secrets in tree, history and CI, malicious-package indicators |
-| | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-25` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
-| ai-safety | `ai-safety.md` | `AI-01`..`AI-11` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
+| | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-26` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
+| ai-safety | `ai-safety.md` | `AI-01`..`AI-11`, `AI-29` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
 | | `ai-safety-data-output.md` | `AI-12`..`AI-24` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
 | | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
 | local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |

@@ -35,8 +35,8 @@ rather than a matter of taste:
 
 ## What is measured today, and what is not
 
-Of the **43** planted defects in this corpus, **10** are reproducible without installing
-anything, and all ten now carry a probe:
+Of the **54** planted defects in this corpus, **10** were reproducible without installing
+anything at the time the probes were written, and all ten carry one:
 
 | case | defects | cross-check |
 |---|---|---|
@@ -44,8 +44,11 @@ anything, and all ten now carry a probe:
 | `analytics-service` | 3 | no patch ships, so only the unpatched half |
 | `rag-agent` | 2 | no patch ships, so only the unpatched half |
 
-The other 33 need `anthropic`, `sqlalchemy`, `marshmallow` or `flask_restful`, or are not
-Python at all — 6 JavaScript, 4 Terraform, 4 YAML, 5 JSON, 2 Go, 2 Java.
+`intake-portal` then took the corpus from 43 planted defects to **54**, and six of its own
+are probe-able with nothing installed but wait on the multi-case harness. Of the remaining
+38, some need `anthropic`, `sqlalchemy`, `marshmallow` or `flask_restful`, and the rest are
+not Python at all — the 54 break down as 25 `.py`, 6 `.js`, 6 `.json`, 4 `.tf`, 4 `.yml`,
+2 `.go`, 2 `.java`, 1 `.toml`, 1 `.txt` and 3 with no extension.
 
 **A green here is ten defects proved, not a bench reproduced.** Fourteen measurements: ten
 probes on the unpatched cases, four on the patched variants.

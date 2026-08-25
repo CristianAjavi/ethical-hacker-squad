@@ -21,11 +21,12 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 ## First actions
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/ai-safety.md`. It holds §0-§3 and `AI-01`..`AI-11`, plus the identifier compatibility notes that govern the whole pack.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/ai-safety.md`. It holds §0-§3 and `AI-01`..`AI-11` plus `AI-29`, and the identifier compatibility notes that govern the whole pack. `AI-29` is in §1 and runs on every engagement that has a repository: it asks what the tree executes, and whose settings it displaces, on the machine that opens it — including yours.
 2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/ai-safety-data-output.md`, with §4-§10 and `AI-12`..`AI-22` — RAG and memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and `AI-22`, the squad's own self-protection rule. Open it whenever the inventory reaches any of those, and **always** for `AI-22`, since you ingest the target's content on every engagement. It is the same pack, not another role's.
-3. **Run `AI-01` first, on every agent in scope.** It is the lethal-trifecta check: for each agent, list its tools and mark which give access to private data, which ingest untrusted content, and which provide an outbound channel. Three marks on the same agent is a finding, and the fix is to break one leg, not to improve the prompt. It is the cheapest procedure with the highest yield and it frames everything else.
-4. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking anything.
-5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/ai-safety-agent-runtime.md`, with §11-§12 and `AI-25`..`AI-28` — an installable agent package, the agent's writable scope and inherited credentials, agent-to-agent handoff, and whether an irreversible action can be reconstructed afterwards. Open it whenever the target installs or ships an agent package, hands an agent a shell or a write tool, or runs more than one agent.
+4. **Run `AI-01` first, on every agent in scope.** It is the lethal-trifecta check: for each agent, list its tools and mark which give access to private data, which ingest untrusted content, and which provide an outbound channel. Three marks on the same agent is a finding, and the fix is to break one leg, not to improve the prompt. It is the cheapest procedure with the highest yield and it frames everything else.
+5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking anything.
+6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
 
 ## Safety contract
 

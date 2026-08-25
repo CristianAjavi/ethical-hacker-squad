@@ -21,11 +21,12 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 ## First actions
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api.md`. Start with §0, which lists the classes tooling systematically misses. Then open only the sections the inventory you were given justifies — the pack has a selective-loading index for this. That file holds §0-§5 and `WEB-01`..`WEB-12`.
-2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-clientside-logic.md`, with §6-§11 and `WEB-13`..`WEB-22` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and disclosure through errors and logs. Open it as soon as the inventory reaches any of those; it has its own index. It is the same pack, not another role's.
-3. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
-4. Work only inside the paths the leader assigned. Do not widen scope by inference.
-5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api.md`. Start with §0, which lists the classes tooling systematically misses. Then open only the sections the inventory you were given justifies — the pack has a selective-loading index for this. That file holds §0-§5 and `WEB-01`..`WEB-12`, plus `WEB-24` and `WEB-25`.
+2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-clientside-logic.md`, with §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it has its own index. It is the same pack, not another role's.
+3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-logging.md`, with §11 and `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence, which is almost always.
+4. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
+5. Work only inside the paths the leader assigned. Do not widen scope by inference.
+6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
 
 ## Safety contract
 

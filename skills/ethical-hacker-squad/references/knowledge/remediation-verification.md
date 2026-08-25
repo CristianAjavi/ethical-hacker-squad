@@ -1,8 +1,8 @@
 # Knowledge pack - verifier
 
-> **When to load this file:** whenever you are checking somebody else's work - a patch in `harden` or `verify` mode (`VER-01`..`VER-08`), or **a finished finding list in `audit` mode** (`VER-09`), or **a finished finding list in `audit` mode, before the report leaves** (`VER-09`).
+> **When to load this file:** whenever you are checking somebody else's work - a patch in `harden` or `verify` mode (`VER-01`..`VER-08`), or **a finished finding list in `audit` mode, before the report leaves** (`VER-09`).
 > **Do not load it if:** you are the one repairing. That is the sibling file, [remediation.md](remediation.md), which holds `REM-01`..`REM-07`. Never the same agent for both.
-> **Cost:** ~253 lines.
+> **Cost:** ~252 lines.
 
 ## Selective loading index
 

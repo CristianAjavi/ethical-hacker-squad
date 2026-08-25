@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,238 lines across eighteen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,396 lines across nineteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
@@ -69,7 +69,7 @@ Do not load a pack for a role you did not staff. The corpus is 4,238 lines acros
 
 ### 2. Inventory before delegating
 
-Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive artifacts without revealing their content. Not every project needs every role.
+Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive artifacts without revealing their content. Record **how the code got here** as well as what it is: an agent instruction file, repository-scoped editor or agent configuration, a coding agent among the dependencies. That is a routing signal in `references/coverage.md`, never a verdict — it can be deleted from a tree, and the client's account of its own process is not evidence. Not every project needs every role.
 
 Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read only the matching sections of `references/coverage.md` to decide which packs are worth loading.
 
