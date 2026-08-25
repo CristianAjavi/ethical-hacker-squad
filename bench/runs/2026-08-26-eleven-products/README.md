@@ -73,23 +73,40 @@ read one.
   and `Netflix/lemur` — code nobody here wrote — every arm scored at or near zero, and nothing
   here changes that.
 
-## What `mantis` does that this project does not
+## Where the eight points actually are — and the hypothesis this page first published was wrong
 
-Its run 1 reported the pipeline it executed, and the shape is the finding worth taking away:
-**summarize → architecture → threat model → plan → 11 parallel auditors → dedupe → 3
-independent adversarial review shards → critic → chain → calibrate → report**, with a funnel of
-68 raw findings → 11 killed by adversarial review, a **16% false-positive rate it measured on
-itself** → 57 valid → critic triage → 58 scored.
+The first version of this section credited `mantis`'s **adversarial review stage**. Comparing
+the two arms defect by defect against the key says otherwise, and the arithmetic is not subtle:
 
-Two things there are absent from this project: **auditors fanned out one per product** rather
-than one pass over the whole tree, and **a review stage whose job is to kill its own side's
-findings** before they are reported. This project's 0.25 decoy rate comes from triage rules
-applied by the same agent that made the finding; `mantis` pays for a separate stage to argue
-against itself — and pays a lot: that run cost 70 minutes and 682 tool calls.
+| | this project | `mantis` |
+|---|---|---|
+| detections per run | 43.0 | 47.5 |
+| **reach** — union over its 4 runs | **49 / 54** | **52 / 54** |
+| **stable** — found in *all* 4 runs | **36 / 54** | **40 / 54** |
+| lost per run from inside its own reach | **6.0** | 4.5 |
 
-That is a hypothesis about where the eight points live. It is **not measured**, and it is
-written here so the next round registers it rather than assumes it.
+**The knowledge gap is three defects.** Exactly three are found by `mantis` and never by this
+project across any run: `P-19` (`SUP-03`, an install-time hook in `node-supply`) and `P-45` /
+`P-47` (both `INF-24`, in `intake-portal`). Nothing is the other way round — `mantis`'s reach
+contains this project's entirely.
 
+**The rest is consistency.** This project reaches 49 of 54 and reports 43 in an average run: it
+**drops six defects per run that it is demonstrably able to find**, and which six varies. That
+is where the gap lives, and it is not a gap in what the corpus knows.
+
+So the adversarial review stage is the wrong suspect. A stage that argues against its own
+findings *removes* them; it cannot raise recall. It is not even buying `mantis` precision here
+— it reported **1.00 decoys per run against this project's 0.25**.
+
+The suspect that fits the arithmetic is the other difference: `mantis` fans out **eleven
+auditors, one per product**, where this project makes one pass across all eleven. A single pass
+spreads attention over 73 files and drops a different handful each time; eleven bounded passes
+do not have to choose.
+
+**That is a hypothesis and it is unmeasured.** What is measured is the split it has to explain:
+**3 of knowledge, 4 of consistency, 6 dropped per run from inside our own reach.**
+
+## The answer to the question that prompted the round
 ## The answer to the question that prompted the round
 
 *"Are we already the best hacker repo for different products or services built with
