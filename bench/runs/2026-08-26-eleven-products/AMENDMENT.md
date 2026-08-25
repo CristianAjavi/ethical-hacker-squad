@@ -1,5 +1,9 @@
 # Amendment — the competitor arms were cancelled before any of them ran
 
+> **Superseded in part.** The `google/mantis` section below is WRONG: it judged a
+> nineteen-skill product by one skill. See [`CORRECTION.md`](CORRECTION.md). This file is
+> left unedited so the mistake stays visible. The `AI-Infra-Guard` section stands.
+
 Written **after the four `ours` runs were launched and before any competitor arm was started**.
 The pre-registration is not edited; this file records what changed and why, so the change is
 visible rather than absorbed.
