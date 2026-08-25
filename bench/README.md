@@ -5,9 +5,10 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 ## Reproduction
 
 Five of the planted defects now carry an executable probe, and the probes are cross-checked
-against both keys this corpus holds — see [reproduction/](reproduction/). Ten of the 43
-planted defects are reproducible without installing anything; five ship today. A green
-there is five defects proved, not a bench reproduced.
+against both keys this corpus holds — see [reproduction/](reproduction/). Of the **54**
+planted defects, **ten** are reproducible without installing anything and five ship a probe
+today; six more became probe-able with `intake-portal` and wait on the multi-case harness. A
+green there is five defects proved, not a bench reproduced.
 
 ## The measured result so far
 
@@ -397,6 +398,17 @@ Every round above asks whether the squad found the defect, which is the question
 
 A case is worth adding when it can carry both halves: a real defect and a construct that resists. A case with only planted defects measures nothing but the model's willingness to agree.
 
+**Do not plant a name the corpus invented as an example.** `fastapi_security_utils` appears in
+`supply-chain.md` as `SUP-08`'s illustration; a fixture reusing it is resolved from memory by any
+auditor who read the pack, and the plant measures recall of our own prose instead of detection.
+Caught here before the first run, and left as a rule rather than as a gate on purpose: measured
+over the whole key, **20 of 104 symbols appear somewhere under `skills/`**, and every one of the
+other nineteen is legitimate — a corpus about `pull_request_target`, `withCredentials` or
+`preinstall` has to name them. Restricting the check to fenced code blocks does not separate them
+either (24 hits, same story). The distinguishing property is *invented by us as an illustration*,
+which is not computable offline, so the check is one grep the author of a case runs:
+`git grep -F "<symbol>" -- skills/`, and a hit gets a reason or a rename.
+
 `intake-portal` was added on 2026-08-25 as the first case whose defects are
 characteristic of a **generator** rather than of a surface, and it is built to
 measure three things nothing else here measures:
@@ -414,6 +426,15 @@ measure three things nothing else here measures:
   fallback and set nowhere; `D-45` and `D-46` are read the same way and defined
   in two deployment files. The half of the case that makes the question decidable
   is the deployment configuration shipped beside the code.
+
+**Two of the four generator-characteristic traits are deliberately not in it, and that is a cap
+worth stating.** Permissive scaffolding defaults — open CORS, `DEBUG`, cookies without flags — are
+absent because they are ordinary detection already owned by `WEB-16`, `WEB-22` and `WEB-02`, and a
+case that measured them would be measuring the scanner. And the agent instruction file appears only
+in its **benign** half (`D-50`): the plant next to it is `.cursor/mcp.json`, which *executes*, not a
+file that *steers*. So this case measures whether an auditor falsely reports a harmless instruction
+file, and never whether it finds a poisoned one — that second question belongs to `AI-04` and
+`AI-20`, and no case here asks it yet.
 
 Its answer key also records, **before the first run**, that the three route
 guards are readable both as an inert control and as an absent object-level check.

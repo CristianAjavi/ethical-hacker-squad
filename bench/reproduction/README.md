@@ -35,7 +35,7 @@ rather than a matter of taste:
 
 ## What is measured today, and what is not
 
-Of the **43** planted defects in this corpus, **10** are reproducible without installing
+Of the **54** planted defects in this corpus, **10** are reproducible without installing
 anything. Five of those ten live in one file, `bench/cases/cli-packer/packer.py`, and
 those five are what ships here. The other 33 need `anthropic`, `sqlalchemy`,
 `marshmallow` or `flask_restful`, or are not Python at all — 6 JavaScript, 4 Terraform,
