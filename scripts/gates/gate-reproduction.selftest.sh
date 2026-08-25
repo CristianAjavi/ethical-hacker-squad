@@ -35,9 +35,10 @@ build() {  # build <dir>
   return 0
 }
 
-check() {  # check <name> <expected-rc>  (the mutation is applied by the caller)
+check() {  # check <name> <expected-rc> <dir> [extra harness args...]
   local name="$1" want="$2" dir="$3" out rc
-  out="$(python3 "$HARNESS" --root "$dir" 2>&1)"; rc=$?
+  shift 3
+  out="$(python3 "$HARNESS" --root "$dir" "$@" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ]; then
     pass=$((pass + 1)); printf 'ok       %-46s rc=%s\n' "$name" "$rc"
   else
@@ -161,6 +162,47 @@ if [ "$rc" -eq 1 ]; then
 else
   fail=$((fail + 1)); printf 'FAIL     %-46s rc=%s, expected 1\n' "the gate reddens on a contradicting key" "$rc"
   printf '%s\n' "$out" | sed 's/^/           /' | head -6
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Isolation. The environment a run uses is part of the result and not a
+#    detail: a weaker sandbox than the key declares is an unmeasured run
+#    wearing a green.
+# ---------------------------------------------------------------------------
+D="$TMP/floor-inprocess"; build "$D" || exit 2
+check "running below the declared isolation floor" 2 "$D" --environment inprocess
+
+D="$TMP/floor-subprocess"; build "$D" || exit 2
+check "the declared floor itself is enough" 0 "$D" --environment subprocess
+
+D="$TMP/floor-unknown"; build "$D" || exit 2
+python3 - "$D/bench/reproduction/cli-packer/key.json" <<'FLOOR'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+doc["minimum_isolation"] = "unobtainium"
+json.dump(doc, open(path, "w"), indent=1)
+FLOOR
+check "a floor nobody can offer" 2 "$D"
+
+# The sandbox is asserted to deny the network. That is MEASURED here rather than
+# trusted: the same few lines of Python run in both environments and only the
+# sandboxed one may fail. On a machine with no sandbox-exec the case says so and
+# is not counted as a pass, because an absent sandbox is not a proved one.
+iso="$(python3 "$HERE/../bench/selftest_isolation.py" 2>&1)"
+if printf '%s' "$iso" | grep -q '"skip"'; then
+  printf 'skip     %-46s %s\n' "the sandbox denies the network" "$iso"
+elif printf '%s' "$iso" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if (d.get('subprocess') is True and d.get('seatbelt') is False) else 1)
+" 2>/dev/null; then
+  pass=$((pass + 1)); printf 'ok       %-46s %s\n' "the sandbox denies the network" "unsandboxed opens it, sandboxed does not"
+else
+  fail=$((fail + 1)); printf 'FAIL     %-46s %s\n' "the sandbox denies the network" "$iso"
 fi
 
 printf -- '--- %s passed, %s failed ---\n' "$pass" "$fail"

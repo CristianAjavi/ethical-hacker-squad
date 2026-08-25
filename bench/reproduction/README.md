@@ -59,13 +59,49 @@ filename while leaving the next caller one dash away from the same defect — wh
 its key says `not fixed`. A probe that only tried a dashed filename would have called it
 fixed.
 
+## Where a probe runs
+
+A probe sets `PATH`, changes the umask and chdirs. Run inside the harness, a probe that
+died halfway left the harness holding whatever it had changed. So probes run in a child
+process, and where the machine allows it, in a sandbox.
+
+| environment | what it gives | available here |
+|---|---|---|
+| `inprocess` | nothing; fastest | always, and below the declared floor |
+| `subprocess` | the probe's damage dies with the child, plus CPU, address-space and file-size limits | wherever python3 runs |
+| `seatbelt` | the same, with the network denied through `sandbox-exec` | macOS only |
+
+`key.json` declares `minimum_isolation`, and a run weaker than it answers **2**. Falling
+back quietly to a weaker sandbox and returning 0 would be an unmeasured run wearing a
+green, which is the one thing this project's exit codes exist to prevent.
+
+The sandbox is not taken on trust. `scripts/bench/selftest_isolation.py` runs the same
+socket open in both environments and the battery requires the unsandboxed one to succeed
+and the sandboxed one to fail — measured, because a sandbox that leaks and a sandbox
+nobody exercised look identical from outside. On a machine with no `sandbox-exec` that
+case reports a skip and is not counted as a pass.
+
+### What the neighbouring product has here, measured
+
+Four backends, of which exactly one runs on this machine. `gce_env.py` (606 lines) wants a
+Google Cloud account, `gvisor_env.py` (321) wants Docker and `runsc` — Linux only — and
+`microsandbox_env.py` (234) wants the `msb` binary. None of the three is present. The one
+that runs is `static_env.py`: 145 lines that import `os` and isolate nothing.
+
+That is the honest shape of the comparison. On infrastructure they are ahead and it is not
+close — a cloud VM per run is a capability this has no answer to. On what can actually be
+executed on a developer's machine, a denied network beats no isolation at all.
+
 ## Safety
 
 Probes run against fixture code this repository owns, offline, in a temporary directory
-the harness creates and removes. No network, no installs, nothing written outside that
-directory, and no real `gpg` or `uploader` is ever invoked — a recorder on `PATH` answers
-what argv the case *built*, which is the question, without running anything that signs or
-uploads.
+the harness creates and removes. Nothing is written outside it, and no real `gpg` or
+`uploader` is ever invoked — a recorder on `PATH` answers what argv the case *built*,
+which is the question, without running anything that signs or uploads.
+
+Running probes against code this project does **not** own is a separate decision, and not
+an infrastructure one: it changes what the engagement rules permit. Building the isolation
+did not require it, and taking it is not implied by having built this.
 
 ## Running it
 
