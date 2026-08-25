@@ -86,6 +86,21 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The answer is no, and it is not close
+
+[2026-08-26, eleven products](runs/2026-08-26-eleven-products/) — **`google/mantis` 90.1% recall,
+this project 79.6%**, over 54 planted defects across eleven vibecoded products. Its worst run
+beats this project's best. **Refuted**: the band required leading by 15 points.
+
+The loss is on this project's *own* corpus — its cases, its planted defects, its key — which is
+why it is strong evidence where a win would have been weak. The one column it leads is false
+positives: 0.25 decoys per run against 1.00, and that does not rescue the primary.
+
+Four earlier rounds ran `mantis` through `mantis-advise`, the one skill of nineteen its own
+description excludes for a sweep, and published the 0.20 recall that produced. Its entry point
+is `mantis-meta-agent`. [The correction](runs/2026-08-26-eleven-products/CORRECTION.md) records
+how that happened.
+
 ## The round that could not answer its own question
 
 [2026-08-26, instrument hypothesis](runs/2026-08-26-instrument-hypothesis/) — **arm A 4 of 4,

