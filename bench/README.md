@@ -86,6 +86,18 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The rules work, and they bought recall with noise
+
+[2026-08-26, coverage rules](runs/2026-08-26-coverage-rules/) — **not supported.** With
+`COV-01..03` this project reports **97.8% recall against `mantis`'s 91.9%** on a six-service
+corpus written by an author blinded to its procedures — and **9.75 decoys per run against
+5.25**. The band was a conjunction: recall ahead *and* decoys no worse. The first held, the
+second failed.
+
+The registered mechanism test **passed**: 2.98 findings per multi-defect file against 2.50, and
+2+ findings in 10 of 10 files against 8.8. The fix does what it was built to do, and it cost
+precisely what `coverage.md` says in its own text not to spend. **A sentence is not a control.**
+
 ## The answer is no, and it is not close
 
 [2026-08-26, eleven products](runs/2026-08-26-eleven-products/) — **`google/mantis` 88.0% recall,
