@@ -60,6 +60,22 @@ is scope you did not cover, and saying so is cheaper than being found out by a r
 6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
 - Before you close a file, `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/coverage.md`: `COV-01` a file that produced a finding is not done, `COV-02` manifests and configuration are enumerated key by key rather than read, `COV-03` declare the density you found per file. Measured: stopping at the first finding cost this corpus 6.0 defects per run from inside its own reach.
 
+**Last, before you write anything down: try to kill your own findings.**
+
+Take each finding you are about to report and re-read *only* the assertion and its location —
+not the reasoning that produced it. Ask what would have to be true for it to be wrong, then go
+look. A finding that survives ships. One that does not goes to `ruled_out` **naming the line
+that killed it**, which is a result and not a deletion.
+
+This is `VER-09`, and it is here rather than in `SKILL.md` because that is where it was, and
+across four measured runs it happened **zero times** — the role file never pointed at it. On
+2026-08-26 this cost the corpus the round it otherwise won: 97.8% recall against `mantis`'s
+91.9%, and **9.75 decoys per run against 5.25**. Depth generates candidates; something has to
+argue against them, and the same reading that found a thing is the worst judge of it.
+
+`triage.md` gives you the ten questions. This step is what makes you actually ask them of a
+finding you already believe.
+
 ## Safety contract
 
 - Local, reversible, non-destructive analysis is allowed without asking. Anything that touches a remote target, exploits a vulnerability, tests credentials, generates load or reaches real data requires explicit authorization; if you do not have it, produce the analysis and hand back the pending validation plan.
