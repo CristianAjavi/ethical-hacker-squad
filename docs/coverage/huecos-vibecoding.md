@@ -249,9 +249,28 @@ que queda vigente**, no la ausencia en sí.
 
 ---
 
-### Hueco 5 — Verificar el **caso**, con la familia intacta → `VER-10`
+### Hueco 5 — Verificar el **caso**, con la familia intacta → BLOQUEADO, sin identificador
 **Evidencia: nivel A para la persistencia dentro de un modelo (Spracklen) y nivel A de sede para las
 tasas de clonado (Wu, FSE 2025). En disputa en el eje entre ficheros (Mao 2026). Ver la advertencia.**
+
+> **NO ENTRA AL CORPUS EN ESTE CAMBIO, y no por falta de evidencia.** El siguiente identificador
+> libre de la familia es `VER-10`, y `VER-10` está **congelado** como candidato pre-registrado en
+> `bench/runs/2026-08-24-chain-completion/PROCEDURE-FROZEN.md` — con otro contenido, *The finding
+> that landed next to the defect* — a la espera de una ronda **que no se ha corrido**. Ese fichero
+> dice literalmente que su texto no entra al corpus salvo que la ronda cumpla sus criterios.
+>
+> Son procedimientos **distintos**, y conviene decir en qué: el congelado va de **detección** —
+> desde un hallazgo cierto, dar un paso más hacia el vecino *de otra forma* (el atributo hermano, la
+> asignación de memoria de al lado, la transición de estado siguiente) antes de escribir; el mío va
+> de **verificación** — desde un hallazgo ya parcheado, volver a medir sus **copias idénticas** antes
+> de firmar `verified`. Distinto momento, distinto agente, distintas reglas de exculpación.
+>
+> Renumerar el mío a `VER-11` **tampoco vale**: la numeración del corpus tiene que ser contigua por
+> familia y `gate-corpus-contract.sh` lo mide, así que un `VER-11` con `VER-10` sin aterrizar
+> abriría un agujero — exactamente el defecto que el `CHANGELOG` ya registró una vez con `AI-23` y
+> `PRV-12`. Lo desbloquea una de dos cosas, y ninguna se decide aquí: que se corra la ronda
+> `2026-08-24-chain-completion` (y `VER-10` aterrice o se refute, liberando `VER-11`), o que Cristian
+> decida retirar la pre-registración. Hasta entonces esto queda documentado y sin enviar.
 
 **Hoy**: `REM-01` lo dice bien y lo dice primero — antes de tocar nada, buscar en todo el repositorio
 otros usos del mismo patrón, y si el parche no los cubre, decirlo en el informe con la lista. Es una
@@ -278,7 +297,7 @@ arreglar uno de nueve y comprobar ese uno.
 > frente a 24,52 %). Son denominadores distintos, no un empate — y quien escriba lo contrario está
 > afirmando más de lo medido.
 
-Por eso el procedimiento **no** se escribe como "el código de IA está duplicado". Se escribe como lo
+Por eso el procedimiento, cuando se escriba, **no** se escribirá como "el código de IA está duplicado". Se escribe como lo
 que sí se sostiene: **un hallazgo cuya familia no se enumeró no está verificado**, se genere como se
 genere el código. Es barato, se mide, y cae exactamente donde este repositorio tiene su ventaja medida
 —la verificación— y no donde no la tiene.
@@ -395,14 +414,24 @@ conocidos de `traceability.md`:
 
 ## 7. Resumen ejecutable
 
-| # | Hueco | Destino | Evidencia | Caso de banco |
+| # | Hueco | Destino | Evidencia | Estado |
 |---|---|---|---|---|
-| 1 | El nombre alucinado que ya resuelve | `SUP-26` + retoque a `SUP-08` | Nivel A + medición propia de registro | sí |
-| 2 | El repositorio se ejecuta al abrirlo | `AI-29` | Nivel B, 5 CVE | sí |
-| 3 | Un control que corre y no puede fallar | `WEB-27` | Mecanismo medido, prevalencia **hipótesis** | sí |
-| 4 | Un referente que nadie define | `INF-24` | Analogía medida, prevalencia **hipótesis** | sí |
-| 5 | Verificar el caso con la familia intacta | `VER-10` | Nivel A con reserva declarada | sí |
-| 6 | `CWE-117`, hueco de AppSec ordinaria | `WEB-28` | Nivel B directa | sí |
+| 1 | El nombre alucinado que ya resuelve | `SUP-26` + retoque a `SUP-08` | Nivel A + comprobación de registro y de la base de avisos | escrito |
+| 2 | El repositorio se ejecuta al abrirlo | `AI-29` | Nivel B, 5 CVE, 2 verificadas dos veces | escrito |
+| 3 | Un control que corre y no puede fallar | `WEB-27` | Mecanismo medido, prevalencia **hipótesis** | escrito |
+| 4 | Un referente que nadie define | `INF-24` | Analogía medida, prevalencia **hipótesis** | escrito |
+| 5 | Verificar el caso con la familia intacta | — | Nivel A con reserva declarada | **BLOQUEADO** por la pre-registración de `VER-10` |
+| 6 | `CWE-117`, hueco de AppSec ordinaria | `WEB-28` | Nivel B directa | escrito |
 
-Seis procedimientos en cinco packs. **Ningún pack nuevo, ningún rol nuevo, ninguna familia de
-identificadores nueva.**
+Cinco procedimientos escritos en cuatro packs, uno bloqueado y declarado. **Ningún pack nuevo, ningún
+rol nuevo, ninguna familia de identificadores nueva.**
+
+### Nota de numeración — tres identificadores vienen de un plan anterior
+
+`INF-24`, `WEB-27` y `WEB-28` aparecían con **otro contenido** en el plan de
+`INFORME-COBERTURA-CURRICULAR.md`: guardarraíles organizacionales (cortado), *HTTP request
+smuggling* (diferido) y *file inclusion* (Tier 2, nunca aterrizado). Un identificador propuesto en un
+informe no queda reservado —la numeración contigua obliga a que lo tome el siguiente procedimiento
+que aterriza de verdad, y ya había pasado antes con `WEB-26`—, pero tampoco se reutiliza en
+silencio: la reasignación queda registrada en el addendum fechado de aquel informe. Un candidato
+**pre-registrado** es otra cosa y no se toca: ver el hueco 5.

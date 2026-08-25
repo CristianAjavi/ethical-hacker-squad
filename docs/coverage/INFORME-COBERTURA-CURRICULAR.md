@@ -390,3 +390,35 @@ Añado una cuarta, no prevista: **el ejercicio se auditó a sí mismo.** `AI-25`
 5. **No repetir este ejercicio con más certificaciones de rol.** El filón restante son las fuentes organizadas por *clase explotable* (forma PortSwigger) o por *verificación* (forma OpenSSF). Las organizadas por *puesto de trabajo* ya dieron lo que tenían.
 
 Dato final para calibrar expectativas: **alrededor del 60 % del contenido curricular mapeado se descartó correctamente como ruido** (weaponización, GRC, teoría introductoria, operativa de SOC, productos de postura, modelos de madurez como puntuación). Eso no es un fallo del método — es el método funcionando. Pero significa que el rendimiento futuro de "mapear otro currículo" es bajo, y presentarlo como una veta abundante sería venderte humo.
+
+---
+
+## Addendum — 2026-08-24: tres identificadores de este informe quedan reasignados
+
+Este informe **propuso** identificadores para procedimientos que aún no existían. Tres de ellos los
+ocupa desde hoy otro contenido, llegado del ejercicio de `mapa-vibecoding.md` /
+`huecos-vibecoding.md`. Se registra aquí y no se corrige el texto de arriba, porque el informe es una
+fotografía fechada y reescribirlo borraría lo que se decidió aquel día.
+
+**Por qué ocurre**: la numeración del corpus tiene que ser **contigua por familia** —
+`gate-corpus-contract.sh` lo mide, y el `CHANGELOG` registra dos agujeros anteriores como defecto—.
+Un identificador propuesto en un informe **no queda reservado**: lo toma el siguiente procedimiento
+que aterriza de verdad. La diferencia con una **pre-registración** es total, y está al final.
+
+| Id | Lo que proponía este informe | Lo que ocupa el id desde 2026-08-24 | Dónde queda el candidato original |
+|---|---|---|---|
+| `INF-24` | Guardarraíles organizacionales — **cortado** en §3.4, sustituido por el Gate C de §1.3 | Un nombre de configuración que el código lee y nada en el proyecto define | Sigue cortado. Nada cambia. |
+| `WEB-27` | HTTP request smuggling — **diferido** en §3.4 a pregunta de intake, con cláusula de reactivación | Un control que se ejecuta y no puede fallar | Sigue diferido y sigue siendo reactivable; cuando vuelva, **tomará el siguiente identificador libre**, no éste. |
+| `WEB-28` | File inclusion y carga dinámica de código/módulos — Tier 2, ítem 18, nunca aterrizado | Datos controlados por el atacante escritos en un registro sin neutralizar (`CWE-117`) | Sigue pendiente en Tier 2; **cambia de identificador** cuando se escriba. |
+
+**Precedente, para que esto no parezca una excepción hecha a medida**: ya había pasado una vez sin
+que nadie lo anotara. El ítem 17 de §3.2 asigna `WEB-26` a *prototype pollution*, y el `WEB-26` que
+vive hoy en el corpus es *A length from the wire decides the size of an allocation*. La contaminación
+de prototipos sigue sin escribirse y sin identificador. Este addendum también deja constancia de eso.
+
+**Lo que NO se toca, y es una clase distinta de objeto**: `VER-10` está **congelado** en
+`bench/runs/2026-08-24-chain-completion/PROCEDURE-FROZEN.md` como candidato pre-registrado, con la
+cláusula de que no entra al corpus salvo que la ronda cumpla sus criterios. Esa ronda **no se ha
+corrido**. Un identificador propuesto en un informe se puede reasignar; uno **pre-registrado, no**,
+porque todo su valor está en haber fijado texto e identificador antes de medir. El sexto hueco de
+`huecos-vibecoding.md` se quedó fuera del corpus por esto, y así está declarado allí.
