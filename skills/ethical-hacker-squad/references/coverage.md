@@ -23,6 +23,7 @@ Five packs ship as more than one file (`web-api` + `web-api-clientside-logic`, `
 | ORM usage, raw SQL, query builders | `web-api` | `web-api.md` §3 | |
 | File upload, deserialization, template rendering, PDF/XML/YAML parsing | `web-api` | `web-api.md` §3, §5 | CWE-502 and CWE-20 are among the least-detected classes by SAST. |
 | Outbound HTTP from user-controlled input, webhooks, URL fetching, previews | `web-api` | `web-api.md` §4 | SSRF is folded into A01:2025, not its own category any more. |
+| A predicate that decides: `is_valid`, `check_*`, `verify_*`, `authorize`, `has_permission`, `sanitize_*`; a route guard, a middleware, a validator, or a constant whose name states a bound | `web-api` | `web-api-clientside-logic.md` §9 | `WEB-23` finds the control that never runs, `WEB-27` the one that runs and cannot fail. **This row is not conditional on anything**: every application has controls, and both classes are invisible to a scanner because the code is well formed. |
 | Browser-rendered HTML, React/Vue/Svelte, template engines, `innerHTML` | `web-api` | `web-api-clientside-logic.md` §6, §7 | Client-side sinks, CSP, CORS, caching. |
 | GraphQL schema, WebSocket handlers, gRPC | `web-api` | `web-api-clientside-logic.md` §10 | |
 | JWT, OAuth/OIDC, session cookies, password handling, MFA | `web-api` | `web-api.md` §1, `web-api-clientside-logic.md` §9 | |
