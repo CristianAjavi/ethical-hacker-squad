@@ -7,14 +7,63 @@ contra el corpus real del escuadrón, procedimiento por procedimiento:
 
 - Los **164 procedimientos** de `skills/ethical-hacker-squad/references/knowledge/` (18 ficheros de
   procedimientos + `README.md`), familias `AI-01..28`, `INF-01..23`, `LOC-01..15`, `MOB-01..18`,
-  `PRV-01..13`, `REM-01..07`, `SUP-01..25`, `VER-01..09`, `WEB-01..26`.
-- Los **9 ficheros de `agents/`** y su lista de carga.
+  `PRV-01..13`, `REM-01..07`, `SUP-01..25`, `VER-01..09`, `WEB-01..26`. **Los 18 ficheros se
+  revisaron uno por uno y el veredicto de cada uno está en §0.1**, incluidos los que esta lente
+  descarta: un fichero que no se nombra no se distingue de uno que no se miró.
+- Los **9 ficheros de `agents/`** y su lista de carga — censo en §0.2.
 - `references/coverage.md` (encaminamiento), `references/triage.md` (`FP-01`..`FP-10`),
   `references/traceability.md` (huecos ya declarados).
 
 Censo ejecutado el 2026-08-24 sobre el árbol en `84986a3`. **Modo solo lectura para el censo**: este
 fichero y su mapa son el único entregable de este análisis; los procedimientos que propone se
 escriben aparte.
+
+---
+
+## 0.1 Los 18 ficheros de procedimientos, uno por uno
+
+Un cruce que solo nombra los ficheros interesantes no se distingue de uno que no los miró. Esta es
+la tabla completa, con el veredicto de esta lente y su motivo. "Descartado" no significa que el
+fichero sea malo: significa que **la procedencia del código no cambia lo que ese fichero busca**.
+
+| Fichero | Proc. | Veredicto para esta lente | Motivo |
+|---|---|---|---|
+| `web-api.md` | 14 | **Central** | Aquí viven las clases que el generador falla y las que la herramienta no ve; `WEB-04` mata el hueco falso del incidente de app builders |
+| `web-api-clientside-logic.md` | 12 | **Central** | `WEB-23` es el eje contiguo al hueco 3 y el que obliga a distinguir *no cableado* de *inerte* |
+| `supply-chain.md` | 15 | **Central** | `SUP-07` y `SUP-08` deciden qué parte de la dependencia alucinada ya está cubierta |
+| `supply-chain-source-lifecycle.md` | 5 | **Central** | `SUP-22` es el único precedente de "control presente y hueco"; `SUP-24` y `SUP-25` fijan la doctrina de "el silencio del feed no es medición" |
+| `ai-safety.md` | 11 | **Central** | `AI-04`, `AI-09` y `AI-11` cubren el fichero de instrucciones y la configuración MCP |
+| `ai-safety-data-output.md` | 13 | **Central** | `AI-20` cubre el Unicode invisible y `AI-22` fija que el contenido auditado es dato |
+| `ai-safety-agent-runtime.md` | 4 | **Central** | `AI-25` y `AI-28` cubren el paquete instalable y la frontera de ejecución del agente |
+| `remediation.md` | 7 | **Central** | `REM-01` ya ordena buscar los hermanos antes de parchear: es la mitad que sí existe del hueco 5 |
+| `remediation-verification.md` | 9 | **Central** | `VER-02`, `VER-03` y `VER-08` son la mitad que falta: ninguno vuelve a medir los hermanos |
+| `infra-cloud-cicd-exposure.md` | 6 | **Central** | §5 es la superficie de configuración y entorno donde aterriza `INF-24` |
+| `supply-chain-secrets-malware.md` | 5 | Parcial | `SUP-16` y `SUP-17` cubren el secreto en el árbol; el defecto del generador es que el secreto sea el **valor por defecto**, y eso es `INF-24` |
+| `local-app.md` | 15 | Parcial | `LOC-06` y `LOC-15` cierran dos clases del inventario de §1; §0 aporta la doctrina del segundo principal que `AI-29` reutiliza |
+| `privacy-abuse.md` | 13 | Parcial | `PRV-05` y `PRV-06` cierran la mitad de privacidad de los incidentes de plataforma; el resto es ortogonal a la procedencia |
+| `mobile.md` | 12 | Parcial | `MOB-11` y `MOB-12` cierran aleatoriedad y secretos embebidos; el resto es superficie de APK |
+| `infra-cloud.md` | 12 | **Descartado** | IaC, imágenes y Kubernetes: lo que se audita es la configuración declarada, y no cambia según quién la escribió |
+| `infra-cloud-cicd-platforms.md` | 5 | **Descartado** | `INF-19`..`INF-23` son los símbolos de cinco plataformas de CI. Un generador no inventa una plataforma |
+| `mobile-runtime-trust.md` | 4 | **Descartado** | Biometría ligada a clave, superposición, actualizaciones fuera de tienda: propiedades del artefacto en ejecución, no de su autoría |
+| `mobile-ios.md` | 2 | **Descartado** | `Info.plist`, entitlements y Keychain: misma razón |
+
+## 0.2 Los 9 agentes y su lista de carga
+
+Censo de qué ficheros de su pack nombra cada agente en sus *First actions*, cruzado contra
+`team.md`. Importa para esta lente porque **§1 acredita cobertura apoyándose en procedimientos que
+el rol dueño no sabe que existen**, y eso no es cobertura:
+
+| Agente | Ficheros del pack | Los nombra todos | Consecuencia |
+|---|---|---|---|
+| `ehs-web-api` | 3 | sí (corregido en este trabajo) | — |
+| `ehs-supply-chain` | 3 | sí (corregido en este trabajo) | — |
+| `ehs-ai-safety` | 3 | sí (corregido en este trabajo) | `AI-25`..`AI-28` llegaban solo por `coverage.md` |
+| `ehs-mobile` | 3 | sí (corregido en este trabajo) | `MOB-13`, `MOB-16`..`MOB-18` llegaban solo por `coverage.md` |
+| `ehs-infra-cloud` | 3 | sí | — |
+| `ehs-local-app` | 1 | sí | Pero **no está declarado en `.claude-plugin/plugin.json`**: ver §6 |
+| `ehs-privacy-abuse` | 1 | sí | — |
+| `ehs-remediator` | 1 | sí | — |
+| `ehs-verifier` | 1 | sí | Declaraba `VER-01`..`VER-08` con `VER-09` existiendo (corregido) |
 
 ---
 
@@ -337,7 +386,7 @@ Esta sección existe porque la tentación de inflar aquí es enorme.
 
 | Se dice que… | Qué es en realidad | Quién lo cubre |
 |---|---|---|
-| "El código generado trae valores por defecto permisivos" | Frecuencia elevada, detección ordinaria. `CWE-330`, `CWE-798`, `CWE-732` son cobertura central de cualquier analizador y de este corpus | `WEB-03`, `WEB-19`, `SUP-16`, `MOB-11` |
+| "El código generado trae valores por defecto permisivos" | Frecuencia elevada, detección ordinaria. Dos familias distintas y conviene no mezclarlas: la **configuración** permisiva del andamiaje (CORS abierto, `DEBUG`, cookie sin banderas) la cubren `WEB-16`, `WEB-22` y `WEB-02`; los **valores** débiles (`CWE-330`, `CWE-798`, `CWE-732`), `WEB-03`, `WEB-19`, `SUP-16` y `MOB-11`. Es la misma fila de §1, desglosada | ver motivo |
 | "Las apps generadas filtran claves en el paquete de cliente" | Error de 2015. Lo único nuevo es que un generador lo repite | `SUP-16`, `MOB-12` |
 | "Las plataformas de *app builder* dejan la base de datos abierta" | `CWE-863`. Además, el estado de las políticas de fila vive en el proveedor, no en el árbol: es petición de evidencia (`FP-08`), no barrido | `WEB-04`, `PRV-05` |
 | "El vibecoding introduce inyección de *prompt*" | Eso es un producto **de** IA, no código **escrito por** IA. Terreno distinto y ya cubierto | `AI-01`..`AI-22` |
@@ -408,6 +457,15 @@ conocidos de `traceability.md`:
   escriben por mecanismo y lo dicen dentro.
 - **Clones hermanos por hallazgo.** Medición ausente en toda la literatura abierta; el hueco 5 la
   convierte en trabajo propio.
+- **`ehs-local-app` existe en `agents/` y no está declarado en `.claude-plugin/plugin.json`.**
+  El array `agents` de ese manifiesto lista **8 de los 9** ficheros del directorio, y ningún gate
+  compara el array contra el directorio (`gate-plugin-integrity.sh` mide `agents/` como raíz servida,
+  por directorio, no por el array). No está verificado cómo resuelve el cargador —puede que
+  descubra el directorio solo—, así que no se afirma que el especialista no llegue al usuario: lo
+  que sí está medido es que **un inventario declarado se separó del directorio y nada lo vigila**.
+  Se reporta aquí, no se arregla en este trabajo: es un cambio a lo que reciben los instalados y
+  merece su propio PR con su propio check.
+
 - **El estado en el proveedor** de las plataformas de *app builder* —políticas de fila, ajustes del
   panel—: es petición de evidencia bajo `FP-08`, no barrido, y así hay que reportarlo.
 
