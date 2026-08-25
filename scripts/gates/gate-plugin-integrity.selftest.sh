@@ -46,6 +46,38 @@ agent
 MD
 }
 
+
+# --- shipped tools ------------------------------------------------------------
+# Permitting an extension is not permitting what the file DOES, and these cases
+# exist because the second is the part a user is trusting. Each writes a tool
+# that is inert except for one capability, and asserts the gate names it.
+
+m_tool_inert() {
+  mkdir -p "$1/skills/mypack/tools"
+  cat > "$1/skills/mypack/tools/t.py" <<'PY'
+import ast
+import json
+import sys
+from pathlib import Path
+
+
+def main():
+    tree = ast.parse(Path(sys.argv[1]).read_text())
+    print(json.dumps({"nodes": len(list(ast.walk(tree)))}))
+PY
+}
+m_tool_loose() {            # the same inert file, one level up: not a tool
+  m_tool_inert "$1"
+  mv "$1/skills/mypack/tools/t.py" "$1/skills/mypack/t.py"
+}
+m_tool_subprocess() { m_tool_inert "$1"; printf 'import subprocess\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_network()    { m_tool_inert "$1"; printf 'from urllib import request\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_writes()     { m_tool_inert "$1"; printf 'open("/tmp/x", "w")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_writetext()  { m_tool_inert "$1"; printf 'Path("/tmp/x").write_text("y")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_eval()       { m_tool_inert "$1"; printf 'eval("1+1")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
+
 # run_case <name> <expected rc> <needle> <mutation> [env assignments...]
 run_case() {
   local name="$1" want="$2" needle="$3" mutate="$4"; shift 4
@@ -115,6 +147,17 @@ run_case reference-over-budget       1 "split the file"            m_fat_referen
 run_case tree-over-byte-budget       1 "blast-radius"              m_none EHS_MAX_TREE_BYTES=10
 run_case tree-over-file-budget       1 "files >"                   m_none EHS_MAX_TREE_FILES=1
 
+echo "-- shipped tools: the extension is permitted, the capability is not"
+run_case tool-inert-ships            0 "read and inert"            m_tool_inert
+run_case tool-loose-in-tree          1 "non-permitted extension"   m_tool_loose
+run_case tool-imports-subprocess     1 "subprocess"                m_tool_subprocess
+run_case tool-imports-network        1 "urllib"                    m_tool_network
+run_case tool-opens-for-writing      1 "for writing"               m_tool_writes
+run_case tool-calls-write-text       1 "write_text"                m_tool_writetext
+run_case tool-calls-eval             1 "calls \`eval\`"            m_tool_eval
+run_case tool-relative-import        1 "stand alone"               m_tool_relative
+run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable
+
 echo "-- could not measure (never a pass)"
 run_case no-skill-md-anywhere        2 "nothing to validate"       m_no_skill_md
 run_case no-markdown-at-all          2 ""                          m_no_md_at_all
@@ -123,6 +166,7 @@ echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate rejects a malformed skill, a tree that points outside"
-echo "        itself, and a corpus over budget, and it reports could-not-measure"
-echo "        instead of approving an incomplete tree."
+echo "        itself, a corpus over budget, and a shipped tool that can reach off"
+echo "        the machine or change it; and it reports could-not-measure instead"
+echo "        of approving an incomplete tree."
 exit 0

@@ -107,6 +107,26 @@ ALLOWED_FM_KEYS="name description license metadata"
 # the extension cannot be used to smuggle bytes that only look like text.
 ALLOWED_EXTENSIONS="md json"
 
+# `py` was added 2026-08-26, and ONLY under a `tools/` directory. It is a real
+# change in what this plugin IS: until now a user installed documentation and
+# agent definitions, and now they install code an agent will run on their
+# machine. The reason is measured - six blinded auditors called the defective
+# log line the safe one, and a deterministic check finds it every time where
+# judgement did not - but the reason does not make the code inert.
+#
+# So the extension is not a free pass either. Every shipped .py is parsed below
+# and must be provably incapable of reaching off the machine or changing it:
+# stdlib-only imports from a named list, no subprocess, no socket, no network
+# module, no write mode, no eval/exec/compile/__import__. A tool that needs any
+# of those does not ship - it stays in the bench and the pack cites its output.
+TOOL_EXTENSIONS="py"
+TOOL_DIR_SEGMENT="/tools/"
+
+# Modules a shipped tool may import. Deliberately short, and deliberately all
+# inert: they read, parse and print. Adding one is a decision about what a user
+# installs, not a convenience.
+TOOL_ALLOWED_IMPORTS="__future__ argparse ast json pathlib re sys typing dataclasses collections itertools"
+
 FAILURES=0
 N_CHECKED=0
 SKIPPED=()
@@ -375,6 +395,7 @@ fi
 
 bad_ext=""
 exec_bits=""
+shipped_tools=""
 for f in "${TREE_FILES[@]}"; do
   rel="${f#"$ROOT"/}"
   # The extension is taken from the NAME, not from the path: `${f##*.}` over the
@@ -382,16 +403,95 @@ for f in "${TREE_FILES[@]}"; do
   # and some parent directory does.
   base="${f##*/}"
   if [[ "$base" == *.* ]]; then ext="${base##*.}"; else ext=""; fi
+  permitted=0
   case " $ALLOWED_EXTENSIONS " in
-    *" $ext "*) ;;
-    *) bad_ext+="$rel " ;;
+    *" $ext "*) permitted=1 ;;
   esac
+  # A tool extension is permitted only INSIDE a tools/ directory. The same file
+  # one level up is not a tool, it is executable code loose in the served tree.
+  if [[ "$permitted" -eq 0 ]]; then
+    case " $TOOL_EXTENSIONS " in
+      *" $ext "*)
+        case "/$rel" in
+          *"$TOOL_DIR_SEGMENT"*) permitted=1; shipped_tools+="$f " ;;
+        esac
+        ;;
+    esac
+  fi
+  [[ "$permitted" -eq 0 ]] && bad_ext+="$rel "
   [[ -x "$f" ]] && exec_bits+="$rel "
 done
 if [[ -n "$bad_ext" ]]; then
   fail "file(s) with a non-permitted extension in the served tree (permitted: $ALLOWED_EXTENSIONS): $bad_ext"
 else
   ok "every file in the served tree carries a permitted extension ($ALLOWED_EXTENSIONS)"
+fi
+
+# ---------------------------------------------------------------------------
+# SHIPPED TOOLS. Permitting an extension is not the same as permitting what the
+# file does, and the second is the part that matters to whoever installs this.
+# Each shipped tool is parsed and must be provably inert: it reads, it parses,
+# it prints. If python3 is absent the answer is 2, not a pass - an unread file
+# is not a safe one.
+# ---------------------------------------------------------------------------
+if [[ -n "$shipped_tools" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    unmeasurable "python3 is absent: the shipped tool(s) were NOT read, so nothing here says they are inert"
+  else
+    tool_report="$(TOOL_ALLOWED_IMPORTS="$TOOL_ALLOWED_IMPORTS" python3 - $shipped_tools <<'TOOLCHECK'
+import ast, os, sys
+
+allowed = set(os.environ["TOOL_ALLOWED_IMPORTS"].split())
+BANNED_CALLS = {"eval", "exec", "compile", "__import__", "system", "popen",
+                "write_text", "write_bytes", "spawn", "fork"}
+problems = []
+
+for path in sys.argv[1:]:
+    try:
+        tree = ast.parse(open(path, encoding="utf-8", errors="strict").read())
+    except (SyntaxError, ValueError, UnicodeDecodeError) as e:
+        problems.append(f"{path}: does not parse as Python ({e.__class__.__name__})")
+        continue
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                if top not in allowed:
+                    problems.append(f"{path}:{node.lineno}: imports `{a.name}`, which is not on the shipped-tool list")
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if node.level:
+                problems.append(f"{path}:{node.lineno}: relative import - a shipped tool must stand alone")
+            elif top not in allowed:
+                problems.append(f"{path}:{node.lineno}: imports from `{node.module}`, which is not on the shipped-tool list")
+        elif isinstance(node, ast.Call):
+            f = node.func
+            name = getattr(f, "id", None) or getattr(f, "attr", None) or ""
+            if name in BANNED_CALLS:
+                problems.append(f"{path}:{node.lineno}: calls `{name}`")
+            # open(..., "w"/"a"/"x") - reading is fine, changing the machine is not
+            if name == "open":
+                mode = None
+                if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+                    mode = node.args[1].value
+                for kw in node.keywords:
+                    if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                        mode = kw.value.value
+                if isinstance(mode, str) and any(c in mode for c in "wax+"):
+                    problems.append(f"{path}:{node.lineno}: opens a file for writing (mode {mode!r})")
+
+print("\n".join(problems))
+TOOLCHECK
+)"
+    if [[ -n "$tool_report" ]]; then
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && fail "shipped tool is not inert - $line"
+      done <<< "$tool_report"
+    else
+      n_tools="$(printf '%s\n' $shipped_tools | grep -c . || true)"
+      ok "$n_tools shipped tool(s) read and inert: stdlib-only from the named list, no subprocess, no network, no write, no eval"
+    fi
+  fi
 fi
 
 # Every shipped .json must parse. An extension allowlist that never opens the

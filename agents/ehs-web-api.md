@@ -34,9 +34,16 @@ So before opening any pack, produce the lists a machine can produce. They are ch
 are exhaustive where judgement is not, and they turn "which of 569 files do I read" into "here
 are the call sites". At minimum, for the languages in front of you:
 
-- **Sinks that log** — every logging call whose message is not a plain literal, deferred
-  placeholders included, because deferring changes when the string is built and nothing
-  about what ends up in it. `web-api-logging.md` carries the query.
+- **Sinks that log** — run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/log_escaper.py --target <tree>`.
+  It lists every logging call and splits them by whether an escaper sits between the value
+  and the sink. Run it rather than reading for the pattern: on the case that produced this
+  step, six independent auditors reported the concatenated log line and named the deferred
+  `%s` line beside it as *the example of doing it right*, and both carry the same defect.
+  Recognising the idiom is what failed, so the enumeration must not depend on recognising it.
+  Read `UNCLEARED` as **a worklist, not a verdict** — it flags anything whose neutralisation
+  it cannot prove, which is every value arriving from outside the function, so on a large
+  target most flags are fine. It earns its place by the other direction: within this class it
+  does not miss. `web-api-logging.md` carries what to do with each line.
 - **Sinks that execute or interpolate** — `eval`, `exec`, template construction, subprocess
   argv assembly, and query strings built by concatenation or f-string rather than binding.
 - **The boundary** — every route, handler or RPC entry point, and every place a request

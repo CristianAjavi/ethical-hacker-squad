@@ -66,11 +66,24 @@ The credited escaper is printed for every cleared call precisely so the `ESCAPER
 argued with. It is short on purpose, and `strip` is deliberately absent: stripping whitespace
 does not remove a newline from the middle of a value.
 
+## It ships
+
+The check lives at `skills/ethical-hacker-squad/tools/log_escaper.py` — inside the plugin, not
+in the bench — and `ehs-web-api` runs it as step 0 rather than asking an auditor to recognise
+the pattern. `WEB-28` invokes it in place of the hand-written query it used to carry.
+
+That is a real change in what this plugin is: until now a user installed documentation and
+agent definitions, and now they install code an agent will run on their machine. So
+`gate-plugin-integrity.sh` permits `.py` **only** under a `tools/` directory and only after
+parsing it: stdlib-only imports from a named list, no subprocess, no socket, no network module,
+no write mode, no `eval`/`exec`/`compile`/`__import__`. Nine cases in its battery hold that
+open, one per capability. A tool that needs any of them does not ship.
+
 ## Reproduce
 
 ```
-python3 scripts/bench/log_escaper.py --target <tree>
-python3 scripts/bench/log_escaper.py --target bench/cases/intake-portal/app/audit.py
+python3 skills/ethical-hacker-squad/tools/log_escaper.py --target <tree>
+python3 skills/ethical-hacker-squad/tools/log_escaper.py --target bench/cases/intake-portal/app/audit.py
 ```
 
 Exit `1` when something is uncleared, `0` when nothing is, `2` when it could not parse.

@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,450 lines across nineteen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,439 lines across nineteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 

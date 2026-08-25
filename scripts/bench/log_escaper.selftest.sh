@@ -13,7 +13,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-SUBJECT="$HERE/log_escaper.py"
+SUBJECT="$ROOT/skills/ethical-hacker-squad/tools/log_escaper.py"
 CASE="$ROOT/bench/cases/intake-portal/app/audit.py"
 
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
