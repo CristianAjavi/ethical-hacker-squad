@@ -35,22 +35,27 @@ rather than a matter of taste:
 
 ## What is measured today, and what is not
 
-Of the **54** planted defects in this corpus, **10** were reproducible without installing
-anything at the time the probes were written, and all ten carry one:
+Of the **54** planted defects in this corpus, **16** are reproducible without installing
+anything, and all sixteen carry a probe:
 
 | case | defects | cross-check |
 |---|---|---|
 | `cli-packer` | 5 | four patches, so both halves run |
 | `analytics-service` | 3 | no patch ships, so only the unpatched half |
 | `rag-agent` | 2 | no patch ships, so only the unpatched half |
+| `intake-portal` | 6 | one of its two patches targets a probed defect; the other is named as unverifiable below |
 
-`intake-portal` then took the corpus from 43 planted defects to **54**, and six of its own
-are probe-able with nothing installed but wait on the multi-case harness. Of the remaining
-38, some need `anthropic`, `sqlalchemy`, `marshmallow` or `flask_restful`, and the rest are
-not Python at all — the 54 break down as 25 `.py`, 6 `.js`, 6 `.json`, 4 `.tf`, 4 `.yml`,
+The other 38 need `anthropic`, `sqlalchemy`, `marshmallow` or `flask_restful`, or are not
+Python at all — the 54 break down as 25 `.py`, 6 `.js`, 6 `.json`, 4 `.tf`, 4 `.yml`,
 2 `.go`, 2 `.java`, 1 `.toml`, 1 `.txt` and 3 with no extension.
 
-**A green here is ten defects proved, not a bench reproduced.** Fourteen measurements: ten
+**One cross-check is named rather than quietly skipped.** `PX-09` claims to fix `P-48` in
+`intake-portal/app/routes_forms.py`, which imports Flask; Flask is not installed and this
+project installs nothing in order to measure. So `P-48` carries no probe and `PX-09`'s
+`not fixed` declaration is **not** verified by execution. It stays a claim in the patch key
+and the run prints the reason on every pass.
+
+**A green here is sixteen defects proved, not a bench reproduced.** Twenty-one measurements: sixteen
 probes on the unpatched cases, four on the patched variants.
 
 ## Not every probe proves the same thing
