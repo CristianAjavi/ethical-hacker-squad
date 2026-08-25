@@ -35,13 +35,25 @@ corpus reports it, ranking was the problem and the enumeration step is what fixe
 does not, the class is one this corpus does not find in real code, and three rounds of
 intervention did not change that.
 
-## Precondition, and it is not optional
+## The key, pinned from the fix commit
 
-**The key must be pinned from the fix commit before a single run**, the way `pyload`'s was —
-file, symbol and line range read from the diff, not from the advisory's prose. This file does
-not carry a key yet, and a round that started without one would be scoring against a summary.
-Django is also far larger than 569 files, so the size of the enumerated list must be recorded
-before the runs, not after.
+The precondition this file set for itself is satisfied, and here is what it produced. Read
+from the diff, not from the advisory's prose:
+
+- **Fix commit** `a07ebec5591e233d8bbb38b7d63f35c5479eef0e`, 2025-05-20, *"Fixed
+  CVE-2025-48432 -- Escaped formatting arguments in `log_response()`."*
+- **Target commit** `08187c94ed`, its parent.
+- **File** `django/utils/log.py`. **Symbol** `log_response`, lines **217-257**.
+- **The defect**, at line **248**: `getattr(logger, level)(message, *args, ...)` passes the
+  formatting arguments — `request.path` among them — straight into the log record. The fix
+  adds `escaped_args`, encoding each `str` through `unicode_escape` first.
+
+A report **matches** when it names `django/utils/log.py` AND either the symbol `log_response`
+or a line between 217 and 257.
+
+The size of the enumerated list must still be recorded **before** the runs rather than after:
+Django is far larger than 569 files, and a list whose size is only known afterwards is a
+number chosen with the data in view.
 
 ## Design
 
