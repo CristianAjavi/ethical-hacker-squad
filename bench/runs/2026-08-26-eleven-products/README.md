@@ -98,13 +98,37 @@ So the adversarial review stage is the wrong suspect. A stage that argues agains
 findings *removes* them; it cannot raise recall. It is not even buying `mantis` precision here
 — it reported **1.00 decoys per run against this project's 0.25**.
 
-The suspect that fits the arithmetic is the other difference: `mantis` fans out **eleven
-auditors, one per product**, where this project makes one pass across all eleven. A single pass
-spreads attention over 73 files and drops a different handful each time; eleven bounded passes
-do not have to choose.
+And it is not dispatch either: this project's runs reached **all three** of those files, in all
+four runs. They reported **exactly one finding in each**, every time, where `mantis` reported
+one to four.
 
-**That is a hypothesis and it is unmeasured.** What is measured is the split it has to explain:
-**3 of knowledge, 4 of consistency, 6 dropped per run from inside our own reach.**
+**The mechanism is depth per file.** On the 14 files carrying more than one planted defect —
+**34 of the 54** — this project reported **2.05 findings per file against `mantis`'s 2.50**, and
+reached two or more findings in **8.8 of 14 files against 11.5**:
+
+| file | planted | this project | `mantis` |
+|---|---|---|---|
+| `node-supply/package.json` | 2 | **1.0** | 3.2 |
+| `terraform-platform/.github/workflows/deploy.yml` | 2 | **2.0** | 3.0 |
+| `rag-agent/agent/memory.py` | 2 | **1.8** | 2.5 |
+| `cli-packer/packer.py` | 5 | 4.5 | 4.8 |
+
+A long Python file gets worked through and the arms tie. A twenty-line manifest gets read,
+yields its one obvious problem, and is closed. **This project finds something and stops**, and
+that accounts for the gap without needing any hypothesis about fan-out or review stages.
+
+`mantis` fanning out eleven auditors, one per product, is a plausible *cause* of that depth —
+smaller surface per auditor — but the *symptom* is measured and the cause is not.
+
+## What was changed because of it
+
+[`references/coverage.md`](../../../skills/ethical-hacker-squad/references/coverage.md), cited
+by all seven auditing roles: `COV-01` a file that produced a finding is not a file that is
+done; `COV-02` manifests and configuration are enumerated key by key rather than read for
+*the* problem; `COV-03` declare per file how many distinct defects you looked for and found.
+
+It carries the measurement above, and it says explicitly that it is **not** a licence to report
+more — the 0.25 decoy rate is the one column this project led and is not to be traded away.
 
 ## The answer to the question that prompted the round
 ## The answer to the question that prompted the round

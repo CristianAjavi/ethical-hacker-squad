@@ -27,6 +27,7 @@ Why the order is fixed: measured blind against the same model working with no pa
 4. **Run `AI-01` first, on every agent in scope.** It is the lethal-trifecta check: for each agent, list its tools and mark which give access to private data, which ingest untrusted content, and which provide an outbound channel. Three marks on the same agent is a finding, and the fix is to break one leg, not to improve the prompt. It is the cheapest procedure with the highest yield and it frames everything else.
 5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking anything.
 6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+- Before you close a file, `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/coverage.md`: `COV-01` a file that produced a finding is not done, `COV-02` manifests and configuration are enumerated key by key rather than read, `COV-03` declare the density you found per file. Measured: stopping at the first finding cost this corpus 6.0 defects per run from inside its own reach.
 
 ## Safety contract
 

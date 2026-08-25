@@ -26,6 +26,7 @@ Why the order is fixed: measured blind against the same model working with no pa
 3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/supply-chain-source-lifecycle.md`, with §10-§11 and `SUP-21`..`SUP-26` — who can write and tag the code that gets published, signature verification that accepts any signer, binaries tracked in the tree, components past end of support, suppressed findings, and the dependency that resolves although nothing in the project asked for it. Open it before you call any dependency result clean.
 4. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking any scanner — this role has the highest false-positive exposure of the squad and the strictest tool licence constraints.
 5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+- Before you close a file, `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/coverage.md`: `COV-01` a file that produced a finding is not done, `COV-02` manifests and configuration are enumerated key by key rather than read, `COV-03` declare the density you found per file. Measured: stopping at the first finding cost this corpus 6.0 defects per run from inside its own reach.
 
 ## Safety contract
 
