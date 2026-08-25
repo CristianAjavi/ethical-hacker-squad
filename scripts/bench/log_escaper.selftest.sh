@@ -98,6 +98,29 @@ run "$SUBJECT" "$TMP/broken"; rc=$?
 [ "$rc" -eq 2 ] && ok "a tree where nothing parses gives rc 2, not a silent green" \
                 || bad "expected rc 2 when nothing parsed, got $rc"
 
+echo "== a call is not an escaper just because its arguments are literals =="
+
+# This is the shape of CVE-2024-27097. CKAN's reset endpoint binds `id` from
+# request.form.get("user") - a call whose only argument is a literal - and
+# formats it into a log line. An earlier version of this check credited such a
+# call and reported BOTH keyed sites as cleared: a false negative on a published
+# advisory, in the one class this file exists for.
+mkdir -p "$TMP/ckanshape"
+cat > "$TMP/ckanshape/reset.py" <<'CKAN_EOF'
+import logging
+
+log = logging.getLogger(__name__)
+
+
+def post(request):
+    id = request.form.get("user")
+    log.info('Password reset requested for user "{}"'.format(id))
+CKAN_EOF
+
+run "$SUBJECT" "$TMP/ckanshape"; rc=$?
+[ "$rc" -eq 1 ] && ok "a value bound from a non-escaper call is uncleared"                 || bad "expected rc 1 on the CVE-2024-27097 shape, got $rc"
+grep -q 'UNCLEARED.*reset.py' "$TMP/out"   && ok "the published-advisory shape is flagged"   || bad "the advisory shape reads as safe: the false negative is back"
+
 echo "== mutants: the battery must fail without the thing that makes it useful =="
 
 # MUTANT 1 — the idiom recogniser. This is the check the six auditors WERE,
@@ -126,6 +149,21 @@ if ! cmp -s "$SUBJECT" "$TMP/nodumps.py"; then
     || bad "the twin stays cleared without dumps: something else is clearing it"
 else
   bad "MUTANT 2 did not apply: the battery would pass without measuring anything"
+fi
+
+# MUTANT 3 — the clever exception, restored. Credit a non-escaper call whose
+# arguments are all literals, which is what the code said until CKAN proved it
+# wrong. The battery asserts that version MISSES the advisory shape. Without
+# this, the case above would be a line nobody could break on purpose.
+sed 's|^        return False, f"{name}(\.\.\.)"|        return all(cleared(a, bindings)[0] for a in node.args) and bool(node.args), f"{name}(...)"|' \
+  "$SUBJECT" > "$TMP/literalargs.py"
+if ! cmp -s "$SUBJECT" "$TMP/literalargs.py"; then
+  run "$TMP/literalargs.py" "$TMP/ckanshape"
+  grep -q 'UNCLEARED.*reset.py' "$TMP/out" \
+    && bad "the restored exception ALSO flags it: this battery cannot tell them apart" \
+    || ok "the restored exception misses the advisory — removing it is what fixed this"
+else
+  bad "MUTANT 3 did not apply: the battery would pass without measuring anything"
 fi
 
 echo

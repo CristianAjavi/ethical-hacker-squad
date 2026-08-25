@@ -79,9 +79,17 @@ def cleared(node, bindings: dict[str, bool]) -> tuple[bool, str]:
         name = getattr(f, "attr", None) or getattr(f, "id", None) or ""
         if name in ESCAPERS:
             return True, name
-        # a call that is not an escaper clears nothing, but its arguments might
-        # still all be literals - `str(1)` is fine, `str(x)` is not
-        return all(cleared(a, bindings)[0] for a in node.args) and bool(node.args), f"{name}(...)"
+        # A call that is not an escaper clears NOTHING, whatever its arguments
+        # look like.
+        #
+        # An earlier version credited a call whose arguments were all literals -
+        # the `str(1)` is fine, `str(x)` is not reasoning - and that cleared
+        # `request.form.get("user")`, which is the entire attack surface. It
+        # read CVE-2024-27097 as safe: CKAN's reset endpoint binds `id` from
+        # exactly that call and formats it into a log line, and this function
+        # said both keyed sites were fine. Literal arguments say nothing about
+        # what a call RETURNS, and the clever exception was the blind spot.
+        return False, f"{name}(...)"
     if isinstance(node, ast.Name):
         return bindings.get(node.id, False), f"bound `{node.id}`"
     if isinstance(node, ast.JoinedStr):  # f-string: every interpolation must clear

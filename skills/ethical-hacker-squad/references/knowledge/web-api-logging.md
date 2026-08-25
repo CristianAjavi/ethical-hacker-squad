@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target logs anything an outside caller can influence, returns errors to a client, ships traces to a third party, or renders logs in a viewer.
 > **Do not load it if:** the audit has no application code, or you are only looking at routes and authorization (`web-api.md`) or at client-side sinks, CSRF, CORS, business logic and cryptography (`web-api-clientside-logic.md`).
-> **Cost:** ~109 lines. Two procedures that face in opposite directions and are read together.
+> **Cost:** ~115 lines. Two procedures that face in opposite directions and are read together.
 > **Third file of this pack.** `web-api.md` is the entry point and holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; `web-api-clientside-logic.md` holds §6-§10 with `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27`. This file exists because those two are at the per-file size budget, and a pack file that cannot grow stops being where the next procedure goes.
 
 ## Selective loading index
@@ -74,12 +74,18 @@ enumeration that misses the defect it was written for is worse than none, becaus
 result reads as coverage.
 
 **What it costs, measured, so you read the output correctly.** On Django it reports 250
-logging calls across 2,838 files, **210 of them uncleared**; on the 569-file repository above,
-238 calls with **106 uncleared**. It cannot see through a function boundary, so every value
+logging calls across 2,838 files, **211 of them uncleared**; on the 569-file repository above,
+238 calls with **218 uncleared**; on CKAN at the parent of its `CVE-2024-27097` fix, 256 calls
+with **182 uncleared**. It cannot see through a function boundary, so every value
 arriving from outside its function is uncleared by construction and most of those flags are
 fine. It is a conservative filter and not a verdict. What it buys is the other direction:
-both keyed advisories are in its flagged list, every run, and four rounds of auditors choosing
-where to look reported them in 0 of 4, 1 of 3, 0 of 4 and 1 of 4.
+every keyed advisory of this class is in its flagged list, every run, and four rounds of
+auditors choosing where to look reported them in 0 of 4, 1 of 3, 0 of 4 and 1 of 4.
+
+**Do not read a `cleared` line as a clearance.** This check cleared both keyed sites of
+`CVE-2024-27097` until the rule that credited a non-escaper call with literal arguments was
+removed - CKAN binds the value from `request.form.get("user")`. A rule that looks clever about
+what a call returns is where the blind spot goes.
 
 For a language it does not parse, keep the shape rather than the file: enumerate the sinks
 mechanically, then split them by whether a neutralising call sits on the path — never by how

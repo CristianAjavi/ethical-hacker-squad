@@ -91,11 +91,12 @@ a fact about ranking when it was a fact about the query.
 [2026-08-26, log escaper](runs/2026-08-26-log-escaper/) — the answer to issue #53. Six auditors
 called the deferred `%s` line the example of doing it right; this check flags it, because it
 asks whether an escaper sits between the value and the sink rather than how the string was
-built. **It finds all three keyed defects** that four model-driven rounds could not reliably
-find — `P-52`, `pyload`'s `add_package`, Django's `log_response`.
+built. **It finds all four keyed defects** — `P-52`, `pyload`'s `add_package`, Django's
+`log_response`, and CKAN's `CVE-2024-27097`, which it missed at first and which exposed a
+false negative in the check itself.
 
-And the number that says what it is not: **45% of `pyload`'s logging calls and 84% of
-Django's come back uncleared.** It is a conservative filter, not a detector: it cannot see
+And the number that says what it is not: **92% of `pyload`'s logging calls, 84% of Django's
+and 71% of CKAN's come back uncleared.** It is a conservative filter, not a detector: it cannot see
 through a function parameter, so anything arriving from outside is flagged by construction.
 Its one promise is that within this class it does not miss.
 

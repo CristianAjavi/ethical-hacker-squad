@@ -27,27 +27,47 @@ The line six readers called safe is flagged. The one that actually neutralises i
 the report names `dumps` as what was credited, so a reviewer can disagree with the credit
 rather than with a verdict.
 
-## It finds both published advisories
+## It finds every published advisory of the class we have a key for
 
 | target | keyed defect | model-driven rounds | this check |
 |---|---|---|---|
 | `intake-portal` | `P-52`, `record_submission` | **0 of 6** — all six called it the safe example | flagged |
 | `pyload` @ `6c52b198d` | `add_package`, line 469 | **0 of 4**, then 1 of 3, then 0 of 4 | flagged |
 | Django @ `08187c94ed` | `log_response`, line 248 | **1 of 4** | flagged |
+| CKAN @ `873d30a477` | `RequestResetView.post`, lines 616 and 650 (`CVE-2024-27097`) | *not measured — this is the fresh target* | flagged |
 
-Four rounds of blinded auditing across three targets could not reliably find these. A
-deterministic AST pass finds all three, every time, in seconds.
+Four rounds of blinded auditing across three targets could not reliably find the first three. A
+deterministic AST pass finds all four, every time, in seconds.
+
+## The fourth one found a false negative in this check first
+
+CKAN was picked as an unused target and the check **cleared both keyed sites**. The cause was a
+clever exception in `cleared()`: a call that is not an escaper was credited when all of its
+arguments were literals — the *`str(1)` is fine, `str(x)` is not* reasoning. CKAN's reset
+endpoint binds `id` from `request.form.get("user")`, a call whose only argument is a literal, so
+the value read as neutralised and `'...{}'.format(id)` inherited that.
+
+The exception is gone: **a call that is not an escaper clears nothing, whatever its arguments
+look like.** Literal arguments say nothing about what a call returns. Two battery cases hold it
+— the advisory shape must be flagged, and a mutant restoring the exception must miss it.
+
+This is what the number below cost.
 
 ## And the number that says what it is not
 
 | target | logging calls | uncleared | rate |
 |---|---|---|---|
-| `pyload` | 238 | 106 | **45%** |
-| Django | 250 | 210 | **84%** |
+| `pyload` @ `6c52b198d` | 238 | 218 | **92%** |
+| Django @ `08187c94ed` | 250 | 211 | **84%** |
+| CKAN @ `873d30a477` | 256 | 182 | **71%** |
+
+`pyload` was 106 of 238 before the exception was removed. Removing it more than doubled the
+flag rate on that target, and that is the honest trade: the old number bought its precision by
+being wrong about a published advisory.
 
 **This is not a detector of vulnerabilities.** It is a *conservative filter*: it flags every
 call whose neutralisation it cannot prove, and it cannot see through a function parameter, so
-every value arriving from outside the function is uncleared by construction. Most of those 210
+every value arriving from outside the function is uncleared by construction. Most of those 211
 Django calls are fine.
 
 What it offers is the property a worklist needs and a judgement cannot promise: **within this
