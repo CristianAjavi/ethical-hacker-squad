@@ -14,13 +14,12 @@ other one is what both arms actually did.
 
 ## Reproduction
 
-All ten planted defects that were reproducible without installing anything now carry an
-executable probe, across three cases — see [reproduction/](reproduction/). Where a case
+All sixteen planted defects that are reproducible without installing anything now carry an
+executable probe, across four cases — see [reproduction/](reproduction/). Where a case
 ships patches the probes are cross-checked against both keys this corpus holds; where it
-does not, only the unpatched half runs and the harness says so. `intake-portal` then took
-the corpus from 43 planted defects to **54**, and six of its own are probe-able with
-nothing installed but wait on the multi-case harness. So: ten proved, six queued, 54
-planted — not a bench reproduced.
+does not, only the unpatched half runs and the harness says so. `intake-portal` took the corpus
+from 43 planted defects to **54**, and its own six now have probes too. So: **sixteen
+proved out of 54** — not a bench reproduced.
 
 ## The measured result so far
 
