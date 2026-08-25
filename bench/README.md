@@ -4,10 +4,11 @@ Five neighbouring products publish stars. **None of them publishes a number for 
 
 ## Reproduction
 
-Five of the planted defects now carry an executable probe, and the probes are cross-checked
-against both keys this corpus holds — see [reproduction/](reproduction/). Ten of the 43
-planted defects are reproducible without installing anything; five ship today. A green
-there is five defects proved, not a bench reproduced.
+All ten planted defects that are reproducible without installing anything now carry an
+executable probe, across three cases — see [reproduction/](reproduction/). Where a case
+ships patches the probes are cross-checked against both keys this corpus holds; where it
+does not, only the unpatched half runs and the harness says so. A green there is ten
+defects proved out of 43, not a bench reproduced.
 
 ## The measured result so far
 

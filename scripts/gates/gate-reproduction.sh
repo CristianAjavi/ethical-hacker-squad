@@ -114,8 +114,8 @@ PY
 
 main() {
   gate_header "reproduction (the probes still reproduce what both keys say)"
-  gate_scope "every planted defect of bench/cases/cli-packer that carries a probe, run on the unpatched case and on each patch of it, against bench/ground-truth.json and bench/patch-truth.json"
-  gate_out_of_scope "whether a patch is good, whether a probe is the proof a reviewer would have written, and the 38 planted defects that need a dependency or another language"
+  gate_scope "every case under bench/reproduction/ that carries a key, each probe run on the unpatched case and on every patch of it, against bench/ground-truth.json and bench/patch-truth.json"
+  gate_out_of_scope "whether a patch is good, whether a probe is the proof a reviewer would have written, and the 33 planted defects that need a dependency or another language"
 
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     selftest
