@@ -12,6 +12,14 @@ a ceiling was followed and no difference is reported. What the round did establi
 hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
 other one is what both arms actually did.
 
+## A blinded audit of the vibecoding case — pre-registered, not yet run
+
+[2026-08-25, vibecoding blind](runs/2026-08-25-vibecoding-blind/) — the criteria are
+committed and **no run has happened**. The question is whether a blinded audit of
+`intake-portal` reports the class that hides: a control that runs and cannot fail. The
+weakness is declared up front — the procedure written against that class shipped the same
+day the case was planted, so a pass is weak evidence and a failure is strong evidence.
+
 ## Reproduction
 
 All ten planted defects that were reproducible without installing anything now carry an
