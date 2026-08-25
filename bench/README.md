@@ -86,6 +86,23 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The refutation stage ran, and it changed nothing
+
+[2026-08-26, refutation stage](runs/2026-08-26-refutation-stage/) — **not supported**, same
+conjunction, same failing half. **96.3% recall against `mantis`'s 84.6%** on six stacks these
+procedures had never seen, and **9.50 decoys per run against 3.75**.
+
+`VER-09` was wired to the roles' entry point and it *ran* — 15 to 21 assertions killed per run,
+each naming a line, where the field was empty four times of four before. The decoy rate moved
+from 9.75 to **9.50**. Of the ~9.5 decoys reported per run, only 1 to 3 had ever entered that
+list: the stage argues competently against things that were not the problem.
+
+A tempting explanation — that `mantis` computes reachability and this project does not — was
+**checked and discarded**: this project's reports mention dead code and absent callers 44 times
+against 48, and constraints defined elsewhere 158 times against 84. What differs is a threshold,
+not a capability: **1.2 planted defects missed per run against 5.2**, at 78% precision against
+88%.
+
 ## The rules work, and they bought recall with noise
 
 [2026-08-26, coverage rules](runs/2026-08-26-coverage-rules/) — **not supported.** With
