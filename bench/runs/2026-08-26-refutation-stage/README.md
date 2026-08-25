@@ -5,7 +5,7 @@
 > `gate-findings-artifact.sh` enforces, so no arm was ever obliged to name and answer a
 > false-positive rule before reporting. The decoy numbers below were measured with this
 > project's own false-positive control switched off at the door. See
-> [`../2026-08-26-refutation-stage/HARNESS-DEFECT.md`](../2026-08-26-refutation-stage/HARNESS-DEFECT.md).
+> [`HARNESS-DEFECT.md`](HARNESS-DEFECT.md).
 > The recall numbers are unaffected and no verdict here is edited.
 
 **Not supported**, on the same conjunction as last round and the same failing half.
