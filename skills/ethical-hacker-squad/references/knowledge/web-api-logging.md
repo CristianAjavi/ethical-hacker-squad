@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target logs anything an outside caller can influence, returns errors to a client, ships traces to a third party, or renders logs in a viewer.
 > **Do not load it if:** the audit has no application code, or you are only looking at routes and authorization (`web-api.md`) or at client-side sinks, CSRF, CORS, business logic and cryptography (`web-api-clientside-logic.md`).
-> **Cost:** ~97 lines. Two procedures that face in opposite directions and are read together.
+> **Cost:** ~120 lines. Two procedures that face in opposite directions and are read together.
 > **Third file of this pack.** `web-api.md` is the entry point and holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; `web-api-clientside-logic.md` holds §6-§10 with `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27`. This file exists because those two are at the per-file size budget, and a pack file that cannot grow stops being where the next procedure goes.
 
 ## Selective loading index
@@ -54,18 +54,41 @@ python3 - "$TARGET" <<'PY'
 import ast, sys, pathlib
 root = pathlib.Path(sys.argv[1])
 LOG = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
+
+
+def is_log_call(n):
+    if not isinstance(n, ast.Call):
+        return False
+    f = n.func
+    if isinstance(f, ast.Attribute) and f.attr in LOG:          # logger.info(...)
+        return True
+    if (isinstance(f, ast.Call) and isinstance(f.func, ast.Name)  # getattr(logger, lvl)(...)
+            and f.func.id == "getattr" and f.args):
+        base = f.args[0]
+        name = getattr(base, "id", "") or getattr(base, "attr", "")
+        return "log" in name.lower()
+    return False
+
+
 for f in root.rglob("*.py"):
     try:
         tree = ast.parse(f.read_text(errors="ignore"))
     except SyntaxError:
         continue
     for n in ast.walk(tree):
-        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                and n.func.attr in LOG and n.args
-                and (not isinstance(n.args[0], ast.Constant) or len(n.args) > 1)):
+        if is_log_call(n) and n.args and (
+                not isinstance(n.args[0], ast.Constant) or len(n.args) > 1):
             print(f"{f.relative_to(root)}:{n.lineno}")
 PY
 ```
+
+**The dynamic-dispatch clause is not decoration, and it was added for a measured reason.**
+Without it the query missed `CVE-2025-48432` entirely: Django selects the level at runtime
+with `getattr(logger, level)(message, *args, ...)`, so the call is a `Call` and not an
+`Attribute`, and 206 sites came back from 2,839 files with the vulnerable one absent. Adding
+the clause returns **207** — exactly one more, and that one is the advisory. A query that
+misses the defect it was written for is worse than no query, because the empty result reads
+as coverage.
 
 It lists every logging call whose message is not a plain literal — deferred `%s` included,
 because deferring changes when the string is built and nothing about what ends up in it. On

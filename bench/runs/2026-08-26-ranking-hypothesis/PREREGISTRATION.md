@@ -51,9 +51,30 @@ from the diff, not from the advisory's prose:
 A report **matches** when it names `django/utils/log.py` AND either the symbol `log_response`
 or a line between 217 and 257.
 
-The size of the enumerated list must still be recorded **before** the runs rather than after:
-Django is far larger than 569 files, and a list whose size is only known afterwards is a
-number chosen with the data in view.
+## The list was counted before the runs, and counting it stopped the round
+
+The precondition said to record the enumerated list's size first. Doing so found that
+**the query shipped today does not list the defect at all.**
+
+206 sites across 2,839 files, and `django/utils/log.py` absent from every one of them. The
+reason is in the code the key points at: Django selects the level at runtime with
+`getattr(logger, level)(message, *args, ...)`, so the call is an `ast.Call` and not an
+`ast.Attribute`, and the query only looked for the latter.
+
+**Ranking cannot fail on a list that does not contain the item.** Running twelve arms against
+this target would have measured something the setup could not answer, and the empty result
+would have read as coverage.
+
+The query now handles dynamic dispatch. Re-measured: **207 sites — exactly one more, and that
+one is the advisory**, `django/utils/log.py:248`. The clause is not noise; it is precisely
+what was missing. `WEB-28` carries the corrected query and the reason.
+
+There is a thing worth saying plainly about this: the defect that eluded four rounds of
+auditors also eluded the mechanical query written to catch it. The step is not a substitute
+for a reviewer who reads what the code actually does — it only decides where that reviewer
+looks, and it can be wrong about that too.
+
+**Recorded before any run: 207.**
 
 ## Design
 
