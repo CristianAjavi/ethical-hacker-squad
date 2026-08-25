@@ -28,12 +28,16 @@ it — a false negative measured against a prediction that predates it.
 
 ## Three arms on the vibecoding case — pre-registered, competitors not yet run
 
-[2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — the
-criteria are committed and **neither competitor arm has run**. The question is one defect,
-not a scoreboard: `P-52` was missed by this corpus in 6 of 6 runs, with all six naming it
-as the safe pattern. A miss by one product is a defect in that product; a miss by every
-product is a property of the class. The outcome that costs this project most — a competitor
-finding it — is named in the pre-registration as a live possibility.
+[2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — three arms
+on the same blinded tree. **`P-52` is zero in all fourteen runs, and the round still cannot
+say the class is a field-wide blind spot.** The pre-registration fixed an engagement test
+in advance: an arm that reports neither half of the pair did not reach the file, and its
+zero is silence rather than agreement. `AI-Infra-Guard` reported the concatenated neighbour
+in 0 of 4 runs and `mantis` in 1 of 4, so both zeros are silence. The question stays open.
+
+Recall on this case came out 0.83 for this corpus against 0.48 and 0.20 — **reported as
+weak and claimed as nothing**, because the case was planted here. The round that speaks to
+detection ran against code nobody here wrote, and every arm scored 0 of 4 there.
 
 ## Reproduction
 
