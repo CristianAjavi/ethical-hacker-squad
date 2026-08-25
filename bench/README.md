@@ -54,6 +54,14 @@ weak. Recorded there too: a competitor found that `UnTar.py`'s guard against `CV
 is broken by a `commonprefix` check — *a control that runs and cannot fail*, in real code,
 found by somebody else. The class this project named is not one it has to itself.
 
+## The same advisory, after the procedure changed — pre-registered, not yet run
+
+[2026-08-25, external retest](runs/2026-08-25-external-retest/) — an A/B with one variable.
+Same target, same key, same scoring, same arm; the only change is that `WEB-28` now opens
+with a mandatory enumeration step that lists every logging call whose message is not a plain
+literal. On this target that query returns 218 sites and the advisory is one of them.
+Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
