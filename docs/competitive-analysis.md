@@ -571,6 +571,48 @@ measurement.
 
 ---
 
+## Six rounds on the vibecoding class, 2026-08-25 and 26 — and what they cost this analysis
+
+This section exists because the rounds below were run to support a claim in this document,
+and they did not support it. Reading them in order is the point; each one moved the diagnosis
+and none of them moved the number.
+
+| round | question | result |
+|---|---|---|
+| [vibecoding blind](../bench/runs/2026-08-25-vibecoding-blind/) | does a blinded audit report the class that hides? | 4 of 4 in 6 of 6 — **declared weak evidence before the run**, because the case was planted here |
+| [vibecoding comparative](../bench/runs/2026-08-25-vibecoding-comparative/) | do the competitors report it? | **could not measure** — neither arm reached the file, so their zeros are silence |
+| [external log injection](../bench/runs/2026-08-25-external-log-injection/) | does anyone find a published advisory in real code? | **0 of 4 in all three arms**, this corpus included |
+| [external retest](../bench/runs/2026-08-25-external-retest/) | does an enumeration step recover it? | 1 of 3, band was 2 of 4 — **refuted** |
+| [external delivery](../bench/runs/2026-08-25-external-delivery/) | does moving the step to the entry point? | 0 of 4, band was 3 of 4 — **refuted**, target retired |
+| [ranking hypothesis](../bench/runs/2026-08-26-ranking-hypothesis/) | is it ranking? Django, 2,839 files | 1 of 4, band was 2 of 4 — **refuted** |
+
+**Four interventions, four refutations: describing, enumerating, delivery, ranking.** On the
+one class this analysis named as the corpus's own — a control written in the shape of its own
+remediation — it does not lead on real code, and the rounds say so in their own pages.
+
+### Three things these rounds establish that this document has to carry
+
+1. **The class is real and it is not ours.** `AI-Infra-Guard` found, in `pyload`, that the
+   guard against `CVE-2007-4559` is broken by an `os.path.commonprefix` check, and reported
+   verifying the bypass. That is *a control that runs and cannot fail*, in real code, found by
+   a competitor. Section 3 should not be read as if this corpus has that class to itself.
+2. **`P-52` is a false negative in this product**, matched in 0 of 6 blinded runs while all
+   six cited it as the example of doing it right — the deferred `%s` idiom. It has an issue
+   and a probe that proves it reproduces. The comparative round could not establish whether
+   the field misses it too, and says so rather than claiming the flattering reading.
+3. **A mechanical step can miss the defect it was written for.** The enumeration query shipped
+   on the 25th did not list Django's `log_response` at all, because Django dispatches the log
+   level at runtime. Counting the list *before* the round caught it. Had it not, `0 of 4`
+   would have been published as a fact about ranking when it was a fact about the query.
+
+### What did not enter this document
+
+Recall on `intake-portal` came out 0.83 for this corpus against 0.48 and 0.20, and the
+enumeration step took class-level detection from 1 of 4 runs to 4 of 4. **Neither number is
+claimed anywhere.** The first is a comparison on a case this project planted; the second was
+never pre-registered and reading it after the fact is the fitting these pages refuse. They are
+on their own round pages with those sentences attached.
+
 ## 7. What would overturn this analysis
 
 - **If any rival publishes real detection metrics** (precision, recall, FP rate on a

@@ -74,6 +74,18 @@ past it toward the web UI, while the advisory sits in the RPC layer behind the b
 permission for adding a download. That hypothesis has three rounds behind it and **no
 pre-registration**, so it is the next round's question, on a different target.
 
+## Is it ranking? — pre-registered, target not yet fetched
+
+[2026-08-26, ranking hypothesis](runs/2026-08-26-ranking-hypothesis/) — **refuted, 1 of 4
+against a band of 2 of 4** on Django `CVE-2025-48432`, 2,839 files, key pinned from the fix
+commit. Four interventions have now failed to move this class past its band: describing,
+enumerating, delivery, ranking. The same round holds **the first recovery of a keyed defect
+on external code** this project has measured — printed with the band it missed, and claimed
+as nothing. And the precondition on its own page paid for the round twice over: counting the enumerated
+list *before* running found that the query shipped that morning did not list the defect at
+all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
+a fact about ranking when it was a fact about the query.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
