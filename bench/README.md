@@ -41,14 +41,18 @@ detection ran against code nobody here wrote, and every arm scored 0 of 4 there.
 
 ## A published advisory, on code nobody here wrote — pre-registered, not yet run
 
-[2026-08-25, external log injection](runs/2026-08-25-external-log-injection/) — the criteria
-are committed and **no run has happened**. Everything measured about the log-injection class
-so far has been measured on a case this project planted, which is the weakest kind of
-evidence. This round points three arms at `pyload/pyload` at the parent of its own fix
-commit, 569 Python files, with the key read from the public commit rather than from a
-summary. The prediction is deliberately unsafe: the corpus arm reports it at least once and
-the competitors never — and the prior external round, where every arm scored 0 of 4, makes
-the refuting outcome the likely one.
+[2026-08-25, external log injection](runs/2026-08-25-external-log-injection/) — three arms
+on `pyload/pyload` at the parent of its own fix commit, 569 Python files, key read from the
+public commit. **The prediction is refuted: 0 of 4 in every arm.** `WEB-28`, the `CWE-117`
+procedure added the same day, does not survive contact with a repository of that size — on
+17 files this corpus reported the neighbouring half of the pair in 6 of 6 runs, and on 569
+it reported neither half in any run.
+
+**This is the round with the strong evidence, and it says no.** The favourable numbers
+elsewhere are all from a case planted here, and each of those pages says a pass there is
+weak. Recorded there too: a competitor found that `UnTar.py`'s guard against `CVE-2007-4559`
+is broken by a `commonprefix` check — *a control that runs and cannot fail*, in real code,
+found by somebody else. The class this project named is not one it has to itself.
 
 ## Reproduction
 
