@@ -1,0 +1,59 @@
+{
+  "comment": "Which planted defects of bench/cases/intake-portal carry an executable probe. Six of the eleven, across three files, so each probe names its own source. This case is the corpus's vibecoding case: three of its defects are one class - a control that runs and cannot fail - and that class REMOVES findings rather than adding them, which is why every probe here is paired with the benign twin the case ships beside the defect.",
+  "verified": "2026-08-25",
+  "case": "intake-portal",
+  "minimum_isolation": "subprocess",
+  "minimum_isolation_why": "Three of these probes read module constants that resolve at import time from `os.environ`, and two attach handlers to a logger. Both belong to a process that ends when the measurement ends: a probe that left a handler on a shared logger would change what the next probe sees.",
+
+  "probes": {
+    "P-44": {
+      "source": "bench/cases/intake-portal/app/security.py",
+      "class": "a control that runs and cannot fail",
+      "evidence_kind": "exploit",
+      "what_the_probe_does": "Offers a body with a signature that is not a hex digest of anything and requires the verifier to accept it.",
+      "control": "`verify_internal_token`, in the same file, computes the same HMAC and does compare it. The finding stands only if it rejects the identical pair. If it accepted too, the probe would be measuring the harness.",
+      "why_this_class_matters": "The HMAC is imported, computed and assigned. A reader grepping for the comparison finds every part of it except the comparison, so this defect makes a report SHORTER rather than longer. That is what a detection-first product cannot see."
+    },
+    "P-45": {
+      "source": "bench/cases/intake-portal/app/security.py",
+      "class": "a configuration name nothing defines, and the default is the secret",
+      "evidence_kind": "exposure",
+      "what_the_probe_does": "With `PARTNER_SIGNING_KEY` unset, requires the module constant to resolve to the literal shipped in the source.",
+      "cannot_measure_when": "The name is set in the environment running the probe. Then the default is not observable and the answer is 2, not a negative."
+    },
+    "P-46": {
+      "source": "bench/cases/intake-portal/app/settings.py",
+      "class": "a configuration name nothing defines, and the default is the secret",
+      "evidence_kind": "exposure",
+      "what_the_probe_does": "The same question for `SESSION_SECRET`, whose literal announces itself: `change-me-in-production`.",
+      "cannot_measure_when": "As above."
+    },
+    "P-47": {
+      "source": "bench/cases/intake-portal/app/settings.py",
+      "class": "a configuration name nothing defines, and its absence turns a check off",
+      "evidence_kind": "absent-control",
+      "what_the_probe_does": "With the name unset, reports what the audience check defaults to and how that value reads.",
+      "the_trap_reported_rather_than_resolved": "The default is the STRING `\"false\"`, which is truthy in Python. `if VERIFY_WEBHOOK_AUDIENCE:` turns the check ON and a comparison against `\"true\"` turns it OFF, from the same line. The probe reports the value and both readings instead of choosing the one that makes a better finding."
+    },
+    "P-51": {
+      "source": "bench/cases/intake-portal/app/audit.py",
+      "class": "attacker-controlled data written into a line-oriented log",
+      "evidence_kind": "exploit",
+      "what_the_probe_does": "Passes a reason containing a newline and a plausible second record, and requires one call to produce more than one line.",
+      "control": "`record_export`, in the same file, encodes through `json.dumps`, which escapes the newline. A probe where the twin also forged a line would be measuring the logger."
+    },
+    "P-52": {
+      "source": "bench/cases/intake-portal/app/audit.py",
+      "class": "attacker-controlled data written into a line-oriented log",
+      "evidence_kind": "exploit",
+      "what_the_probe_does": "The same question through the deferred `%s` idiom rather than concatenation.",
+      "why_the_pair_is_the_point": "Deferred interpolation is what every linter asks for, and it is the reason this half is the interesting one: deferring changes WHEN the string is built and nothing about WHAT ends up in it. A reviewer who accepts `%s` as the fix has moved the defect, not removed it."
+    }
+  },
+
+  "cross_check_that_cannot_run_here": {
+    "comment": "Stated rather than left to be noticed. `bench/patch-truth.json` ships two patches for this case. Only one of them can be cross-checked.",
+    "PX-10": "Targets P-51, which has a probe, so this cross-check runs. It is declared `partially verified`, which forces no outcome either way.",
+    "PX-09": "Targets P-48, in `app/routes_forms.py`, which imports Flask. Flask is not installed and this project installs nothing to measure, so P-48 carries no probe and PX-09's `not fixed` declaration is NOT verified by execution here. It stays a claim in the patch key, and this line is where a reader is told so."
+  }
+}

@@ -118,15 +118,23 @@ def load_probes(path: Path):
     return module.PROBES
 
 
-def variant(work: Path, diff: Path | None, label: str, source: Path) -> Path:
+def variant(work: Path, diff: Path | None, label: str, source: Path, case: str) -> Path:
     """A private copy of one source file, optionally patched.
 
-    The corpus is read and never written. The copy keeps the original file name
-    because a patch names it, and because a probe may import it by name.
+    The corpus is read and never written. The copy is laid out at its path
+    RELATIVE TO THE CASE ROOT rather than flat, because that is what the diffs
+    are written against: `cli-packer` keeps its one file at the root and a flat
+    copy happened to work, while `intake-portal` holds `app/audit.py` and a flat
+    copy left `patch -p1` looking for a file that was not there. The layout has
+    to match the patch, not the other way round.
     """
+    marker = f"bench/cases/{case}/"
+    text = source.as_posix()
+    rel = text.split(marker, 1)[1] if marker in text else source.name
+
     target = work / label
-    target.mkdir(parents=True, exist_ok=True)
-    copy = target / source.name
+    copy = target / rel
+    copy.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, copy)
     if diff is None:
         return copy
@@ -218,7 +226,7 @@ def measure_case(tree: Tree, case: str, env, planted: dict, patch_truth: dict) -
         for defect in sorted(covered):
             try:
                 base_path = variant(
-                    work, None, f"base-{defect}", source_for(tree, case, key, defect))
+                    work, None, f"base-{defect}", source_for(tree, case, key, defect), case)
             except (Unmeasurable, OSError) as exc:
                 report["notes"].append(f"{case}/{defect}: NOT MEASURED - {exc}")
                 report["base"][defect] = {
@@ -242,7 +250,7 @@ def measure_case(tree: Tree, case: str, env, planted: dict, patch_truth: dict) -
                 continue
             diff = tree.patches(case) / entry["diff"]
             try:
-                patched_path = variant(work, diff, pid, source_for(tree, case, key, fixes))
+                patched_path = variant(work, diff, pid, source_for(tree, case, key, fixes), case)
             except (Unmeasurable, OSError) as exc:
                 report["notes"].append(f"{pid}: NOT MEASURED - {exc}")
                 report["unmeasured_variants"].append(pid)

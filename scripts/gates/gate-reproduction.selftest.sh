@@ -269,6 +269,64 @@ check "analytics-service untouched is consistent" 0 "$D" --case analytics-servic
 D="$TMP/new-control-r"; build "$D" || exit 2
 check "rag-agent untouched is consistent" 0 "$D" --case rag-agent
 
+# ---------------------------------------------------------------------------
+# 9. The six probes for `intake-portal`, each proved in the negative.
+#
+#    Only one of this case's two patches targets a defect that carries a probe,
+#    so the two-key cross-check catches almost nothing here. Repairing each
+#    defect in a copy and demanding the run redden is what stands between these
+#    probes and six functions that always say yes.
+# ---------------------------------------------------------------------------
+# The two secret mutants drop the literal and keep an empty default rather than
+# indexing os.environ directly. Indexing raises KeyError AT IMPORT when the name
+# is unset, so the module never loads and the run answers 2 - a mutant that
+# prevents the measurement instead of removing the defect, which is the same
+# mistake an absent binary made in section 3.
+IP="bench/cases/intake-portal/app"
+
+D="$TMP/fix-P44"; build "$D" || exit 2
+repair "$D" "$IP/security.py" \
+  '    if not signature:
+        return False
+    return True' \
+  '    return hmac.compare_digest(expected, signature)' || exit 2
+check "a signature check that now compares" 1 "$D" --case intake-portal
+
+D="$TMP/fix-P45"; build "$D" || exit 2
+repair "$D" "$IP/security.py" \
+  'os.environ.get("PARTNER_SIGNING_KEY", "local-development-key")' \
+  'os.environ.get("PARTNER_SIGNING_KEY", "")' || exit 2
+check "a signing key with no literal fallback" 1 "$D" --case intake-portal
+
+D="$TMP/fix-P46"; build "$D" || exit 2
+repair "$D" "$IP/settings.py" \
+  'os.environ.get("SESSION_SECRET", "change-me-in-production")' \
+  'os.environ.get("SESSION_SECRET", "")' || exit 2
+check "a session secret with no literal fallback" 1 "$D" --case intake-portal
+
+D="$TMP/fix-P47"; build "$D" || exit 2
+repair "$D" "$IP/settings.py" \
+  'os.environ.get("VERIFY_WEBHOOK_AUDIENCE", "false")' \
+  'os.environ.get("VERIFY_WEBHOOK_AUDIENCE", "true")' || exit 2
+check "an audience check that defaults on" 1 "$D" --case intake-portal
+
+D="$TMP/fix-P51"; build "$D" || exit 2
+repair "$D" "$IP/audit.py" \
+  '    logger.info("submission " + form_id + " rejected: " + reason)' \
+  '    logger.info(json.dumps({"event": "reject", "form": form_id, "reason": reason}))' || exit 2
+check "a rejection line that encodes" 1 "$D" --case intake-portal
+
+D="$TMP/fix-P52"; build "$D" || exit 2
+repair "$D" "$IP/audit.py" \
+  '    logger.info("submission %s accepted for %s", form_id, submitter)' \
+  '    logger.info(json.dumps({"event": "accept", "form": form_id, "by": submitter}))' || exit 2
+check "a submission line that encodes" 1 "$D" --case intake-portal
+
+# The control for this case. Without it the six reds above would prove only that
+# the harness reddens whenever anything is touched.
+D="$TMP/intake-control"; build "$D" || exit 2
+check "intake-portal untouched is consistent" 0 "$D" --case intake-portal
+
 printf -- '--- %s passed, %s failed ---\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0
