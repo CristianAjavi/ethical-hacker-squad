@@ -86,6 +86,23 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## Running now: does an instrument move what four procedures could not?
+
+[2026-08-26, instrument hypothesis](runs/2026-08-26-instrument-hypothesis/) — **the arms are
+running; there is no result on this page and there will not be one until the scorer has read
+them.** What is published is everything that has to exist beforehand: the
+[pre-registration](runs/2026-08-26-instrument-hypothesis/PREREGISTRATION.md) with a band that
+constrains *both* arms, the [key](runs/2026-08-26-instrument-hypothesis/key.json) derived from
+CKAN's public fix commit, the [scorer](runs/2026-08-26-instrument-hypothesis/score.py) exercised
+on synthetic reports before it saw a real one, and the
+[limits](runs/2026-08-26-instrument-hypothesis/LIMITS.md) — including the fact that the blind is
+structural, not perfect.
+
+Four rounds moved describing, enumerating, delivering and ranking, and all four kept the
+auditor's judgement as the thing that decides. This one hands the agent a deterministic
+instrument instead. Target: `ckan/ckan` at the parent of its `CVE-2024-27097` fix, unused, and
+retired for this intervention whatever the outcome.
+
 ## A check that does not look at the idiom
 
 [2026-08-26, log escaper](runs/2026-08-26-log-escaper/) — the answer to issue #53. Six auditors
