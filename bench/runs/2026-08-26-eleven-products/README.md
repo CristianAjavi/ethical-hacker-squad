@@ -1,16 +1,17 @@
 # 2026-08-26 — the answer is no, and it is not close
 
 **Refuted.** The band required this project's recall to exceed each competitor's by **≥ 15
-points**. `google/mantis` beat it by **10.5 points**, on **this project's own corpus** — cases
+points**. `google/mantis` beat it by **8.3 points**, on **this project's own corpus** — cases
 this project wrote, defects it planted, a key it wrote.
 
 | arm | valid runs | recall (mean) | range | decoys reported | findings |
 |---|---|---|---|---|---|
-| **`google/mantis` @ `56377ad`** | 3 | **90.1%** | 87 – 94% | 1.00 | 66.7 |
+| **`google/mantis` @ `56377ad`** | 4 | **88.0%** | 81 – 94% | 1.00 | 64.5 |
 | **this project** | 4 | **79.6%** | 78 – 81% | **0.25** | 52.5 |
 
-`mantis`'s **worst** run (87%) beats this project's **best** (81%). Over 54 planted defects
-across eleven vibecoded products, it found on average **five and a half more** of them per run.
+Over 54 planted defects across eleven vibecoded products, `mantis` found on average **four and
+a half more** of them per run. Three of its four runs beat every run of this project's; its
+weakest (81%) ties this project's best.
 
 ## Why this result is strong where the favourable ones were weak
 
@@ -22,7 +23,7 @@ Every prior page that reported a favourable number on this corpus carried the sa
 
 That cuts one way. It makes a **win** here weak evidence — and it makes a **loss** here strong
 evidence, because the bias ran toward this project and the result went the other way anyway.
-This is the home fixture, with the home key, and it was lost by ten points.
+This is the home fixture, with the home key, and it was lost by eight points.
 
 ## The one number that goes the other way
 
@@ -30,7 +31,7 @@ This project reported **0.25 decoys per run against `mantis`'s 1.00** — four t
 positives on the 50 constructs planted to look vulnerable and be ruled out. That is real, it is
 this repository's stated first-class defect, and it is the only column it leads.
 
-**It does not rescue the primary and is not offered as doing so.** Recall 79.6% against 90.1%
+**It does not rescue the primary and is not offered as doing so.** Recall 79.6% against 88.0%
 is the registered question and the registered question was answered.
 
 ## What had to be fixed before this could be measured at all
@@ -59,15 +60,35 @@ read one.
 
 ## What was not measured
 
-- **`mantis` run 1 stalled** and never wrote a report. It is recorded as a run that did not
-  happen, not as an empty run — the same rule the scorer applies to a report with no
-  provenance. The arm is scored on 3 valid runs, at the floor the pre-registration fixed.
+- **`mantis` run 1 was misdiagnosed as stalled and it was not.** Its workspace stopped growing
+  for five minutes and this page, in its first version, recorded it as a run that did not
+  happen. It completed: **70 minutes, 682 tool calls, 461k tokens** — several times the cost of
+  any other run in the round — and scored 81%. Including it moves `mantis` from 90.1% to
+  **88.0%** and the gap from 10.5 to **8.3**. Both numbers stay here because the first was
+  published before the run landed. The verdict is unchanged: refuted.
 - **`Tencent/AI-Infra-Guard` was excluded**, and that exclusion stands: all four of its skills
   were read, `aig-scanner` requires a remote `taskapi` these offline rounds cannot reach, and
   the rest scope to the OpenClaw environment, to skills, and to red-teaming agents.
 - **No claim about real code.** This is eleven products this project wrote. On `pyload`, Django
   and `Netflix/lemur` — code nobody here wrote — every arm scored at or near zero, and nothing
   here changes that.
+
+## What `mantis` does that this project does not
+
+Its run 1 reported the pipeline it executed, and the shape is the finding worth taking away:
+**summarize → architecture → threat model → plan → 11 parallel auditors → dedupe → 3
+independent adversarial review shards → critic → chain → calibrate → report**, with a funnel of
+68 raw findings → 11 killed by adversarial review, a **16% false-positive rate it measured on
+itself** → 57 valid → critic triage → 58 scored.
+
+Two things there are absent from this project: **auditors fanned out one per product** rather
+than one pass over the whole tree, and **a review stage whose job is to kill its own side's
+findings** before they are reported. This project's 0.25 decoy rate comes from triage rules
+applied by the same agent that made the finding; `mantis` pays for a separate stage to argue
+against itself — and pays a lot: that run cost 70 minutes and 682 tool calls.
+
+That is a hypothesis about where the eight points live. It is **not measured**, and it is
+written here so the next round registers it rather than assumes it.
 
 ## The answer to the question that prompted the round
 
@@ -79,4 +100,4 @@ competitor that claims the same job, run through its own entry point: **it is be
 points of recall, and it leads on false positives alone.**
 
 Per the multiplicity commitment, **this corpus is retired for this question.** The next step is
-not another run here — it is reading how `mantis` gets those ten points.
+not another run here — it is reading how `mantis` gets those eight points.
