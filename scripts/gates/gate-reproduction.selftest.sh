@@ -205,6 +205,70 @@ else
   fail=$((fail + 1)); printf 'FAIL     %-46s %s\n' "the sandbox denies the network" "$iso"
 fi
 
+# ---------------------------------------------------------------------------
+# 8. The five probes added for `rag-agent` and `analytics-service`, each proved
+#    in the negative. Neither case ships a patch, so the cross-check has no
+#    second half to catch a hollow probe: repairing the defect in a copy and
+#    demanding the run turn red is the only thing standing between these and a
+#    probe that always says yes.
+#
+#    `--case` keeps each mutation on the case it belongs to. Running all three
+#    for every mutant would say nothing extra and cost three times as much.
+# ---------------------------------------------------------------------------
+repair() {  # repair <dir> <relative file> <needle> <replacement>
+  python3 - "$1/$2" "$3" "$4" <<'REPAIR'
+import sys
+path, needle, replacement = sys.argv[1], sys.argv[2], sys.argv[3]
+text = open(path).read()
+if needle not in text:
+    print(f"the mutation anchor is not in {path}", file=sys.stderr)
+    raise SystemExit(3)
+open(path, "w").write(text.replace(needle, replacement, 1))
+REPAIR
+}
+
+D="$TMP/fix-P29"; build "$D" || exit 2
+repair "$D" "bench/cases/analytics-service/app/serializers.py" \
+  "    return asdict(customer)" \
+  "    return {f: getattr(customer, f) for f in PUBLIC_FIELDS}" || exit 2
+check "a serializer that no longer leaks" 1 "$D" --case analytics-service
+
+D="$TMP/fix-P30"; build "$D" || exit 2
+repair "$D" "bench/cases/analytics-service/app/logging_setup.py" \
+  '    logger.info("request path=%s user=%s email=%s national_id=%s",
+                path, user["id"], user["email"], user["national_id"])' \
+  '    logger.info("request path=%s user=%s", path, user["id"])' || exit 2
+check "a log line that no longer carries the data" 1 "$D" --case analytics-service
+
+D="$TMP/fix-P32"; build "$D" || exit 2
+repair "$D" "bench/cases/analytics-service/jobs/lifecycle.py" \
+  '    return [
+        '"'"'<script src="https://cdn.metrics.example/collect.js" data-site="acme"></script>'"'"',
+        '"'"'<script src="https://ads.partner.example/px.js"></script>'"'"',
+    ]' \
+  '    return []' || exit 2
+check "tags that are no longer rendered" 1 "$D" --case analytics-service
+
+D="$TMP/fix-P24"; build "$D" || exit 2
+repair "$D" "bench/cases/rag-agent/agent/memory.py" \
+  '    data.setdefault("notes", []).append(reply)' \
+  '    raise ValueError("free text is not stored")' || exit 2
+check "memory that refuses free text" 1 "$D" --case rag-agent
+
+D="$TMP/fix-P28"; build "$D" || exit 2
+repair "$D" "bench/cases/rag-agent/agent/memory.py" \
+  '    index.add_texts([ticket["body"]])' \
+  '    index.add_texts([ticket["body"]], metadatas=[{"origin": "customer-ticket"}])' || exit 2
+check "ingestion that now records an origin" 1 "$D" --case rag-agent
+
+# And the control for the new cases: untouched, they must be quiet. Without this
+# the five reds above would prove only that the harness reddens on everything.
+D="$TMP/new-control-a"; build "$D" || exit 2
+check "analytics-service untouched is consistent" 0 "$D" --case analytics-service
+
+D="$TMP/new-control-r"; build "$D" || exit 2
+check "rag-agent untouched is consistent" 0 "$D" --case rag-agent
+
 printf -- '--- %s passed, %s failed ---\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

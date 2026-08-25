@@ -35,14 +35,42 @@ rather than a matter of taste:
 
 ## What is measured today, and what is not
 
-Of the **54** planted defects in this corpus, **10** are reproducible without installing
-anything. Five of those ten live in one file, `bench/cases/cli-packer/packer.py`, and
-those five are what ships here. The other 33 need `anthropic`, `sqlalchemy`,
-`marshmallow` or `flask_restful`, or are not Python at all — 6 JavaScript, 4 Terraform,
-4 YAML, 5 JSON, 2 Go, 2 Java.
+Of the **54** planted defects in this corpus, **10** were reproducible without installing
+anything at the time the probes were written, and all ten carry one:
 
-**A green here is five defects proved, not a bench reproduced.** Nine measurements: five
-probes on the unpatched case, four on the patched variants.
+| case | defects | cross-check |
+|---|---|---|
+| `cli-packer` | 5 | four patches, so both halves run |
+| `analytics-service` | 3 | no patch ships, so only the unpatched half |
+| `rag-agent` | 2 | no patch ships, so only the unpatched half |
+
+`intake-portal` then took the corpus from 43 planted defects to **54**, and six of its own
+are probe-able with nothing installed but wait on the multi-case harness. Of the remaining
+38, some need `anthropic`, `sqlalchemy`, `marshmallow` or `flask_restful`, and the rest are
+not Python at all — the 54 break down as 25 `.py`, 6 `.js`, 6 `.json`, 4 `.tf`, 4 `.yml`,
+2 `.go`, 2 `.java`, 1 `.toml`, 1 `.txt` and 3 with no extension.
+
+**A green here is ten defects proved, not a bench reproduced.** Fourteen measurements: ten
+probes on the unpatched cases, four on the patched variants.
+
+## Not every probe proves the same thing
+
+Counting ten as if they were interchangeable would be inflating the number, so each probe
+declares what kind of evidence it offers:
+
+- **exploit** — a file lands outside its destination, a planted binary runs. The strongest.
+  All five in `cli-packer`.
+- **exposure** — a specific value that should not have left the process arrives where it
+  should not be: a national id in a response body, an email in a log line, model output
+  read back out of a store. `P-24`, `P-29`, `P-30`.
+- **absent control** — nothing records where a document came from, nothing consults consent
+  before third-party tags render. `P-28`, `P-32`.
+
+An absence is the weakest evidence a probe can offer, because *nothing happened* is also
+what a broken probe looks like. So no absence is asserted alone: **every probe outside
+`cli-packer` also runs the safe sibling the case ships beside the defect**, and reports a
+finding only if the two differ. A property that also holds of the hardened function is a
+property of the harness, and the probe says that rather than claiming a defect.
 
 ## Two things the probes had to get right
 

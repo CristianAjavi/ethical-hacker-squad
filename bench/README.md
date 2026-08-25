@@ -2,13 +2,25 @@
 
 Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
 
+## The triage stage, run and unmeasured
+
+[2026-08-24, triage stage](runs/2026-08-24-triage-stage/) — twelve runs, six per arm,
+against a pre-registration written before the first model call. **The primary metric could
+not measure**: over-affirmation was defined as answering `HOLDS` where nothing could be
+established, and that happened zero times in both arms. The pre-registration's own rule for
+a ceiling was followed and no difference is reported. What the round did establish is a
+hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
+other one is what both arms actually did.
+
 ## Reproduction
 
-Five of the planted defects now carry an executable probe, and the probes are cross-checked
-against both keys this corpus holds — see [reproduction/](reproduction/). Of the **54**
-planted defects, **ten** are reproducible without installing anything and five ship a probe
-today; six more became probe-able with `intake-portal` and wait on the multi-case harness. A
-green there is five defects proved, not a bench reproduced.
+All ten planted defects that were reproducible without installing anything now carry an
+executable probe, across three cases — see [reproduction/](reproduction/). Where a case
+ships patches the probes are cross-checked against both keys this corpus holds; where it
+does not, only the unpatched half runs and the harness says so. `intake-portal` then took
+the corpus from 43 planted defects to **54**, and six of its own are probe-able with
+nothing installed but wait on the multi-case harness. So: ten proved, six queued, 54
+planted — not a bench reproduced.
 
 ## The measured result so far
 
