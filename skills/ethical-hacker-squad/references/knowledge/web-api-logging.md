@@ -40,7 +40,7 @@ Rules: FP-01, FP-04.
 
 ### WEB-28 Attacker-controlled data written into a log without neutralisation
 
-`WEB-22` covers what leaks **out through** the log. This is the opposite direction: what an attacker writes **into** it. `CWE-117` appears in no other traceability line in this corpus, and it is the class model-generated code resolves worst of all — Veracode measured a 12.03% security pass rate on it in 2025, alongside 13.53% for cross-site scripting.
+`WEB-22` covers what leaks **out through** the log. This is the opposite direction: what an attacker writes **into** it. `CWE-117` appears in no other traceability line in this corpus, and of the **four** CWEs Veracode measured in 2025 it is the one model-generated code resolves worst: a 12.03% security pass rate, below the 13.53% of cross-site scripting. Four measured classes are not all the classes there are, and the claim is worth no more than its scope.
 
 **Where to look**
 - Logger calls interpolating request data: `logger.info(f"... {value}")`, `log.Printf("%s", value)`, `console.log(\`... ${value}\`)`, `String.format` into a logger, and structured fields whose value is a raw string.

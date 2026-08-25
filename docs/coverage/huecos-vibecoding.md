@@ -55,7 +55,7 @@ otro nombre.
 |---|---|
 | `CWE-89` inyección SQL — la peor clase de Perry (36 % frente a 7 %) | `WEB-07` |
 | `CWE-78` inyección de órdenes — 83,3 % de escenarios vulnerables en Pearce, 6,21 % de las debilidades de Fu | `WEB-08` |
-| `CWE-79`/`CWE-80` XSS — **la peor clase del generador en Veracode (13,53 %)** y 9,55 % en Fu | `WEB-13` (servidor), `WEB-14` (cliente y CSP) |
+| `CWE-79`/`CWE-80` XSS — **13,53 % en Veracode, la segunda peor de las cuatro CWE que mide** (la peor es `CWE-117`, 12,03 %) y 9,55 % en Fu | `WEB-13` (servidor), `WEB-14` (cliente y CSP) |
 | `CWE-330` valores no aleatorios — **la clase mayor de Fu (18,15 %)** | `WEB-03`, `WEB-19`, `MOB-11` |
 | `CWE-798` credenciales embebidas, `CWE-522` credenciales sin proteger | `SUP-16`, `SUP-17`, `MOB-12`, `LOC-15` |
 | `CWE-327` criptografía rota — donde el generador **acierta** (85,61 %) | `WEB-19` |
@@ -320,10 +320,11 @@ La dirección contraria, escribir en el registro datos controlados por el atacan
 saltos de línea ni secuencias de control, no aparece. `CWE-117` no se cita en ninguna línea de
 trazabilidad de los 164 procedimientos.
 
-**Por qué sale aquí**: porque `CWE-117` es, junto a `CWE-80`, **la clase que peor resuelve el
-generador**: 12,03 % de aprobación en Veracode. Un corpus que se presente como la mejor opción para
-auditar código generado y que no tenga procedimiento para la clase que el generador falla el 88 % de
-las veces no es defendible.
+**Por qué sale aquí**: porque de las **cuatro** CWE que Veracode mide, `CWE-117` es la que peor
+resuelve el generador — 12,03 % de aprobación, por debajo del 13,53 % de `CWE-80`. El alcance
+importa y hay que decirlo cada vez: son cuatro clases medidas, no todas las clases que existen. Aun
+así, un corpus que se presente como la mejor opción para auditar código generado y que no tenga
+procedimiento para la clase que el generador falla el 88 % de las veces medidas no es defendible.
 
 **No es un hueco de vibecoding.** Es un hueco de AppSec ordinaria que esta lente sacó a la luz, y así
 hay que escribirlo: sin la palabra vibecoding en ninguna parte del procedimiento.
