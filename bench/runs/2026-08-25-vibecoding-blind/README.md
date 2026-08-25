@@ -16,7 +16,9 @@ bottom rather than buried, because it is the finding.
 
 The blind was structural: the tree was copied out of the repository into a directory from
 which `bench/ground-truth.json` is not reachable. Every prompt, every report and the
-scorer's own output ship in `reports/` and `score.json`.
+scorer's own output ship in `runs/` and `score.json`. The artifact directory is named `runs/` and not
+`reports/` because `.gitignore` line 31 ignores any directory called `reports/`, which
+silently kept the evidence for this round out of the commit until it was caught.
 
 ## The pass is weak evidence, and that was said first
 

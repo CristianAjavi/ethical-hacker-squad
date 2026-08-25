@@ -61,7 +61,7 @@ def matches(finding: dict, entry: dict) -> bool:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--reports", type=Path, required=True, help="directory of run-*.json")
+    ap.add_argument("--reports", type=Path, required=True, help="directory of run-*.findings.json")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
@@ -78,7 +78,7 @@ def main(argv=None) -> int:
         print(f"UNMEASURED the key holds no planted defect for {CASE}, or none of the class")
         return 2
 
-    files = sorted(args.reports.glob("run-*.json"))
+    files = sorted(args.reports.glob("run-*.findings.json"))
     if not files:
         print(f"UNMEASURED no report under {args.reports}")
         return 2
@@ -88,16 +88,16 @@ def main(argv=None) -> int:
         try:
             report = json.loads(path.read_text(encoding="utf-8"))
         except ValueError as exc:
-            runs.append({"run": path.stem, "valid": False, "why": f"did not parse: {exc}"})
+            runs.append({"run": path.stem.replace(".findings", ""), "valid": False, "why": f"did not parse: {exc}"})
             continue
         if not isinstance(report, list):
-            runs.append({"run": path.stem, "valid": False, "why": "not a JSON array"})
+            runs.append({"run": path.stem.replace(".findings", ""), "valid": False, "why": "not a JSON array"})
             continue
 
         found = {p["id"] for p in planted if any(matches(f, p) for f in report if isinstance(f, dict))}
         dec = {d["id"] for d in decoys if any(matches(f, d) for f in report if isinstance(f, dict))}
         runs.append({
-            "run": path.stem, "valid": True,
+            "run": path.stem.replace(".findings", ""), "valid": True,
             "reported": len(report),
             "matched": sorted(found),
             "matched_hiding": sorted(found & {p["id"] for p in hiding}),
