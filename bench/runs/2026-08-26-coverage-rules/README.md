@@ -1,5 +1,13 @@
 # 2026-08-26 — the rules work, and they bought recall with noise
 
+> **The harness bypassed a shipped control.** Every round's prompt asked for a report shape
+> without the `triage` field that `findings.schema.json` requires and
+> `gate-findings-artifact.sh` enforces, so no arm was ever obliged to name and answer a
+> false-positive rule before reporting. The decoy numbers below were measured with this
+> project's own false-positive control switched off at the door. See
+> [`../2026-08-26-refutation-stage/HARNESS-DEFECT.md`](../2026-08-26-refutation-stage/HARNESS-DEFECT.md).
+> The recall numbers are unaffected and no verdict here is edited.
+
 **Not supported.** The band was a conjunction and it was written that way on purpose: recall
 ahead by ≥ 5 points **and** a decoy rate no higher. The first held. The second failed.
 
