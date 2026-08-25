@@ -88,9 +88,8 @@ a fact about ranking when it was a fact about the query.
 
 ## The answer is no, and it is not close
 
-[2026-08-26, eleven products](runs/2026-08-26-eleven-products/) — **`google/mantis` 90.1% recall,
-this project 79.6%**, over 54 planted defects across eleven vibecoded products. Its worst run
-beats this project's best. **Refuted**: the band required leading by 15 points.
+[2026-08-26, eleven products](runs/2026-08-26-eleven-products/) — **`google/mantis` 88.0% recall,
+this project 79.6%**, over 54 planted defects across eleven vibecoded products. Three of its four runs beat every run of this project's. **Refuted**: the band required leading by 15 points; it is behind by 8.3.
 
 The loss is on this project's *own* corpus — its cases, its planted defects, its key — which is
 why it is strong evidence where a win would have been weak. The one column it leads is false
