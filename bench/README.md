@@ -396,3 +396,26 @@ Every round above asks whether the squad found the defect, which is the question
 ## Growing it
 
 A case is worth adding when it can carry both halves: a real defect and a construct that resists. A case with only planted defects measures nothing but the model's willingness to agree.
+
+`intake-portal` was added on 2026-08-25 as the first case whose defects are
+characteristic of a **generator** rather than of a surface, and it is built to
+measure three things nothing else here measures:
+
+- **Multiplicity.** The same inert guard appears in three route modules under
+  three names (`P-48`, `P-49`, `P-50`), and a fourth module carries the guard
+  that works (`D-44`). A run that reports one of the three has not found the
+  defect; a run that reports the fourth has found a control.
+- **A control that deletes findings instead of adding one.** `P-44` computes a
+  digest and never compares it, beside `D-43`, which is the same shape one
+  reading away from benign. This is the class that makes a taint analyser go
+  quiet, and no published figure exists for how often it happens - which is
+  exactly why it is in a bench rather than in a claim.
+- **A referent nothing defines.** `P-45`, `P-46` and `P-47` are read with a
+  fallback and set nowhere; `D-45` and `D-46` are read the same way and defined
+  in two deployment files. The half of the case that makes the question decidable
+  is the deployment configuration shipped beside the code.
+
+Its answer key also records, **before the first run**, that the three route
+guards are readable both as an inert control and as an absent object-level check.
+Both readings are true of the same line, and `case_defects` says so, so a run is
+scored on detection rather than on vocabulary.
