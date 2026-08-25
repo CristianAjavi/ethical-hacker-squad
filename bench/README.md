@@ -64,16 +64,15 @@ Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
 
 ## The same advisory, with the step where the agent starts — pre-registered, not yet run
 
-[2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **the third round on
-this target, and the last one for this intervention.** The multiplicity is on the page rather
-than in a footnote: running until a band lands is fishing, so if this refutes, the position
-already published stands and the next attempt changes the target instead of retrying the
-measurement.
+[2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **refuted, 0 of 4
+against a band of 3 of 4.** Three rounds have failed to move this and the target is retired
+for the intervention, as the pre-registration committed before the run.
 
-The previous round showed *where* the failure sits — two of three auditors read the mandatory
-enumeration step and did not run it. So it moved out of the pack and into
-`agents/ehs-web-api.md`, where the agent starts. Every other first action is *read this file*;
-this is the only one that is *run this*. Band: at least 3 of 4.
+What the three together diagnose is that the failure is **neither describing nor
+enumerating — it is ranking**. The list contains the site; every arm in every round walks
+past it toward the web UI, while the advisory sits in the RPC layer behind the base
+permission for adding a download. That hypothesis has three rounds behind it and **no
+pre-registration**, so it is the next round's question, on a different target.
 
 ## Reproduction
 
