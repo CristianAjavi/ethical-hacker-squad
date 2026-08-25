@@ -74,6 +74,15 @@ past it toward the web UI, while the advisory sits in the RPC layer behind the b
 permission for adding a download. That hypothesis has three rounds behind it and **no
 pre-registration**, so it is the next round's question, on a different target.
 
+## Is it ranking? — pre-registered, target not yet fetched
+
+[2026-08-26, ranking hypothesis](runs/2026-08-26-ranking-hypothesis/) — the criteria exist and
+**nothing has been run**. Three rounds moved the failure from *describing* to *enumerating* to
+*ranking*: the auditor now finds the class in 4 of 4 runs and still walks past the keyed site.
+The target changes to Django `CVE-2025-48432`, where the defect is in the framework's own
+internal logging and there is no web UI to drift toward. The key must be pinned from the fix
+commit before a run, and the page says the round does not start without it.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
