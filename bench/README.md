@@ -86,6 +86,19 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## A check that does not look at the idiom
+
+[2026-08-26, log escaper](runs/2026-08-26-log-escaper/) — the answer to issue #53. Six auditors
+called the deferred `%s` line the example of doing it right; this check flags it, because it
+asks whether an escaper sits between the value and the sink rather than how the string was
+built. **It finds all three keyed defects** that four model-driven rounds could not reliably
+find — `P-52`, `pyload`'s `add_package`, Django's `log_response`.
+
+And the number that says what it is not: **45% of `pyload`'s logging calls and 84% of
+Django's come back uncleared.** It is a conservative filter, not a detector: it cannot see
+through a function parameter, so anything arriving from outside is flagged by construction.
+Its one promise is that within this class it does not miss.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an

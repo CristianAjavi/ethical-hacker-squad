@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Self-test for log_escaper.py.
+#
+# The check exists because six independent auditors read the same file and
+# called the defective line the safe one. So passing this battery is not about
+# finding log calls: it is about behaving DIFFERENTLY from an idiom recogniser.
+# Two of the cases below are mutants of the check itself, and they are the
+# point. A battery that both the real check and a `%s`-trusting stub pass would
+# prove nothing at all.
+#
+# Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+SUBJECT="$HERE/log_escaper.py"
+CASE="$ROOT/bench/cases/intake-portal/app/audit.py"
+
+command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
+[ -f "$SUBJECT" ] || { echo "UNMEASURABLE the subject is missing: $SUBJECT"; exit 2; }
+[ -f "$CASE" ]    || { echo "UNMEASURABLE the three-way case is missing: $CASE"; exit 2; }
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-escaper-XXXXXX")"
+cleanup() { rm -rf "$TMP"; }
+trap cleanup EXIT
+pass=0; fail=0
+
+ok()   { pass=$((pass+1)); echo "  PASS  $1"; }
+bad()  { fail=$((fail+1)); echo "  FAIL  $1"; }
+
+# run <script> <target> -> writes $TMP/out, returns the exit code
+run() { python3 "$1" --target "$2" >"$TMP/out" 2>&1; }
+
+echo "== the case that caused the miss: all three lines, sorted correctly =="
+
+run "$SUBJECT" "$CASE"; rc=$?
+[ "$rc" -eq 1 ] && ok "an uncleared argument gives rc 1" \
+                || bad "expected rc 1 on the planted case, got $rc"
+
+# P-52: the deferred `%s` line every auditor called the example of doing it right.
+grep -q 'UNCLEARED.*record_submission' "$TMP/out" \
+  && ok "P-52 flagged — the line six readers called safe" \
+  || bad "P-52 NOT flagged: the check reproduces the human miss"
+
+# P-51: the concatenated neighbour. Every arm found this one; so must we.
+grep -q 'UNCLEARED.*record_rejection' "$TMP/out" \
+  && ok "P-51 flagged — the concatenated neighbour" \
+  || bad "P-51 NOT flagged"
+
+# The benign twin. Flagging everything is not detection, it is noise.
+grep -q 'cleared   .*record_export' "$TMP/out" \
+  && ok "the json.dumps twin is cleared, not flagged" \
+  || bad "the benign control was flagged: the check cannot separate"
+
+# The report has to name what it credited, or a reviewer cannot argue with it.
+grep -q 'record_export.*dumps' "$TMP/out" \
+  && ok "the credited escaper is named in the report" \
+  || bad "a cleared line does not say what cleared it"
+
+echo "== proved in the negative: nothing to flag must not invent something =="
+
+mkdir -p "$TMP/clean"
+cat > "$TMP/clean/safe.py" <<'CLEAN_EOF'
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def record(event):
+    logger.info("event %s", json.dumps(event))
+
+
+def announce():
+    logger.warning("service started")
+CLEAN_EOF
+
+run "$SUBJECT" "$TMP/clean"; rc=$?
+[ "$rc" -eq 0 ] && ok "a fully cleared tree gives rc 0" \
+                || bad "expected rc 0 on the clean fixture, got $rc"
+grep -q 'UNCLEARED' "$TMP/out" \
+  && bad "the clean fixture produced a flag" \
+  || ok "no flag invented on the clean fixture"
+
+echo "== could not measure is never a pass =="
+
+run "$SUBJECT" "$TMP/does-not-exist"; rc=$?
+[ "$rc" -eq 2 ] && ok "an absent target gives rc 2, not rc 0" \
+                || bad "expected rc 2 for an absent target, got $rc"
+
+mkdir -p "$TMP/empty" && : > "$TMP/empty/README.md"
+run "$SUBJECT" "$TMP/empty"; rc=$?
+[ "$rc" -eq 2 ] && ok "a tree with no Python gives rc 2" \
+                || bad "expected rc 2 for a tree with no Python, got $rc"
+
+mkdir -p "$TMP/broken" && printf 'def (\n' > "$TMP/broken/bad.py"
+run "$SUBJECT" "$TMP/broken"; rc=$?
+[ "$rc" -eq 2 ] && ok "a tree where nothing parses gives rc 2, not a silent green" \
+                || bad "expected rc 2 when nothing parsed, got $rc"
+
+echo "== mutants: the battery must fail without the thing that makes it useful =="
+
+# MUTANT 1 — the idiom recogniser. This is the check the six auditors WERE,
+# and the whole reason #53 was opened: it trusts a log call that defers its
+# formatting, exactly as pylint W1203 teaches. If the real check and this stub
+# agree on the case, the real check bought nothing.
+sed 's|^        for i, arg in enumerate(node.args):|        if len(node.args) > 1:\n            continue\n        for i, arg in enumerate(node.args):|' \
+  "$SUBJECT" > "$TMP/idiom.py"
+if ! cmp -s "$SUBJECT" "$TMP/idiom.py"; then
+  run "$TMP/idiom.py" "$CASE"
+  grep -q 'UNCLEARED.*record_submission' "$TMP/out" \
+    && bad "the idiom recogniser ALSO flags P-52: this battery cannot tell them apart" \
+    || ok "the idiom recogniser misses P-52 — the real check is doing the work"
+else
+  bad "MUTANT 1 did not apply: the battery would pass without measuring anything"
+fi
+
+# MUTANT 2 — clearing is load-bearing. Take `dumps` out of the credited set and
+# the benign twin must turn red. If it stays green, the clear verdict is being
+# reached by some other route and the report's credit line is a decoration.
+sed 's|^    "dumps", |    |' "$SUBJECT" > "$TMP/nodumps.py"
+if ! cmp -s "$SUBJECT" "$TMP/nodumps.py"; then
+  run "$TMP/nodumps.py" "$CASE"
+  grep -q 'UNCLEARED.*record_export' "$TMP/out" \
+    && ok "removing dumps from ESCAPERS turns the twin red — the clear is earned" \
+    || bad "the twin stays cleared without dumps: something else is clearing it"
+else
+  bad "MUTANT 2 did not apply: the battery would pass without measuring anything"
+fi
+
+echo
+echo "$pass PASS / $fail FAIL"
+[ "$fail" -eq 0 ] || exit 1
+exit 0
