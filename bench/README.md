@@ -2,6 +2,16 @@
 
 Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
 
+## The triage stage, run and unmeasured
+
+[2026-08-24, triage stage](runs/2026-08-24-triage-stage/) — twelve runs, six per arm,
+against a pre-registration written before the first model call. **The primary metric could
+not measure**: over-affirmation was defined as answering `HOLDS` where nothing could be
+established, and that happened zero times in both arms. The pre-registration's own rule for
+a ceiling was followed and no difference is reported. What the round did establish is a
+hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
+other one is what both arms actually did.
+
 ## Reproduction
 
 Five of the planted defects now carry an executable probe, and the probes are cross-checked
