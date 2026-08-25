@@ -88,7 +88,7 @@ el resultado lo juzga el motor SAST del propio proveedor.
 | Por tamaño de modelo (medias, Figura 4) | pequeño <20B **50,65 %** · medio 20–100B **51,10 %** · grande >100B **50,87 %** |
 | Por fecha de publicación (RQ5) | la tasa sintáctica mejora mucho; **la de seguridad se mantiene plana** |
 
-**Las dos lecturas que hacen de esto una herramienta y no un titular:**
+**Las dos lecturas que hacen de esto una herramienta y no un titular** (y una precisión: de las cuatro CWE medidas, la peor es `CWE-117` con 12,03 %, no XSS):
 
 1. **El fallo del generador tiene forma, y la forma es la dependencia del contexto.** Donde la
    opción segura es *una llamada canónica* — una consulta parametrizada, un cifrado con nombre — el
@@ -377,7 +377,7 @@ las que sostienen un procedimiento nuevo.
 
 | Identificador | Producto y versiones | Publicada | CVSS | CWE | Mecanismo |
 |---|---|---|---|---|---|
-| `CVE-2025-64109` | Cursor anterior a 2025.09.17-25b418f | 2025-11-04 | 8,8 | `CWE-78` | un `.cursor/mcp.json` presente en el repositorio ejecuta órdenes **al abrir el proyecto**, sin consentimiento |
+| `CVE-2025-64109` | **Cursor CLI Beta** anterior a 2025.09.17-25b418f | 2025-11-04 | 8,8 | `CWE-78` | un `.cursor/mcp.json` presente en el repositorio ejecuta órdenes al clonar y **abrir el proyecto con el CLI**, **sin ningún aviso**. El registro acota las dos cosas: es el CLI en beta, no el editor en general |
 | `CVE-2025-59536` | Claude Code anterior a 1.0.111 | 2025-10-03 | 8,8 (3.1) / 8,7 (4.0) | `CWE-94` | ejecución de código del proyecto **antes** de que el usuario acepte el diálogo de confianza, al lanzarlo en un directorio no confiable |
 | `CVE-2026-21852` | Claude Code anterior a 2.0.65 | — | — | — | exfiltración de clave de API antes del diálogo de confianza |
 | `CVE-2025-61592` | Cursor 1.7 e inferiores | — | — | — | `.cursor/cli.json` del repositorio **prevalece** sobre la configuración global del usuario |
