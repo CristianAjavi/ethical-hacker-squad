@@ -417,5 +417,8 @@ measure three things nothing else here measures:
 
 Its answer key also records, **before the first run**, that the three route
 guards are readable both as an inert control and as an absent object-level check.
-Both readings are true of the same line, and `case_defects` says so, so a run is
-scored on detection rather than on vocabulary.
+Both readings are true of the same line, so whoever scores a round has that in
+writing beforehand instead of ruling on it afterwards. Be precise about the
+mechanism: `score.py` does **not** read `case_defects`. It is a human-facing
+record, like the `rag-agent` entry beside it, so it binds the person scoring and
+not the script.
