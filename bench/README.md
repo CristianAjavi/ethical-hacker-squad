@@ -380,6 +380,11 @@ Today the bench exercises `web-api`, `local-app`, `infra-cloud`, `supply-chain`,
 A round whose criteria are committed and whose numbers do not exist. It is listed here from the moment it is written, because a pre-registration a reader cannot find before the result arrives proves nothing about the order the two were written in — which is the whole point of writing it first.
 
 - [2026-08-24, the near-miss round](runs/2026-08-24-chain-completion/) — three rounds record the same shape of miss: the right file open, something true reported, and the defect beside it missed. The candidate procedure is **frozen in the run directory and is not in the corpus**, and moves into `references/` only if the pre-registered band is met.
+- [2026-08-24, the triage stage on its own](stages/triage/) — fifteen cases that ask one stage of the squad, not the whole of it, and whose **key is auditable by machine**: the consequence of every answer is forced by the table in `references/triage.md`, and `gate-triage-stage.sh` re-derives all of them and fails the case when the key and the table disagree. Nothing has been run; the criteria are frozen beside the cases.
+
+## Measuring one stage instead of the whole squad
+
+Every round above asks whether the squad found the defect, which is the question a reader cares about and is blunt about where a miss happened. `stages/` holds evals that ask a single stage. The first is [the triage stage](stages/triage/), and it carries a check the rounds do not need: a gate that rejects any case whose statement contains the rule id, the answer token or the consequence terms its own key declares, or that prescribes the remedy. **That second family is not hypothetical** — pointed at the eight per-stage eval sets a neighbouring product publishes, it finds one row of twenty-five that names the fix inside the field naming the defect, and that row is the whole of that stage's dataset. The measurement, its limits and how to reproduce it are in that directory's `README.md`.
 
 ## Growing it
 
