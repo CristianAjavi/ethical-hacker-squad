@@ -2,8 +2,9 @@
 
 > **When to load this file:** the inventory includes an HTTP server, an API (REST, GraphQL, RPC, WebSocket) or a web backend with routes, controllers, an ORM, sessions or tokens.
 > **Do not load it if:** the scope is only an APK/IPA with no reachable backend, only IaC and containers, only dependencies, or a library with no network surface.
-> **Cost:** ~357 lines. Load by section using the index; you do not need to read it end to end.
-> **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§11 and `WEB-13`..`WEB-22` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and disclosure through errors and logs. Open it as soon as the inventory reaches any of those; it carries its own index.
+> **Cost:** ~358 lines. Load by section using the index; you do not need to read it end to end.
+> **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it carries its own index.
+> **Third file of this pack:** `web-api-logging.md` holds §11 with `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence.
 
 ## Selective loading index
 
@@ -16,7 +17,7 @@
 | §4 SSRF and outbound network | fetch to user-supplied URLs, webhooks, importers | WEB-10 |
 | §5 Deserialization and files | pickle/Java/YAML, upload, download by path | WEB-11..WEB-12 |
 
-Sections §6 to §11 (`WEB-13`..`WEB-22`) are in `web-api-clientside-logic.md`.
+Sections §6 to §10 (`WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`, `WEB-27`) are in `web-api-clientside-logic.md`; §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`.
 
 ## How to use a procedure
 

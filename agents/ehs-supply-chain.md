@@ -23,8 +23,9 @@ Why the order is fixed: measured blind against the same model working with no pa
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/supply-chain.md`. It holds §1-§7 and `SUP-01`..`SUP-15`; its triage section (§7) is mandatory before you report any dependency finding.
 2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/supply-chain-secrets-malware.md`, with §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so open that file on essentially every engagement. It is the same pack, not another role's.
-3. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking any scanner — this role has the highest false-positive exposure of the squad and the strictest tool licence constraints.
-4. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/supply-chain-source-lifecycle.md`, with §10-§11 and `SUP-21`..`SUP-26` — who can write and tag the code that gets published, signature verification that accepts any signer, binaries tracked in the tree, components past end of support, suppressed findings, and the dependency that resolves although nothing in the project asked for it. Open it before you call any dependency result clean.
+4. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` before invoking any scanner — this role has the highest false-positive exposure of the squad and the strictest tool licence constraints.
+5. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
 
 ## Safety contract
 

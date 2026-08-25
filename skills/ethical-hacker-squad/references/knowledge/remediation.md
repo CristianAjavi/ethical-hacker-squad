@@ -2,7 +2,7 @@
 
 > **When to load this file:** in `harden` mode, when confirmed findings exist and patches have to be applied.
 > **Do not load it if:** you are verifying rather than repairing - that is the sibling file, [remediation-verification.md](remediation-verification.md), which holds `VER-01`..`VER-09`.
-> **Cost:** ~198 lines. **Never the same person and never the same agent repairs and verifies.**
+> **Cost:** ~197 lines. **Never the same person and never the same agent repairs and verifies.**
 
 ## Selective loading index
 

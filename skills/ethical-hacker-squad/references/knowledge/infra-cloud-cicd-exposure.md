@@ -2,13 +2,13 @@
 
 > **When to load this file:** the inventory contains CI/CD workflows (`.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`), several deployment environments, a Terraform state backend or a secret manager, or a live host or cluster named in scope.
 > **Do not load it if:** the work is confined to infrastructure as code, container images or Kubernetes manifests — those are `infra-cloud.md` §1-§3.
-> **Cost:** ~151 lines. Load by section using the index. The rest of the pack: `infra-cloud.md` holds §1-§3 and `INF-01`..`INF-12`; `infra-cloud-cicd-platforms.md` holds §7 and `INF-19`..`INF-23`, the same classes on GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket.
+> **Cost:** ~180 lines. Load by section using the index. The rest of the pack: `infra-cloud.md` holds §1-§3 and `INF-01`..`INF-12`; `infra-cloud-cicd-platforms.md` holds §7 and `INF-19`..`INF-23`, the same classes on GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
 |---|---|---|
 | §4 CI/CD and GitHub Actions | `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile` | INF-13 … INF-16 |
-| §5 Environments, state and deployment secrets | multiple environments, state backend, secret manager | INF-17 |
+| §5 Environments, state and deployment secrets | multiple environments, state backend, secret manager, any configuration read with a fallback | INF-17, INF-24 |
 | §6 Network exposure and remote surface | a real cloud account or a reachable cluster | INF-18 |
 
 ## How to use a procedure
@@ -125,6 +125,35 @@ Rules: FP-04, FP-09.
 **Minimal test**: `rg -n 'backend "' --glob '*.tf'` and `git log --all --name-only --pretty=format: | rg 'tfstate'`. If state was ever in git, the credential is considered compromised and the deliverable is a rotation plan, not "remove it from the repo".\
 **Traceability**: `CWE-312` · `CWE-200` · `CWE-668` · `A02:2025` · `A04:2025` · `CICD-SEC-1` · `CICD-SEC-7` · `NIST 800-53 CM` · `CCM DSP`\
 **Tooling**: manual review plus `gitleaks dir . --report-format sarif --report-path out.sarif --redact --no-banner` (MIT, fully offline) for leaked state. Context: GitGuardian State of Secrets Sprawl 2026 measured **28.65 million new hardcoded secrets in public GitHub during 2025 (+34%)** and that **64% of the valid secrets from 2022 were still live**.
+
+### INF-24 A configuration name the code reads and nothing in the project defines
+
+`WEB-23` finds a name that is **declared and nobody reads**. This is the mirror image: a name that is **read and nobody declares**. Both are joins across files, both survive every analyser, and this one ends somewhere worse — because the idiom that reads configuration safely is the same idiom that turns an absent value into silence.
+
+**Where to look**
+- Every read of a configuration name **with a fallback**: `os.environ.get("X", ...)`, `os.getenv("X", ...)`, `process.env.X || ...`, `System.getenv("X")` followed by a null branch, `viper.GetString`, `config.get("x", ...)`, `env("X", ...)` in a settings module.
+- The definition side, all of it, or the subtraction is worthless: `.env`, `.env.example`, `docker-compose*.y*ml` `environment:`, `Dockerfile` `ENV`, Kubernetes `env:` and `envFrom:`, Helm `values.yaml`, Terraform variables and task definitions, the CI `env:` blocks, and the deployment documentation.
+- The same shape one level out: a feature flag the code queries and no flag file defines; an internal route or job name a caller builds by string and no route table registers; a template or migration referenced by a name that resolves to nothing.
+- **Highest yield where the default is itself the control**: a secret, a signing key, an issuer, an allowlist, a mode selector, a `*_ENABLED` flag guarding a check.
+
+**Vulnerable pattern** — the program starts, nothing fails, and the fallback is the security decision:
+```python
+SECRET = os.environ.get("JWT_SECRET", "dev-secret")     # nothing in the repo sets JWT_SECRET
+STRICT = os.environ.get("VERIFY_AUDIENCE", "false")     # ... and the check is off by default
+```
+This is the shape generated code produces most reliably, because the model writes against a deployment it cannot see: it invents a plausible variable name and, being careful, gives it a default.
+
+**What rules it out (false positive)**
+- The value is injected by something outside the repository — a secret manager, a platform variable, an operator-managed configuration. **The exported variable list or a written statement is required; without it the answer is `UNKNOWN`, never `HOLDS`.** This is the normal case for this class and it is precisely why the finding gets written down rather than dropped.
+- The name is consumed by a mechanism a symbol search cannot see: a prefix-based loader, a struct with environment tags read wholesale, a chart that templates the whole block. Prove it by naming the consumer, as `WEB-23` requires.
+- The default is not a security decision: a page size, a log level, a display string. Say which, and move on.
+- **`FP-02` does not exculpate this class, and answering it wrongly is the standard mistake.** A placeholder such as `changeme` or `dev-secret` is indeed not attacker-controlled — and that is not why it is a finding. It is a finding because the value is *known*, identical in every deployment that forgot the variable, and readable in this repository.
+
+Rules: FP-02, FP-04, FP-08, FP-09.
+
+**Minimal test**: build the two lists and subtract them, in that order. Read every name with `rg -n --no-heading 'environ\.get\(|getenv\(|process\.env\.|env\(' .` over the source — **the trailing path is not optional**, since with none and a non-interactive stdin `rg` reads stdin and hangs — and every name defined with `rg -n -e '^\s*[A-Z0-9_]+\s*[:=]' .env* docker-compose*.y*ml` plus the chart and the manifests. For each leftover, print **the default that stays in force** and answer one question in writing: does that default decide a security property? A name whose absence turns a check off is the finding; a name whose absence changes a page size is a note. Then do the same subtraction for feature flags and for internal route names.\
+**Traceability**: `CWE-1188` · `CWE-453` · `CWE-665` · `A05:2025` · `ASVS 5.0 V14` · `SSDF PW` · `NIST 800-53 CM`
+**Tooling**: `rg` and the subtraction. No scanner reports it, for the same reason no scanner reports `WEB-23`: the code is well formed, the read is idiomatic and the default is syntactically ordinary — the defect is the **absence of a definition in a different file**, and absence is not a pattern. A secret scanner does not fire either: `dev-secret` has no distinctive format. Report the count and the ones whose default is load-bearing, not the whole list, and when the definitions live in the platform say so and ask for them rather than calling the surface clean.
 
 ## §6 Network exposure and remote surface
 

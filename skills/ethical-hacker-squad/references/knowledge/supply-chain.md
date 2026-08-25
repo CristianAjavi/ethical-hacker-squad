@@ -4,7 +4,7 @@
 > **Do not load it if:** the audit only covers infrastructure or network configuration (use `infra-cloud.md`) or application logic with no relevant external dependencies.
 > **Cost:** ~333 lines. Load by section using the index; §7 changes the report the most.
 > **Second file of this pack:** `supply-chain-secrets-malware.md` holds §8-§9 and `SUP-16`..`SUP-20` — secrets in the working tree, in git history and outside the repository, plus behavioural indicators of a malicious package. §8 applies to every git repository, so that file is opened on almost every engagement; it carries its own index.
-> **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-25` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, and suppressed CVEs. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
+> **Third file of this pack:** `supply-chain-source-lifecycle.md` holds §10-§11 and `SUP-21`..`SUP-26` — who can write and tag the code that gets published, signature verification that accepts any signer or gates nothing, binaries committed to the tree, components past end of support, suppressed CVEs, and the dependency that resolves although nothing in the project asked for it. Open it whenever you audit the repository that produces the artifact, and **always before closing a §7 verdict as clean**: `SUP-24` is what separates *clean* from *unmeasured*. It carries its own index.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
@@ -12,7 +12,7 @@
 | §1 Manifests and locks | `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml` | SUP-01, SUP-02 |
 | §2 Install scripts | `package.json` with `scripts`, `setup.py`, `build.rs`, gradle | SUP-03, SUP-04 |
 | §3 Dependency confusion and registries | `.npmrc`, `pip.conf`, `settings.xml`, a private registry | SUP-05, SUP-06 |
-| §4 Typosquatting and slopsquatting | new dependencies, LLM-assisted code | SUP-07, SUP-08 |
+| §4 Typosquatting and slopsquatting | new dependencies, LLM-assisted code | SUP-07, SUP-08 (+ `SUP-26`) |
 | §5 CI/CD and publishing integrity | `.github/workflows/`, `release.yml`, registry tokens | SUP-09, SUP-10 |
 | §6 Provenance, SBOM and signing | SLSA requirements, SBOM, binary distribution | SUP-11, SUP-12 |
 | §7 Dependency vulnerability triage | any SCA output (always) | SUP-13, SUP-14, SUP-15 |
@@ -179,13 +179,13 @@ Rules: FP-09.
 import fastapi_security_utils          # the LLM proposed it; it does not exist... until someone publishes it
 ```
 **What rules it out (false positive)**
-- The package exists, is old, and is the one the project actually uses: the hallucination was the reviewer's, not the code's.
+- The package exists, is old, and is the one the project actually uses: the hallucination was the reviewer's, not the code's. **Existing is not enough on its own** — a name someone registered *after* the code that imports it also exists, and that case is `SUP-26`.
 - The import resolves to an internal module of the repository by path.
 
 Rules: FP-09.
 
 **Minimal test**: extract every top-level import and subtract those resolving to local modules or declared dependencies; each leftover is verified **against the real registry** before you accept it or write it into any deliverable. The same rule binds you: every dependency or version you suggest gets checked before you write it down.\
-**Traceability**: `CWE-1357` · `CWE-829` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR`\
+**Traceability**: `CWE-1357` · `CWE-829` · `LLM07:2026` · `LLM04:2026` · `A03:2025` · `A06:2025` · `SSDF PW` · `NIST 800-53 SR`\
 **Tooling**: your own import-extraction script plus an existence query. Evidence: Spracklen et al., **USENIX Security 2025** (arXiv:2406.10279), across 576,000 samples and 16 models, measured **5.2% hallucinated packages in commercial models and 21.7% in open ones**, with **205,474 unique** invented names; Sonatype reports GPT-5 hallucinated **27.8% of recommended versions**. A hallucinated, repeatable name is a name an attacker can register.
 
 ## §5 CI/CD and publishing integrity

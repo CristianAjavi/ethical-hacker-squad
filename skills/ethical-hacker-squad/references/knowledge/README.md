@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over eighteen files, 4,238 lines in total, 164 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over nineteen files, 4,396 lines in total, 169 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -8,29 +8,30 @@ Eight packs, one per role, spread over eighteen files, 4,238 lines in total, 164
 2. The **specialist reads its own pack**, and only the sections its inventory justifies. Every pack opens with a selective-loading index for exactly this.
 3. One role, one pack. A specialist that needs another pack's procedure is a sign the leader split the work wrong; report it instead of reading across.
 4. `remediation.md` is the exception: it is shared by two roles, part A for the remediator and part B for the verifier. Each reads its own part.
-5. Five packs ship as **more than one file**, because a single file above 32 KiB stops being selectively loadable and blows the plugin size budget. The files of a pack are one pack: same role, same procedure numbering, disjoint sections. The first file is the entry point and names its siblings in its header; open a sibling only when the inventory reaches its sections. `mobile` ships as three (`mobile.md`, `mobile-runtime-trust.md`, `mobile-ios.md`), and so do `supply-chain` (`supply-chain.md`, `supply-chain-secrets-malware.md`, `supply-chain-source-lifecycle.md`), `ai-safety` (`ai-safety.md`, `ai-safety-data-output.md`, `ai-safety-agent-runtime.md`) and `infra-cloud` (`infra-cloud.md`, `infra-cloud-cicd-exposure.md`, `infra-cloud-cicd-platforms.md`).
+5. Five packs ship as **more than one file**, because a single file above 32 KiB stops being selectively loadable and blows the plugin size budget. The files of a pack are one pack: same role, same procedure numbering, disjoint sections. The first file is the entry point and names its siblings in its header; open a sibling only when the inventory reaches its sections. `mobile` ships as three (`mobile.md`, `mobile-runtime-trust.md`, `mobile-ios.md`), and so do `supply-chain` (`supply-chain.md`, `supply-chain-secrets-malware.md`, `supply-chain-source-lifecycle.md`), `ai-safety` (`ai-safety.md`, `ai-safety-data-output.md`, `ai-safety-agent-runtime.md`), `infra-cloud` (`infra-cloud.md`, `infra-cloud-cicd-exposure.md`, `infra-cloud-cicd-platforms.md`) and `web-api` (`web-api.md`, `web-api-clientside-logic.md`, `web-api-logging.md`). The web pack reached three the day both of its files were within a kilobyte of the budget: a pack file that cannot grow is no longer where the next procedure goes, and squeezing one in would have left the next contributor to discover the ceiling by breaking the build.
 
 ## The packs
 
 | Pack file | Role | Lines | Procedures | Load when the inventory has |
 |---|---|---|---|---|
-| `web-api.md` | `ehs-web-api` | ~357 | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
-| `web-api-clientside-logic.md` | `ehs-web-api` | ~297 | `WEB-13`..`WEB-23`, `WEB-26` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, error and log output |
+| `web-api.md` | `ehs-web-api` | ~358 | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
+| `web-api-clientside-logic.md` | `ehs-web-api` | ~306 | `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`..`WEB-27` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, and any control whose presence is being read as proof that it works |
+| `web-api-logging.md` | `ehs-web-api` | ~66 | `WEB-22`, `WEB-28` | Exception handlers, a logger, stack traces returned to a client, a log viewer, a log aggregator |
 | `mobile.md` | `ehs-mobile` | ~313 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
 | `mobile-runtime-trust.md` | `ehs-mobile` | ~119 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
 | `infra-cloud.md` | `ehs-infra-cloud` | ~287 | `INF-01`..`INF-12` | Terraform and other IaC, Dockerfiles and images, Kubernetes manifests, Helm |
-| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~151 | `INF-13`..`INF-18` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
+| `infra-cloud-cicd-exposure.md` | `ehs-infra-cloud` | ~180 | `INF-13`..`INF-18`, `INF-24` | CI workflows, several deployment environments, Terraform state, a live host or cluster in scope |
 | `infra-cloud-cicd-platforms.md` | `ehs-infra-cloud` | ~146 | `INF-19`..`INF-23` | `.gitlab-ci.yml`, a `Jenkinsfile`, `azure-pipelines.yml`, `.circleci/config.yml` or `bitbucket-pipelines.yml` |
 | `supply-chain.md` | `ehs-supply-chain` | ~333 | `SUP-01`..`SUP-15` | Any manifest or lockfile, any publishing pipeline, any SCA output to triage |
 | `supply-chain-secrets-malware.md` | `ehs-supply-chain` | ~117 | `SUP-16`..`SUP-20` | Any git repository, a recently added dependency, a suspected incident |
-| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~141 | `SUP-21`..`SUP-25` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
-| `ai-safety.md` | `ehs-ai-safety` | ~308 | `AI-01`..`AI-11` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
+| `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~165 | `SUP-21`..`SUP-26` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
+| `ai-safety.md` | `ehs-ai-safety` | ~337 | `AI-01`..`AI-11`, `AI-29` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
 | `ai-safety-data-output.md` | `ehs-ai-safety` | ~350 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
 | `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~136 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~354 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
 | `local-app.md` | `ehs-local-app` | ~321 | `LOC-01`..`LOC-15` | A command-line tool, a desktop or WebView shell, a published library or SDK, an installer or updater, a local daemon or a loopback listener |
-| `remediation.md` | `ehs-remediator` | ~198 | `REM-01`..`REM-07` | `harden` mode, applying a patch |
+| `remediation.md` | `ehs-remediator` | ~197 | `REM-01`..`REM-07` | `harden` mode, applying a patch |
 | `remediation-verification.md` | `ehs-verifier` | ~252 | `VER-01`..`VER-09` | checking someone else's work: a patch in `harden`/`verify`, or a finished finding list in `audit` (`VER-09`) |
 
 ## Procedure anatomy
