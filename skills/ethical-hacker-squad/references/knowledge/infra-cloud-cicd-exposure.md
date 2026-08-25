@@ -141,7 +141,7 @@ Rules: FP-04, FP-09.
 SECRET = os.environ.get("JWT_SECRET", "dev-secret")     # nothing in the repo sets JWT_SECRET
 STRICT = os.environ.get("VERIFY_AUDIENCE", "false")     # ... and the check is off by default
 ```
-This is the shape generated code produces most reliably, because the model writes against a deployment it cannot see: it invents a plausible variable name and, being careful, gives it a default.
+The mechanism is worth stating because it is what makes a generator produce this shape at all: the model writes against a deployment it cannot see, so it invents a plausible name and, being careful, gives it a default. **How often that happens is not known.** No published measurement exists for configuration names - unlike hallucinated *package* names, which are measured - so this procedure stands on the mechanism and on the cost of the default that stays in force, never on a rate. Do not report it as a frequency.
 
 **What rules it out (false positive)**
 - The value is injected by something outside the repository — a secret manager, a platform variable, an operator-managed configuration. **The exported variable list or a written statement is required; without it the answer is `UNKNOWN`, never `HOLDS`.** This is the normal case for this class and it is precisely why the finding gets written down rather than dropped.
