@@ -131,9 +131,9 @@ patch, reflect, report, reproduce and review — holding **25 cases between them
 alongside four sandbox backends under `reference/core/environments/`. That is a
 finer instrument than this bench had, and it is why this directory exists.
 
-The same leak scan this gate runs on our own cases was pointed at those eight
-sets. **One row of the twenty-five would not pass it**, and it is the only one in
-`patch_dataset.json`:
+The same leak scan this gate runs on our own cases is pointed at those eight
+sets, one map per set, and the gate prints a line for each. **One row of the
+twenty-five would not pass it**, and it is the only one in `patch_dataset.json`:
 
 ```
 case_id                   patch_sql_interpolation
@@ -153,7 +153,7 @@ git clone --depth 1 https://github.com/google/mantis.git /tmp/mantis
 EHS_MANTIS_SNAPSHOT=/tmp/mantis bash scripts/gates/gate-triage-stage.sh
 ```
 
-Four things must be said about that number rather than left for the reader to
+Five things must be said about that number rather than left for the reader to
 discover.
 
 1. **Only the remedy family fires.** The token family found nothing anywhere in
@@ -163,13 +163,21 @@ discover.
 2. **A naive version of the token family would have produced a false hit.**
    Matching every ground-truth string rather than the declared key fields flags
    `reflect_dataset.json` on the words `database` and `environment`, which are
-   ordinary English. The shipped map declares which fields are the key
-   (`ground_truth.expected_status`, `ground_truth.invariant`) for that reason.
+   ordinary English. Each shipped map declares which fields are its key for
+   that reason, and two sets declare none: `deduplication` keys on a clustering
+   expectation and `report` on a schema and two counts, so neither states a
+   value a case could echo.
 3. **It is reported, never enforced.** A gate in this repository that failed
    because somebody else's file changed is a gate nobody could keep green. With
    `EHS_MANTIS_SNAPSHOT` unset the gate says the measurement was not taken, which
    is not the same as saying it was clean.
-4. **Their datasets are small and so is this one.** Twenty-five cases across
+4. **One presented field names a fix on purpose, and is not counted.**
+   `report_dataset.json` presents `remediation`. That stage is asked to WRITE a
+   report from findings it was handed, so the remedy is input by design rather
+   than an answer leaked into the question, and the scan reads it without
+   flagging it. A scanner that called that a leak would be wrong about a
+   neighbour's work, which is worse than not measuring.
+5. **Their datasets are small and so is this one.** Twenty-five cases across
    eight stages, one of them a single case; fifteen here across one stage.
    Neither number supports a claim about which product triages better, and none
    is made.
