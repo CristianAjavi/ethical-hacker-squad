@@ -1,5 +1,13 @@
 # 2026-08-25 — the same advisory, with the step where the agent starts
 
+
+> **Scoring note, added 2026-08-26.** The reports in this directory were transcribed by the
+> orchestrator from what each arm returned, not written by the arms themselves, so they carry
+> no provenance block. `scripts/bench/score_blind.py` now refuses to score an untraced report
+> by default; reproducing this round's numbers needs `--allow-untraced`. That flag is not a
+> convenience — it is the record that these particular artefacts passed through a person's
+> hands, and the reason it exists is on the scorer's own page.
+
 **Refuted. 0 of 4, against a band of 3 of 4.** Three rounds have now failed to move this,
 and per the multiplicity commitment made before the run, **this target is retired for this
 intervention.** The position published in
