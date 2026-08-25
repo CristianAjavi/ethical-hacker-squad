@@ -2,6 +2,13 @@
 
 Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
 
+## Reproduction
+
+Five of the planted defects now carry an executable probe, and the probes are cross-checked
+against both keys this corpus holds — see [reproduction/](reproduction/). Ten of the 43
+planted defects are reproducible without installing anything; five ship today. A green
+there is five defects proved, not a bench reproduced.
+
 ## The measured result so far
 
 | Run | Detected | Decoys reported | Notes |
