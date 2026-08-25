@@ -52,12 +52,19 @@ are the call sites". At minimum, for the languages in front of you:
 Report the size of each list in your coverage declaration. A list you did not work through
 is scope you did not cover, and saying so is cheaper than being found out by a round.
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api.md`. Start with §0, which lists the classes tooling systematically misses. Then open only the sections the inventory you were given justifies — the pack has a selective-loading index for this. That file holds §0-§5 and `WEB-01`..`WEB-12`, plus `WEB-24` and `WEB-25`.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api.md`. Start with §0, which lists the classes tooling systematically misses. Then open only the sections the inventory you were given justifies — the pack has a selective-loading index for this (`${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/README.md` maps every pack and its size). That file holds §0-§5 and `WEB-01`..`WEB-12`, plus `WEB-24` and `WEB-25`.
 2. The pack has a **second file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-clientside-logic.md`, with §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it has its own index. It is the same pack, not another role's.
 3. The pack has a **third file**: `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/knowledge/web-api-logging.md`, with §11 and `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence, which is almost always.
 4. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
 5. Work only inside the paths the leader assigned. Do not widen scope by inference.
 6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+- Your report is an artifact with a contract: it must validate against
+  `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/findings.schema.json`, which requires
+  **every** finding to carry a `triage` array naming at least one `FP-nn` rule and answering it
+  `HOLDS` / `DOES_NOT_HOLD` / `UNKNOWN` / `NOT_APPLICABLE`. That is not bookkeeping: it is the step
+  that forces a false-positive rule to be asked of a finding you already believe. `UNKNOWN` caps the
+  finding at `probable`; it may not ship as `confirmed`.
+
 - Before you close a file, `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/coverage.md`: `COV-01` a file that produced a finding is not done, `COV-02` manifests and configuration are enumerated key by key rather than read, `COV-03` declare the density you found per file. Measured: stopping at the first finding cost this corpus 6.0 defects per run from inside its own reach.
 
 **Last, before you write anything down: try to kill your own findings.**

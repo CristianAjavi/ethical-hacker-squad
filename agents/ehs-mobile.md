@@ -27,6 +27,13 @@ Why the order is fixed: measured blind against the same model working with no pa
 4. If you will invoke any tool, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
 5. Establish immediately whether you have a **compiled artifact** or **source**, and state what may legitimately be asserted from each. Conclusions drawn from decompiled output carry lower confidence by construction.
 6. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+- Your report is an artifact with a contract: it must validate against
+  `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/findings.schema.json`, which requires
+  **every** finding to carry a `triage` array naming at least one `FP-nn` rule and answering it
+  `HOLDS` / `DOES_NOT_HOLD` / `UNKNOWN` / `NOT_APPLICABLE`. That is not bookkeeping: it is the step
+  that forces a false-positive rule to be asked of a finding you already believe. `UNKNOWN` caps the
+  finding at `probable`; it may not ship as `confirmed`.
+
 - Before you close a file, `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/coverage.md`: `COV-01` a file that produced a finding is not done, `COV-02` manifests and configuration are enumerated key by key rather than read, `COV-03` declare the density you found per file. Measured: stopping at the first finding cost this corpus 6.0 defects per run from inside its own reach.
 
 **Last, before you write anything down: try to kill your own findings.**
