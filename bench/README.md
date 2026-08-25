@@ -26,6 +26,15 @@ deferred `%s` idiom, and the probe shows one call still emits two lines in a lin
 log. Six auditors held up a planted defect as the benign twin of the planted defect beside
 it — a false negative measured against a prediction that predates it.
 
+## Three arms on the vibecoding case — pre-registered, competitors not yet run
+
+[2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — the
+criteria are committed and **neither competitor arm has run**. The question is one defect,
+not a scoreboard: `P-52` was missed by this corpus in 6 of 6 runs, with all six naming it
+as the safe pattern. A miss by one product is a defect in that product; a miss by every
+product is a property of the class. The outcome that costs this project most — a competitor
+finding it — is named in the pre-registration as a live possibility.
+
 ## Reproduction
 
 All ten planted defects that were reproducible without installing anything now carry an
