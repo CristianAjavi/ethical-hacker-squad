@@ -43,6 +43,31 @@ this author wrote it.
 `gate-bench-integrity.sh` did not catch it: it checks that a comparative round ships prompts,
 and the round shipped prompts. A file can be present and incomplete.
 
+## The suppression was symmetric, and that is worse
+
+The paragraph above says no `ours` launch carried a constraint "because this project's corpus is
+nine role files executed by one agent — there was nothing to constrain." **That is wrong, and it
+is the more serious half of this correction.**
+
+`SKILL.md` §3 is called *Form the adaptive squad* and says:
+
+> Staff two to four relevant specialists… **Run them in parallel** when their files and tests do
+> not collide. Reserve capacity for `ehs-remediator` and `ehs-verifier`.
+
+Every prompt in every round pointed at **one** role file and said other roles "apply where the
+tree calls for them". A single agent read them. **This project never formed a squad either.**
+
+So the honest statement is not that one arm was constrained. It is that **neither product ran as
+designed in nine rounds**, and a product whose entry point is called *the adaptive squad* was
+measured without ever adapting or forming one.
+
+It also reinterprets an earlier finding. `VER-09` fired **zero times** across four measured runs,
+and that was written up as evidence that a rule in a file the executor reads is a rule the
+executor can ignore. It is at least as likely that it fired zero times because **`ehs-verifier`
+is a separate specialist that §3 reserves capacity for, and there was never a second agent to
+be it.** That page's conclusion is not withdrawn — the rule may still be weak — but its evidence
+no longer establishes it, and it now says so.
+
 ## What is and is not undone
 
 - **The recall and decoy numbers stand.** They measure what the arms did on the day.

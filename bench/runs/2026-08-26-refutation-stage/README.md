@@ -6,6 +6,11 @@
 > inline it becomes what this project already is. This round therefore compares two prose
 > corpora executed by one agent each, **not two products as they ship**. The numbers stand;
 > the claim narrows. See [`../CORRECTION-inline-constraint.md`](../CORRECTION-inline-constraint.md).
+>
+> **And this page's central finding needs the same care.** `VER-09` fired zero times, which
+> this page reads as a rule being ignored. `SKILL.md` §3 staffs `ehs-verifier` as a separate
+> specialist, and every run here was a single agent — so there was **never a second agent to
+> be it**. The conclusion is not withdrawn; the evidence no longer establishes it.
 
 > **The harness bypassed a shipped control.** Every round's prompt asked for a report shape
 > without the `triage` field that `findings.schema.json` requires and
