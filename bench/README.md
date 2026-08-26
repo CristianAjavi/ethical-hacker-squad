@@ -86,6 +86,20 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The join moves composition detection by a third of what was asked
+
+[2026-08-26, join effect](runs/2026-08-26-join-effect/) — **not supported.** With
+`path_coverage.py` wired in, composition recall goes **62.5% → 65.6%**: +3.1 points against a
+band of 8, or 0.75 defects out of 24. Single-file recall unchanged, decoys +0.50 and inside
+tolerance, so the registered failure mode — recall bought with noise — did not happen. A
+within-arm measurement; it says nothing about any competitor.
+
+A real run found a defect no fixture had: on a tree of six independent services the join puts
+every route in one namespace and emits **32 false UNGUARDED**. The run isolated the true
+`DEAD GUARD` only by re-running the tool per directory. The tool was not changed mid-arm, the
+fix is filed, and this corpus is retired for the question, so whether the fix would have
+carried it to the band cannot be answered here.
+
 ## A blind spot that belongs to the field
 
 [2026-08-27, composition](runs/2026-08-27-composition/) — **refuted** (73.6% against 72.9%),
