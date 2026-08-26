@@ -60,3 +60,29 @@ The four new reports in [`runs/`](runs/), each with `tools_run` and `from_tool` 
 time any round can say which findings came from a tool rather than from a reading. The
 `without` arm is not copied: it is the four already published in
 [`../2026-08-27-composition/runs/`](../2026-08-27-composition/runs/), unmodified.
+
+## Correction, after the partition fix: the tool's real precision is narrower than first claimed
+
+The commit that shipped `path_coverage.py` said it "lands three more flags on files where keyed
+composition defects live, with zero flags on a decoy and zero on nothing." That is literally
+true and it was misleading.
+
+Fixing the partition, and the earlier precedence fix its own battery forced, changed what the
+tool reports on this corpus from **five flags to one**:
+
+| flag, before the fixes | what it actually was |
+|---|---|
+| `ledger-flow` `'/internal'` | **true** — `T-14`, by its exact keyed mechanism |
+| `atlas-sync` `'/auth/token'`, `'/auth/refresh'` | **false** — `r.Post(...)` route registrations misread as guards |
+| `pulse-notify` × 2 | **false** — a config string and a route, neither a guard |
+
+Four of the five were wrong about *why*, while landing on files where keyed defects happen to
+live. Reporting that as "flags on files where defects live" credited the tool for accuracy it
+did not have. **On this corpus it makes one flag and one true positive**, and that is the number
+that should have been published.
+
+The precision is better than the first claim implied; the *reach* is much worse. One shape, one
+service out of six.
+
+Nothing in the measurement above changes — those four runs used the version with the precedence
+fix already in, and the partition fix landed after all four had finished, deliberately.

@@ -186,14 +186,55 @@ def main(argv=None) -> int:
     if not a.target.is_dir():
         print(f"UNMEASURABLE not a directory: {a.target}")
         return 2
-    routes, guards, parsed = scan(a.target)
+
+    # PARTITION. A repository of independent services shares no path namespace:
+    # /admin in one is unrelated to /admin in another. Joined as one tree, almost
+    # every route reads as unguarded-while-a-sibling-is-protected.
+    #
+    # Measured, on a real run rather than on a fixture: pointed at six services
+    # at once this emitted 32 UNGUARDED, and the run found the one true DEAD
+    # GUARD only by re-running the tool per directory on its own initiative. A
+    # tool whose output has to be worked around is a tool that is wrong.
+    #
+    # The heuristic is deliberately dull: if the target's immediate children are
+    # directories and more than one of them holds routes, each is its own
+    # namespace. Say so, because a reader who disagrees has to be able to see it.
+    subdirs = [d for d in sorted(a.target.iterdir()) if d.is_dir() and d.name not in SKIP_DIRS]
+    partitions = [a.target]
+    if len(subdirs) > 1:
+        with_routes = [d for d in subdirs if scan(d)[0]]
+        if len(with_routes) > 1:
+            partitions = with_routes
+            print(f"  partitioned into {len(partitions)} independent trees "
+                  f"({', '.join(d.name for d in partitions)}): a path namespace is per service, "
+                  f"and joining them makes almost everything look unguarded")
+
+    rc_worst, tot_routes, tot_guards, tot_parsed, tot_dead, tot_ung = 0, 0, 0, 0, 0, 0
+    for part in partitions:
+        r, g, n = run_one(part, a, len(partitions) > 1)
+        tot_routes += r[0]; tot_guards += r[1]; tot_parsed += n
+        tot_dead += r[2]; tot_ung += r[3]
+        rc_worst = max(rc_worst, g)
+    if len(partitions) > 1:
+        print(f"  {tot_routes} route path(s), {tot_guards} guard path(s) in {tot_parsed} file(s) "
+              f"across {len(partitions)} tree(s); {tot_dead} dead guard(s), "
+              f"{tot_ung} unguarded sibling(s)")
+    return rc_worst
+
+
+def run_one(target, a, prefixed):
+    routes, guards, parsed = scan(target)
     if not parsed:
-        print(f"UNMEASURABLE nothing readable under {a.target}")
-        return 2
+        if prefixed:
+            return (0, 0, 0, 0), 0, 0
+        print(f"UNMEASURABLE nothing readable under {target}")
+        return (0, 0, 0, 0), 2, 0
     if not routes:
-        print(f"UNMEASURABLE no route-like path literal found under {a.target}; "
+        if prefixed:
+            return (0, 0, 0, 0), 0, parsed
+        print(f"UNMEASURABLE no route-like path literal found under {target}; "
               "this check has nothing to join")
-        return 2
+        return (0, 0, 0, 0), 2, parsed
 
     dead = {g: w for g, w in guards.items() if not any(covers(g, r) for r in routes)}
 
@@ -205,22 +246,25 @@ def main(argv=None) -> int:
         if any(s in covered for s in siblings):
             unguarded.append((r, [s for s in siblings if s in covered]))
 
+    tag = target.name + "/" if prefixed else ""
     if a.json:
         print(json.dumps({
-            "files": parsed, "routes": len(routes), "guards": len(guards),
+            "tree": str(target), "files": parsed, "routes": len(routes), "guards": len(guards),
             "dead_guards": {g: w for g, w in dead.items()},
             "unguarded_siblings": [{"route": r, "guarded_siblings": s} for r, s in unguarded],
         }, indent=2))
     else:
         for g, w in sorted(dead.items()):
             f, ln, raw = w[0]
-            print(f"  DEAD GUARD   {g!r} guards nothing: no route starts with it   [{f}:{ln}]")
+            print(f"  DEAD GUARD   {g!r} guards nothing: no route starts with it   [{tag}{f}:{ln}]")
         for r, sibs in unguarded:
             for f, ln, raw in routes[r][:1]:
-                print(f"  UNGUARDED    {r!r} has no guard, but sibling {sibs[0]!r} does   [{f}:{ln}]")
-        print(f"  {len(routes)} route path(s), {len(guards)} guard path(s) in {parsed} file(s); "
-              f"{len(dead)} dead guard(s), {len(unguarded)} unguarded sibling(s)")
-    return 1 if (dead or unguarded) else 0
+                print(f"  UNGUARDED    {r!r} has no guard, but sibling {sibs[0]!r} does   [{tag}{f}:{ln}]")
+        if not prefixed:
+            print(f"  {len(routes)} route path(s), {len(guards)} guard path(s) in {parsed} file(s); "
+                  f"{len(dead)} dead guard(s), {len(unguarded)} unguarded sibling(s)")
+    return ((len(routes), len(guards), len(dead), len(unguarded)),
+            1 if (dead or unguarded) else 0, parsed)
 
 
 if __name__ == "__main__":
