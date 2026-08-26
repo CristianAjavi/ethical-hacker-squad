@@ -86,6 +86,20 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The diagnosis reproduced and the remedy failed
+
+[2026-08-26, FP-11](runs/2026-08-26-fp11/) — **not supported**, eighth round. **74.3% recall
+against 65.3%** — the widest lead yet, +9.0 — and **5.50 decoys against 4.25**.
+
+The registered secondary is the result. On a corpus whose decoy shapes are evenly spread,
+**the entire excess is one shape**: `narrowed-sibling`, 1.75 against 0.25, +1.50 of a +1.25
+total. Every other shape is level or better for this project.
+
+So the seventh round's diagnosis — which rested on n=2 and said so — **reproduced**. And
+`FP-11`, the rule written for it, cited in the file every role reads, given an eval case and a
+sealed key row, **did not move the number**. A rule the executor reads is still a rule the
+executor can read and not apply, and that is now measured five ways in one day.
+
 ## The tools did not carry the round
 
 [2026-08-26, four tools](runs/2026-08-26-four-tools/) — **not supported**, seventh round, same
