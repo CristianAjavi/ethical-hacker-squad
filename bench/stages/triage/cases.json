@@ -1,402 +1,421 @@
 {
- "dataset": "triage-stage",
- "about": "One case is one triage step. A finding was raised, somebody offered a reason it should not be reported, and the step is to say which of the rules in skills/ethical-hacker-squad/references/triage.md that reason invokes, what the answer to that rule is, and what follows for the finding. The answer is not in this file; it is in keys/, and scripts/gates/gate-triage-stage.sh checks that it stays there.",
- "task": "For the case below, name the triage rule the offered reason invokes, answer that rule from the closed vocabulary the rules file declares, and state what follows for the finding. Give the reason for the answer, naming the artifact it rests on.",
- "presented_fields": [
-  "finding.title",
-  "finding.detail",
-  "artifact[].path",
-  "artifact[].content",
-  "exculpation_offered",
-  "evidence_available",
-  "evidence_absent"
- ],
- "cases": [
-  {
-   "case": "TS-01",
-   "finding": {
-    "title": "Report filter concatenated into SQL",
-    "detail": "The `/reports` handler builds its WHERE clause by concatenating the `org` query parameter into the statement text before it reaches the driver."
-   },
-   "artifact": [
+  "dataset": "triage-stage",
+  "about": "One case is one triage step. A finding was raised, somebody offered a reason it should not be reported, and the step is to say which of the rules in skills/ethical-hacker-squad/references/triage.md that reason invokes, what the answer to that rule is, and what follows for the finding. The answer is not in this file; it is in keys/, and scripts/gates/gate-triage-stage.sh checks that it stays there.",
+  "task": "For the case below, name the triage rule the offered reason invokes, answer that rule from the closed vocabulary the rules file declares, and state what follows for the finding. Give the reason for the answer, naming the artifact it rests on.",
+  "presented_fields": [
+    "finding.title",
+    "finding.detail",
+    "artifact[].path",
+    "artifact[].content",
+    "exculpation_offered",
+    "evidence_available",
+    "evidence_absent"
+  ],
+  "cases": [
     {
-     "path": "routes/reports.js",
-     "content": "const express = require('express');\nconst router = express.Router();\nconst { pool } = require('../lib/db');\nconst { sanitizeQuery } = require('../lib/sanitize');\n\n// The billing export goes through the sanitiser.\nrouter.get('/billing', sanitizeQuery, async (req, res) => {\n  const rows = await pool.query('SELECT * FROM invoices WHERE org = $1', [req.query.org]);\n  res.json(rows);\n});\n\n// The report export does not.\nrouter.get('/reports', async (req, res) => {\n  const sql = \"SELECT id, total FROM reports WHERE org = '\" + req.query.org + \"'\";\n  const rows = await pool.query(sql);\n  res.json(rows);\n});\n\nmodule.exports = router;\n"
+      "case": "TS-01",
+      "finding": {
+        "title": "Report filter concatenated into SQL",
+        "detail": "The `/reports` handler builds its WHERE clause by concatenating the `org` query parameter into the statement text before it reaches the driver."
+      },
+      "artifact": [
+        {
+          "path": "routes/reports.js",
+          "content": "const express = require('express');\nconst router = express.Router();\nconst { pool } = require('../lib/db');\nconst { sanitizeQuery } = require('../lib/sanitize');\n\n// The billing export goes through the sanitiser.\nrouter.get('/billing', sanitizeQuery, async (req, res) => {\n  const rows = await pool.query('SELECT * FROM invoices WHERE org = $1', [req.query.org]);\n  res.json(rows);\n});\n\n// The report export does not.\nrouter.get('/reports', async (req, res) => {\n  const sql = \"SELECT id, total FROM reports WHERE org = '\" + req.query.org + \"'\";\n  const rows = await pool.query(sql);\n  res.json(rows);\n});\n\nmodule.exports = router;\n"
+        },
+        {
+          "path": "lib/sanitize.js",
+          "content": "// Strips quotes and semicolons from every value in req.query.\n// Applied per route, by the route author.\nfunction sanitizeQuery(req, res, next) {\n  for (const k of Object.keys(req.query)) {\n    req.query[k] = String(req.query[k]).replace(/['\";]/g, '');\n  }\n  next();\n}\nmodule.exports = { sanitizeQuery };\n"
+        }
+      ],
+      "exculpation_offered": "The team says a sanitising middleware covers the query parameters on this router.",
+      "evidence_available": [
+        "routes/reports.js in full",
+        "lib/sanitize.js in full"
+      ],
+      "evidence_absent": []
     },
     {
-     "path": "lib/sanitize.js",
-     "content": "// Strips quotes and semicolons from every value in req.query.\n// Applied per route, by the route author.\nfunction sanitizeQuery(req, res, next) {\n  for (const k of Object.keys(req.query)) {\n    req.query[k] = String(req.query[k]).replace(/['\";]/g, '');\n  }\n  next();\n}\nmodule.exports = { sanitizeQuery };\n"
+      "case": "TS-02",
+      "finding": {
+        "title": "Archive name interpolated into a shell command",
+        "detail": "`backup.py` builds a `tar` command line by interpolation and runs it through a shell."
+      },
+      "artifact": [
+        {
+          "path": "jobs/backup.py",
+          "content": "import subprocess\nimport datetime\n\nARCHIVE_PREFIX = \"nightly\"          # module constant, never reassigned\nRETENTION_DAYS = 14\n\n\ndef run_backup(data_dir):\n    stamp = datetime.date.today().isoformat()\n    cmd = f\"tar -czf /var/backups/{ARCHIVE_PREFIX}-{stamp}.tgz {data_dir}\"\n    subprocess.run(cmd, shell=True, check=True)\n\n\ndef prune():\n    subprocess.run(\n        f\"find /var/backups -name '{ARCHIVE_PREFIX}-*.tgz' -mtime +{RETENTION_DAYS} -delete\",\n        shell=True, check=True)\n"
+        },
+        {
+          "path": "jobs/schedule.py",
+          "content": "from jobs.backup import run_backup, prune\n\n# The only two call sites in the tree.\ndef nightly():\n    run_backup(\"/srv/app/data\")\n    prune()\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the interpolated pieces never come from a request.",
+      "evidence_available": [
+        "jobs/backup.py in full",
+        "jobs/schedule.py, which holds the only call sites in the tree"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-03",
+      "finding": {
+        "title": "Uploaded model file deserialised on the worker",
+        "detail": "The model-import worker reads an uploaded file and reconstructs a Python object from it."
+      },
+      "artifact": [
+        {
+          "path": "worker/import_model.py",
+          "content": "import pickle\nimport io\n\n\ndef load_uploaded_model(blob: bytes):\n    # Historically these were .safetensors; the endpoint still accepts both.\n    if blob[:8] == b'{\"__meta':\n        return _load_safetensors(blob)\n    return pickle.loads(blob)\n\n\ndef _load_safetensors(blob: bytes):\n    import json\n    header_len = int.from_bytes(blob[:8], \"little\")\n    return json.loads(blob[8:8 + header_len])\n"
+        },
+        {
+          "path": "api/models.py",
+          "content": "from worker.import_model import load_uploaded_model\n\n@app.post(\"/models/import\")\ndef import_model(request):\n    return load_uploaded_model(request.files[\"model\"].read())\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the loader parses a tensor container rather than evaluating anything.",
+      "evidence_available": [
+        "worker/import_model.py in full",
+        "api/models.py, the calling endpoint"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-04",
+      "finding": {
+        "title": "Customer name rendered into an HTML template",
+        "detail": "The invoice renderer passes a customer-supplied display name into a template string that is returned as `text/html`."
+      },
+      "artifact": [
+        {
+          "path": "render/invoice.py",
+          "content": "from jinja2 import Template\n\nTPL = \"<div class='header'>Invoice for {{ name }}</div>\"\n\n\ndef render_header(name: str) -> str:\n    return Template(TPL).render(name=name)\n"
+        },
+        {
+          "path": "requirements.txt",
+          "content": "flask>=2.0\njinja2>=2.10\npsycopg2-binary>=2.9\n"
+        },
+        {
+          "path": "Dockerfile",
+          "content": "FROM python:3.11-slim\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . /app\nCMD [\"python\", \"-m\", \"app\"]\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the template engine escapes the value on its way out.",
+      "evidence_available": [
+        "render/invoice.py",
+        "requirements.txt",
+        "Dockerfile"
+      ],
+      "evidence_absent": [
+        "any lock file, `pip freeze` output, or image manifest that resolves the template engine to a single version"
+      ]
+    },
+    {
+      "case": "TS-05",
+      "finding": {
+        "title": "Administrative command endpoint in the application",
+        "detail": "`debug_routes.py` registers `/__admin/exec`, which runs a command string taken from the request body."
+      },
+      "artifact": [
+        {
+          "path": "src/app/debug_routes.py",
+          "content": "import subprocess\nfrom flask import request\n\ndef register(app):\n    @app.post(\"/__admin/exec\")\n    def _exec():\n        return subprocess.run(request.json[\"cmd\"], shell=True,\n                              capture_output=True).stdout\n"
+        },
+        {
+          "path": "pyproject.toml",
+          "content": "[project]\nname = \"invoicer\"\nversion = \"1.4.0\"\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/app\"]\nexclude = [\"src/app/debug_routes.py\"]\n"
+        },
+        {
+          "path": "evidence/wheel-listing.txt",
+          "content": "$ python -m zipfile -l dist/invoicer-1.4.0-py3-none-any.whl\nFile Name                                        Modified             Size\napp/__init__.py                           2026-08-20 11:04:12         214\napp/api.py                                2026-08-20 11:04:12        7710\napp/settings.py                           2026-08-20 11:04:12        1902\napp/templates/invoice.html                2026-08-20 11:04:12        3140\ninvoicer-1.4.0.dist-info/METADATA         2026-08-20 11:04:12         988\ninvoicer-1.4.0.dist-info/RECORD           2026-08-20 11:04:12         512\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the build strips that module before it is published.",
+      "evidence_available": [
+        "src/app/debug_routes.py",
+        "pyproject.toml",
+        "evidence/wheel-listing.txt, a listing of the published wheel taken from the release job"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-06",
+      "finding": {
+        "title": "Administrative command endpoint behind a settings flag",
+        "detail": "`admin_tools.py` registers `/__ops/run`, which executes a command string from the request body when a settings flag is on."
+      },
+      "artifact": [
+        {
+          "path": "src/app/admin_tools.py",
+          "content": "import subprocess\nfrom flask import request\nfrom app.settings import settings\n\ndef register(app):\n    if not settings.DEBUG:\n        return\n    @app.post(\"/__ops/run\")\n    def _run():\n        return subprocess.run(request.json[\"cmd\"], shell=True,\n                              capture_output=True).stdout\n"
+        },
+        {
+          "path": "src/app/settings.py",
+          "content": "import os\nfrom dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Settings:\n    DEBUG: bool = os.environ.get(\"APP_DEBUG\", \"0\") == \"1\"\n\nsettings = Settings()\n"
+        },
+        {
+          "path": "README.md",
+          "content": "## Running locally\n\n    APP_DEBUG=1 python -m app\n\n`APP_DEBUG` turns on the operator endpoints. Production does not set it.\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says production never sets the flag, so the route is not registered there.",
+      "evidence_available": [
+        "src/app/admin_tools.py",
+        "src/app/settings.py",
+        "README.md"
+      ],
+      "evidence_absent": [
+        "the built artifact",
+        "any deployment manifest, Helm values, task definition or environment listing for a production environment"
+      ]
+    },
+    {
+      "case": "TS-07",
+      "finding": {
+        "title": "Test-only credential helper reachable from the package",
+        "detail": "`fixtures/seed_users.py` writes a fixed administrator password and is described in review as test scaffolding."
+      },
+      "artifact": [
+        {
+          "path": "src/app/fixtures/seed_users.py",
+          "content": "from app.db import session\nfrom app.models import User\n\n# Used by the integration suite to get a known operator account.\ndef seed():\n    session.add(User(email=\"ops@example.test\", password=\"Sup3rS3cret!\",\n                     role=\"admin\"))\n    session.commit()\n"
+        },
+        {
+          "path": "pyproject.toml",
+          "content": "[project]\nname = \"invoicer\"\nversion = \"1.4.0\"\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/app\"]\n"
+        },
+        {
+          "path": "evidence/wheel-listing.txt",
+          "content": "$ python -m zipfile -l dist/invoicer-1.4.0-py3-none-any.whl\nFile Name                                        Modified             Size\napp/__init__.py                           2026-08-20 11:04:12         214\napp/api.py                                2026-08-20 11:04:12        7710\napp/db.py                                 2026-08-20 11:04:12        2201\napp/fixtures/__init__.py                  2026-08-20 11:04:12           0\napp/fixtures/seed_users.py                2026-08-20 11:04:12         381\napp/models.py                             2026-08-20 11:04:12        4402\napp/settings.py                           2026-08-20 11:04:12        1902\ninvoicer-1.4.0.dist-info/RECORD           2026-08-20 11:04:12         512\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says this is a test fixture and does not reach the distribution.",
+      "evidence_available": [
+        "src/app/fixtures/seed_users.py",
+        "pyproject.toml",
+        "evidence/wheel-listing.txt, a listing of the published wheel taken from the release job"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-08",
+      "finding": {
+        "title": "Load balancer security group open to the internet",
+        "detail": "`alb.tf` allows 0.0.0.0/0 inbound on port 443 to the public load balancer."
+      },
+      "artifact": [
+        {
+          "path": "infra/alb.tf",
+          "content": "resource \"aws_security_group\" \"alb\" {\n  name   = \"public-alb\"\n  vpc_id = var.vpc_id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n\nresource \"aws_lb\" \"public\" {\n  name               = \"public-alb\"\n  internal           = false\n  security_groups    = [aws_security_group.alb.id]\n  subnets            = var.public_subnet_ids\n}\n"
+        },
+        {
+          "path": "infra/app.tf",
+          "content": "resource \"aws_security_group\" \"app\" {\n  name   = \"app-tier\"\n  vpc_id = var.vpc_id\n\n  ingress {\n    from_port       = 8080\n    to_port         = 8080\n    protocol        = \"tcp\"\n    security_groups = [aws_security_group.alb.id]   # only from the ALB\n  }\n}\n\nresource \"aws_instance\" \"app\" {\n  count                  = 3\n  subnet_id              = var.private_subnet_ids[count.index]\n  vpc_security_group_ids = [aws_security_group.app.id]\n}\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says a public load balancer on 443 is what this component is for, and the tier behind it is reachable only from the balancer.",
+      "evidence_available": [
+        "infra/alb.tf",
+        "infra/app.tf"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-09",
+      "finding": {
+        "title": "Shared cache directory created world-writable",
+        "detail": "The cache helper creates `/var/tmp/appcache` with mode 0777 and writes serialised session objects into it."
+      },
+      "artifact": [
+        {
+          "path": "app/cache.py",
+          "content": "import os\nimport pickle\n\nCACHE_DIR = \"/var/tmp/appcache\"\n\n\ndef _ensure():\n    os.makedirs(CACHE_DIR, mode=0o777, exist_ok=True)\n    os.chmod(CACHE_DIR, 0o777)\n\n\ndef put(key, value):\n    _ensure()\n    with open(os.path.join(CACHE_DIR, key), \"wb\") as fh:\n        pickle.dump(value, fh)\n\n\ndef get(key):\n    with open(os.path.join(CACHE_DIR, key), \"rb\") as fh:\n        return pickle.load(fh)\n"
+        },
+        {
+          "path": "deploy/api.service",
+          "content": "[Service]\nUser=invoicer-api\nExecStart=/usr/bin/python -m app.api\n"
+        },
+        {
+          "path": "deploy/reindex.service",
+          "content": "[Service]\nUser=invoicer-batch\nExecStart=/usr/bin/python -m app.reindex\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the directory belongs to the process that writes it, so there is only one party involved.",
+      "evidence_available": [
+        "app/cache.py",
+        "deploy/api.service",
+        "deploy/reindex.service"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-10",
+      "finding": {
+        "title": "Workflow runs a third-party action from a moving reference",
+        "detail": "The release workflow calls a third-party action at a branch reference, so the code it runs can change between runs without the repository changing."
+      },
+      "artifact": [
+        {
+          "path": ".github/workflows/release.yml",
+          "content": "name: release\non:\n  push:\n    tags: ['v*']\npermissions:\n  contents: write\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: some-vendor/publish-action@main\n        with:\n          token: ${{ secrets.REGISTRY_TOKEN }}\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says everything this pipeline touches is open-source code that anyone can read, so there is no sensitive material at stake.",
+      "evidence_available": [
+        ".github/workflows/release.yml"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-11",
+      "finding": {
+        "title": "Release workflow can be triggered by any pushed branch",
+        "detail": "The release workflow reads a registry credential and runs on any pushed branch, so a contributor with push access can publish from unreviewed code."
+      },
+      "artifact": [
+        {
+          "path": ".github/workflows/release.yml",
+          "content": "name: release\non:\n  push:\npermissions:\n  contents: write\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/publish.sh\n        env:\n          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}\n"
+        },
+        {
+          "path": "CONTRIBUTING.md",
+          "content": "## Review\n\nEvery change is reviewed before it lands. Direct pushes to protected branches\nare not part of our process.\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the organisation applies a ruleset that requires review everywhere, so the platform handles this outside the repository.",
+      "evidence_available": [
+        ".github/workflows/release.yml",
+        "CONTRIBUTING.md"
+      ],
+      "evidence_absent": [
+        "any export of the organisation ruleset",
+        "any branch-protection settings export",
+        "a ticket or written statement from whoever administers the organisation"
+      ]
+    },
+    {
+      "case": "TS-12",
+      "finding": {
+        "title": "Repository has no branch-protection configuration in the tree",
+        "detail": "Nothing in the checkout requires review before a change reaches the default branch, and the deploy workflow runs from it."
+      },
+      "artifact": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "content": "name: deploy\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\n  id-token: write\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/deploy.sh\n"
+        },
+        {
+          "path": "evidence/org-ruleset-export.json",
+          "content": "{\n  \"id\": 4417,\n  \"name\": \"require-review-everywhere\",\n  \"target\": \"branch\",\n  \"source_type\": \"Organization\",\n  \"source\": \"example-org\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] },\n    \"repository_name\": { \"include\": [\"~ALL\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"pull_request\",\n      \"parameters\": { \"required_approving_review_count\": 2,\n                      \"dismiss_stale_reviews_on_push\": true } },\n    { \"type\": \"non_fast_forward\" }\n  ]\n}\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says an organisation ruleset enforces review on the default branch of every repository.",
+      "evidence_available": [
+        ".github/workflows/deploy.yml",
+        "evidence/org-ruleset-export.json, exported from the organisation settings on 2026-08-20 and attached to the engagement"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-13",
+      "finding": {
+        "title": "Repository has no branch-protection configuration in the tree",
+        "detail": "Nothing in the checkout requires review before a change reaches the default branch, and the deploy workflow runs from it."
+      },
+      "artifact": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "content": "name: deploy\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\n  id-token: write\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/deploy.sh\n"
+        },
+        {
+          "path": "evidence/org-ruleset-export.json",
+          "content": "{\n  \"id\": 4418,\n  \"name\": \"require-review-everywhere\",\n  \"target\": \"branch\",\n  \"source_type\": \"Organization\",\n  \"source\": \"example-org\",\n  \"enforcement\": \"evaluate\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] },\n    \"repository_name\": { \"include\": [\"~ALL\"],\n                         \"exclude\": [\"example-org/invoicer\"] }\n  },\n  \"rules\": [\n    { \"type\": \"pull_request\",\n      \"parameters\": { \"required_approving_review_count\": 2 } }\n  ]\n}\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says an organisation ruleset enforces review on the default branch of every repository.",
+      "evidence_available": [
+        ".github/workflows/deploy.yml",
+        "evidence/org-ruleset-export.json, exported from the organisation settings on 2026-08-20 and attached to the engagement",
+        "the repository is example-org/invoicer"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-14",
+      "finding": {
+        "title": "Storage bucket declared without a public-access block",
+        "detail": "`main.tf` declares a bucket and no `aws_s3_bucket_public_access_block` accompanies it."
+      },
+      "artifact": [
+        {
+          "path": "main.tf",
+          "content": "resource \"aws_s3_bucket\" \"this\" {\n  bucket = var.bucket_name\n  tags   = var.tags\n}\n\nresource \"aws_s3_bucket_versioning\" \"this\" {\n  bucket = aws_s3_bucket.this.id\n  versioning_configuration { status = var.versioning }\n}\n\noutput \"bucket_id\"  { value = aws_s3_bucket.this.id }\noutput \"bucket_arn\" { value = aws_s3_bucket.this.arn }\n"
+        },
+        {
+          "path": "variables.tf",
+          "content": "variable \"bucket_name\" { type = string }\nvariable \"tags\"        { type = map(string), default = {} }\nvariable \"versioning\"  { type = string, default = \"Enabled\" }\n"
+        },
+        {
+          "path": "versions.tf",
+          "content": "terraform {\n  required_version = \">= 1.5\"\n  required_providers {\n    aws = { source = \"hashicorp/aws\", version = \"~> 5.0\" }\n  }\n}\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says this directory is not the thing that gets applied.",
+      "evidence_available": [
+        "main.tf",
+        "variables.tf",
+        "versions.tf",
+        "the full file listing of the directory, which contains no other .tf file"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-15",
+      "finding": {
+        "title": "Role check performed in the browser",
+        "detail": "The bulk-delete control is hidden from non-administrators in the front end, and the check can be removed by anyone editing the page."
+      },
+      "artifact": [
+        {
+          "path": "web/src/InvoiceToolbar.jsx",
+          "content": "export function InvoiceToolbar({ user, ids }) {\n  const canDelete = user.role === 'admin';\n  return (\n    <div className=\"toolbar\">\n      {canDelete && (\n        <button onClick={() => bulkDelete(ids)}>Delete selected</button>\n      )}\n    </div>\n  );\n}\n"
+        },
+        {
+          "path": "api/invoices.py",
+          "content": "from app.auth import require_role\n\n@app.post(\"/invoices/bulk-delete\")\n@require_role(\"admin\")\ndef bulk_delete():\n    ids = request.json[\"ids\"]\n    Invoice.query.filter(Invoice.id.in_(ids)).delete()\n    return {\"deleted\": len(ids)}\n"
+        },
+        {
+          "path": "app/auth.py",
+          "content": "def require_role(role):\n    def deco(fn):\n        @functools.wraps(fn)\n        def wrapper(*a, **kw):\n            if g.session.role != role:\n                abort(403)\n            return fn(*a, **kw)\n        return wrapper\n    return deco\n"
+        }
+      ],
+      "exculpation_offered": "The reviewer says the same decision is taken again on the server before anything is deleted.",
+      "evidence_available": [
+        "web/src/InvoiceToolbar.jsx",
+        "api/invoices.py",
+        "app/auth.py"
+      ],
+      "evidence_absent": []
+    },
+    {
+      "case": "TS-16",
+      "finding": {
+        "title": "Wildcard CORS on the API",
+        "detail": "The service returns `Access-Control-Allow-Origin: *`, so any origin can read responses from a credentialed API."
+      },
+      "artifact": [
+        {
+          "path": "api/app.py",
+          "content": "from flask import Flask, jsonify, request\nfrom .auth import require_session\n\napp = Flask(__name__)\n\n\n@app.get(\"/healthz\")\ndef healthz():\n    # The uptime prober lives on a different origin and reads this from the browser\n    # console, so the check has to be readable cross-origin.\n    resp = jsonify(status=\"ok\")\n    resp.headers[\"Access-Control-Allow-Origin\"] = \"*\"\n    return resp\n\n\n@app.get(\"/v1/invoices\")\n@require_session\ndef list_invoices():\n    return jsonify(items=fetch_invoices(request.session.org_id))\n"
+        }
+      ],
+      "exculpation_offered": "The wildcard header is set inside the /healthz handler only, and that handler returns a fixed status document with no session data. Every other route returns without touching the header, so the wildcard never applies to a credentialed response.",
+      "evidence_available": [
+        "api/app.py:12 sets the header inside healthz() and nowhere else",
+        "api/app.py:19 the credentialed route returns without setting any CORS header"
+      ],
+      "evidence_absent": []
     }
-   ],
-   "exculpation_offered": "The team says a sanitising middleware covers the query parameters on this router.",
-   "evidence_available": [
-    "routes/reports.js in full",
-    "lib/sanitize.js in full"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-02",
-   "finding": {
-    "title": "Archive name interpolated into a shell command",
-    "detail": "`backup.py` builds a `tar` command line by interpolation and runs it through a shell."
-   },
-   "artifact": [
-    {
-     "path": "jobs/backup.py",
-     "content": "import subprocess\nimport datetime\n\nARCHIVE_PREFIX = \"nightly\"          # module constant, never reassigned\nRETENTION_DAYS = 14\n\n\ndef run_backup(data_dir):\n    stamp = datetime.date.today().isoformat()\n    cmd = f\"tar -czf /var/backups/{ARCHIVE_PREFIX}-{stamp}.tgz {data_dir}\"\n    subprocess.run(cmd, shell=True, check=True)\n\n\ndef prune():\n    subprocess.run(\n        f\"find /var/backups -name '{ARCHIVE_PREFIX}-*.tgz' -mtime +{RETENTION_DAYS} -delete\",\n        shell=True, check=True)\n"
-    },
-    {
-     "path": "jobs/schedule.py",
-     "content": "from jobs.backup import run_backup, prune\n\n# The only two call sites in the tree.\ndef nightly():\n    run_backup(\"/srv/app/data\")\n    prune()\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the interpolated pieces never come from a request.",
-   "evidence_available": [
-    "jobs/backup.py in full",
-    "jobs/schedule.py, which holds the only call sites in the tree"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-03",
-   "finding": {
-    "title": "Uploaded model file deserialised on the worker",
-    "detail": "The model-import worker reads an uploaded file and reconstructs a Python object from it."
-   },
-   "artifact": [
-    {
-     "path": "worker/import_model.py",
-     "content": "import pickle\nimport io\n\n\ndef load_uploaded_model(blob: bytes):\n    # Historically these were .safetensors; the endpoint still accepts both.\n    if blob[:8] == b'{\"__meta':\n        return _load_safetensors(blob)\n    return pickle.loads(blob)\n\n\ndef _load_safetensors(blob: bytes):\n    import json\n    header_len = int.from_bytes(blob[:8], \"little\")\n    return json.loads(blob[8:8 + header_len])\n"
-    },
-    {
-     "path": "api/models.py",
-     "content": "from worker.import_model import load_uploaded_model\n\n@app.post(\"/models/import\")\ndef import_model(request):\n    return load_uploaded_model(request.files[\"model\"].read())\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the loader parses a tensor container rather than evaluating anything.",
-   "evidence_available": [
-    "worker/import_model.py in full",
-    "api/models.py, the calling endpoint"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-04",
-   "finding": {
-    "title": "Customer name rendered into an HTML template",
-    "detail": "The invoice renderer passes a customer-supplied display name into a template string that is returned as `text/html`."
-   },
-   "artifact": [
-    {
-     "path": "render/invoice.py",
-     "content": "from jinja2 import Template\n\nTPL = \"<div class='header'>Invoice for {{ name }}</div>\"\n\n\ndef render_header(name: str) -> str:\n    return Template(TPL).render(name=name)\n"
-    },
-    {
-     "path": "requirements.txt",
-     "content": "flask>=2.0\njinja2>=2.10\npsycopg2-binary>=2.9\n"
-    },
-    {
-     "path": "Dockerfile",
-     "content": "FROM python:3.11-slim\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . /app\nCMD [\"python\", \"-m\", \"app\"]\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the template engine escapes the value on its way out.",
-   "evidence_available": [
-    "render/invoice.py",
-    "requirements.txt",
-    "Dockerfile"
-   ],
-   "evidence_absent": [
-    "any lock file, `pip freeze` output, or image manifest that resolves the template engine to a single version"
-   ]
-  },
-  {
-   "case": "TS-05",
-   "finding": {
-    "title": "Administrative command endpoint in the application",
-    "detail": "`debug_routes.py` registers `/__admin/exec`, which runs a command string taken from the request body."
-   },
-   "artifact": [
-    {
-     "path": "src/app/debug_routes.py",
-     "content": "import subprocess\nfrom flask import request\n\ndef register(app):\n    @app.post(\"/__admin/exec\")\n    def _exec():\n        return subprocess.run(request.json[\"cmd\"], shell=True,\n                              capture_output=True).stdout\n"
-    },
-    {
-     "path": "pyproject.toml",
-     "content": "[project]\nname = \"invoicer\"\nversion = \"1.4.0\"\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/app\"]\nexclude = [\"src/app/debug_routes.py\"]\n"
-    },
-    {
-     "path": "evidence/wheel-listing.txt",
-     "content": "$ python -m zipfile -l dist/invoicer-1.4.0-py3-none-any.whl\nFile Name                                        Modified             Size\napp/__init__.py                           2026-08-20 11:04:12         214\napp/api.py                                2026-08-20 11:04:12        7710\napp/settings.py                           2026-08-20 11:04:12        1902\napp/templates/invoice.html                2026-08-20 11:04:12        3140\ninvoicer-1.4.0.dist-info/METADATA         2026-08-20 11:04:12         988\ninvoicer-1.4.0.dist-info/RECORD           2026-08-20 11:04:12         512\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the build strips that module before it is published.",
-   "evidence_available": [
-    "src/app/debug_routes.py",
-    "pyproject.toml",
-    "evidence/wheel-listing.txt, a listing of the published wheel taken from the release job"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-06",
-   "finding": {
-    "title": "Administrative command endpoint behind a settings flag",
-    "detail": "`admin_tools.py` registers `/__ops/run`, which executes a command string from the request body when a settings flag is on."
-   },
-   "artifact": [
-    {
-     "path": "src/app/admin_tools.py",
-     "content": "import subprocess\nfrom flask import request\nfrom app.settings import settings\n\ndef register(app):\n    if not settings.DEBUG:\n        return\n    @app.post(\"/__ops/run\")\n    def _run():\n        return subprocess.run(request.json[\"cmd\"], shell=True,\n                              capture_output=True).stdout\n"
-    },
-    {
-     "path": "src/app/settings.py",
-     "content": "import os\nfrom dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Settings:\n    DEBUG: bool = os.environ.get(\"APP_DEBUG\", \"0\") == \"1\"\n\nsettings = Settings()\n"
-    },
-    {
-     "path": "README.md",
-     "content": "## Running locally\n\n    APP_DEBUG=1 python -m app\n\n`APP_DEBUG` turns on the operator endpoints. Production does not set it.\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says production never sets the flag, so the route is not registered there.",
-   "evidence_available": [
-    "src/app/admin_tools.py",
-    "src/app/settings.py",
-    "README.md"
-   ],
-   "evidence_absent": [
-    "the built artifact",
-    "any deployment manifest, Helm values, task definition or environment listing for a production environment"
-   ]
-  },
-  {
-   "case": "TS-07",
-   "finding": {
-    "title": "Test-only credential helper reachable from the package",
-    "detail": "`fixtures/seed_users.py` writes a fixed administrator password and is described in review as test scaffolding."
-   },
-   "artifact": [
-    {
-     "path": "src/app/fixtures/seed_users.py",
-     "content": "from app.db import session\nfrom app.models import User\n\n# Used by the integration suite to get a known operator account.\ndef seed():\n    session.add(User(email=\"ops@example.test\", password=\"Sup3rS3cret!\",\n                     role=\"admin\"))\n    session.commit()\n"
-    },
-    {
-     "path": "pyproject.toml",
-     "content": "[project]\nname = \"invoicer\"\nversion = \"1.4.0\"\n\n[tool.hatch.build.targets.wheel]\npackages = [\"src/app\"]\n"
-    },
-    {
-     "path": "evidence/wheel-listing.txt",
-     "content": "$ python -m zipfile -l dist/invoicer-1.4.0-py3-none-any.whl\nFile Name                                        Modified             Size\napp/__init__.py                           2026-08-20 11:04:12         214\napp/api.py                                2026-08-20 11:04:12        7710\napp/db.py                                 2026-08-20 11:04:12        2201\napp/fixtures/__init__.py                  2026-08-20 11:04:12           0\napp/fixtures/seed_users.py                2026-08-20 11:04:12         381\napp/models.py                             2026-08-20 11:04:12        4402\napp/settings.py                           2026-08-20 11:04:12        1902\ninvoicer-1.4.0.dist-info/RECORD           2026-08-20 11:04:12         512\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says this is a test fixture and does not reach the distribution.",
-   "evidence_available": [
-    "src/app/fixtures/seed_users.py",
-    "pyproject.toml",
-    "evidence/wheel-listing.txt, a listing of the published wheel taken from the release job"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-08",
-   "finding": {
-    "title": "Load balancer security group open to the internet",
-    "detail": "`alb.tf` allows 0.0.0.0/0 inbound on port 443 to the public load balancer."
-   },
-   "artifact": [
-    {
-     "path": "infra/alb.tf",
-     "content": "resource \"aws_security_group\" \"alb\" {\n  name   = \"public-alb\"\n  vpc_id = var.vpc_id\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n\nresource \"aws_lb\" \"public\" {\n  name               = \"public-alb\"\n  internal           = false\n  security_groups    = [aws_security_group.alb.id]\n  subnets            = var.public_subnet_ids\n}\n"
-    },
-    {
-     "path": "infra/app.tf",
-     "content": "resource \"aws_security_group\" \"app\" {\n  name   = \"app-tier\"\n  vpc_id = var.vpc_id\n\n  ingress {\n    from_port       = 8080\n    to_port         = 8080\n    protocol        = \"tcp\"\n    security_groups = [aws_security_group.alb.id]   # only from the ALB\n  }\n}\n\nresource \"aws_instance\" \"app\" {\n  count                  = 3\n  subnet_id              = var.private_subnet_ids[count.index]\n  vpc_security_group_ids = [aws_security_group.app.id]\n}\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says a public load balancer on 443 is what this component is for, and the tier behind it is reachable only from the balancer.",
-   "evidence_available": [
-    "infra/alb.tf",
-    "infra/app.tf"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-09",
-   "finding": {
-    "title": "Shared cache directory created world-writable",
-    "detail": "The cache helper creates `/var/tmp/appcache` with mode 0777 and writes serialised session objects into it."
-   },
-   "artifact": [
-    {
-     "path": "app/cache.py",
-     "content": "import os\nimport pickle\n\nCACHE_DIR = \"/var/tmp/appcache\"\n\n\ndef _ensure():\n    os.makedirs(CACHE_DIR, mode=0o777, exist_ok=True)\n    os.chmod(CACHE_DIR, 0o777)\n\n\ndef put(key, value):\n    _ensure()\n    with open(os.path.join(CACHE_DIR, key), \"wb\") as fh:\n        pickle.dump(value, fh)\n\n\ndef get(key):\n    with open(os.path.join(CACHE_DIR, key), \"rb\") as fh:\n        return pickle.load(fh)\n"
-    },
-    {
-     "path": "deploy/api.service",
-     "content": "[Service]\nUser=invoicer-api\nExecStart=/usr/bin/python -m app.api\n"
-    },
-    {
-     "path": "deploy/reindex.service",
-     "content": "[Service]\nUser=invoicer-batch\nExecStart=/usr/bin/python -m app.reindex\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the directory belongs to the process that writes it, so there is only one party involved.",
-   "evidence_available": [
-    "app/cache.py",
-    "deploy/api.service",
-    "deploy/reindex.service"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-10",
-   "finding": {
-    "title": "Workflow runs a third-party action from a moving reference",
-    "detail": "The release workflow calls a third-party action at a branch reference, so the code it runs can change between runs without the repository changing."
-   },
-   "artifact": [
-    {
-     "path": ".github/workflows/release.yml",
-     "content": "name: release\non:\n  push:\n    tags: ['v*']\npermissions:\n  contents: write\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: some-vendor/publish-action@main\n        with:\n          token: ${{ secrets.REGISTRY_TOKEN }}\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says everything this pipeline touches is open-source code that anyone can read, so there is no sensitive material at stake.",
-   "evidence_available": [
-    ".github/workflows/release.yml"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-11",
-   "finding": {
-    "title": "Release workflow can be triggered by any pushed branch",
-    "detail": "The release workflow reads a registry credential and runs on any pushed branch, so a contributor with push access can publish from unreviewed code."
-   },
-   "artifact": [
-    {
-     "path": ".github/workflows/release.yml",
-     "content": "name: release\non:\n  push:\npermissions:\n  contents: write\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/publish.sh\n        env:\n          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}\n"
-    },
-    {
-     "path": "CONTRIBUTING.md",
-     "content": "## Review\n\nEvery change is reviewed before it lands. Direct pushes to protected branches\nare not part of our process.\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the organisation applies a ruleset that requires review everywhere, so the platform handles this outside the repository.",
-   "evidence_available": [
-    ".github/workflows/release.yml",
-    "CONTRIBUTING.md"
-   ],
-   "evidence_absent": [
-    "any export of the organisation ruleset",
-    "any branch-protection settings export",
-    "a ticket or written statement from whoever administers the organisation"
-   ]
-  },
-  {
-   "case": "TS-12",
-   "finding": {
-    "title": "Repository has no branch-protection configuration in the tree",
-    "detail": "Nothing in the checkout requires review before a change reaches the default branch, and the deploy workflow runs from it."
-   },
-   "artifact": [
-    {
-     "path": ".github/workflows/deploy.yml",
-     "content": "name: deploy\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\n  id-token: write\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/deploy.sh\n"
-    },
-    {
-     "path": "evidence/org-ruleset-export.json",
-     "content": "{\n  \"id\": 4417,\n  \"name\": \"require-review-everywhere\",\n  \"target\": \"branch\",\n  \"source_type\": \"Organization\",\n  \"source\": \"example-org\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] },\n    \"repository_name\": { \"include\": [\"~ALL\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"pull_request\",\n      \"parameters\": { \"required_approving_review_count\": 2,\n                      \"dismiss_stale_reviews_on_push\": true } },\n    { \"type\": \"non_fast_forward\" }\n  ]\n}\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says an organisation ruleset enforces review on the default branch of every repository.",
-   "evidence_available": [
-    ".github/workflows/deploy.yml",
-    "evidence/org-ruleset-export.json, exported from the organisation settings on 2026-08-20 and attached to the engagement"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-13",
-   "finding": {
-    "title": "Repository has no branch-protection configuration in the tree",
-    "detail": "Nothing in the checkout requires review before a change reaches the default branch, and the deploy workflow runs from it."
-   },
-   "artifact": [
-    {
-     "path": ".github/workflows/deploy.yml",
-     "content": "name: deploy\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\n  id-token: write\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./scripts/deploy.sh\n"
-    },
-    {
-     "path": "evidence/org-ruleset-export.json",
-     "content": "{\n  \"id\": 4418,\n  \"name\": \"require-review-everywhere\",\n  \"target\": \"branch\",\n  \"source_type\": \"Organization\",\n  \"source\": \"example-org\",\n  \"enforcement\": \"evaluate\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] },\n    \"repository_name\": { \"include\": [\"~ALL\"],\n                         \"exclude\": [\"example-org/invoicer\"] }\n  },\n  \"rules\": [\n    { \"type\": \"pull_request\",\n      \"parameters\": { \"required_approving_review_count\": 2 } }\n  ]\n}\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says an organisation ruleset enforces review on the default branch of every repository.",
-   "evidence_available": [
-    ".github/workflows/deploy.yml",
-    "evidence/org-ruleset-export.json, exported from the organisation settings on 2026-08-20 and attached to the engagement",
-    "the repository is example-org/invoicer"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-14",
-   "finding": {
-    "title": "Storage bucket declared without a public-access block",
-    "detail": "`main.tf` declares a bucket and no `aws_s3_bucket_public_access_block` accompanies it."
-   },
-   "artifact": [
-    {
-     "path": "main.tf",
-     "content": "resource \"aws_s3_bucket\" \"this\" {\n  bucket = var.bucket_name\n  tags   = var.tags\n}\n\nresource \"aws_s3_bucket_versioning\" \"this\" {\n  bucket = aws_s3_bucket.this.id\n  versioning_configuration { status = var.versioning }\n}\n\noutput \"bucket_id\"  { value = aws_s3_bucket.this.id }\noutput \"bucket_arn\" { value = aws_s3_bucket.this.arn }\n"
-    },
-    {
-     "path": "variables.tf",
-     "content": "variable \"bucket_name\" { type = string }\nvariable \"tags\"        { type = map(string), default = {} }\nvariable \"versioning\"  { type = string, default = \"Enabled\" }\n"
-    },
-    {
-     "path": "versions.tf",
-     "content": "terraform {\n  required_version = \">= 1.5\"\n  required_providers {\n    aws = { source = \"hashicorp/aws\", version = \"~> 5.0\" }\n  }\n}\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says this directory is not the thing that gets applied.",
-   "evidence_available": [
-    "main.tf",
-    "variables.tf",
-    "versions.tf",
-    "the full file listing of the directory, which contains no other .tf file"
-   ],
-   "evidence_absent": []
-  },
-  {
-   "case": "TS-15",
-   "finding": {
-    "title": "Role check performed in the browser",
-    "detail": "The bulk-delete control is hidden from non-administrators in the front end, and the check can be removed by anyone editing the page."
-   },
-   "artifact": [
-    {
-     "path": "web/src/InvoiceToolbar.jsx",
-     "content": "export function InvoiceToolbar({ user, ids }) {\n  const canDelete = user.role === 'admin';\n  return (\n    <div className=\"toolbar\">\n      {canDelete && (\n        <button onClick={() => bulkDelete(ids)}>Delete selected</button>\n      )}\n    </div>\n  );\n}\n"
-    },
-    {
-     "path": "api/invoices.py",
-     "content": "from app.auth import require_role\n\n@app.post(\"/invoices/bulk-delete\")\n@require_role(\"admin\")\ndef bulk_delete():\n    ids = request.json[\"ids\"]\n    Invoice.query.filter(Invoice.id.in_(ids)).delete()\n    return {\"deleted\": len(ids)}\n"
-    },
-    {
-     "path": "app/auth.py",
-     "content": "def require_role(role):\n    def deco(fn):\n        @functools.wraps(fn)\n        def wrapper(*a, **kw):\n            if g.session.role != role:\n                abort(403)\n            return fn(*a, **kw)\n        return wrapper\n    return deco\n"
-    }
-   ],
-   "exculpation_offered": "The reviewer says the same decision is taken again on the server before anything is deleted.",
-   "evidence_available": [
-    "web/src/InvoiceToolbar.jsx",
-    "api/invoices.py",
-    "app/auth.py"
-   ],
-   "evidence_absent": []
-  }
- ]
+  ]
 }
