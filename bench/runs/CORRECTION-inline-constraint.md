@@ -63,3 +63,15 @@ now says so.
 Affected: `2026-08-26-refutation-stage`, `2026-08-27-artifact-contract`, `2026-08-27-composition`,
 `2026-08-26-four-tools`, `2026-08-26-fp11`, `2026-08-26-scope-field`, and the relaunched arms of
 `2026-08-26-coverage-rules`.
+
+## A correction to this correction, made minutes later
+
+The first version of this note was pasted into **fifteen** `prompts/README.md` files by a
+glob that did not check which rounds were affected. Twelve of them predate the inline
+constraint entirely — the 2026-08-21 and 2026-08-22 rounds never carried it — and
+`2026-08-26-join-effect` has no `mantis` arm at all, being a within-arm measurement.
+
+Writing a true correction into a page where it is false is its own defect, and a
+particularly bad one on a page whose whole subject is that evidence must say what actually
+happened. The note now sits only on the three affected rounds that ship a `prompts/`
+directory, and the pointer at the top of a page sits only on the seven affected rounds.
