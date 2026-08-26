@@ -89,3 +89,42 @@ All eight reports in [`runs/`](runs/), each carrying its `triage` answers and `r
 the [key](key.json), [`SCORE.txt`](SCORE.txt), and the
 [pre-registration](PREREGISTRATION.md) written before its author saw the corpus — including the
 sentence, written in advance, that a favourable result here counts for less.
+
+## Addendum, measured after the verdict: the recall half of the band was not measurable here
+
+The verdict above stands as registered. What follows does not change it, and it is the most
+important thing this round found.
+
+Diffing the two arms defect by defect against the key:
+
+| | detections per run | **reach** (union of 4 runs) | found in *all* 4 |
+|---|---|---|---|
+| this project | 31.0 | **32 / 33** | 30 |
+| `mantis` | 31.5 | **32 / 33** | 30 |
+
+- Defects found **only** by `mantis`: **zero**.
+- Defects found **only** by this project: **zero**.
+- Defects found by **neither**: one — `S-26`.
+
+**The two arms have identical reach.** They find the same 32 of 33 defects and miss the same
+one. The 1.5-point recall difference is 0.5 detections per run: which of two volatile defects a
+given pass happens to catch.
+
+There is **no detection difference left to measure** on this corpus. A band asking for a
+5-point recall lead cannot be met by anything short of a product that is better than the
+ceiling both arms are already sitting on — and that is a property of the corpus, not a finding
+about either product.
+
+This is the same failure the CKAN round recorded in its own words: **a target that does not
+discriminate.** It was not foreseen here because the previous three corpora did discriminate,
+and the brief for this one asked for harder decoys rather than harder defects. It got them: the
+decoy rate is the only thing that still separates the arms, and it separates them **in this
+project's favour**, stably, at every window.
+
+What it forces:
+
+- **The verdict is unchanged.** Refuted as registered, at the registered window.
+- **The recall half of the band is retired on this corpus** and no future round may use it here.
+- **The next round needs defects hard enough that reach is not 32 of 33 for everybody** — the
+  same lesson as CKAN, arrived at from the opposite direction, and it is now in the ledger
+  twice.
