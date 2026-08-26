@@ -52,6 +52,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
 | `findings[].traceability` | The standard identifiers, verbatim. |
 | `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
+| `findings[].scope` | Where the construct actually applies: `applies_to` as `path:line` for every place it takes effect, `established_by` naming how that list was arrived at, and `narrowed_by` when a condition narrows it. A wildcard header set in one handler applies to one response — write the one. **It is a required field because the rule that asked the same question did not change what got reported**: `FP-11` was added, cited, evalled and sealed, and the shape it targets stayed at 1.75 false positives per run against a competitor's 0.25. A field is answered; a rule is read. |
 | `findings[].limits` | What this finding does not establish. |
 | `ruled_out` | **Top-level, once per artifact** — a sibling of `findings` and `engagement`, not a field inside a finding. What was tested and did not appear, with the bound of how far the test reached. |
 
