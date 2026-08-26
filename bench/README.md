@@ -86,6 +86,20 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The precision half, met at last, and the recall half lost in the same breath
+
+[2026-08-26, scope field](runs/2026-08-26-scope-field/) — **inconclusive.** For the first time in
+nine rounds the decoy condition is met — **7.50 against 10.75** — and the recall condition fails:
+**80.9% against 80.3%**, a quarter of a defect.
+
+The registered prediction is still not met. The excess on the target shape collapsed from +1.50
+to +0.25, but **this project moved 1.75 → 1.50 while `mantis` moved 0.25 → 1.25**: most of the
+collapse is the competitor getting worse, not this project getting better.
+
+And the whole −3.25 comes from **two shapes the field was not written for**, `constrained-elsewhere`
+and `dead-path`. So a required field still beats a rule, and **aiming either at a specific shape
+still fails.**
+
 ## The diagnosis reproduced and the remedy failed
 
 [2026-08-26, FP-11](runs/2026-08-26-fp11/) — **not supported**, eighth round. **74.3% recall
