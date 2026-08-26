@@ -86,6 +86,23 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The control works; the band is refuted anyway
+
+[2026-08-27, artifact contract](runs/2026-08-27-artifact-contract/) — the shipped contract
+requiring an answered `FP-nn` rule per finding was **cited by no agent** until this round. With
+it required, the decoy rate fell **9.50 → 6.00**, below `mantis`'s 7.75, at a recall cost of 2.4
+points — the registered prediction, confirmed on both halves.
+
+**The band is refuted anyway**: `mantis` 95.5% against 93.9% at the reported window. But the
+sign of that gap **flips across windows** (+0.8, +0.8, −1.5, +1.5), so the arms are
+indistinguishable on recall at this sample size; the decoy advantage is stable at every window.
+
+The contract was exercised rather than filled in: **0% `NOT_APPLICABLE`**, 10 distinct rules per
+run, assertions killed up from ~18 to **27.8**.
+
+Four rounds: behind on recall → ahead on recall and worse on noise → level on recall and better
+on noise. **Level is not best.**
+
 ## The refutation stage ran, and it changed nothing
 
 [2026-08-26, refutation stage](runs/2026-08-26-refutation-stage/) — **not supported**, same
