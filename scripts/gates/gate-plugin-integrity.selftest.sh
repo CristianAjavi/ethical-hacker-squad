@@ -75,6 +75,9 @@ m_tool_network()    { m_tool_inert "$1"; printf 'from urllib import request\n' >
 m_tool_writes()     { m_tool_inert "$1"; printf 'open("/tmp/x", "w")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_writetext()  { m_tool_inert "$1"; printf 'Path("/tmp/x").write_text("y")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_eval()       { m_tool_inert "$1"; printf 'eval("1+1")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_compile()    { m_tool_inert "$1"; printf 'compile("x=1", "<s>", "exec")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_recompile()  { m_tool_inert "$1"; printf 'import re\nPAT = re.compile(r"x")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_ossystem()   { m_tool_inert "$1"; printf 'import os\nos.system("id")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
 
@@ -155,6 +158,9 @@ run_case tool-imports-network        1 "urllib"                    m_tool_networ
 run_case tool-opens-for-writing      1 "for writing"               m_tool_writes
 run_case tool-calls-write-text       1 "write_text"                m_tool_writetext
 run_case tool-calls-eval             1 "calls \`eval\`"            m_tool_eval
+run_case tool-calls-builtin-compile  1 "calls \`compile\`"         m_tool_compile
+run_case tool-uses-re-compile        0 "read and inert"            m_tool_recompile
+run_case tool-calls-os-system        1 "calls \`system\`"          m_tool_ossystem
 run_case tool-relative-import        1 "stand alone"               m_tool_relative
 run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable
 

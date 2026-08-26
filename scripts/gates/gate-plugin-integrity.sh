@@ -442,8 +442,13 @@ if [[ -n "$shipped_tools" ]]; then
 import ast, os, sys
 
 allowed = set(os.environ["TOOL_ALLOWED_IMPORTS"].split())
-BANNED_CALLS = {"eval", "exec", "compile", "__import__", "system", "popen",
-                "write_text", "write_bytes", "spawn", "fork"}
+# Split by HOW the call is written, because the name alone is ambiguous.
+# `re.compile` builds a regex and is inert; the builtin `compile` builds a code
+# object and is not. The first version of this gate banned both by attribute
+# name and refused a shipped tool for using `re.compile` seven times - a real
+# false positive, found the day the second tool shipped.
+BANNED_BARE = {"eval", "exec", "compile", "__import__"}      # only as a bare name
+BANNED_ANY  = {"system", "popen", "write_text", "write_bytes", "spawn", "fork"}
 problems = []
 
 for path in sys.argv[1:]:
@@ -466,8 +471,10 @@ for path in sys.argv[1:]:
                 problems.append(f"{path}:{node.lineno}: imports from `{node.module}`, which is not on the shipped-tool list")
         elif isinstance(node, ast.Call):
             f = node.func
-            name = getattr(f, "id", None) or getattr(f, "attr", None) or ""
-            if name in BANNED_CALLS:
+            bare = getattr(f, "id", None)
+            attr = getattr(f, "attr", None)
+            name = bare or attr or ""
+            if (bare in BANNED_BARE) or (name in BANNED_ANY):
                 problems.append(f"{path}:{node.lineno}: calls `{name}`")
             # open(..., "w"/"a"/"x") - reading is fine, changing the machine is not
             if name == "open":

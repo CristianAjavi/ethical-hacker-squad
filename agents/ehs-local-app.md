@@ -25,6 +25,14 @@ Why the order is fixed: measured blind against the same model working with no pa
 2. If you will invoke any scanner, read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/tooling.md` first.
 3. Work only inside the paths the leader assigned. Do not widen scope by inference.
 4. Read `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/triage.md` before you write a single finding. Its ten rules are what you answer instead of deciding by feel, and your return format carries the answers.
+- Two mechanical joins, run before you judge anything:
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/log_escaper.py --target <tree>`
+  splits logging calls by whether an escaper reaches the sink — a worklist, not a verdict.
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/path_coverage.py --target <tree>`
+  joins mounted paths against the paths guards claim to cover: `DEAD GUARD` is a control that
+  cannot fire, `UNGUARDED` a route whose sibling is protected. Both files are correct alone, which
+  is why reading either harder does not find it. Each tool's own header carries what it misses.
+
 - Your report is an artifact with a contract: it must validate against
   `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/findings.schema.json`, which requires
   **every** finding to carry a `triage` array naming at least one `FP-nn` rule and answering it
