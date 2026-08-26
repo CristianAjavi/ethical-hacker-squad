@@ -26,6 +26,21 @@ WHAT IT DOES
     scope. Nothing else is looked at, because a default that decides a retry
     count is not this tool's business.
 
+WHAT IT COVERS, AND WHAT IT MEASURABLY DOES NOT
+    Of the four defects in that family, it names two: the omitted argument
+    (`T-31`, api-stack.ts calling grantArtifacts with 2 of 3 args) and the table
+    (`T-32`, tierPolicies resolving `ops` to AdministratorAccess). It does NOT
+    catch the third - a `??` fallback returning a default for unknown input -
+    because that line carries no security word, and widening the filter until it
+    did would flag every default in every config file. Fitting the filter to a
+    defect whose location is already known is fitting to the test set, so the
+    gap stays open and its battery asserts the gap rather than hiding it.
+
+    On the service it was built for it makes three flags: two keyed defects and
+    one unlabelled - `dev.adminCidrs: ['0.0.0.0/0']` in an environment named
+    `dev` and marked `ephemeral: true`, which is plausibly meant. Two of three,
+    not three of three.
+
 WHAT IT IS NOT
     Not a detector. A default may be the right default, and an omitted argument
     may be exactly what the caller meant. It reads TypeScript and JavaScript by
@@ -64,6 +79,22 @@ NAME_OPEN = re.compile(r"\b([A-Za-z_$][\w$]*)\s*\(")
 PARAM_DEFAULT = re.compile(r"([A-Za-z_$][\w$]*)\s*(?::[^=,]+)?=\s*([^,]+)")
 NOT_A_CALL = {"if", "for", "while", "switch", "catch", "return", "function",
               "typeof", "await", "new", "super", "constructor", "require"}
+
+# Values that end an argument. A table one of whose entries is
+# `AdministratorAccess` is a table that can resolve to administrator, however
+# clean the call site reads - and `attachTierPolicy(env.tier)` reads perfectly
+# clean. Deliberately a short list of things nobody types by accident.
+DANGEROUS = re.compile(
+    r"(AdministratorAccess|PowerUserAccess|FullAccess|iam:\*|s3:\*|\*:\*|"
+    r"['\"`]\*['\"`]|0\.0\.0\.0/0|::/0|Allow['\"`]?\s*,?\s*['\"`]?\*|"
+    r"BLOCK_ACLS|publicRead\s*:\s*true|anyone|AllUsers|PUBLIC_READ)", re.I)
+
+# key: 'value' inside an object literal
+TABLE_ENTRY = re.compile(r'''^\s*([A-Za-z_$][\w$]*|'[^']+'|"[^"]+")\s*:\s*(.+?),?\s*$''')
+
+# a fallback that decides what happens when the caller said nothing:
+#   return environments[name ?? ''] ?? dev;      x || DEFAULT;
+FALLBACK = re.compile(r"return\s+.*?(?:\?\?|\|\|)\s*([A-Za-z_$][\w$.]*|'[^']*'|\{)")
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__", ".venv"}
 EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs"}
 
@@ -162,17 +193,53 @@ def main(argv=None) -> int:
                     "defaults_taken": [f"{k}={v}" for k, v in taken],
                 })
 
+    # ---- tables and fallbacks: the other two ways a value arrives unsaid ----
+    tables, fallbacks = [], []
+    for p, text in texts.items():
+        rel = str(p.relative_to(a.target))
+        lines = text.splitlines()
+        open_at, key = None, None
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)[^=]*=\s*\{\s*$", line):
+                open_at = i
+                key = re.search(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)", line).group(1)
+                continue
+            if open_at is not None:
+                if line.strip().startswith("}"):
+                    open_at, key = None, None
+                    continue
+                m = TABLE_ENTRY.match(line)
+                if m and DANGEROUS.search(m.group(2)):
+                    tables.append({"where": f"{rel}:{i}", "table": key,
+                                   "entry": f"{m.group(1)}: {m.group(2).strip().rstrip(',')}"})
+        for i, line in enumerate(lines, 1):
+            m = FALLBACK.search(line)
+            if not m:
+                continue
+            head = "\n".join(lines[max(0, i - 8):i])
+            if SECURITY.search(head) or SECURITY.search(line):
+                fallbacks.append({"where": f"{rel}:{i}", "falls_back_to": m.group(1),
+                                  "line": line.strip()})
+
     if a.json:
         print(json.dumps({"files": len(files), "declarations": len(decls),
-                          "omissions": omissions}, indent=2))
+                          "omissions": omissions, "tables": tables,
+                          "fallbacks": fallbacks}, indent=2))
     else:
         for o in omissions:
             print(f"  OMITTED      {o['call']} calls {o['callee']}() with {o['given']} of "
                   f"{o['expects']} args, silently taking {', '.join(o['defaults_taken'])}"
                   f"   [declared {o['declared']}]")
+        for t in tables:
+            print(f"  TABLE        {t['where']} `{t['table']}` can resolve to "
+                  f"{t['entry']}   — the call site names the key, not this")
+        for fb in fallbacks:
+            print(f"  FALLBACK     {fb['where']} unknown or missing input resolves to "
+                  f"`{fb['falls_back_to']}`   [{fb['line'][:60]}]")
         print(f"  {len(decls)} permission-shaped declaration(s) with defaults in {len(files)} "
-              f"file(s); {len(omissions)} call(s) omit an argument")
-    return 1 if omissions else 0
+              f"file(s); {len(omissions)} omitted argument(s), {len(tables)} table(s) with a "
+              f"dangerous value, {len(fallbacks)} silent fallback(s)")
+    return 1 if (omissions or tables or fallbacks) else 0
 
 
 if __name__ == "__main__":

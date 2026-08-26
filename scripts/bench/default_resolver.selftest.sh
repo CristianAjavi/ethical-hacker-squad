@@ -88,6 +88,42 @@ else
   bad "the mutant did not apply: this battery would pass without measuring anything"
 fi
 
+echo "== a table whose value ends the argument =="
+mkdir -p "$TMP/table/config"
+cat > "$TMP/table/config/env.ts" <<'TS4'
+const tierPolicies: Record<Tier, string> = {
+  standard: 'ReadOnlyAccess',
+  ops: 'AdministratorAccess',
+};
+
+export function attachTierPolicy(role: iam.IRole, tier: Tier): void {
+  role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName(tierPolicies[tier]));
+}
+TS4
+run "$TMP/table"; rc=$?
+[ "$rc" -eq 1 ] && ok "a table entry resolving to administrator gives rc 1" || bad "expected rc 1, got $rc"
+grep -q "TABLE.*AdministratorAccess" "$TMP/out" \
+  && ok "the table is named with the entry that ends the argument" \
+  || bad "the dangerous entry was not named: $(head -2 "$TMP/out")"
+
+echo "== the same table with only ordinary values: silent =="
+mkdir -p "$TMP/tame/config"
+sed "s|'AdministratorAccess'|'ReadOnlyAccess'|" "$TMP/table/config/env.ts" > "$TMP/tame/config/env.ts"
+run "$TMP/tame"; rc=$?
+[ "$rc" -eq 0 ] && ok "an ordinary table is not flagged — it tracks the value, not the shape" \
+                || bad "flagged a tame table: $(head -2 "$TMP/out")"
+
+echo "== the limit this tool does NOT cover, asserted so nobody assumes it does =="
+mkdir -p "$TMP/fallback/config"
+cat > "$TMP/fallback/config/pick.ts" <<'TS5'
+export function pickEnv(name?: string): EnvConfig {
+  return environments[name ?? ''] ?? dev;
+}
+TS5
+run "$TMP/fallback"; rc=$?
+[ "$rc" -eq 0 ] && ok "a fallback with no security word on or above its line is NOT caught — a stated gap" \
+                || ok "the fallback was caught here; the gap may have closed, re-read the header"
+
 echo "== could not measure is never a pass =="
 run "$TMP/absent"; rc=$?
 [ "$rc" -eq 2 ] && ok "an absent target gives rc 2" || bad "expected rc 2, got $rc"
