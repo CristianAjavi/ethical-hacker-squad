@@ -86,6 +86,24 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## A blind spot that belongs to the field
+
+[2026-08-27, composition](runs/2026-08-27-composition/) — **refuted** (73.6% against 72.9%),
+and that is the least interesting thing on the page.
+
+On a corpus built so that most defects require reading two or three files together, both arms
+find **essentially every single-file defect and lose four in ten composition defects**:
+
+| arm | composition | single-file |
+|---|---|---|
+| this project | 62.5% | 93.8% |
+| `mantis` | 60.4% | **100.0%** |
+
+A forty-point collapse in the same place, for two products with entirely different
+architectures. The three defects **neither** arm found in any run are three out of three
+composition. The discrimination check was registered *before* the runs this time, and passed:
+reach 83.3% and 88.9%, both under the 90% line the previous round failed after the fact.
+
 ## The control works; the band is refuted anyway
 
 [2026-08-27, artifact contract](runs/2026-08-27-artifact-contract/) — the shipped contract

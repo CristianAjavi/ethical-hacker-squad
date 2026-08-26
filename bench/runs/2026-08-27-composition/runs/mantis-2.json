@@ -1,0 +1,1484 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v5",
+    "arm": "mantis",
+    "run": 2,
+    "mode": "MODE-OFF (no --sync; active_snapshot absent per schema.json 3-state rule). Target has no VCS, so SNAPSHOT_ID would be content-addressed; pinning was not requested.",
+    "execution": "Stages run inline/sequentially by the orchestrator, per mantis-researcher Step 2's documented fallback ('If sub-agents or concurrency are not supported by the current environment, fall back to performing the sweeps and deep-dives sequentially'), because the harness caps concurrency.",
+    "triage_rule_mapping": "FP-01..FP-13 map one-to-one and in order onto mantis-review Step 3's 13 negative constraints (FP-01 ignore_hypothetical_misuse ... FP-13 verify_attacker_control_of_source). 'answer' states whether that rule's own stated condition holds for the finding: for the twelve dismissal rules, DOES_NOT_HOLD means the rule does not knock the finding out; for FP-08 (intrinsic_security_flaws, the one save rule) HOLDS means its keep-it-anyway condition applies.",
+    "stages_run": [
+      "mantis-meta-agent (supervisor; pass 1, MODE-OFF, state written to workspace/.mantis_state.json)",
+      "mantis-summarize (per-directory security map; written under workspace/, NOT into the target)",
+      "mantis-architecture (workspace/kb/architecture.md + kb/entities/trust_boundaries.md)",
+      "mantis-threat-model (workspace/kb/THREAT_MODEL.md; Intent: PRODUCTION via the 5-check production-signal checklist)",
+      "mantis-plan (workspace/plan.json; 7 investigations)",
+      "mantis-researcher (sequential Wave-1 triage + Wave-2 deep audit over all 55 files; grep fallback for the structural index)",
+      "mantis-dedupe (signature = sha256(normalized_title|cwe|primary_target); no cross-pass archive to fold against on pass 1)",
+      "mantis-review (13 negative constraints applied adversarially; 17 candidates killed, see ruled_out)",
+      "mantis-critic (production viability; Intent: PRODUCTION so no SAMPLE_OR_TEST dismissal)",
+      "mantis-chain (one super-finding: ledger-flow unauthenticated import to unauthenticated stored XSS)",
+      "mantis-calibrate (Mantis Risk Score per finding, recorded in the workspace finding JSONs)",
+      "mantis-reflect (no per-subagent transcript logs exposed by this harness; recorded as a missing-transcript insight per the skill's explicit instruction)",
+      "mantis-report (workspace/report/review_packet-latest.md)"
+    ],
+    "stages_skipped": [
+      "mantis-history: the target is a plain directory with no VCS metadata (git rev-parse --is-inside-work-tree fails), so vcs_type = none and there is no history to mine for past vulnerability patterns.",
+      "mantis-structural-index: no SCIP/Kythe/compiler/ctags backend is available offline. The skill declares the index HINT-only and degrades to grep, so the researcher's mandatory repo-wide grep floor was used for every call-site sweep instead.",
+      "mantis-reproduce: cannot run offline. No Go toolchain, Python venv, Node modules, Postgres/Redis, container runtime or network is available, and the operator forbade writing under the target tree, so no PoC could be executed. Every finding therefore carries repro_status not_attempted, never failed_to_reproduce (the skill's absent-evidence rule routes to not_attempted, never to a negative verdict).",
+      "mantis-patch: skipped by operator instruction (TARGET is read-only). No fix was generated or applied, so the re-attack bypass loop was not entered either.",
+      "mantis-advise / mantis-pipeline-adapter: not pipeline stages (guidance documents for building custom harnesses)."
+    ],
+    "ruled_out": [
+      {
+        "assertion": "SQL injection in the account-balance query via the f-string interpolation of account_id",
+        "location": "ledger-flow/blueprints/api.py:64",
+        "rule": "FP-09",
+        "killed_by": "The route is declared `@api_bp.get(\"/accounts/<int:account_id>/balance\")`; Flask's `int` converter only matches digits and hands the view a Python int, so nothing non-numeric can reach the f-string. The mitigation works, so rule 09 dismisses it."
+      },
+      {
+        "assertion": "Path traversal in the importer's staged-file resolution",
+        "location": "ledger-flow/services/importer.py:27",
+        "rule": "FP-09",
+        "killed_by": "`_staged_path` calls `os.path.realpath` on the join and requires the result to start with `realpath(root) + os.sep`, which defeats both `..` segments and an absolute `name` (join returns the absolute path, whose realpath fails the prefix test). Rule 09 credits the working mitigation."
+      },
+      {
+        "assertion": "Non-constant-time comparison in _compare_legacy_digest",
+        "location": "ledger-flow/auth.py:100",
+        "rule": "FP-01",
+        "killed_by": "The function's own docstring says the migration removed the last caller, and a repo-wide grep confirms zero call sites. Nothing reaches it, and it is not an injection/secret/broken-algorithm case, so rule 08 does not rescue it and rule 01 applies."
+      },
+      {
+        "assertion": "SQL injection through the LIMIT clause of ListDevices",
+        "location": "atlas-sync/store/queries.go:90",
+        "rule": "FP-09",
+        "killed_by": "The only caller (`handlers/device.go:38-45`) parses the value with `strconv.Atoi`, requires `n > 0 && n <= 500`, and re-serialises with `strconv.Itoa`, so the interpolated string is always decimal digits. The round trip is an effective mitigation."
+      },
+      {
+        "assertion": "Billing webhook compares the signature against a stale digest (hmac.Equal(got, mac.Sum(nil)) after want was computed)",
+        "location": "atlas-sync/handlers/webhook.go:63",
+        "rule": "FP-09",
+        "killed_by": "`hash.Hash.Sum` appends the current digest to its argument without mutating the underlying state, so the second `mac.Sum(nil)` returns the same bytes as `want`. The comparison is correct, is constant-time via `hmac.Equal`, and is preceded by a 300-second timestamp check."
+      },
+      {
+        "assertion": "TLS verification disabled in the billing HTTP client",
+        "location": "atlas-sync/main.go:33",
+        "rule": "FP-03",
+        "killed_by": "`Env` is declared `const Env = \"production\"` at main.go:24, so `Env == \"sandbox\"` is a compile-time-false branch that never executes in this build. There is no reachable path to the InsecureSkipVerify transport."
+      },
+      {
+        "assertion": "Path traversal in the landing-page slug handler",
+        "location": "edge-relay/app/routes_public.py:57",
+        "rule": "FP-09",
+        "killed_by": "`safe_slug` enforces `^[a-z0-9][a-z0-9-]{0,63}$` before the join (deps.py:7, 72-75), which admits no dot, slash or backslash. The mitigation blocks the traversal class outright."
+      },
+      {
+        "assertion": "Reflected XSS in the unsubscribe landing page",
+        "location": "edge-relay/app/routes_public.py:69",
+        "rule": "FP-09",
+        "killed_by": "The token is inserted into element text with `<` and `>` replaced by entities. Without an angle bracket no tag or attribute context can be opened, and there is no attribute or script context at the sink."
+      },
+      {
+        "assertion": "SQL injection through the LIMIT clause of listNotifications",
+        "location": "pulse-notify/lib/store.js:43",
+        "rule": "FP-09",
+        "killed_by": "The route declares a Fastify JSON schema with `limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }` and `additionalProperties: false` (routes/notifications.js:6-15); Fastify coerces and validates before the handler runs, so only a bounded integer reaches the template literal."
+      },
+      {
+        "assertion": "Hardcoded API token in the service configuration (defaults.demoToken)",
+        "location": "pulse-notify/config/default.json:31",
+        "rule": "FP-02",
+        "killed_by": "The value is `pulse-sample-token-for-docs` under a `defaults` block and is never read by any authentication path \u2014 `plugins/auth.js` resolves sessions only through `store.findSessionByHash`. Rule 02's hardcoded-mock exemption applies; its exposure through the unauthenticated /admin/config route is already covered by the admin-scope finding."
+      },
+      {
+        "assertion": "Arbitrary SQL execution through store.execRaw",
+        "location": "pulse-notify/lib/store.js:100",
+        "rule": "FP-01",
+        "killed_by": "The helper takes a complete SQL string by contract and its comment says it is used by one-off migration scripts under ops/. A repo-wide grep finds no HTTP-layer caller, so reaching it requires a hypothetical future caller passing untrusted SQL."
+      },
+      {
+        "assertion": "Asset-host allowlist bypass via URL userinfo (https://assets.orchard.example@evil.example/)",
+        "location": "orchard-jobs/src/lib/schema.js:75",
+        "rule": "FP-09",
+        "killed_by": "`new URL(...).hostname` returns the authority host, which is `evil.example` in that construction, so the `ASSET_HOSTS` set check rejects it. The allowlist works on the submission path; the real defect is the retry path that never calls this validator, reported separately."
+      },
+      {
+        "assertion": "SQS queue policy grants sqs:SendMessage to AnyPrincipal",
+        "location": "beacon-cdk/lib/constructs/queue.ts:36",
+        "rule": "FP-09",
+        "killed_by": "The statement is guarded by `conditions: { ArnEquals: { 'aws:SourceArn': props.eventBusArn } }`, the documented cross-account EventBridge pattern, and `data-stack.ts:34-36` never passes `eventBusArn`, so the branch does not execute in any synthesised stack."
+      },
+      {
+        "assertion": "Hardcoded API key in the environment configuration (docs.exampleApiKey)",
+        "location": "beacon-cdk/config/environments.ts:79",
+        "rule": "FP-02",
+        "killed_by": "The constant sits in an object whose JSDoc reads 'Values shown in the onboarding guide; not read by any stack', and a repo-wide grep confirms `docs` has no consumer. Rule 02's documentation/mock exemption applies."
+      },
+      {
+        "assertion": "Unbounded in-memory rate-limiter maps allow memory exhaustion",
+        "location": "atlas-sync/middleware/ratelimit.go:19",
+        "rule": "FP-07",
+        "killed_by": "Neither module's stated purpose is DoS defence and the finding is a missing size bound on a cache, which rule 07 excludes. The same reasoning covers pulse-notify/plugins/ratelimit.js:29."
+      },
+      {
+        "assertion": "Missing security headers and verbose error messages across the services",
+        "location": "pulse-notify/server.js:48",
+        "rule": "FP-02",
+        "killed_by": "Reflecting `err.message` and omitting CSP/HSTS are the defence-in-depth and hygiene items rule 02 excludes; no specific secret was shown to flow into an error path."
+      },
+      {
+        "assertion": "Unhandled ValueError on the postings limit parameter",
+        "location": "ledger-flow/blueprints/api.py:21",
+        "rule": "FP-07",
+        "killed_by": "`int(request.args.get(\"limit\", 100))` raises on non-numeric input and yields a 500. That is an input-robustness/availability nit with no data-integrity or confidentiality consequence, which rules 07 and 02 exclude."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Maintenance API is unauthenticated: the internal-token guard matches a prefix the blueprint is not mounted under",
+      "location": {
+        "path": "ledger-flow/auth.py",
+        "symbol": "enforce_internal_token",
+        "line": 55
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`INTERNAL_PREFIX = \"/internal\"` (auth.py:13) and the guard returns early unless `request.path.startswith(INTERNAL_PREFIX)` (auth.py:55). `app.py:35` registers `internal_bp` with `url_prefix=\"/api/internal\"`, so every real request path is `/api/internal/...` and never matches; the guard returns None for all of them. `internal_bp` is also the one blueprint that never calls `before_request(require_session)` (only `api_bp` does, api.py:16), so no session is required either.",
+      "impact": "Anonymous callers reach DELETE /api/internal/tenants/<id> (deletes every posting for a tenant), POST /api/internal/reindex, POST /api/internal/import and GET /api/internal/status. Destructive, unauthenticated tenant data loss.",
+      "recommendation": "Compare against the mounted prefix (`/api/internal`) or, better, attach the guard as `internal_bp.before_request` together with `require_session` so the check cannot drift from the mount point again.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): this is not a hypothetical caller misusing an API; the mismatch is between two literals inside this repository (auth.py:13 and app.py:35)."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; both the constant and the `url_prefix=` argument was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is any unauthenticated HTTP request to /api/internal/* (app.py:35)."
+        }
+      ]
+    },
+    {
+      "title": "Unauthenticated cross-tenant ledger export through the current_tenant() query-string fallback",
+      "location": {
+        "path": "ledger-flow/auth.py",
+        "symbol": "current_tenant",
+        "line": 95
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`current_tenant()` returns `request.args.get(\"tenant\")` whenever `g.user` is None (auth.py:92-95). `reports_bp` never registers `require_session` (grep for require_session finds only api.py:16), and all three of its views call `current_tenant()` (reports.py:50, 72, 91). `GET /reports/export.csv?tenant=<victim>` therefore returns up to 100000 postings for an arbitrary tenant with no credentials.",
+      "impact": "Anonymous full-ledger disclosure for every tenant: entry ids, account codes, amounts and memos via /reports/export.csv, /reports/statement and /reports/trial-balance.",
+      "recommendation": "Register `reports_bp.before_request(require_session)` and derive the tenant only from `g.user`; give the nightly export job its own service credential instead of an unauthenticated query parameter.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): this is not missing defence-in-depth: the fallback is the only tenant selector on an unauthenticated blueprint, so it is the primary authorization decision."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the fallback branch and the three call sites was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `?tenant=` on GET /reports/* (reports.py:50)."
+        }
+      ]
+    },
+    {
+      "title": "Remote code execution via pickle.loads on a client-supplied draft blob",
+      "location": {
+        "path": "ledger-flow/blueprints/api.py",
+        "symbol": "restore_draft",
+        "line": 79
+      },
+      "class": "Insecure deserialization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`blob = (request.form.get(\"state\") or \"\").encode(\"ascii\")` then `state = pickle.loads(base64.b64decode(blob))` (api.py:78-79). The value is taken straight from the request form with no signature, no allowlist and no safe unpickler.",
+      "impact": "Any authenticated tenant user executes arbitrary Python in the ledger process (pickle `__reduce__`), reaching the database credentials, the import volume and the session secret.",
+      "recommendation": "Serialise drafts as JSON, or sign the blob with `itsdangerous` and verify before unpickling; never call `pickle.loads` on request data.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: a deserialization sink fed directly from request data is an intrinsic flaw in this function's own logic."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the pickle import and the loads() call was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `request.form[\"state\"]` at api.py:78."
+        }
+      ]
+    },
+    {
+      "title": "Bulk importer bypasses Posting.clean(), and the statement view then renders memos as trusted markup",
+      "location": {
+        "path": "ledger-flow/services/importer.py",
+        "symbol": "import_batch",
+        "line": 82
+      },
+      "class": "Stored XSS / validation bypass",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`Posting.clean()` (models.py:60-80) is the documented invariant for every row that lands in `postings`: it enforces the account-code shape and runs `bleach.clean(...)` over the memo. `import_batch` writes with `db.session.bulk_insert_mappings(Posting, mappings)` (importer.py:82), which inserts dicts without instantiating the model, so `clean()` never runs on the imported rows. `reports.py:64` then wraps the stored memo in `Markup(p.memo or \"\")`, explicitly marking it safe, and the Jinja template interpolates it unescaped (reports.py:30).",
+      "impact": "A memo cell in an imported CSV carrying `<script>` or an event handler executes in the browser of any accountant opening /reports/statement; the account-code invariant is also unenforced on this path.",
+      "recommendation": "Route the importer through `Posting(**row).clean()` (or apply `bleach.clean` to the mapping before the bulk insert) and sanitise at render time instead of trusting the column with `Markup`.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 05 (no_security_flaw_stretching): this is not stretching a mitigation: the bleach mitigation exists on the ORM path and is simply not on the bulk path, which is a second write path to the same column."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; bulk_insert_mappings, clean() and the Markup() wrapper was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is memo column of a staged CSV, reached via POST /api/internal/import (internal.py:33)."
+        }
+      ]
+    },
+    {
+      "title": "Hardcoded fallback SECRET_KEY signs the session cookie",
+      "location": {
+        "path": "ledger-flow/config.py",
+        "symbol": "BaseConfig.SECRET_KEY",
+        "line": 15
+      },
+      "class": "Hardcoded secret",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`SECRET_KEY = os.environ.get(\"LEDGER_SECRET_KEY\", \"ledger-flow-default-secret\")` (config.py:15). The comment on line 14 states it signs the session cookie and the CSRF tokens. Nothing fails closed when `LEDGER_SECRET_KEY` is absent, and `load()` defaults to `ProductionConfig` (config.py:50).",
+      "impact": "If the variable is unset in any environment, anyone can mint a Flask session cookie with an arbitrary `uid`, which `load_session` turns into `g.user` (auth.py:24-34): full account impersonation, including the `accountant` role gate.",
+      "recommendation": "Raise at start-up when `LEDGER_SECRET_KEY` is missing in a non-testing config, as the code already does for the internal token (`if not expected: abort(403)`).",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: a static secret embedded in the source is an intrinsic flaw independent of callers."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a hardcoded mock database: this value is the live signing key whenever the env var is absent."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the config constant and its default was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "Maintenance status endpoint discloses the database URI and import root",
+      "location": {
+        "path": "ledger-flow/blueprints/internal.py",
+        "symbol": "status",
+        "line": 18
+      },
+      "class": "Information disclosure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`status()` returns `current_app.config[\"SQLALCHEMY_DATABASE_URI\"]` and `IMPORT_ROOT` (internal.py:18-19). The default URI is a DSN (`postgresql+psycopg://ledger@localhost/ledger`, config.py:18) and a deployed one normally carries a password. The endpoint sits under `/api/internal`, which the guard never covers (see the prefix-mismatch finding).",
+      "impact": "Anonymous callers learn the database DSN (and any credential in it) plus the filesystem root used by the importer, which is the input to the import path.",
+      "recommendation": "Remove the connection string from the response and gate the blueprint behind the internal-token check plus a session.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a missing-header hygiene item: the handler actively serialises a credential-bearing configuration value into an HTTP response."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the two config keys in the jsonify call was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is GET /api/internal/status from any unauthenticated client."
+        }
+      ]
+    },
+    {
+      "title": "Authentication bypass: RequireSession falls back to ParseLegacy, which never verifies the signature",
+      "location": {
+        "path": "atlas-sync/middleware/auth.go",
+        "symbol": "RequireSession",
+        "line": 56
+      },
+      "class": "Authentication bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`Verifier.Parse` is strict (HS256 only, `jwt.WithExpirationRequired`, secret checked) but when it returns an error `RequireSession` retries with `token.ParseLegacy(raw)` (auth.go:51-61). `ParseLegacy` (token.go:67-87) splits on '.', base64-decodes **only** `parts[1]` and json-unmarshals it into `Claims`. No key, no MAC, no algorithm check. The resulting `claims.Subject`, `claims.TenantID` and `claims.Role` are written into the request `Scope` (auth.go:63-68).",
+      "impact": "Anyone can forge `Authorization: Bearer aa.<base64({\"sub\":\"victim\",\"role\":\"admin\",\"tid\":\"other-tenant\"})>.bb` and become any user in any tenant with any role. Every handler behind the session group, and `middleware.RequireRole`, trust this Scope.",
+      "recommendation": "Delete the legacy fallback, or verify legacy envelopes against the same secret before accepting them; never accept a claim set that has not been MAC-verified.",
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 09 (verify_mitigations_pragmatically): the strict `Parse` mitigation exists but is not the only path: the error branch reaches an unverified parser, so the mitigation is bypassable rather than effective."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the fallback call at auth.go:56 and the body of ParseLegacy was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `Authorization` header at auth.go:45 (bearer())."
+        }
+      ]
+    },
+    {
+      "title": "The /v1/sync route group carries no session middleware and resolves the device from the query string",
+      "location": {
+        "path": "atlas-sync/router.go",
+        "symbol": "NewRouter",
+        "line": 53
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`r.Route(\"/v1/sync\", ...)` attaches only `chimw.Timeout` and `middleware.MaxBytes` (router.go:53-60) \u2014 unlike the group above it, which uses `middleware.RequireSession` (router.go:41). `SyncHandler.resolveDevice` returns `middleware.ScopeFrom(ctx).DeviceID` if set and otherwise `r.URL.Query().Get(\"device_id\")` (sync.go:39-44); with no session middleware the Scope is always the zero value, so the query parameter always wins.",
+      "impact": "`GET /v1/sync/delta?device_id=<victim>` streams up to 5000 records of any device with no credentials, and `POST /v1/sync/push?device_id=<victim>` writes records attributed to that device's owner (`OwnerOfDevice`, sync.go:95).",
+      "recommendation": "Add `sr.Use(middleware.RequireSession(deps.Tokens))` to the sync group and remove the query-string device fallback, or bind it to a paired device proven by the session.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not a hypothetical caller: the route table in this file is what omits the middleware."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the router group and resolveDevice was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `?device_id=` at sync.go:43."
+        }
+      ]
+    },
+    {
+      "title": "Path traversal in the attachment handler on an unauthenticated route",
+      "location": {
+        "path": "atlas-sync/handlers/sync.go",
+        "symbol": "Attachment",
+        "line": 134
+      },
+      "class": "Path traversal",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`os.Open(filepath.Join(h.attachDir, name))` where `name := r.URL.Query().Get(\"name\")` (sync.go:128-134). The only check is that the name is non-empty; `filepath.Join` cleans the path but does not confine it, so `..` segments escape `attachDir`. The route is registered in the `/v1/sync` group, which has no session middleware.",
+      "impact": "Anonymous arbitrary file read from the service container (`/v1/sync/attachment?name=../../../../etc/passwd`, or the process environment / mounted secrets), returned as `application/octet-stream`.",
+      "recommendation": "Reject names containing a separator or `..` (or match an opaque-id regex), then verify `filepath.Clean` of the joined path still has `attachDir` as a prefix; use `os.Root`/`openat` semantics where available.",
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 09 (verify_mitigations_pragmatically): there is no mitigation to credit: `filepath.Join` normalises but does not constrain, and no prefix check follows."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the Join call and the query read was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `?name=` at sync.go:128."
+        }
+      ]
+    },
+    {
+      "title": "SQL injection through the sort column of the activity feed",
+      "location": {
+        "path": "atlas-sync/store/queries.go",
+        "symbol": "ListRecords",
+        "line": 167
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`q := fmt.Sprintf(\"... ORDER BY %s DESC LIMIT 500\", sortColumn)` (queries.go:163-168). `sortColumn` comes from `r.URL.Query().Get(\"sort\")` in `SyncHandler.ListRecords` (sync.go:113-117) with no allowlist \u2014 only an empty-string default. The `ownerID` bind parameter is unaffected by the injected fragment.",
+      "impact": "An authenticated caller injects into the ORDER BY clause of a live query (subselect-based boolean/error oracles in PostgreSQL), reading data outside the owner scope the `WHERE owner_id = $1` clause was meant to enforce.",
+      "recommendation": "Map the segmented-control value through a fixed allowlist (`updated_at`, `kind`, `id`) and fall back to the default for anything else; never interpolate an identifier taken from the request.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 04 (avoid_pedantic_linting): not pedantic linting of a safe library: the surrounding query is parameterised precisely because the driver supports it, and this one identifier is concatenated instead."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the Sprintf and the handler's query read was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `?sort=` at sync.go:113."
+        }
+      ]
+    },
+    {
+      "title": "Device import trusts the client-supplied owner_id and writes records for other accounts",
+      "location": {
+        "path": "atlas-sync/store/queries.go",
+        "symbol": "BulkInsertRecords",
+        "line": 131
+      },
+      "class": "Broken object-level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`DeviceHandler.Import` decodes `records[]` and passes them straight to `h.repo.BulkInsertRecords(r.Context(), body.Records)` (device.go:81-95); `scope.UserID` is read at line 60 of the neighbouring handlers but never used here. `BulkInsertRecords` inserts `rec.OwnerID` verbatim and its upsert is `ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body` with **no** owner predicate (queries.go:129-131) \u2014 contrast `UpsertRecord`, which does carry `WHERE records.owner_id = $2` (queries.go:115).",
+      "impact": "Any authenticated user inserts or overwrites the body of any record id belonging to any other user or tenant: cross-tenant data tampering and, by choosing existing ids, silent corruption of other tenants' data.",
+      "recommendation": "Ignore `OwnerID` on the wire and stamp `scope.UserID` server-side, and add the `WHERE records.owner_id = $2` guard to the bulk statement so the two write paths agree.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not a hypothetical caller passing a bad parameter: the handler in this repository is the caller, and it forwards the wire value unchanged."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the handler, the struct tag `json:\"owner_id\"` and the conflict clause was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `records[].owner_id` in the POST /v1/devices/import body (device.go:83)."
+        }
+      ]
+    },
+    {
+      "title": "Reflected XSS in the staging echo handler",
+      "location": {
+        "path": "atlas-sync/handlers/webhook.go",
+        "symbol": "echoEvent",
+        "line": 86
+      },
+      "class": "Cross-site scripting",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`w.Write([]byte(\"<pre>\" + string(raw) + \"</pre>\"))` with `Content-Type: text/html` and `raw` read from the request body (webhook.go:83-87). A repo-wide grep for `echoEvent` finds only its definition and its doc comment \u2014 it is not registered in `router.go`, so it is unreachable in this build.",
+      "impact": "If the staging build wires the route (the comment says it does), the payload renders as HTML in the provider's console; no impact in the code as committed.",
+      "recommendation": "Escape with `html.EscapeString`, or serve the payload as `text/plain`.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 06 (evaluate_questionable_file_paths): the path was traced rather than dismissed: the symbol is unrouted in this tree, so it is reported as probable, not confirmed."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: the injection path exists in the function's own logic, so it is not dismissed merely for having no current caller."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the concatenation and the absent router registration was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "The nginx office-only allowlist guards /internal/, but the operator console is mounted at /ops",
+      "location": {
+        "path": "edge-relay/nginx/relay.conf",
+        "symbol": "location /internal/",
+        "line": 25
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`location /internal/ { allow 10.20.0.0/16; allow 10.30.4.0/24; deny all; proxy_pass http://relay_app; }` (relay.conf:25-31). The application mounts the operator routes at `/ops`: `Mount(\"/ops\", routes=admin_routes)` (main.py:28). No location block matches `/ops/`, so those requests take `location / { proxy_pass http://relay_app; }` (relay.conf:56) with no `allow`/`deny`. routes_admin.py:3-5 states in its module docstring that the handlers do not re-check staff membership because the edge is assumed to filter them.",
+      "impact": "The entire operator surface (`/ops/status`, `/ops/flags`, `/ops/replay`, `DELETE /ops/tenants/{id}`) is reachable from the public internet, and the handlers deliberately perform no membership check of their own.",
+      "recommendation": "Change the block to `location /ops/`, and stop relying on a network ACL as the only authorization for staff endpoints \u2014 enforce a role check inside the handlers.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not defence-in-depth: this ACL is the sole documented authorization control for the operator surface, per routes_admin.py's own docstring."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the location block and the Mount prefix was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is any internet client requesting /ops/* (main.py:28)."
+        }
+      ]
+    },
+    {
+      "title": "/ops/status is on the public-path allowlist and returns the database URL",
+      "location": {
+        "path": "edge-relay/app/deps.py",
+        "symbol": "PUBLIC_PATHS",
+        "line": 13
+      },
+      "class": "Credential disclosure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`PUBLIC_PATHS` contains `\"/ops/status\"` (deps.py:13) and `SessionAuthMiddleware.dispatch` returns early for any path `is_public_path()` accepts (middleware.py:43-45). The handler serialises `settings.database_url` (routes_admin.py:26), which `docker-compose.yml:21` sets to `postgresql://relay:${POSTGRES_PASSWORD}@db:5432/relay`. Combined with the `/ops` vs `/internal/` prefix mismatch above, no network ACL covers it either.",
+      "impact": "Unauthenticated disclosure of the Postgres username, password and host, plus the template directory and process id \u2014 a direct path to the database if it is reachable.",
+      "recommendation": "Drop `database_url` (and `template_dir`) from the payload, and remove `/ops/status` from `PUBLIC_PATHS`; expose an unauthenticated liveness probe that returns only a status string.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not an information-leak nit: the leaked value is a live credential-bearing DSN, not a version banner."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the allowlist entry and the JSONResponse body was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is GET /ops/status from any unauthenticated client."
+        }
+      ]
+    },
+    {
+      "title": "Operator handlers accept any authenticated session; there is no role check",
+      "location": {
+        "path": "edge-relay/app/routes_admin.py",
+        "symbol": "purge_tenant",
+        "line": 58
+      },
+      "class": "Privilege escalation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`SessionAuthMiddleware` sets `request.state.user = claims` for any cookie whose HMAC verifies (middleware.py:64) and nothing downstream inspects `claims[\"role\"]`. None of `flags`, `replay` or `purge_tenant` reads `request.state.user` at all (routes_admin.py:35-60); the docstring says membership is not re-checked because the edge filters by IP.",
+      "impact": "Any signed-in tenant user \u2014 not just staff \u2014 can flip feature flags, replay stored webhook deliveries to a tenant of their choosing, and issue `DELETE /ops/tenants/{tenant_id}`.",
+      "recommendation": "Add a role/audience check (`claims['role'] == 'operator'`, or validate against `settings.operator_audience`) as a dependency on the admin mount.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not missing hygiene: authorization for a destructive administrative action is a primary control, and it is absent."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the four handlers and the middleware assignment was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is a valid `relay_session` cookie held by any tenant user (middleware.py:55)."
+        }
+      ]
+    },
+    {
+      "title": "Server-side request forgery in the link-preview endpoint",
+      "location": {
+        "path": "edge-relay/app/routes_public.py",
+        "symbol": "link_preview",
+        "line": 33
+      },
+      "class": "SSRF",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`target = request.query_params.get(\"url\")` is passed unchanged to `client.get(target, ...)` with `follow_redirects=True` (routes_public.py:28-33). There is no scheme check, no host allowlist, no DNS/IP-literal rejection and no redirect pinning. The handler then returns the upstream status code, content type and the extracted `<title>` (routes_public.py:40-47).",
+      "impact": "An authenticated tenant user makes the service issue requests to cloud metadata (169.254.169.254), to the compose-internal `thumbs:8100` and `db:5432`, and to any host behind the perimeter, with status/content-type/title returned as an oracle.",
+      "recommendation": "Allowlist the scheme (http/https only), resolve the host and reject loopback/link-local/private ranges before connecting, disable redirect following or re-validate each hop, and egress through a dedicated proxy.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 05 (no_security_flaw_stretching): not an adjacent class invented while reviewing a fix: SSRF is the primary and only class of this handler's flaw."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the query read and the httpx call was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `?url=` at routes_public.py:28."
+        }
+      ]
+    },
+    {
+      "title": "Edge reflects the request Origin with Access-Control-Allow-Credentials: true",
+      "location": {
+        "path": "edge-relay/nginx/relay.conf",
+        "symbol": "location /api/",
+        "line": 39
+      },
+      "class": "CORS misconfiguration",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`add_header Access-Control-Allow-Origin $http_origin always;` together with `add_header Access-Control-Allow-Credentials \"true\" always;` (relay.conf:39-40). `$http_origin` echoes whatever the caller sent, so every origin is allowed while credentials are permitted.",
+      "impact": "Any web page a signed-in operator visits can issue credentialed cross-origin requests to `/api/*` and read the responses \u2014 full session-riding read access to the tenant API (`/api/whoami`, `/api/preview`).",
+      "recommendation": "Validate `$http_origin` against a map of permitted tenant subdomains and emit the header only on a match; never combine a reflected origin with credentialed CORS.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a missing security header: a header is actively emitted that grants cross-origin credentialed access."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; both add_header directives in the /api/ block was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the `Origin` request header of any cross-site request."
+        }
+      ]
+    },
+    {
+      "title": "The application container publishes port 8000 on the host, bypassing the nginx edge entirely",
+      "location": {
+        "path": "edge-relay/docker-compose.yml",
+        "symbol": "services.app.ports",
+        "line": 27
+      },
+      "class": "Network exposure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The `app` service maps `\"8000:8000\"` (docker-compose.yml:26-27) with the stated reason that the load tester and on-call debugger want direct access. The edge container is the only place the `/internal/` IP allowlist, the `limit_req`/`limit_conn` zones and the security headers exist (relay.conf:3-4, 19-34).",
+      "impact": "Every control implemented at the edge \u2014 IP allowlisting, rate limiting, header hardening \u2014 is optional for anyone who can reach the host on 8000, including the operator surface.",
+      "recommendation": "Remove the host port mapping (use `expose:` so only the compose network reaches it), or bind it to 127.0.0.1 and reach it through an SSH tunnel.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a hygiene nit: the mapping makes the only authorization boundary for /ops and the only rate limiter optional."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the ports mapping and the edge-only directives was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is any client with network reach to the host on TCP 8000."
+        }
+      ]
+    },
+    {
+      "title": "Client IP is taken from the first X-Forwarded-For entry, so the office-network check is spoofable",
+      "location": {
+        "path": "edge-relay/app/deps.py",
+        "symbol": "client_ip",
+        "line": 56
+      },
+      "class": "Spoofable trust signal",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`client_ip` returns `forwarded.split(\",\")[0].strip()` (deps.py:54-56), i.e. the left-most entry. nginx sets `X-Forwarded-For $proxy_add_x_forwarded_for` (relay.conf:16), which **appends** the peer to whatever the client sent, so the left-most entry is entirely client-controlled. `from_office()` builds its decision on that value (deps.py:63-65). The app port is also directly reachable, in which case no proxy header is added at all.",
+      "impact": "An external caller sets `X-Forwarded-For: 10.20.0.5` and is reported as office-originated; the same value is what the service logs and returns from `/api/whoami`, so audit trails are attacker-authored.",
+      "recommendation": "Take the right-most untrusted hop after a known-proxy count, or use a vetted `ProxyHeaders`/`trusted hosts` middleware configured with the edge's address; never trust the left-most entry.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not hypothetical misuse by a caller: the header semantics are documented in the adjacent nginx config in this same repository."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the split() and the nginx proxy_set_header line was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the `X-Forwarded-For` request header (deps.py:54)."
+        }
+      ]
+    },
+    {
+      "title": "Header-based user impersonation is enabled whenever RELAY_ENV is unset",
+      "location": {
+        "path": "edge-relay/app/middleware.py",
+        "symbol": "SessionAuthMiddleware.dispatch",
+        "line": 47
+      },
+      "class": "Authentication bypass",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`if settings.is_local and request.headers.get(\"x-debug-user\")` grants `{\"id\": <header value>, \"role\": \"operator\"}` with no further checks (middleware.py:47-53). `is_local` is `env == \"local\"` and `env` defaults to `os.environ.get(\"RELAY_ENV\", \"local\")` (deps.py:26, 41) \u2014 the insecure state is the default, and the only thing that changes it is `RELAY_ENV: production` in docker-compose.yml:20.",
+      "impact": "Any deployment that misses the variable (a different orchestrator, a `docker run`, a migration to k8s) lets anyone become an operator with a single header.",
+      "recommendation": "Default `env` to `\"production\"` so the fail-open state requires an explicit opt-in, and gate the debug path on an additional secret.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 03 (require_strict_reproducibility): reproducibility is not fragile: the trigger is one header on a deployment whose only guard is one environment variable; reported as probable because the shipped compose file sets it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the is_local branch and the Settings default was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the `x-debug-user` request header (middleware.py:47)."
+        }
+      ]
+    },
+    {
+      "title": "Session cookie claims are never checked for expiry",
+      "location": {
+        "path": "edge-relay/app/middleware.py",
+        "symbol": "_unsign",
+        "line": 31
+      },
+      "class": "Session management",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`_unsign` verifies the HMAC and returns `json.loads(raw)` (middleware.py:24-34); `dispatch` assigns the result to `request.state.user` (middleware.py:64). Neither reads an `exp`/`iat` field, and there is no revocation lookup anywhere in the module.",
+      "impact": "A cookie captured once is valid forever: sign-out, password reset and staff offboarding cannot end a session.",
+      "recommendation": "Include an expiry in the signed payload and reject claims past it; keep a revocation list keyed by a session id for forced logout.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): session lifetime is a primary authentication control, not defence-in-depth."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the _unsign body and its single call site was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "proxy_ssl_verify is disabled at http scope for every upstream",
+      "location": {
+        "path": "edge-relay/nginx/upstreams.conf",
+        "symbol": "proxy_ssl_verify",
+        "line": 17
+      },
+      "class": "Insecure TLS configuration",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`proxy_ssl_verify off;` sits at the top level of `upstreams.conf` (line 17), which relay.conf includes at server-file scope (relay.conf:1), so it applies to every `proxy_pass`. The comment says it was carried over from a deployment where the thumbnailer terminated its own TLS. Both current upstreams are plain HTTP, so nothing verifies a certificate today.",
+      "impact": "No impact as configured; the moment any upstream is switched to https the connection accepts any certificate, enabling an in-path attacker on the internal network.",
+      "recommendation": "Delete the directive, or scope it to the specific upstream that needs it and pin `proxy_ssl_trusted_certificate` instead.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 03 (require_strict_reproducibility): strict reproducibility does not hold today: no https upstream exists, so the setting is currently inert \u2014 hence low severity and probable status."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the directive and the include line was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "The /admin surface is registered outside the authenticated Fastify scope and has no session hook",
+      "location": {
+        "path": "pulse-notify/server.js",
+        "symbol": "build",
+        "line": 38
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`authPlugin` and `rateLimitPlugin` are registered *inside* the encapsulated `apiScope` plugin (server.js:27-34), so their `onRequest` hooks bind only to routes registered in that scope. `app.register(adminRoutes, { prefix: '/admin' })` (server.js:38) registers on the root instance, outside that encapsulation, and adds no `preHandler`. routes/admin.js:6-8 nevertheless states that 'the session hook populates request.user before any of these handlers run'; the handler at admin.js:15 even guards with `request.user ? ... : 'system'`, which is exactly what an unauthenticated request produces.",
+      "impact": "Unauthenticated `DELETE /admin/tenants/:id` deletes every notification and the tenant row (`store.deleteTenant`); `GET /admin/config` returns `config.defaults` including `demoToken`, `trustedProxies` and `publicPrefixes`; `GET /admin/tenants/:id/notifications` dumps any tenant's notifications; `POST /admin/sessions/impersonate` performs a session lookup for a caller-supplied value. No rate limit applies either.",
+      "recommendation": "Register the admin routes inside a scope that awaits `authPlugin` (or attach the hook with `fastify.addHook` on the root and exempt only the public prefixes), and add an explicit `fastify.requireRole(request, 'operator')` in every admin handler.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not hypothetical: Fastify plugin encapsulation is what makes the hook not apply, and both registrations are in this file."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the two register() calls and the onRequest hook in plugins/auth.js was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is any unauthenticated HTTP request to /admin/* (server.js:38)."
+        }
+      ]
+    },
+    {
+      "title": "SQL injection through attacker-controlled column names in the saved-filter search",
+      "location": {
+        "path": "pulse-notify/lib/store.js",
+        "symbol": "searchNotifications",
+        "line": 52
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`Object.entries(filter).map(([column, value]) => `${column} = ${quote(value)}`)` (store.js:51-53). Only the *value* passes through `quote()`; the column identifier is interpolated raw into the WHERE clause (store.js:58). The route `POST /api/v1/notifications/search` passes `request.body.filter` straight in (notifications.js:48) and its schema constrains only the value type (`additionalProperties: { type: 'string' }`, notifications.js:24), never the key. The statement also has no tenant predicate of its own.",
+      "impact": "An authenticated tenant user injects arbitrary SQL (`{\"1=1 OR tenant_id LIKE '%' --\": \"x\"}` or a UNION/subselect) into a live query, reading every tenant's notifications; the missing tenant predicate already permits cross-tenant reads without injection.",
+      "recommendation": "Map filter keys through an explicit allowlist of column names, bind values as `$n` parameters, and add `tenant_id = $1` from the session to the statement.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 04 (avoid_pedantic_linting): not pedantic: the value-quoting helper is present and the identifier path deliberately skips it, so this is a genuine unparameterised identifier."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the template literal and both call sites was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the `filter` object keys in the POST /api/v1/notifications/search body (notifications.js:48)."
+        }
+      ]
+    },
+    {
+      "title": "Remote code execution: the template preview endpoint compiles caller-supplied expressions with new Function",
+      "location": {
+        "path": "pulse-notify/lib/render.js",
+        "symbol": "renderTemplate",
+        "line": 28
+      },
+      "class": "Code injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "For the `{{= expr }}` form, `renderTemplate` builds `new Function(...keys, \\`return (${body});\\`)` and immediately calls it (render.js:25-30), where `body` is the text between the braces of the template. `POST /api/v1/notifications/preview` passes the request body's `template` field in with no schema at all (notifications.js:58-61) \u2014 the route has no `schema` option, unlike its siblings.",
+      "impact": "Any authenticated tenant user executes arbitrary JavaScript in the API process: `{{= process.mainModule.require('child_process').execSync('id') }}`. That reaches `DATABASE_URL`, `PULSE_WEBHOOK_SECRET` and the session table.",
+      "recommendation": "Remove the `{{= }}` expression form (implement pluralisation as a named helper with a fixed argument list), or evaluate templates in a separate sandboxed process with no `require`.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: `new Function` over caller text is a direct injection path in this function's own logic."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the new Function call and the unschema'd route was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the `template` field of the POST /api/v1/notifications/preview body (notifications.js:59)."
+        }
+      ]
+    },
+    {
+      "title": "Delivery webhook only verifies the signature when the caller chooses to send one",
+      "location": {
+        "path": "pulse-notify/routes/webhooks.js",
+        "symbol": "deliveries handler",
+        "line": 44
+      },
+      "class": "Authentication bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`const header = request.headers[config.webhook.header]; ... if (header) { <timestamp check>; <signature check> }` (webhooks.js:39-54). When the header is absent the whole block is skipped and execution falls through to `store.recordDelivery(...)` for every event in the body (webhooks.js:56-59). The route is registered outside the authenticated scope (server.js:42), by design.",
+      "impact": "Anyone can POST forged delivery receipts to `/hooks/deliveries` with arbitrary `provider_id` and `status`, overwriting real delivery state (the statement is an upsert on `provider_id`) and corrupting the notification audit trail.",
+      "recommendation": "Require the signature unconditionally; if unmigrated provider accounts genuinely exist, gate the exemption on an explicit per-account allowlist with an expiry date rather than on the absence of a header.",
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 09 (verify_mitigations_pragmatically): the HMAC mitigation is correctly implemented but is conditional on attacker-controlled input, so it does not hold as a control."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the `if (header)` guard and the fall-through was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the presence/absence of the `x-pulse-signature` header on POST /hooks/deliveries."
+        }
+      ]
+    },
+    {
+      "title": "Public-prefix matching exempts the per-tenant digest route from authentication",
+      "location": {
+        "path": "pulse-notify/plugins/auth.js",
+        "symbol": "isPublicPath",
+        "line": 15
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`config.publicPrefixes.some((prefix) => pathname.startsWith(prefix))` (auth.js:15) with `publicPrefixes` containing `\"/api/v1/notifications/public\"` (config/default.json:13). The route registered at `/notifications/public-digest/:tenantId` under the `/api/v1` prefix (notifications.js:53) produces the path `/api/v1/notifications/public-digest/<id>`, which starts with that prefix, so the onRequest hook returns before any bearer check. The handler passes `request.params.tenantId` straight to `store.publicDigest` (notifications.js:54).",
+      "impact": "Anonymous enumeration of any tenant's 25 most recent notifications, including the `recipient` column (e-mail addresses / phone numbers) and subjects \u2014 cross-tenant PII disclosure.",
+      "recommendation": "Match public paths on exact segments (split and compare, or anchor with a trailing `/`), and require a per-recipient signed token for the digest instead of a bare tenant id.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not hypothetical misuse: the prefix list and the route path are both in this repository and the overlap is exact."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the startsWith call, the config entry and the route path was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is an unauthenticated GET to /api/v1/notifications/public-digest/<tenantId>."
+        }
+      ]
+    },
+    {
+      "title": "Job retry merges the unvalidated request body over stored job data, bypassing every schema check",
+      "location": {
+        "path": "orchard-jobs/src/api/routes.js",
+        "symbol": "retry handler",
+        "line": 57
+      },
+      "class": "Validation bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`queue.enqueueRender({ ...previous.data, ...overrides, retryOf: previous.id }, { attempts: 1 })` where `overrides = ctx.request.body || {}` (routes.js:55-59). `schema.validateRenderJob` is never called on this path \u2014 contrast `/v1/jobs` (routes.js:18), which does call it and which is where the `ASSET_HOSTS` allowlist and the `documentId` `^[a-f0-9]{24}$` pattern are enforced (schema.js:22, 74-81). The ownership check at routes.js:51 validates only `previous`, not the overrides.",
+      "impact": "Overriding `assetBaseUrl` defeats the asset-host allowlist and turns `fetchAssetManifest` into an SSRF from the worker (render.js:21), whose response is then interpolated into the rendered HTML (render.js:57). Overriding `tenantId` changes the S3 key the artifact is written to (`${job.data.tenantId}/renders/...`, render.js:64), so a tenant can write into another tenant's prefix. Overriding `documentId` puts unvalidated text into a filesystem path (render.js:54).",
+      "recommendation": "Validate the merged object with `schema.validateRenderJob` before enqueueing, and re-stamp `tenantId`/`requestedBy` from `ctx.state.user` after the spread so they cannot be overridden.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 05 (no_security_flaw_stretching): not stretching a mitigation: the validator exists and is simply not invoked on this path, which is a second entry point to the same queue."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the spread expression and the absent validate call was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is the POST /v1/jobs/:id/retry JSON body (routes.js:55)."
+        }
+      ]
+    },
+    {
+      "title": "Partner webhook enqueues export jobs unvalidated, reaching a path join in the worker",
+      "location": {
+        "path": "orchard-jobs/src/api/webhook.js",
+        "symbol": "exports handler",
+        "line": 47
+      },
+      "class": "Path traversal / arbitrary file write",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`queue.enqueueExport({ tenantId: body.tenant_id, filename: body.filename, ... })` (webhook.js:47-53) never calls `schema.validateExportJob`, which is what applies the `^[a-z0-9-]{3,40}$` tenant pattern and `checkFilename`'s `^(\\w+\\.)*\\w+$` shape (schema.js:35, 63, 87). The worker then does `path.join(EXPORT_ROOT, tenantId, `${filename}.${format}`)` and writes it (export.js:40-42), and `loadRows` does `path.join(EXPORT_ROOT, '_staging', `${tenantId}.tsv`)` and reads it (export.js:17). The comment at export.js:29 states the processor assumes payloads 'reach this queue already validated at submission time'.",
+      "impact": "A partner (or anyone who obtains one partner secret) supplies `filename: \"../../../../etc/cron.d/pwn\"` to write an attacker-chosen file anywhere the worker user can write, with content drawn from an arbitrary file selected through `tenant_id` traversal \u2014 file disclosure chained into arbitrary file write, i.e. code execution on the worker host.",
+      "recommendation": "Call `schema.validateExportJob` on the webhook payload exactly as `/v1/exports` does (routes.js:66), and in the worker re-validate and confine the resolved path under `EXPORT_ROOT` before writing.",
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 09 (verify_mitigations_pragmatically): the `checkFilename` mitigation exists but is not on this path, so it cannot be credited here."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the enqueue call, the absent validator and the worker's path.join was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `tenant_id`/`filename` in the POST /hooks/:partner/exports body (webhook.js:46)."
+        }
+      ]
+    },
+    {
+      "title": "Rendered customer documents are uploaded with a public-read ACL at a guessable key",
+      "location": {
+        "path": "orchard-jobs/src/worker/processors/render.js",
+        "symbol": "renderProcessor",
+        "line": 70
+      },
+      "class": "Sensitive data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`storage.putObject(key, body, { contentType: 'application/pdf', public: true })` (render.js:68-71) makes `putObject` set `ACL: 'public-read'` and `CacheControl: 'public, max-age=31536000'` (storage.js:39-40). The key is `${tenantId}/renders/${documentId}.pdf` (render.js:64) and the returned artifact URL is `storage.publicUrl(key)` \u2014 the plain bucket URL with no token (storage.js:47-48). A repo-wide grep shows `verifySignedUrl` (storage.js:65) has no caller, so the signature scheme is never enforced by anything.",
+      "impact": "Every rendered invoice/statement/letter is readable by anyone on the internet who knows or guesses the 24-hex `documentId`, permanently and with a one-year cache. The `signedUrl` path handed to the browser (routes.js:76) provides no protection because nothing validates the `sig` parameter.",
+      "recommendation": "Upload with the default private ACL and hand out real pre-signed S3 URLs (`@aws-sdk/s3-request-presigner`), or front the bucket with a CDN that validates a signed token \u2014 and wire `verifySignedUrl` into whatever serves the object.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not defence-in-depth: `public-read` is the object's only access-control decision, and it grants anonymous read."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the putObject options, the ACL mapping and the uncalled verifier was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is anonymous HTTP GET against the bucket URL returned at render.js:75."
+        }
+      ]
+    },
+    {
+      "title": "Artifact URL signature is a secret-prefix SHA-256 over concatenated fields",
+      "location": {
+        "path": "orchard-jobs/src/lib/storage.js",
+        "symbol": "objectSignature",
+        "line": 53
+      },
+      "class": "Weak cryptographic construction",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`crypto.createHash('sha256').update(`${signingSecret()}${key}${expiresAt}`).digest('hex')` (storage.js:51-56) \u2014 a raw hash of secret \u2016 message, not an HMAC, and the three fields are concatenated with no separator or length prefix.",
+      "impact": "Merkle-Damg\u00e5rd length extension lets a holder of one valid (key, expires, signature) triple compute a valid signature for an extended message without the secret; the missing separator additionally makes (`a/b`, `123`) and (`a/b1`, `23`) collide, so an expiry can be shifted without breaking the signature.",
+      "recommendation": "Use `crypto.createHmac('sha256', secret)` over a canonical, length-delimited encoding of the fields (e.g. `${key.length}:${key}|${expiresAt}`).",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: a broken MAC construction is an intrinsic flaw in the function's own logic regardless of current callers."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 04 (avoid_pedantic_linting): not pedantic linting of a safe standard hash: the flaw is the secret-prefix construction, not the choice of SHA-256."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the createHash call and the concatenation was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "Session tokens carry no expiry and are accepted forever",
+      "location": {
+        "path": "orchard-jobs/src/api/server.js",
+        "symbol": "decodeSession",
+        "line": 29
+      },
+      "class": "Session management",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`decodeSession` verifies the HMAC in constant time and then returns `JSON.parse(...)` of the payload (server.js:20-32). No `exp`, `iat` or revocation field is read, and the middleware assigns the result directly to `ctx.state.user` (server.js:72), which every route uses for `tenantId` and `id`.",
+      "impact": "A leaked or captured bearer token grants access indefinitely; there is no logout, rotation or offboarding path.",
+      "recommendation": "Include and enforce an `exp` claim, and check a server-side revocation list keyed by a session identifier.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): token lifetime is a primary authentication control, not defence-in-depth."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the decode body and its use at server.js:72 was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "Worker logs the whole failed job payload, including the caller's callback token",
+      "location": {
+        "path": "orchard-jobs/src/worker/index.js",
+        "symbol": "failed handler",
+        "line": 36
+      },
+      "class": "Secret in logs",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`worker.on('failed', (job, err) => log.error({ ..., payload: job ? job.data : null, ... }))` (index.js:30-41), deliberately keeping the whole payload. `routes.js:26` places `callbackToken: body.callbackToken` into that payload, and `callbackToken` is not part of the validated schema \u2014 it is read from the raw body and stored verbatim.",
+      "impact": "Bearer credentials that tenants supply for their own callback endpoints are written to the log pipeline in cleartext on every job failure, where they are retained and broadly readable.",
+      "recommendation": "Redact known secret keys before logging (pino `redact: ['payload.callbackToken']`), and store the callback credential in a secret store keyed by job id rather than in the queue payload.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a logging-hygiene nit: a live third-party credential is written to logs, which is a disclosure with a concrete holder."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the failed handler and the callbackToken assignment was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is `callbackToken` in the POST /v1/jobs body (routes.js:26)."
+        }
+      ]
+    },
+    {
+      "title": "Hardcoded fallback password for the Redis/BullMQ connection",
+      "location": {
+        "path": "orchard-jobs/src/queue/index.js",
+        "symbol": "connection",
+        "line": 8
+      },
+      "class": "Hardcoded secret",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`password: process.env.REDIS_PASSWORD || 'orchard-local-dev'` (index.js:8). The same `connection` object is exported and used by both the API queues and the worker (`worker/index.js:14, 20`), and `package.json`'s `start:worker`/`start:api` scripts set only `NODE_ENV=production`, not `REDIS_PASSWORD`.",
+      "impact": "If the variable is missing in any environment, the queue authenticates with a constant that is public in the source tree; whoever reaches Redis can inject render/export jobs, which the worker executes with the filesystem and S3 privileges described in the other orchard findings.",
+      "recommendation": "Throw at start-up when `REDIS_PASSWORD` is unset, mirroring `signingSecret()` (storage.js:26-30), which already fails closed.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: a static credential in source is an intrinsic flaw."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a mock database: this object is the production connection used by both processes."
+        }
+      ]
+    },
+    {
+      "title": "Prototype pollution in the recursive defaults merge",
+      "location": {
+        "path": "orchard-jobs/src/lib/schema.js",
+        "symbol": "applyDefaults",
+        "line": 96
+      },
+      "class": "Prototype pollution",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`for (const key of Object.keys(source))` with `applyDefaults(target[key], value)` and `target[key] = value` (schema.js:92-102) and no rejection of `__proto__`, `constructor` or `prototype`. `JSON.parse` creates `__proto__` as an own enumerable property, so `Object.keys` yields it and `target['__proto__']` resolves to `Object.prototype`. A repo-wide grep finds no caller: the function is only exported (schema.js:107).",
+      "impact": "If a route ever merges a request body with this helper \u2014 its docstring says it merges 'the tenant's saved preferences under the values supplied for this run' \u2014 an attacker pollutes `Object.prototype`. No reachable path exists in the tree as committed.",
+      "recommendation": "Skip the three dangerous keys, use `Object.create(null)` for accumulators, or replace the helper with `structuredClone` plus explicit field copies.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 06 (evaluate_questionable_file_paths): the path was traced rather than dismissed on its location; the helper simply has no caller yet, hence probable and low."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: the unguarded key walk is a flaw in the function's own logic, reportable without a live caller."
+        }
+      ]
+    },
+    {
+      "title": "Headless Chromium renders job-controlled HTML with --no-sandbox",
+      "location": {
+        "path": "orchard-jobs/src/worker/processors/render.js",
+        "symbol": "renderPdf",
+        "line": 35
+      },
+      "class": "Weakened isolation",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`execFileAsync('chromium-headless', ['--no-sandbox', '--print-to-pdf=' + out, ...])` (render.js:32-41). The HTML it loads embeds a stylesheet URL and a manifest value fetched from `baseUrl` (render.js:51, 57), which the retry path lets a tenant control. Arguments are passed as an array, so there is no shell injection, and `width` is coerced with `Number()`.",
+      "impact": "A browser-engine exploit reached through attacker-influenced content runs with no sandbox, i.e. directly as the worker user, which also holds the export filesystem and S3 write privileges.",
+      "recommendation": "Drop `--no-sandbox` and give the container the `SYS_ADMIN`/seccomp profile Chromium's sandbox needs, or run the renderer in a separate least-privileged container.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not a missing header: an isolation feature is explicitly disabled on a process that parses attacker-influenced input."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 03 (require_strict_reproducibility): strict reproducibility does not hold on its own: exploiting it needs a separate browser vulnerability, so this is reported as low/probable hardening rather than a triggerable flaw."
+        }
+      ]
+    },
+    {
+      "title": "The production API task role is granted the AdministratorAccess managed policy",
+      "location": {
+        "path": "beacon-cdk/config/environments.ts",
+        "symbol": "tierPolicies.ops",
+        "line": 29
+      },
+      "class": "Excessive IAM privilege",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`tierPolicies = { standard: 'ReadOnlyAccess', ops: 'AdministratorAccess' }` (environments.ts:26-30) and `prod.apiTier = 'ops'` (environments.ts:68). `ServiceRole`'s constructor calls `attachTierPolicy(this.role, props.cfg)` (service-role.ts:35), which resolves `cfg.tierPolicies[cfg.apiTier]` and attaches it (service-role.ts:44-45). That role is the `taskRole` of the internet-facing Fargate API (api-stack.ts:33-47, 76-93).",
+      "impact": "Any code execution, SSRF-to-metadata or container escape in the production API container yields full administrative control of AWS account 000000000003 \u2014 the maximum possible blast radius from a single application bug.",
+      "recommendation": "Never attach `AdministratorAccess` to a task role. Give the API only the grants it already receives explicitly (`grantArtifacts`, `grantQueue`, `secret.grantRead`) and move break-glass/migration duties to a separate role assumed by a human or a pipeline with MFA/approval.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not defence-in-depth: this is the privilege the running production workload actually holds."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the tier map, prod.apiTier and attachTierPolicy was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not apply: the excessive grant is what converts any of the other application-layer ingress points into account compromise."
+        }
+      ]
+    },
+    {
+      "title": "The shared artifact bucket is anonymously readable in production and holds tenant documents and exports",
+      "location": {
+        "path": "beacon-cdk/lib/constructs/bucket.ts",
+        "symbol": "ArtifactBucket",
+        "line": 56
+      },
+      "class": "Public object storage",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "When `publicRead` is set the construct relaxes `blockPublicAccess` to `{ blockPublicPolicy: false, restrictPublicBuckets: false }` (bucket.ts:33-39) and adds a policy statement granting `s3:GetObject` to `iam.AnyPrincipal()` on `this.bucket.arnForObjects('*')` \u2014 the whole bucket, not an assets prefix (bucket.ts:56-63). `data-stack.ts:28-32` instantiates it with `publicRead: cfg.assetsPublic`, and `prod.assetsPublic = true` (environments.ts:64). The comment at data-stack.ts:26-27 states this one bucket holds 'the brand assets the CDN pulls, the rendered documents and the tenant data exports'.",
+      "impact": "Every rendered customer document and every tenant data export in production is readable by any anonymous caller who can name or enumerate the key.",
+      "recommendation": "Scope the anonymous statement to the assets prefix (`arnForObjects('assets/*')`), or better, split the buckets and serve the CDN origin through an OAC-restricted CloudFront distribution while keeping documents and exports fully private.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not hygiene: an explicit AnyPrincipal Allow on every object is the operative access-control decision."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the policy statement, the blockPublicAccess override and prod.assetsPublic was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is anonymous s3:GetObject against any object key in the bucket."
+        }
+      ]
+    },
+    {
+      "title": "Production database instance is created with publiclyAccessible: true",
+      "location": {
+        "path": "beacon-cdk/lib/data-stack.ts",
+        "symbol": "DataStack.database",
+        "line": 60
+      },
+      "class": "Network exposure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`publiclyAccessible: true` on the `rds.DatabaseInstance` (data-stack.ts:60), justified by a comment about an analytics warehouse in another account pulling nightly over the public endpoint. The instance is otherwise placed in `PRIVATE_ISOLATED` subnets (data-stack.ts:48), and the only remaining control is `databaseSg`, which admits `serviceSg` and `bastionSg` (network-stack.ts:76-85).",
+      "impact": "The instance is given a publicly resolvable endpoint, so the security group becomes the single control between the internet and the production database; a single over-broad SG rule (the dev environment already ships `0.0.0.0/0` for the bastion) exposes Postgres directly.",
+      "recommendation": "Keep the instance private and give the warehouse a cross-account path that does not require a public endpoint \u2014 VPC peering, PrivateLink, or an export to S3 that the other account reads.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 02 (ignore_missing_hygiene): not defence-in-depth: this flag decides whether the database has an internet-routable endpoint at all."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the property and the subnet/SG context was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 09 (verify_mitigations_pragmatically): the security-group mitigation is real but partial, so the finding is rated medium rather than dismissed."
+        }
+      ]
+    },
+    {
+      "title": "The API role is granted object access to the entire shared bucket because the prefix argument is omitted",
+      "location": {
+        "path": "beacon-cdk/lib/api-stack.ts",
+        "symbol": "ApiStack constructor",
+        "line": 39
+      },
+      "class": "Excessive IAM privilege",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`grantArtifacts(serviceRole.role, props.artifacts.bucket)` is called with two arguments (api-stack.ts:39); the third parameter defaults to `prefix = ''` (service-role.ts:52-56), so the policy resources become `bucket.arnForObjects('*')` and the ListBucket condition becomes `s3:prefix: ['*']` (service-role.ts:60, 67). The function's own docstring says 'Pass the prefix the service writes under so the grant stays scoped to it.'",
+      "impact": "The API task can read, overwrite and delete every object in the shared bucket, which per data-stack.ts:26-27 includes every other tenant's rendered documents and data exports.",
+      "recommendation": "Pass the per-service prefix the docstring calls for, and make the parameter required so the scoping cannot be skipped silently.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not hypothetical misuse of an API: the omission is at the only call site of the function, in this repository."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the two-argument call and the default parameter was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "Container environment pairs a wildcard CORS origin with credentialed CORS",
+      "location": {
+        "path": "beacon-cdk/lib/api-stack.ts",
+        "symbol": "taskDefinition.addContainer",
+        "line": 59
+      },
+      "class": "CORS misconfiguration",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`environment: { ..., CORS_ALLOW_ORIGIN: '*', CORS_ALLOW_CREDENTIALS: 'true' }` (api-stack.ts:53-61), with a comment explaining that the origin cannot be pinned because tenants use their own subdomains and an embedded widget.",
+      "impact": "Browsers reject literal `*` with credentials, so an application handed this pair almost always implements it by reflecting the request Origin \u2014 exactly the pattern that makes every credentialed cross-origin read succeed (the sibling edge-relay service in this corpus does precisely that).",
+      "recommendation": "Ship a regex or list of permitted tenant subdomains and have the application echo only matching origins; keep credentials off the widget endpoints entirely.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): the consuming image is not in this tree, but the configuration pair itself is the defect and is fully specified here."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the two environment entries was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 03 (require_strict_reproducibility): the flaw is a static configuration value, not a fragile timing-dependent condition."
+        }
+      ]
+    },
+    {
+      "title": "pickEnv silently falls back to the dev configuration when BEACON_ENV is unset or misspelled",
+      "location": {
+        "path": "beacon-cdk/config/environments.ts",
+        "symbol": "pickEnv",
+        "line": 83
+      },
+      "class": "Fail-open configuration",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`return environments[name ?? ''] ?? dev;` (environments.ts:83). `bin/beacon.ts:14` calls it with `process.env.BEACON_ENV ?? app.node.tryGetContext('env')`, so an unset variable, a typo (`prd`, `production`) or a missing pipeline export resolves to `dev` \u2014 which carries `adminCidrs: ['0.0.0.0/0']`, `assetsPublic: true` and `ephemeral: true` (RemovalPolicy.DESTROY plus `autoDeleteObjects`, bucket.ts:41-44).",
+      "impact": "A deployment intended for staging or prod silently synthesises the dev posture: SSH open to the internet, a public bucket, and stacks whose data is destroyed on teardown.",
+      "recommendation": "Throw on an unrecognised or absent name (`const cfg = environments[name]; if (!cfg) throw new Error(...)`) so the pipeline fails loudly instead of degrading.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 01 (ignore_hypothetical_misuse): not hypothetical caller misuse: the fallback is written into the resolver itself and the caller passes a possibly-undefined value by design."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the nullish-coalescing fallback and the bin/ call site was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "The dev bastion security group accepts SSH from the entire internet",
+      "location": {
+        "path": "beacon-cdk/config/environments.ts",
+        "symbol": "dev.adminCidrs",
+        "line": 36
+      },
+      "class": "Network exposure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`dev.adminCidrs = ['0.0.0.0/0']` (environments.ts:36) is iterated in `NetworkStack` to add `bastionSg.addIngressRule(ec2.Peer.ipv4(cidr), ec2.Port.tcp(22), ...)` (network-stack.ts:52-58). `bastionSg` is in turn allowed into `databaseSg` on 5432 (network-stack.ts:81-85).",
+      "impact": "The dev jump host is exposed to internet-wide SSH brute-force and 0-day scanning, and it is one hop from the dev database. `pickEnv`'s dev fallback means any environment that loses `BEACON_ENV` inherits this rule.",
+      "recommendation": "Use the same declared operator ranges as staging/prod, or replace the bastion with SSM Session Manager and remove port 22 ingress entirely.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 06 (evaluate_questionable_file_paths): the path was traced rather than dismissed for being a dev configuration: `pickEnv` makes dev the fallback for every unlabelled deployment."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; the CIDR list and the addIngressRule loop was read at the cited path and line in the target tree."
+        }
+      ]
+    },
+    {
+      "title": "Unused break-glass helper builds an unconditional Allow * on *",
+      "location": {
+        "path": "beacon-cdk/lib/constructs/service-role.ts",
+        "symbol": "adminPolicyStatement",
+        "line": 79
+      },
+      "class": "Excessive IAM privilege",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`return new iam.PolicyStatement({ actions: ['*'], resources: ['*'] });` (service-role.ts:78-83). A repo-wide grep finds no caller \u2014 it is exported and referenced nowhere else in the tree.",
+      "impact": "No impact as committed; the helper is a ready-made wildcard statement one import away from being attached to a role, and its 'break-glass' framing invites exactly that.",
+      "recommendation": "Delete it, or move it into the incident runbook as documentation rather than as callable, importable code.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 06 (evaluate_questionable_file_paths): the path was traced rather than dismissed on its location; it is unreferenced, hence low and probable."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "mantis-review constraint 08 (intrinsic_security_flaws): rule 08's save condition applies: an unconditional wildcard grant is an intrinsic defect that rule 08 keeps reportable without a caller."
+        }
+      ]
+    },
+    {
+      "title": "Chain: unauthenticated import to unauthenticated stored XSS on any tenant's statement",
+      "location": {
+        "path": "ledger-flow/blueprints/internal.py",
+        "symbol": "run_import",
+        "line": 33
+      },
+      "class": "Exploit chain",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Step 1 \u2014 `POST /api/internal/import` needs no session and no internal token, because `enforce_internal_token` tests `/internal` while `app.py:35` mounts the blueprint at `/api/internal` and `internal_bp` never registers `require_session`. Step 2 \u2014 the handler calls `importer.import_batch` with a caller-chosen `file` and `tenant` (internal.py:33-38), and `import_batch` writes through `bulk_insert_mappings`, which never runs `Posting.clean()`, so the memo skips `bleach.clean` (importer.py:82, models.py:77). Step 3 \u2014 `GET /reports/statement?tenant=<any>` needs no session either, because `reports_bp` has no `require_session` and `current_tenant()` accepts `?tenant=` (auth.py:95), and it renders the memo through `Markup()` (reports.py:64), i.e. unescaped.",
+      "impact": "A single unauthenticated request stores attacker markup under an arbitrary tenant, and a second unauthenticated URL serves it back as HTML to whoever opens the statement \u2014 including the accountants whose sessions the API blueprint protects. The three defects individually look moderate; composed, they are an unauthenticated stored-XSS delivery channel into staff browsers.",
+      "recommendation": "Fix the prefix comparison, attach `require_session` to `reports_bp` and `internal_bp`, sanitise on the bulk import path, and stop wrapping stored text in `Markup`. Any one of the four breaks the chain; all four are needed to close the individual issues.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 05 (no_security_flaw_stretching): not an invented adjacent class: each of the three links is an independently verified finding in this same report, and the composition uses no additional assumption."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 12 (ensure_source_code_coherence): the anti-hallucination dismissal does not fire; all three links at their cited files and lines was read at the cited path and line in the target tree."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review constraint 13 (verify_attacker_control_of_source): the trusted-origin dismissal does not fire; ingress point is an unauthenticated POST /api/internal/import, then an unauthenticated GET /reports/statement?tenant=."
+        }
+      ]
+    }
+  ]
+}
