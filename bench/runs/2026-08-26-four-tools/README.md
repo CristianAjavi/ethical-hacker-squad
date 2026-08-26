@@ -89,3 +89,36 @@ the instrument after the fact is what these pages refuse.
 **No.** Three rounds have now met the recall half and none has met the conjunction.
 
 Per the multiplicity commitment, this corpus is retired.
+
+## An addendum about a favourable cut that was looked for and is not there
+
+Seven rounds have produced the same shape: this project reports ~47 findings against `mantis`'s
+~38, which buys recall and costs precision. The obvious next thought is that the surplus is in
+the weaker tier — that scoring `confirmed` only would show a cleaner set.
+
+**It was measured, on the data already in hand, and it is not there:**
+
+| arm | cut | recall | decoys | reported |
+|---|---|---|---|---|
+| this project | everything | 78.3% | 3.00 | 47.2 |
+| this project | `confirmed` only | **65.8%** | 2.50 | 38.0 |
+| `mantis` | everything | 72.4% | 2.00 | 38.2 |
+| `mantis` | `confirmed` only | **65.8%** | 2.00 | 32.8 |
+
+On `confirmed` only the two arms are **exactly level at 65.8%** and this project still reports
+more decoys. The band is not met on that reading either.
+
+**This is recorded because it was gone looking for.** Re-scoring after an unfavourable result,
+with a cut chosen for how it might read, is the fishing these pages refuse — and it does not
+stop being fishing when the cut happens to fail. It is reported as an unregistered observation
+and no claim rests on it.
+
+What it does say, and this is worth the next round registering: **this project's entire lead
+lives in its `probable` tier.** Dropping probables costs it 12.5 points of recall and saves 0.5
+decoys — so those probables are hitting planted defects at a far better rate than chance. The
+surplus this project reports is not padding. It is findings it can establish but not confirm,
+and the `UNKNOWN` cap in the triage contract is what keeps them out of `confirmed`.
+
+Whether that is a strength or a reporting failure is a product question, not a measurement one,
+and it belongs beside the other one this ledger has left open: whether an auditor that finds
+more and cries wolf more is worse than one that finds less and is quieter.
