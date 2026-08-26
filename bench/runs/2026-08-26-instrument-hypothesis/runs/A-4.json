@@ -1,0 +1,625 @@
+{
+  "provenance": {
+    "corpus": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-instrument/corpus-A",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-instrument/target",
+    "arm": "A",
+    "run": 4,
+    "outside_information": "None used. I did not draw on any published advisory for this project from training data, and I am not aware of one that I could have named with a file and line. The project and version were identified by reading the tree itself (ckan/__init__.py declares __version__ = '2.9.10'), which is reading, not recall. Every finding below is established from files in the tree plus two inert local tests run in a scratch directory.",
+    "steps_taken": [
+      "1. Unaided pass FIRST, per the agent file: read the target with my own judgement and wrote down candidate labels before opening any pack (see unaided_pass.candidates).",
+      "2. Enumerated the tree mechanically (step 0): 2098 files, 673 .py, 444 non-test .py; 214 logging calls in non-test code (133 with non-literal messages); 195 sites from the pack's own AST query; 113 route registrations; 377 request-data reads; ~9 non-test SQL string constructions; 1 subprocess sink; 0 pickle/yaml.load sinks.",
+      "3. Read boundary code unaided: ckan/views/{__init__,api,user,dataset,resource,util}.py, ckan/lib/{base,helpers,uploader,munge,mailer,api_token,jsonp}.py, ckan/lib/repoze_plugins/auth_tkt.py, ckan/logic/{schema,auth/get}.py, ckanext/{resourceproxy,datastore,webpageview,imageview}.",
+      "4. Opened the pack second: knowledge/web-api.md (index + §0 + WEB-10, WEB-11, WEB-12), web-api-logging.md (all of §11: WEB-22, WEB-28), web-api-clientside-logic.md (index + WEB-13, WEB-14, WEB-15, WEB-16, WEB-19, WEB-23, WEB-26, WEB-27), and references/triage.md.",
+      "5. Ran the enumeration query WEB-28 mandates (AST, including the getattr dynamic-dispatch clause): 195 logging sites, 72 of them at the HTTP boundary; worked the list rather than reading by judgement.",
+      "6. Ran WEB-28's minimal test inertly in the scratchpad: replayed CKAN's shipped formatter (ckan/config/deployment.ini_tmpl [formatter_generic]) and the exact sink string from ckan/views/user.py:616, and counted the lines. One call, two records.",
+      "7. Ran WEB-23's minimal test on the target's declared bounds (ckan.max_resource_size / ckan.max_image_size): both have real readers at the call sites, so no finding.",
+      "8. Verified the URL-path variant of the log-injection claim against werkzeug's own router locally (a decoded %0A survives the default string converter).",
+      "9. Triaged every candidate against the ten FP-* rules; recorded refutations with control_at, and answered the rules per finding.",
+      "10. Wrote this report. The target was not modified; no file under it was written, and no network or remote target was touched."
+    ]
+  },
+  "unaided_pass": {
+    "note": "Written before the pack was opened, as the agent file requires. Every label below ends in exactly one place: a finding carrying it as unaided_label, or dropped with a reason. 'No procedure covers it' was never used as a reason.",
+    "candidates": [
+      "U1 log-injection: unauthenticated reset form field into the log",
+      "U2 secret-in-log: full API key logged",
+      "U3 log-injection: API key header unsanitised in the same line",
+      "U4 secret-in-log: full API request body logged",
+      "U5 log-injection: action name from the URL path",
+      "U6 SSRF: resource proxy fetches any resource URL",
+      "U7 proxy reflects the remote Content-Type on CKAN's origin",
+      "U8 no CSRF anywhere; csrf_input() is an empty stub",
+      "U9 open redirect: url_is_local misses backslash forms",
+      "U10 no security response headers at all",
+      "U11 raw-SQL endpoint on by default and anonymous",
+      "U12 reset key compared with == (not constant time)",
+      "U13 auth cookie Secure defaults to False",
+      "U14 dependency pins are years old",
+      "U15 sanitize_url does not constrain the scheme",
+      "U16 datastore returns the raw DB error to the caller",
+      "U17 log-injection: activity id from the URL",
+      "U18 session contents logged",
+      "U19 JSONP on the util endpoints without de-authentication",
+      "U20 snippet endpoint renders a caller-named template with caller-supplied vars",
+      "U21 stored XSS: resource download serves a user-set Content-Type inline",
+      "U22 stored XSS: webpage_view puts an unvalidated URL into an iframe src",
+      "U23 multi-statement injection through datastore_search_sql",
+      "U24 path traversal through uploaded filenames",
+      "U25 private pages cached as public",
+      "U26 to_jsonp interpolates the callback with no escaping at all",
+      "U27 user_image builds an img tag with an unescaped alt",
+      "U28 upload size limits declared but maybe never enforced"
+    ],
+    "dropped": [
+      {
+        "label": "U19 JSONP on the util endpoints without de-authentication",
+        "reason": "refuted",
+        "control_at": "ckan/lib/repoze_plugins/auth_tkt.py:66",
+        "detail": "The action API de-authenticates itself when a callback is present (ckan/views/api.py:292-297), which is the control I expected to be missing. The /api/util/* autocomplete endpoints do NOT do that and are JSONP-wrappable through _finish, but the auth_tkt cookie is issued SameSite=Lax by default, and a cross-origin <script src> is not a top-level navigation, so the credential is not attached. Caveat recorded rather than hidden: make_plugin accepts who.samesite = none (auth_tkt.py:99-103), and that configuration re-opens this."
+      },
+      {
+        "label": "U23 multi-statement injection through datastore_search_sql",
+        "reason": "refuted",
+        "control_at": "ckanext/datastore/backend/postgres.py:1971",
+        "detail": "DatastorePostgresqlBackend.search_sql calls is_single_statement(sql) and raises before delegating, so the ';'-separated payload I constructed never reaches the EXPLAIN. The residual concern - the single-statement check is sqlparse while the executor is PostgreSQL, two different parsers - is real but I could not demonstrate a divergence by reading, so it is not asserted. It is folded into F09 as a reason the endpoint's default-on posture matters."
+      },
+      {
+        "label": "U24 path traversal through uploaded filenames",
+        "reason": "refuted",
+        "control_at": "ckan/lib/munge.py:156",
+        "detail": "munge_filename strips the path with os.path.split and then removes every character outside [a-zA-Z0-9_. -]; munge_filename_legacy (munge.py:139) leaves '..' but removes every separator, so no join escapes. ResourceUpload.get_path additionally compares the assembled path against its own realpath (ckan/lib/uploader.py:306) and raises on a mismatch."
+      },
+      {
+        "label": "U25 private pages cached as public",
+        "reason": "refuted",
+        "control_at": "ckan/lib/base.py:242",
+        "detail": "render() calls _allow_caching() on every Flask render (base.py:150), and _allow_caching sets environ['__no_cache__'] whenever a user is in context or the session cookie carries data; the after-request hook then emits Cache-Control: private (ckan/views/__init__.py:117). API responses bypass render(), but ckan.cache_expires defaults to 0 and must-revalidate is always set, so the shipped default stores nothing."
+      },
+      {
+        "label": "U26 to_jsonp interpolates the callback with no escaping at all",
+        "reason": "refuted",
+        "control_at": "ckan/config/middleware/__init__.py:56",
+        "detail": "FP-04. ckan/lib/jsonp.py:16 really does interpolate request.params['callback'] with no escaping, and its only callers are the @jsonp.jsonpify controllers at ckan/controllers/api.py:257,271,294. make_app mounts the Pylons stack only under six.PY2; on Python 3 'app = flask_app' and none of ckan/controllers/ is reachable. The tree still ships requirements-py2.txt, so this returns on a Python 2 deployment - noted, not asserted for what a Python 3 install runs."
+      },
+      {
+        "label": "U27 user_image builds an img tag with an unescaped alt",
+        "reason": "refuted",
+        "control_at": "ckan/model/user.py:54",
+        "detail": "alt=user_dict['name'] is interpolated into a literal() with no escaping (ckan/lib/helpers.py:1589), but User.VALID_NAME is ^[a-zA-Z0-9_\\-]{3,255}$, so no quote can reach the attribute. FP-02."
+      },
+      {
+        "label": "U28 upload size limits declared but maybe never enforced",
+        "reason": "refuted",
+        "control_at": "ckan/logic/action/update.py:333",
+        "detail": "WEB-23's test applied: ckan.max_resource_size and ckan.max_image_size each have real readers (uploader.py:104,97) and every .upload() call site passes the configured value (create.py:330,770,1081; update.py:333,751,878,1391). _copy_file enforces it. Zero-reader case does not hold."
+      },
+      {
+        "label": "U20 snippet endpoint renders a caller-named template with caller-supplied vars",
+        "reason": "refuted",
+        "control_at": "ckan/views/api.py:477",
+        "detail": "snippet_path is forced under the 'ajax_snippets/' prefix and the Flask default string converter does not match '/', so no traversal out of that directory. The directory holds three templates; follow_button.html asserts obj_type against _follow_objects (helpers.py:1978) and every value it renders is Jinja-autoescaped. No sink."
+      },
+      {
+        "label": "U17 log-injection: activity id from the URL",
+        "reason": "merged",
+        "merged_into": "F01",
+        "detail": "Split on inspection. ckan/views/dataset.py:466 and ckan/views/resource.py:77 log ids taken from an already-resolved package dict, so FP-02 holds for those two and they are not reported. dataset.py:1132 and dataset.py:1211 log the raw URL segment on the NotFound branch - i.e. exactly when it did not have to be valid - and those two are carried inside F01 as additional instances."
+      },
+      {
+        "label": "U18 session contents logged",
+        "reason": "merged",
+        "merged_into": "F05",
+        "detail": "ckan/views/__init__.py:60 logs session.items(); same class and same fix as the other DEBUG-level disclosures in F05."
+      },
+      {
+        "label": "U7 proxy reflects the remote Content-Type on CKAN's origin",
+        "reason": "merged",
+        "merged_into": "F04",
+        "detail": "ckanext/resourceproxy/blueprint.py:71 copies the upstream content-type onto a response served from CKAN's own origin. Same handler, same fix surface as the SSRF, so it is reported as a second impact of F04 rather than inflating the count."
+      },
+      {
+        "label": "U4 secret-in-log: full API request body logged",
+        "reason": "merged",
+        "merged_into": "F05",
+        "detail": "ckan/views/api.py:220 logs the entire decoded action-API body with '%r', which carries the password field of user_create/user_update. Same class, same absent redaction filter and same fix as the API-key line, so it is carried inside F05 rather than counted separately. The Pylons twins at ckan/controllers/api.py:373-375,406,430 are additionally FP-04 on Python 3 (see the U26 entry)."
+      },
+      {
+        "label": "U5 log-injection: action name from the URL path",
+        "reason": "merged",
+        "merged_into": "F01",
+        "detail": "ckan/views/api.py:259 formats the unrouted action name into an INFO line on the branch reached precisely when the name is unknown, so the value is arbitrary. Same class and same sink-level fix as the reset-form instance; carried inside F01 as an additional instance, with the werkzeug converter check that establishes a newline survives the path."
+      },
+      {
+        "label": "U3 log-injection: API key header unsanitised in the same line",
+        "reason": "merged",
+        "merged_into": "F05",
+        "detail": "ckan/views/__init__.py:277 is both halves of the log surface at once - it discloses the credential and it interpolates an attacker-chosen header with '%s'. Reported once, as F05, with the injection noted; splitting one line into two findings would be double-counting."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "F01",
+      "title": "Unauthenticated password-reset input is written verbatim into a line-oriented log (log injection)",
+      "location": {
+        "path": "ckan/views/user.py",
+        "symbol": "RequestResetView.post",
+        "line": 616
+      },
+      "class": "log-injection",
+      "severity": "medium",
+      "procedure": "WEB-28",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U1 log-injection: unauthenticated reset form field into the log",
+      "evidence": "ckan/views/user.py:613-616:\n    id = request.form.get(u'user')\n    if id in (None, u''): ...\n    log.info(u'Password reset requested for user \"{}\"'.format(id))\nThe value is a POST body field, not a routed identifier: no converter, no validator, no length bound touches it. The endpoint is anonymous - ckan/logic/auth/get.py:409 request_reset() returns {'success': True} unconditionally, and _prepare() only calls check_access on that. The same value is logged again unsanitised at ckan/views/user.py:650.\nThe consumer is line-oriented: ckan/config/deployment.ini_tmpl:257-258 ships format = %(asctime)s %(levelname)-5.5s [%(name)s] %(message)s on a StreamHandler, and [logger_ckan] level = INFO, so this exact call is emitted by the shipped configuration.\nWEB-28 minimal test, run inertly against a replica of that formatter and that message string, with id = 'nobody\\n2026-08-25 12:00:00,000 INFO  [ckan.views.user] Emailing reset link to user: admin' - one logging call produced two records, the second one indistinguishable from a genuine CKAN line (same timestamp shape, level, logger name, and a message string lifted from the same module).\nSame class, same absent neutralisation, at three further boundary sites: ckan/views/api.py:259 ('Action name not known: {0}'.format(logic_function), reached precisely when the name is unknown, from /api/3/action/<logic_function>); ckan/views/dataset.py:1132 and :1211 ('Activity not found: {} - {}' on the NotFound branch); ckanext/resourceproxy/blueprint.py:34 (resource_id straight off the URL, logged before any lookup, under [logger_ckanext] level = DEBUG). For the URL-path variants I confirmed against werkzeug's own router that a percent-encoded %0A survives into the view argument: the default string converter is [^/]{1,}, which matches a newline (tested with werkzeug 3.1.8 locally; the target pins werkzeug 1.0.0, whose default converter is the same expression).",
+      "impact": "Any anonymous caller can write arbitrary, well-formed records into CKAN's log with one POST to /user/reset. That destroys the log as evidence: an attacker can forge 'Emailing reset link to user: admin' entries to frame an account, bury a real intrusion under fabricated noise, or inject lines crafted to match an aggregator's alert pattern. Where the log is rendered by a viewer that treats the line as HTML, the same input becomes stored XSS reached without touching the application. There is no length bound on the field, so a single request can also write an arbitrary volume.",
+      "preconditions": "None beyond network access to the site. Unauthenticated, and enabled in the shipped logging configuration.",
+      "triage": {
+        "FP-02": "DOES_NOT_HOLD - the value is request.form.get('user') at ckan/views/user.py:613, reaching the sink three lines later with no allowlist, pattern or escaping in between.",
+        "FP-03": "DOES_NOT_HOLD - the shipped formatter (deployment.ini_tmpl:258) is a single-line text format on a StreamHandler, which is exactly the format in which a newline forges a record; no structured serialiser is involved.",
+        "FP-09": "NOT_APPLICABLE - the construct is an ordinary logging call, not something being misread.",
+        "FP-10": "DOES_NOT_HOLD - the accountability loss is itself the impact WEB-28 names, so this does not drop to informational."
+      },
+      "recommendation": "Neutralise control characters at the sink rather than at each call site: install a logging.Filter or a Formatter subclass in ckan/config/environment.py that escapes CR, LF and other C0 characters in %(message)s, so that every one of the 195 enumerated call sites is covered including the ones added later. At ckan/views/user.py:616 and :650 also bound the length and prefer the repr form ('%r'), which is what ckan/lib/authenticator.py:24-28 already does correctly for the login path. Longer term, emit one JSON object per event and make the aggregator parse that format.",
+      "verification": "Regression test: POST to /user/reset with user='x\\n<forged line>' and assert that the handler emitted exactly one record - assert len(caplog.records) == 1 and '\\n' not in caplog.records[0].getMessage(). Repeat for GET /api/3/action/foo%0A<forged> and for /dataset/changes/<id>%0A<forged>.",
+      "traceability": [
+        "CWE-117",
+        "CWE-93",
+        "CWE-116",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ]
+    },
+    {
+      "id": "F02",
+      "title": "Uploaded resource is served inline under a Content-Type the uploader chooses (stored XSS)",
+      "location": {
+        "path": "ckan/views/resource.py",
+        "symbol": "download",
+        "line": 179
+      },
+      "class": "stored-xss",
+      "severity": "high",
+      "procedure": "WEB-12 / WEB-13",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U21 stored XSS: resource download serves a user-set Content-Type inline",
+      "evidence": "ckan/views/resource.py:174-180:\n    if rsc.get(u'url_type') == u'upload':\n        upload = uploader.get_resource_uploader(rsc)\n        filepath = upload.get_path(rsc[u'id'])\n        resp = flask.send_file(filepath)\n        if rsc.get(u'mimetype'):\n            resp.headers[u'Content-Type'] = rsc[u'mimetype']\n        return resp\nThree facts make this a sink. (1) mimetype is free text: ckan/logic/schema.py:48 declares 'mimetype': [ignore_missing, unicode_safe] - no allowlist, no pattern. (2) The file bytes are unconstrained: ResourceUpload (ckan/lib/uploader.py:237-361) has no verify_type; the content check at uploader.py:202-234 belongs to Upload, the image/group uploader, and is never reached for resources. (3) send_file is called without as_attachment and no Content-Disposition is set anywhere on this response, so the browser renders it. The stored filename is id[6:] with no extension (uploader.py:304), so send_file's own guess falls back to octet-stream and the explicit assignment on line 179 is what the browser sees.\nNothing in the tree mitigates it: grep for content-security-policy, x-content-type-options and x-frame-options across ckan/ and ckanext/ (py, ini and html) returns zero hits. Route: ckan/views/resource.py:954, /<resource_id>/download/<filename> under the dataset blueprint.",
+      "impact": "Any user who can create a dataset - registered users by default - uploads a file whose bytes are HTML with script, sets mimetype to text/html, and gets a URL on the CKAN origin that executes attacker JavaScript for every visitor who opens it. The download link is the primary call to action on every resource page, so reaching a victim needs no trickery. In CKAN's own origin the script can drive the action API as the victim (the API accepts form-encoded POSTs and there is no anti-CSRF token - see F07), which turns a visit by a sysadmin into full administrative takeover. The auth_tkt cookie is HttpOnly, so the session token itself is not readable, but same-origin request forgery does not need it.",
+      "preconditions": "An account that can create a dataset and upload a resource (the default for registered users), and a victim who opens the resource URL.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - I looked for the compensating control WEB-12 names and it is absent in both forms: no Content-Disposition: attachment on this response, and no X-Content-Type-Options or CSP anywhere in the tree.",
+        "FP-02": "DOES_NOT_HOLD - both halves are attacker-controlled: the header value comes from the resource's mimetype field (schema.py:48, unicode_safe only) and the body from an unrestricted upload.",
+        "FP-03": "DOES_NOT_HOLD - the sink is an HTTP response served from the application's own origin with a type the attacker names; that is the dangerous form.",
+        "FP-04": "DOES_NOT_HOLD - this is core ckan/views/resource.py on the default dataset blueprint, not a plugin or a debug path.",
+        "FP-10": "DOES_NOT_HOLD - impact reaches the user directly; there is no server-side equivalent making it merely defence in depth."
+      },
+      "recommendation": "Serve uploaded resources with Content-Disposition: attachment and a fixed, non-rendering Content-Type (application/octet-stream), which is precisely the pair WEB-12 names as the exculpation. If inline display must stay, constrain rsc['mimetype'] to a server-side allowlist of non-executable types before it is assigned to the header, and add X-Content-Type-Options: nosniff plus a CSP with a nonce and no unsafe-inline (see F08). Best practice is to serve user files from a separate origin.",
+      "verification": "Test: create a resource whose upload body is '<script>window.__x=1</script>' with mimetype 'text/html'; GET the download URL and assert that the response Content-Type is not text/html and that Content-Disposition is attachment. Add the negative case with mimetype 'image/svg+xml'.",
+      "traceability": [
+        "CWE-79",
+        "CWE-434",
+        "CWE-116",
+        "ASVS 5.0 V5",
+        "A05:2025"
+      ]
+    },
+    {
+      "id": "F03",
+      "title": "webpage_view puts an unvalidated URL into an iframe src, so a javascript: URL runs on CKAN's origin",
+      "location": {
+        "path": "ckanext/webpageview/plugin.py",
+        "symbol": "WebPageView.info",
+        "line": 23
+      },
+      "class": "stored-xss",
+      "severity": "high",
+      "procedure": "WEB-13",
+      "status": "confirmed",
+      "confidence": "medium-high",
+      "unaided_label": "U22 stored XSS: webpage_view puts an unvalidated URL into an iframe src",
+      "evidence": "ckanext/webpageview/plugin.py:23 declares the whole validation for the field:\n    'schema': {'page_url': [ignore_empty, text_type]}\ntext_type is a string cast. There is no scheme check, no url_validator, no h.sanitize_url.\nckanext/webpageview/theme/templates/webpage_view.html:1:\n    <iframe src=\"{{ resource_view.get('page_url') or resource.get('url') }}\" ...>\nJinja autoescaping is on (ckan/lib/jinja_extensions.py:41), which stops an attribute breakout but does nothing about the scheme - WEB-13 lists exactly this case, 'a value that lands in a context where HTML escaping is not the right one (URL)'.\nThe view is rendered inline on CKAN's own page, not in a sandbox: plugin.py:24 sets 'iframed': False, so ckan/templates/package/snippets/resource_view.html:26-27 takes the non-iframed branch and calls h.rendered_resource_view(...), which returns literal(base.render(template, ...)) at ckan/lib/helpers.py:2493 - a Markup value inserted into the resource page unescaped. A javascript: URL in an iframe src is evaluated in a document that inherits the embedding page's origin, so the script runs as CKAN.\nSame shape, weaker: ckanext/imageview/plugin.py:29 validates image_url identically and ckanext/imageview/theme/templates/image_view.html:1 puts it in an <img src>, where javascript: does not execute in current browsers - noted, not reported.",
+      "impact": "A user who can add a resource view to a dataset stores script that executes for every visitor of that resource page, on CKAN's origin, with no interaction beyond loading the page. Consequences are the same as F02 and worse in reach, because it fires on page load rather than on a download click: acting on the action API as the victim, and administrative takeover if the visitor is a sysadmin.",
+      "preconditions": "The webpage_view plugin must be in ckan.plugins. It ships in the tree and has an entry point (setup.py:91) but is not in the default list (deployment.ini_tmpl:122 ships 'stats text_view image_view recline_view'), so this is one config line away rather than on by default.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - the only transformation between input and sink is Jinja autoescaping, which is the wrong control for a URL context; no scheme allowlist exists on any branch.",
+        "FP-02": "DOES_NOT_HOLD - page_url is a resource-view field supplied through the form or the API and validated only as a string cast.",
+        "FP-03": "DOES_NOT_HOLD - an iframe src is a URL-executing context, and 'iframed': False places the markup on the parent page rather than in a sandbox.",
+        "FP-04": "DOES_NOT_HOLD - it ships with an entry point and is enabled by configuration; that it is not in the default plugin list is a precondition on exploitation, not evidence the path is absent from the artifact.",
+        "FP-10": "DOES_NOT_HOLD - the impact reaches the viewer directly."
+      },
+      "recommendation": "Validate page_url with a scheme allowlist (http and https only) in the plugin schema at ckanext/webpageview/plugin.py:23, rejecting rather than rewriting; do the same for image_url in ckanext/imageview/plugin.py:29. Extend h.sanitize_url to enforce a scheme allowlist (F12) and route both fields through it at render time as defence in depth, and add the frame-src and default-src directives of F08.",
+      "verification": "Test: create a webpage_view resource view with page_url = \"javascript:window.__x=1\", render the resource page, and assert that the emitted iframe src does not start with a scheme outside {http, https}. Add the same negative test for data: and vbscript:.",
+      "traceability": [
+        "CWE-79",
+        "CWE-83",
+        "ASVS 5.0 V3",
+        "A05:2025"
+      ]
+    },
+    {
+      "id": "F04",
+      "title": "Resource proxy fetches any user-supplied URL from the server's network position (SSRF), and reflects the upstream content type",
+      "location": {
+        "path": "ckanext/resourceproxy/blueprint.py",
+        "symbol": "proxy_resource",
+        "line": 49
+      },
+      "class": "ssrf",
+      "severity": "medium",
+      "procedure": "WEB-10",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U6 SSRF: resource proxy fetches any resource URL",
+      "evidence": "ckanext/resourceproxy/blueprint.py:39-69:\n    url = resource[u'url']\n    parts = urlsplit(url)\n    if not parts.scheme or not parts.netloc:\n        return abort(409, _(u'Invalid URL.'))\n    ...\n    r = requests.head(url, timeout=TIMEOUT)\n    ...\n    r = requests.get(url, timeout=TIMEOUT, stream=True)\nThe entire validation is 'has a scheme and a netloc'. That blocks file:// (empty netloc) and nothing else: http://127.0.0.1:8983/solr/..., http://169.254.169.254/latest/meta-data/, any RFC1918 address and any internal DNS name all pass. requests follows redirects by default and no allow_redirects=False or post-redirect re-validation appears anywhere in the file, so even a hostname allowlist added later would be bypassable - which is the redirect case WEB-10 calls out explicitly. url is the resource's own url field, set by whoever created the resource (ckan/logic/schema.py:38, ignore_missing + unicode_safe + remove_whitespace).\nThe body is then streamed back to the caller (line 75-77), so this is a full read primitive, not blind. Second defect in the same handler, line 71: response.headers[u'content-type'] = r.headers[u'content-type'] - the upstream server names the content type of a response served from CKAN's own origin at /dataset/<id>/resource/<rid>/proxy, which turns the proxy into a stored-XSS delivery path for whoever controls the far end.\nRoute: blueprint.py:111-113. proxy_view passes c.user into the context, so resource_show enforces the resource's own read permission - the attacker uses a resource they created.",
+      "impact": "Any user who can create a resource makes the CKAN server issue GET requests to hosts it can reach and returns up to MAX_FILE_SIZE of the response body. That reads cloud instance metadata and its credentials where the platform still serves IMDSv1, reaches the internal Solr and DataStore/Postgres HTTP surfaces, and maps the internal network from outside. The content-type reflection additionally lets an attacker serve attacker-chosen HTML on CKAN's origin through a URL that looks like a normal CKAN path.",
+      "preconditions": "The resource_proxy plugin must be in ckan.plugins (setup.py:81 provides the entry point; not in the default list at deployment.ini_tmpl:122). It is commonly enabled because the preview plugins need it to bypass the same-origin policy.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - no allowlist, no post-redirect validation, no outbound proxy or network policy anywhere in the repository; MAX_FILE_SIZE and TIMEOUT bound the size and duration of the fetch, not its destination.",
+        "FP-02": "DOES_NOT_HOLD - resource['url'] is user-supplied through resource_create/resource_update.",
+        "FP-08": "UNKNOWN - egress could be restricted at the network layer in a given deployment, but no artifact in this tree shows it, and per FP-08 absence of evidence is not HOLDS.",
+        "FP-05": "DOES_NOT_HOLD - the intended exposure is fetching a dataset's external resource for preview; reaching loopback, link-local and RFC1918 is outside that bound."
+      },
+      "recommendation": "Resolve the hostname and reject loopback, link-local (169.254.0.0/16), unique-local and private ranges before connecting; set allow_redirects=False, or follow redirects manually and re-run the same check on every hop. Constrain the scheme to http and https explicitly instead of inferring it from urlsplit. Do not copy the upstream content-type: pin the response to a safe fixed type, or map it through a small allowlist, and add X-Content-Type-Options: nosniff. Where the platform offers it, require IMDSv2.",
+      "verification": "Local canary only: start a listener on 127.0.0.1 on a test port, create a resource pointing at it, request the proxy URL, and assert the connection is refused by the application rather than received by the canary. Add a redirect case: a first-hop URL that 302s to 127.0.0.1. No non-local target.",
+      "traceability": [
+        "CWE-918",
+        "CWE-1385",
+        "ASVS 5.0 V4",
+        "A01:2025",
+        "API7:2023"
+      ]
+    },
+    {
+      "id": "F05",
+      "title": "Credentials and full request bodies are written to the log, and the API key line is also an injection sink",
+      "location": {
+        "path": "ckan/views/__init__.py",
+        "symbol": "_get_user_for_apikey",
+        "line": 277
+      },
+      "class": "sensitive-data-in-logs",
+      "severity": "medium",
+      "procedure": "WEB-22",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U2 secret-in-log: full API key logged",
+      "evidence": "ckan/views/__init__.py:263-277 collects the credential from the header, the environ or the Authorization header and then logs it whole:\n    apikey = six.ensure_text(apikey, errors=u\"ignore\")\n    log.debug(u'Received API Key: %s' % apikey)\nThe value logged is the live credential - the next two lines use it to look up the user, and ckan/lib/api_token.py:112 accepts the same string as a bearer JWT. It is also interpolated with '%s' from an attacker-chosen header, so the same line is a WEB-28 injection sink.\nSame class nearby: ckan/views/api.py:220 log.debug(u'Request data extracted: %r', request_data) logs the entire decoded action-API body, which for user_create and user_update contains the password field and for api_token_create the token material; ckan/views/__init__.py:60 logs session.items(). No redaction filter exists - grep for a logging Filter or a sensitive-field processor across ckan/ returns nothing.\nHonest scope: the shipped configuration sets [logger_ckan] level = INFO (ckan/config/deployment.ini_tmpl:239-243), so these three DEBUG calls do not fire by default; they fire on any install that turns the ckan logger to DEBUG, which is the standard first step when diagnosing auth problems - exactly when API keys are flowing. The ckanext logger is shipped at DEBUG (deployment.ini_tmpl:246-250), so extension-side debug logging is emitted out of the box.",
+      "impact": "Whoever can read the logs - operators, an aggregator, a log-shipping vendor, anyone who reaches a backup - obtains live API keys and bearer tokens and can act as those users, and obtains plaintext passwords from user_create/user_update bodies. This converts read access to logs into account takeover, and it survives credential rotation only if the logs are purged too. The API-key line adds record forgery, since the header is attacker-chosen and unescaped.",
+      "preconditions": "The ckan logger set to DEBUG for the three ckan/* sites. No precondition for the injection half beyond that same level.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - no redaction filter or sensitive-field processor exists in the logging configuration or in code.",
+        "FP-04": "DOES_NOT_HOLD - the code ships and the level is an operator setting, not a build-time exclusion; FP-04 requires the path to be absent from the artifact, which it is not. The precondition is recorded rather than used to close the finding.",
+        "FP-07": "DOES_NOT_HOLD - API keys, JWTs, session contents and passwords are the definition of security-valuable data."
+      },
+      "recommendation": "Delete ckan/views/__init__.py:277 outright - a credential has no reason to appear in a log at any level. If a diagnostic is wanted, log a stable prefix or a hash. Redact known-sensitive keys (password, apikey, token, secret) from request_data before ckan/views/api.py:220, and drop ckan/views/__init__.py:60. Install the same redaction as a logging.Filter so new call sites inherit it, and pair it with the control-character escaping from F01.",
+      "verification": "Test with the ckan logger at DEBUG: issue a request carrying a known synthetic API key and assert the value does not appear in caplog; POST user_create with a synthetic password and assert the password does not appear. Both must pass at every log level.",
+      "traceability": [
+        "CWE-532",
+        "CWE-522",
+        "CWE-117",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ]
+    },
+    {
+      "id": "F06",
+      "title": "datastore_search_sql accepts raw SQL, is enabled by default, and its auth function allows anonymous callers",
+      "location": {
+        "path": "ckanext/datastore/backend/postgres.py",
+        "symbol": "DatastorePostgresqlBackend.configure",
+        "line": 1734
+      },
+      "class": "raw-sql-exposure",
+      "severity": "medium",
+      "procedure": "WEB-07 (§3 injection) / WEB-05",
+      "status": "probable",
+      "confidence": "medium",
+      "unaided_label": "U11 raw-SQL endpoint on by default and anonymous",
+      "evidence": "ckanext/datastore/backend/postgres.py:1733-1734:\n    self.enable_sql_search = toolkit.asbool(\n        self.config.get('ckan.datastore.sqlsearch.enabled', True))\nThe default is True, and doc/maintaining/configuration.rst:449 confirms 'Default value: True'.\nckanext/datastore/logic/auth.py:53-54 decorates datastore_search_sql with @p.toolkit.auth_allow_anonymous_access, so an unauthenticated caller may submit SQL; authorization is then per-table, derived from the query plan.\nThe caller's string is interpolated into a query at postgres.py:1575: sql = 'SELECT * FROM ({0}) AS blah LIMIT {1} ;'.format(sql, rows_max + 1), and the resulting text is handed to EXPLAIN at ckanext/datastore/helpers.py:101-103 and then executed at postgres.py:1604.\nThe defences are real and I checked each: is_single_statement at postgres.py:1971 (before delegation), the pg_ prefix block at 1588, the per-table check_access at 1594, the function allowlist at 1596-1605, the read-only role enforced by _check_urls_and_permissions at 1651-1665, and a statement timeout. What I could not rule out is the parser differential that the design rests on: the single-statement decision is made by sqlparse (helpers.py:19) while execution is PostgreSQL's parser, and the table-name decision is made by parsing an EXPLAIN plan whose own execution happens before check_access is called (helpers.py:101 runs, then postgres.py:1594). Two different parsers guarding one executor is the shape that fails; I did not demonstrate a bypass by reading, so this is reported as probable, not confirmed.",
+      "impact": "The blast radius of any bypass in that chain is every table in the DataStore, including tables backing private resources, reachable with no credential. Independently of a bypass, the endpoint gives unauthenticated callers a general-purpose query engine on the read replica, which is a denial-of-service surface bounded only by ckan.datastore.sqlsearch's statement timeout.",
+      "preconditions": "The datastore plugin enabled (setup.py:78; not in the default plugin list) and ckan.datastore.sqlsearch.enabled left at its default.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD as a full exculpation - controls exist and are layered, but the load-bearing ones are two parsers disagreeing with the executor rather than an unskippable layer; the read-only role does bound writes and that is reflected in the severity.",
+        "FP-02": "DOES_NOT_HOLD - the sql parameter is caller-supplied by design.",
+        "FP-05": "DOES_NOT_HOLD - the exposure is intended, but 'intended' is bounded by the per-table authorization, and the mechanism enforcing that boundary is the part I cannot verify.",
+        "FP-10": "DOES_NOT_HOLD."
+      },
+      "recommendation": "Default ckan.datastore.sqlsearch.enabled to False and require an explicit opt-in, since an operator who wants the feature will set it. Remove @auth_allow_anonymous_access from datastore_search_sql so raw SQL at minimum requires an identified account that can be rate-limited and audited. Move check_access before the EXPLAIN rather than after it, so no caller-supplied text is submitted to the database ahead of the authorization decision.",
+      "verification": "Differential test over the guard: for a corpus of statements, assert that sqlparse's split count and PostgreSQL's own acceptance agree, and that any disagreement fails closed. Assert that an anonymous datastore_search_sql call returns 403 once the auth change is made.",
+      "traceability": [
+        "CWE-89",
+        "CWE-863",
+        "ASVS 5.0 V5",
+        "A03:2025",
+        "API5:2023"
+      ]
+    },
+    {
+      "id": "F07",
+      "title": "There is no CSRF protection, and csrf_input() is a control that cannot fail",
+      "location": {
+        "path": "ckan/lib/helpers.py",
+        "symbol": "csrf_input",
+        "line": 3031
+      },
+      "class": "missing-csrf",
+      "severity": "low",
+      "procedure": "WEB-27 / WEB-15",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U8 no CSRF anywhere; csrf_input() is an empty stub",
+      "evidence": "ckan/lib/helpers.py:3030-3031, in full:\n    @core_helper\n    def csrf_input():\n        return ''\nIt is registered as a core template helper, so it is callable from every template, and it has no branch that can produce a token. A case-insensitive grep for csrf, xsrf and csrf_token across ckan/, ckanext/ and doc/ (py, html, ini, rst, txt) returns this one line and nothing else: no middleware, no token generation, no verification, and no template calls it. This is WEB-27's shape exactly - a control that is registered, callable and returning, with no path in its body that says no.\nState-changing endpoints are cookie-authorized: ckan/views/__init__.py:203-257 derives the identity from the repoze auth_tkt cookie via REMOTE_USER, and the action API accepts form-encoded POST bodies (ckan/views/api.py:185-199), a content type that triggers no preflight.",
+      "impact": "Nothing in the application distinguishes a form submitted by the user from one submitted by another site. What holds the line today is a cookie attribute set in one place, and the code deliberately supports turning it off.",
+      "preconditions": "Exploitable only where the SameSite default is not in force - who.samesite set to none, or a browser that does not enforce Lax.",
+      "triage": {
+        "FP-01": "HOLDS for the default configuration - ckan/lib/repoze_plugins/auth_tkt.py:58-66 issues auth_tkt with SameSite=Lax unless configured otherwise, and every state-changing route is POST, which is the exculpation WEB-15 names ('SameSite=Lax or Strict and an unsafe method'). It is a single attribute rather than an unskippable layer, and auth_tkt.py:99-103 explicitly supports who.samesite = none, so it is recorded and the finding is kept.",
+        "FP-04": "DOES_NOT_HOLD - csrf_input ships in what runs.",
+        "FP-09": "DOES_NOT_HOLD - the construct is what it looks like; the name promises a token and the body returns an empty string.",
+        "FP-10": "HOLDS - per FP-10 this is bounded to low rather than deleted: the finding stays written down because the day who.samesite is set to none, there is nothing behind it."
+      },
+      "recommendation": "Either implement csrf_input() for real - a token bound to the session, emitted by the form macros and verified server-side on every unsafe method - or delete the helper, because an inert control named like a real one is how a reviewer concludes the protection exists. Until it is implemented, refuse the who.samesite = none configuration for cookie-authorized deployments rather than merely requiring who.secure alongside it (auth_tkt.py:100-103).",
+      "verification": "A negative test, per WEB-27: replay a state-changing POST with no token and no custom header and assert it is rejected. Today that test fails, and the failing test is the evidence.",
+      "traceability": [
+        "CWE-352",
+        "CWE-754",
+        "ASVS 5.0 V3",
+        "A01:2025"
+      ]
+    },
+    {
+      "id": "F08",
+      "title": "No security response headers are emitted anywhere",
+      "location": {
+        "path": "ckan/views/__init__.py",
+        "symbol": "set_cache_control_headers_for_response",
+        "line": 100
+      },
+      "class": "missing-security-headers",
+      "severity": "low",
+      "procedure": "WEB-14 / WEB-16",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U10 no security response headers at all",
+      "evidence": "A case-insensitive grep for content-security-policy, x-content-type-options, x-frame-options, strict-transport-security and x-xss-protection across ckan/ and ckanext/ (py, ini, html) returns zero hits. The after-request hooks registered in ckan/config/middleware/flask_app.py:413-414 and the response helpers in ckan/views/__init__.py:72-119 set only CORS and Cache-Control. The CORS block itself is bounded: it emits '*' only when ckan.cors.origin_allow_all is set, and never emits Access-Control-Allow-Credentials, so it is not an origin-reflection defect.",
+      "impact": "This is not a standalone vulnerability, and it is reported because it is load-bearing for two that are: a nonce-based CSP would reduce F02 and F03 from account takeover to a blocked script, and X-Content-Type-Options: nosniff removes the sniffing variant of F02. Absent frame-ancestors, the site is also framable for clickjacking.",
+      "preconditions": "None.",
+      "triage": {
+        "FP-08": "UNKNOWN - a reverse proxy in front of a given deployment may add these headers, but no artifact in this tree shows one, and per FP-08 that is UNKNOWN and never HOLDS.",
+        "FP-10": "HOLDS - defence in depth that is absent; bounded to low on its own, and written down because F02 and F03 depend on it."
+      },
+      "recommendation": "Add an after-request hook beside set_cache_control_headers_for_response emitting X-Content-Type-Options: nosniff, X-Frame-Options (or CSP frame-ancestors), Referrer-Policy, and a CSP with a nonce and no unsafe-inline, with the value configurable so operators can widen it for extensions.",
+      "verification": "Assert the headers on a representative page and on an API response in the test client.",
+      "traceability": [
+        "CWE-693",
+        "CWE-1021",
+        "ASVS 5.0 V13",
+        "A02:2025"
+      ]
+    },
+    {
+      "id": "F09",
+      "title": "url_is_local accepts backslash forms, so came_from redirects off-site",
+      "location": {
+        "path": "ckan/lib/helpers.py",
+        "symbol": "url_is_local",
+        "line": 635
+      },
+      "class": "open-redirect",
+      "severity": "low",
+      "procedure": "WEB-13 (URL context) / WEB-27",
+      "status": "probable",
+      "confidence": "medium",
+      "unaided_label": "U9 open redirect: url_is_local misses backslash forms",
+      "evidence": "ckan/lib/helpers.py:635-644:\n    if not url or url.startswith('//'):\n        return False\n    parsed = urlparse(url)\n    if parsed.scheme:\n        domain = urlparse(url_for('/', qualified=True)).netloc\n        if domain != parsed.netloc:\n            return False\n    return True\nThe forward-slash form is rejected and the scheme form is compared properly. The backslash form is neither: urlparse('/\\\\evil.example') yields no scheme and no netloc, so the function returns True, while browsers following the WHATWG URL rules normalise a backslash to a forward slash for special schemes and resolve it as a protocol-relative host. Consumers that trust the answer: ckan/views/user.py:476-477 (logged_in) and :503-504 (logged_out), both taking came_from from the request, and ckan/views/util.py:25 (/util/redirect), which strips CR, LF and NUL at line 24 but not backslash. Marked probable rather than confirmed because the last step is browser URL-normalisation behaviour, which I reasoned about rather than measured here.",
+      "impact": "A link to the site's own login or redirect endpoint lands the victim on an attacker page while the visible hostname during the click is the trusted one - the standard credential-phishing lever, and it is most valuable on exactly these endpoints because a login flow is where a user expects to type a password.",
+      "preconditions": "A browser that normalises backslashes in URLs, which current major browsers do.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - url_is_local is the only control on this path and the bypass is in the control itself.",
+        "FP-02": "DOES_NOT_HOLD - came_from and url come straight from the request.",
+        "FP-03": "UNKNOWN - whether the sink is dangerous depends on the browser's URL normalisation, which I did not exercise against a real browser here; this is why the status is probable and not confirmed."
+      },
+      "recommendation": "Normalise before deciding: reject any value whose first two characters are slashes or backslashes in any combination, translate backslashes to forward slashes before urlparse, and prefer an allowlist of known internal endpoints over free-form redirect targets. Add the backslash cases to whatever test covers url_is_local.",
+      "verification": "Parametrised test over ['//evil', '/\\\\evil', '\\\\\\\\evil', '/\\\\/evil', 'https:/\\\\evil'] asserting url_is_local is False for each.",
+      "traceability": [
+        "CWE-601",
+        "ASVS 5.0 V3",
+        "A01:2025"
+      ]
+    },
+    {
+      "id": "F10",
+      "title": "Password-reset key compared with ==, not a constant-time comparison",
+      "location": {
+        "path": "ckan/lib/mailer.py",
+        "symbol": "verify_reset_link",
+        "line": 219
+      },
+      "class": "timing-side-channel",
+      "severity": "low",
+      "procedure": "WEB-19",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U12 reset key compared with == (not constant time)",
+      "evidence": "ckan/lib/mailer.py:214-219:\n    if not user.reset_key or len(user.reset_key) < 5:\n        return False\n    return key.strip() == user.reset_key\n== on strings short-circuits at the first differing byte. The secret itself is well generated - make_key() at mailer.py:210-211 is codecs.encode(os.urandom(16), 'hex'), 128 bits - and create_reset_key is called again after a successful reset (ckan/views/user.py:738), so the key is single-use. The comparison is the only weak part.",
+      "impact": "A remote timing oracle on a 128-bit random key is not practically exploitable over a network, so this is hygiene rather than a live path. It is reported because it sits on the password-reset boundary, where the cost of getting it right is one import.",
+      "preconditions": "None; the weakness is unconditional but the exploitation is not practical remotely.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - no other comparison guards the reset key.",
+        "FP-10": "HOLDS - real but bounded: the entropy of the secret keeps the impact away from the user, so this stays at low and is still written down."
+      },
+      "recommendation": "Use hmac.compare_digest(key.strip(), user.reset_key). Consider the same audit for any other secret comparison introduced later.",
+      "verification": "Assert the call site uses hmac.compare_digest; a timing test is not meaningful at this entropy.",
+      "traceability": [
+        "CWE-208",
+        "CWE-697",
+        "ASVS 5.0 V11"
+      ]
+    },
+    {
+      "id": "F11",
+      "title": "Authentication cookie is issued without Secure by default",
+      "location": {
+        "path": "ckan/lib/repoze_plugins/auth_tkt.py",
+        "symbol": "make_plugin",
+        "line": 97
+      },
+      "class": "insecure-cookie",
+      "severity": "low",
+      "procedure": "WEB-01",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U13 auth cookie Secure defaults to False",
+      "evidence": "ckan/lib/repoze_plugins/auth_tkt.py:96-97:\n    # Set secure based on config value. Default is False\n    secure = _bool(config.get(u'who.secure', False))\nHttpOnly defaults to True (line 95) and SameSite to lax (line 99), so those two are right; Secure is the one that is not. The value reaches CkanAuthTktCookiePlugin (line 121-129) and governs whether the session ticket may travel over plaintext HTTP.",
+      "impact": "On any deployment reachable over HTTP - including one behind a TLS-terminating proxy that still answers on port 80, and any redirect a user follows before HSTS is pinned - the auth_tkt ticket is transmitted in clear and can be captured by a network observer and replayed as the user.",
+      "preconditions": "The site reachable over plaintext HTTP at any point in the user's flow.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - nothing else stops the cookie being sent over HTTP; HSTS is not emitted either (F08).",
+        "FP-04": "DOES_NOT_HOLD - this is the shipped default, not a debug path.",
+        "FP-08": "UNKNOWN - a deployment may set who.secure = True or terminate TLS exclusively, but no artifact here shows it."
+      },
+      "recommendation": "Default who.secure to True and require an explicit opt-out for plain-HTTP development, matching the treatment httponly already gets; emit HSTS alongside the headers in F08.",
+      "verification": "Assert the Set-Cookie for auth_tkt carries Secure, HttpOnly and SameSite in the default test configuration.",
+      "traceability": [
+        "CWE-614",
+        "CWE-319",
+        "ASVS 5.0 V3",
+        "A02:2025"
+      ]
+    },
+    {
+      "id": "F12",
+      "title": "sanitize_url does not constrain the scheme, while its own docstring advertises it for href",
+      "location": {
+        "path": "ckan/lib/helpers.py",
+        "symbol": "sanitize_url",
+        "line": 1540
+      },
+      "class": "unsafe-url-handling",
+      "severity": "low",
+      "procedure": "WEB-27 / WEB-13",
+      "status": "hardening",
+      "confidence": "high",
+      "unaided_label": "U15 sanitize_url does not constrain the scheme",
+      "evidence": "ckan/lib/helpers.py:1543-1546 documents the intended use:\n    <a href=\"{{ h.sanitize_url(user_link) }}\">\nand the body (1556-1568) percent-quotes the path, query, params and fragment and validates the netloc against _PLAUSIBLE_HOST_IDNA, but the scheme is only passed through quote(unquote(scheme), '+'), which leaves 'javascript' intact. urlparse('javascript:alert(1)') yields scheme='javascript' and path='alert(1)'; the path is percent-encoded, and a browser percent-decodes a javascript: URL body before evaluating it, so the result executes in an href.\nReported as hardening rather than a live XSS because the only caller today is user_image at helpers.py:1588, an <img src>, where javascript: does not execute in current browsers - the scheme check that would make the docstring true simply is not there.",
+      "impact": "A core helper named sanitize_url invites theme and extension authors to place user-supplied URLs in href attributes on the strength of its docstring, and each such use is an XSS. This is the failure mode WEB-27 describes: a named control that a reviewer will cite as the compensating control in someone else's finding.",
+      "preconditions": "A caller placing the result in an href or another scheme-executing context.",
+      "triage": {
+        "FP-02": "DOES_NOT_HOLD - the input is a user-supplied URL by design.",
+        "FP-03": "HOLDS for the present caller only - the single call site is an <img src>, where javascript: does not execute; this is why the status is hardening rather than confirmed.",
+        "FP-10": "HOLDS - bounded to low today, kept because the docstring makes the next caller the vulnerability."
+      },
+      "recommendation": "Add a scheme allowlist (http, https, mailto, ftp) at the top of sanitize_url, returning '' otherwise - the function already returns '' on parse errors, so the contract is unchanged - and add negative tests for javascript:, data: and vbscript:.",
+      "verification": "Assert sanitize_url returns '' for 'javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'data:text/html,<script>' and '\\x01javascript:alert(1)'.",
+      "traceability": [
+        "CWE-79",
+        "CWE-20",
+        "ASVS 5.0 V3"
+      ]
+    },
+    {
+      "id": "F13",
+      "title": "DataStore returns the raw database error, statement and parameters to the caller",
+      "location": {
+        "path": "ckanext/datastore/backend/postgres.py",
+        "symbol": "search_sql",
+        "line": 1618
+      },
+      "class": "information-disclosure",
+      "severity": "low",
+      "procedure": "WEB-22",
+      "status": "confirmed",
+      "confidence": "high",
+      "unaided_label": "U16 datastore returns the raw DB error to the caller",
+      "evidence": "ckanext/datastore/backend/postgres.py:1613-1625, in the ProgrammingError handler:\n    raise ValidationError({\n        'query': [_remove_explain(str(e))],\n        'info': {\n            'statement': [_remove_explain(e.statement)],\n            'params': [e.params],\n            'orig': [_remove_explain(str(e.orig))]\n        }\n    })\nValidationError is serialised into the API response body at ckan/views/api.py:328-335, so the caller receives the failing SQL statement, its bound parameters and the PostgreSQL error text. The same shape appears at postgres.py:1550-1558 for search_data.",
+      "impact": "Error text discloses column names, table names, the exact statement CKAN builds and PostgreSQL version-specific detail, which lowers the cost of the reconnaissance an attacker needs for F06 - it turns blind probing of the query wrapper into a directly observable one.",
+      "preconditions": "The datastore plugin enabled; reachable by whoever may call datastore_search or datastore_search_sql, which includes anonymous callers.",
+      "triage": {
+        "FP-01": "DOES_NOT_HOLD - no generic-error path with a correlation id exists here; the detail goes to the client.",
+        "FP-04": "DOES_NOT_HOLD - this is not gated on a debug flag; it runs in normal operation.",
+        "FP-07": "DOES_NOT_HOLD - the disclosed material is internal schema and query structure."
+      },
+      "recommendation": "Return a generic validation message with a correlation identifier and log the statement, parameters and driver error server-side, redacted per F05. Keep the detailed form behind an explicit debug setting.",
+      "verification": "Trigger a syntax error through datastore_search_sql and assert the response body contains no 'statement', no 'params' and no PostgreSQL error text.",
+      "traceability": [
+        "CWE-209",
+        "CWE-200",
+        "ASVS 5.0 V16",
+        "A09:2025"
+      ]
+    },
+    {
+      "id": "F14",
+      "title": "Dependencies are pinned to releases four to six years older than the tree",
+      "location": {
+        "path": "requirements.txt",
+        "symbol": "pinned dependency set",
+        "line": 8
+      },
+      "class": "outdated-dependencies",
+      "severity": "low",
+      "procedure": "WEB-19 (secrets and dependencies) / SUP",
+      "status": "probable",
+      "confidence": "medium",
+      "unaided_label": "U14 dependency pins are years old",
+      "evidence": "requirements.txt pins, among others: flask==1.1.1, werkzeug==1.0.0, jinja2==2.10.1, markupsafe==1.1.1, sqlalchemy==1.3.5, pyjwt==1.7.1, bleach==3.1.4, requests==2.25.1, urllib3==1.26.6, babel==2.7.0, beaker==1.11.0. These are 2019-2021 releases; ckan/__init__.py declares version 2.9.10. Several of them sit directly on the surfaces above: bleach is the sanitiser behind render_markdown (ckan/lib/helpers.py:2383), pyjwt verifies API tokens (ckan/lib/api_token.py:76), and werkzeug decodes the request paths that reach the log sinks in F01.\nStated as the pins themselves, deliberately: naming specific advisories for these versions would be recall rather than something I established from this tree, and the prompt's outside-information rule excludes it. What I can establish by reading is the age and the position of each pin.",
+      "impact": "Any published vulnerability in these versions is present in a deployment built from this file. The security-relevant positions of bleach, pyjwt and werkzeug make that a question worth answering rather than deferring.",
+      "preconditions": "A deployment built from requirements.txt rather than from newer resolved versions.",
+      "triage": {
+        "FP-04": "DOES_NOT_HOLD - requirements.txt is the shipped pin set, referenced by Dockerfile.py3.",
+        "FP-08": "UNKNOWN - a given deployment may patch or override these, but no artifact in this tree shows it, and per FP-08 that is UNKNOWN, never HOLDS."
+      },
+      "recommendation": "Run a real dependency audit (pip-audit or an SCA against the resolved set) and treat its output as the authority; upgrade bleach, pyjwt and werkzeug first, given where they sit. Add the audit to CI so the pin set cannot age silently again.",
+      "verification": "pip-audit -r requirements.txt in CI, failing the build above an agreed severity.",
+      "traceability": [
+        "CWE-1104",
+        "CWE-937",
+        "ASVS 5.0 V10",
+        "A06:2025"
+      ]
+    }
+  ],
+  "coverage_declaration": {
+    "pack_sections_exercised": [
+      "web-api.md §0 (what tools do not see) - read before reporting, as instructed",
+      "web-api.md §4 WEB-10 (SSRF) - applied, produced F04",
+      "web-api.md §5 WEB-11 (deserialization) - applied, no finding: the enumeration returned zero pickle/marshal/yaml.load sinks in non-test code; the only __import__ calls (ckan/authz.py:64, ckan/logic/__init__.py:455,800) take module paths from configuration, not from requests",
+      "web-api.md §5 WEB-12 (upload and path traversal) - applied, produced F02 and refuted the traversal candidate",
+      "web-api-logging.md §11 WEB-22 - applied, produced F05 and F13",
+      "web-api-logging.md §11 WEB-28 - applied with its mandatory AST enumeration and its minimal test, produced F01",
+      "web-api-clientside-logic.md §6 WEB-13, WEB-14 - applied, produced F03, F08, F12",
+      "web-api-clientside-logic.md §7 WEB-15, WEB-16 - applied, produced F07; CORS examined and found bounded (no credentialed wildcard, no origin reflection); caching refuted with control_at",
+      "web-api-clientside-logic.md §9 WEB-19 - applied, produced F10, F11, F14",
+      "web-api-clientside-logic.md §9 WEB-23 - applied with its minimal test on the declared upload bounds, no finding",
+      "web-api-clientside-logic.md §9 WEB-27 - applied, produced F07 and F12",
+      "triage.md - all ten FP-* rules used; every finding carries its answers"
+    ],
+    "pack_sections_skipped": [
+      "web-api.md §1 WEB-01..03 (authN and sessions) beyond the cookie attributes - read the identity path (ckan/views/__init__.py:203-283), the auth_tkt plugin and ckan/lib/api_token.py by judgement and reported F11; did not work the full procedure over login throttling, MFA or OAuth, which this tree does not implement",
+      "web-api.md §2 WEB-04..06 (BOLA/BFLA, object- and function-level authorization) - NOT COVERED to procedure. This is the largest uncovered surface and §0 names it as the number one API class. CKAN's authorization is a 169-function action layer (ckan/logic/action/{get,create,update,delete,patch}.py) paired with ckan/logic/auth/ and ckan/authz.py; establishing per-object authorization for each would be a second audit of comparable size. I read the auth functions on the paths I did report (request_reset, user_reset, datastore_*) and no others. Treat every other action as unexamined for BOLA rather than clean",
+      "web-api.md §3 WEB-07..09 (injection) - partially covered. I worked the SQL surface the enumeration produced (the DataStore backend end to end, ckan/model/__init__.py:250, the migrations) and produced F06; I did not work template, LDAP or NoSQL injection, which this tree does not have",
+      "web-api-clientside-logic.md §8 WEB-17, WEB-18 (business logic, races, rate limiting) - NOT COVERED. No payment or quota flow was examined, and no TOCTOU analysis was done. §0 names both as classes tooling misses, so their absence here is absence of looking",
+      "web-api-clientside-logic.md §9 WEB-26 (length from the wire sizing an allocation) - read and found not to apply: no binary decoder in this tree",
+      "web-api-clientside-logic.md §10 WEB-20, WEB-21 (GraphQL, WebSocket, SSE) - not applicable, the target has neither",
+      "references/tooling.md - not read, because no scanner was invoked; the agent file requires it only before invoking one"
+    ],
+    "enumeration_sizes": {
+      "files_total": 2098,
+      "python_files": 673,
+      "python_files_non_test": 444,
+      "logging_calls_non_test_grep": 214,
+      "logging_calls_non_literal_grep": 133,
+      "logging_sites_pack_ast_query": 195,
+      "logging_sites_at_http_boundary": 72,
+      "route_registrations": 113,
+      "request_data_reads": 377,
+      "sql_string_constructions_non_test": 9,
+      "exec_eval_subprocess_sinks": 1,
+      "deserialization_sinks": 0
+    },
+    "lists_not_fully_worked": "Of the 195 enumerated logging sites I worked the 72 at the HTTP boundary and sampled the rest; the remaining 123 sit in CLI, model, search-index and migration code where the value's origin is internal, but I did not trace every one and say so rather than imply coverage. Of the 377 request-data reads I worked those in ckan/views/ and the four ckanext plugins named above; the reads inside ckan/logic/action/ were followed only where a reported finding passed through them. Of the 113 routes I read the api, user, resource, dataset and util blueprints and the resourceproxy and datastore blueprints; admin, group, feed, dashboard and home were not worked to procedure.",
+    "scanners_invoked": "None. All analysis was local, read-only and non-destructive; the two tests run (the WEB-28 log-line count and the werkzeug converter check) executed in the scratchpad against replicas, never against the target tree, and the target was not modified.",
+    "authorization_boundary": "No remote target was contacted, no credential was tested, no load was generated. The SSRF verification in F04 is written as a plan against a local canary, pending authorization."
+  }
+}

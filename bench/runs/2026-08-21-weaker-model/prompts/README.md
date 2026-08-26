@@ -9,3 +9,15 @@ One asymmetry this round inherits and does not fix: neither prompt says whether 
 ## Outside information: unstated in this round
 
 Neither run prompt here says whether consulting sources outside the target is allowed, and at least one run in this family did consult them — one unaided run diffed the target against upstream `main`, one corpus run cited CVE identifiers. **Recall numbers from this round therefore measure review and library familiarity together, and cannot separate them.** Consistency is unaffected: it compares runs of one arm, and both of them had the same latitude. `../../prompts/external-sources.txt` is the clause that closes this for later rounds; it did not exist when this one ran.
+
+## What this directory does NOT contain
+
+The per-arm **launch call**. Every `mantis` launch in this round carried *run the stages
+inline rather than spawning sub-agents*, and no `ours` launch carried anything like it —
+so the sentence above, that the arms differ only in which corpus the launch points at, is
+**wrong**, and it names the smaller difference while omitting the larger.
+
+A `prompts/` directory that ships the shared template and not the launch call is a
+directory that can be complete and still mislead. `gate-bench-integrity.sh` checked that
+prompts exist; it could not check that they were all of it.
+See [`../../CORRECTION-inline-constraint.md`](../../CORRECTION-inline-constraint.md).

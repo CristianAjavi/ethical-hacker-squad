@@ -69,7 +69,7 @@ another page saying nothing.
 
 ## What ships
 
-All eight reports in `reports/`, each with the `provenance` block the scorer requires. The key
+All eight reports in `runs/`, each with the `provenance` block the scorer requires. The key
 is [derived from the public fix commit](key.json) and was committed while the arms ran. The
 [scorer](score.py) was exercised on synthetic reports — including a hit by symbol, a hit by
 line range, a same-class miss in another file, and a report with no provenance — and committed

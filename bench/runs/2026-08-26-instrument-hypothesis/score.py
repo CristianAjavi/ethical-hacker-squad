@@ -65,9 +65,9 @@ def score_report(p: Path) -> dict:
 
 
 def main() -> int:
-    base = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "reports"
+    base = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "runs"
     if not base.is_dir():
-        print(f"UNMEASURABLE no reports directory at {base}")
+        print(f"UNMEASURABLE no runs directory at {base}")
         return 2
 
     arms: dict[str, list] = {}
@@ -76,7 +76,7 @@ def main() -> int:
         arms.setdefault(arm, []).append((p.stem, score_report(p)))
 
     if not arms:
-        print(f"UNMEASURABLE no reports under {base}")
+        print(f"UNMEASURABLE no run reports under {base}")
         return 2
 
     rc = 0

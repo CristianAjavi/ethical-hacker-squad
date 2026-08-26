@@ -1,5 +1,12 @@
 # 2026-08-27 — a blind spot that belongs to the field, not to either product
 
+> **The arms were not given the same instruction.** Every `mantis` launch in this round
+> carried *run the stages inline rather than spawning sub-agents*, and no `ours` launch
+> carried anything like it. `mantis` is a supervised nineteen-skill pipeline; told to run
+> inline it becomes what this project already is. This round therefore compares two prose
+> corpora executed by one agent each, **not two products as they ship**. The numbers stand;
+> the claim narrows. See [`../CORRECTION-inline-constraint.md`](../CORRECTION-inline-constraint.md).
+
 **The band is refuted.** And it is the least interesting thing on this page.
 
 | arm | runs | recall | decoys / run | findings / run |
