@@ -90,7 +90,29 @@ set -uo pipefail
 #   branch, 64 KiB for a human one. This cap stays as the outer bound.
 MAX_SKILL_MD_BYTES="${EHS_MAX_SKILL_MD_BYTES:-12288}"
 MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
-MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-655360}"
+# RE-BASELINED 2026-08-26, 640 KiB -> 704 KiB, by Cristian's explicit decision.
+#
+#   WHAT PUSHED IT: two deterministic tools, 17,401 B together. Without them the
+#   served tree is 653,784 B - 1,576 B under the old cap - so this is a change
+#   made because this session's own additions broke the limit, which is exactly
+#   the move that needs its reasoning on the record.
+#
+#   THE REASONING, AND ITS WEAKNESS: this byte cap was a proxy for "we ship only
+#   inert text". That proxy is no longer the only defence - the inertness check
+#   above now READS every shipped .py and requires stdlib-only imports from a
+#   named list, no subprocess, no socket, no network module, no write mode, no
+#   eval/exec/compile/__import__, with `python3` absent giving 2 rather than a
+#   pass. A direct check beat a proxy, so the proxy was loosened.
+#
+#   It is still a loosened threshold. What keeps it honest is gate-tree-delta.sh,
+#   which caps how much any SINGLE change may add - 16 KiB on a bot branch, 64
+#   KiB on a human one - so this outer bound cannot be walked upward one commit
+#   at a time without somebody noticing.
+#
+#   WHAT WAS WEIGHED AND REJECTED: shipping the tools while cutting 17 KiB of
+#   knowledge packs. That trades measured detection for a byte count and would
+#   have meant choosing which defect classes stop being covered.
+MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-720896}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an
