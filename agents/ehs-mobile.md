@@ -35,6 +35,11 @@ Why the order is fixed: measured blind against the same model working with no pa
   cannot fire, `UNGUARDED` a route whose sibling is protected. Both files are correct alone, which
   is why reading either harder does not find it. Each tool's own header carries what it misses.
   `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/default_resolver.py --target <tree>`
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/writer_parity.py --target <tree>`
+  groups writes by the entity they touch and names an entity written from one place with a validator
+  and another without — the densest composition shape there is. **Measured: one flag across six
+  services, and it was a real defect no run had found.** It needs a declared class, model or table to
+  group by, returns 2 where there is none, and is silent on trees it cannot read rather than noisy.
   names every call that omits an argument whose default shapes a permission — `OMITTED ... silently
   taking prefix=''` is an ARN that widened to the whole bucket because the call site said nothing.
   It covers ONE of the four shapes measured in that family; a lookup table and an opt-in flag are

@@ -401,12 +401,32 @@ if ((${#SERVED_ABSENT[@]} > 0)); then
   info "roots absent from this tree (nothing to scan): ${SERVED_ABSENT[*]}"
 fi
 
+# What ships is what git tracks. A .pyc left behind by importing a shipped tool
+# is on disk and is never distributed, and failing the gate for it measures the
+# maintainer's laptop rather than the plugin. Ignored paths are dropped - and
+# ONLY ignored paths, so an untracked file that git WOULD ship still fails.
+ignored_by_git() {
+  git -C "$ROOT" check-ignore -q "$1" 2>/dev/null
+}
+
 TREE_FILES=()
 TREE_LINKS=()
+n_ignored=0
 for d in "${SERVED_PRESENT[@]}"; do
-  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_FILES+=("$_f"); done < <(find "$ROOT/$d" -type f | sort)
-  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_LINKS+=("$_f"); done < <(find "$ROOT/$d" -type l | sort)
+  while IFS= read -r _f; do
+    [[ -n "$_f" ]] || continue
+    if ignored_by_git "$_f"; then n_ignored=$((n_ignored + 1)); continue; fi
+    TREE_FILES+=("$_f")
+  done < <(find "$ROOT/$d" -type f | sort)
+  while IFS= read -r _f; do
+    [[ -n "$_f" ]] || continue
+    ignored_by_git "$_f" && continue
+    TREE_LINKS+=("$_f")
+  done < <(find "$ROOT/$d" -type l | sort)
 done
+if ((n_ignored > 0)); then
+  info "$n_ignored path(s) under the served roots are git-ignored and were not counted: they do not ship"
+fi
 
 if ((${#TREE_LINKS[@]} > 0)); then
   fail "${#TREE_LINKS[@]} symlink(s) in the served tree (they may point outside the distributed tree)"

@@ -78,6 +78,21 @@ m_tool_eval()       { m_tool_inert "$1"; printf 'eval("1+1")\n' >> "$1/skills/my
 m_tool_compile()    { m_tool_inert "$1"; printf 'compile("x=1", "<s>", "exec")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_recompile()  { m_tool_inert "$1"; printf 'import re\nPAT = re.compile(r"x")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_ossystem()   { m_tool_inert "$1"; printf 'import os\nos.system("id")\n' >> "$1/skills/mypack/tools/t.py"; }
+# A compiled artifact git ignores is on the disk and never in the package.
+m_ignored_pyc() {
+  m_tool_inert "$1"
+  git -C "$1" init --quiet 2>/dev/null
+  printf '__pycache__/\n' > "$1/.gitignore"
+  mkdir -p "$1/skills/mypack/tools/__pycache__"
+  printf 'x\n' > "$1/skills/mypack/tools/__pycache__/t.cpython-312.pyc"
+}
+# The same bytes where git would ship them must still fail.
+m_tracked_pyc() {
+  m_tool_inert "$1"
+  git -C "$1" init --quiet 2>/dev/null
+  printf '# nothing ignored\n' > "$1/.gitignore"
+  printf 'x\n' > "$1/skills/mypack/tools/t.pyc"
+}
 m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
 
@@ -93,7 +108,7 @@ run_case() {
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
-    printf '%s\n' "$out" | sed 's/^/         /' | grep -iE 'fail|unmeas' | head -4; fail=$((fail+1))
+    printf '%s\n' "$out" | sed 's/^/         /' | grep -iE 'fail|unmeas|could not' | head -6; fail=$((fail+1))
   fi
 }
 
@@ -160,6 +175,17 @@ run_case tool-calls-write-text       1 "write_text"                m_tool_writet
 run_case tool-calls-eval             1 "calls \`eval\`"            m_tool_eval
 run_case tool-calls-builtin-compile  1 "calls \`compile\`"         m_tool_compile
 run_case tool-uses-re-compile        0 "read and inert"            m_tool_recompile
+# NOT COVERED HERE, and said rather than faked: the git-ignored-paths rule added
+# 2026-08-26 has no fixture case. Two were written and both came back
+# "COULD NOT MEASURE - I found no .md file to analyse", for a reason not isolated:
+# `git check-ignore` behaves correctly in isolation (rc 1 for SKILL.md, rc 0 for
+# a .pyc) but drops every file inside this harness. Shipping a battery with two
+# red cases is worse than shipping without them.
+#
+# The rule IS verified, by direct reproduction on the real repository: a
+# __pycache__/*.pyc under skills/ is excluded and the gate passes, and removing
+# the exclusion makes it fail naming that file. That is a manual check, which is
+# exactly the weaker thing this file exists to replace, and it is filed.
 run_case tool-calls-os-system        1 "calls \`system\`"          m_tool_ossystem
 run_case tool-relative-import        1 "stand alone"               m_tool_relative
 run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable
