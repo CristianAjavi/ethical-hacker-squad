@@ -41,6 +41,11 @@ are the call sites". At minimum, for the languages in front of you:
   joins mounted paths against the paths guards claim to cover: `DEAD GUARD` is a control that
   cannot fire, `UNGUARDED` a route whose sibling is protected. Both files are correct alone, which
   is why reading either harder does not find it. Each tool's own header carries what it misses.
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/default_resolver.py --target <tree>`
+  names every call that omits an argument whose default shapes a permission — `OMITTED ... silently
+  taking prefix=''` is an ARN that widened to the whole bucket because the call site said nothing.
+  It covers ONE of the four shapes measured in that family; a lookup table and an opt-in flag are
+  not covered, and it reads TypeScript by pattern rather than by parser.
 - **Sinks that execute or interpolate** — `eval`, `exec`, template construction, subprocess
   argv assembly, and query strings built by concatenation or f-string rather than binding.
 - **The boundary** — every route, handler or RPC entry point, and every place a request

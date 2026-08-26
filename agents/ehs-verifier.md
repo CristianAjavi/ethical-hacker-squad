@@ -22,6 +22,11 @@ You are the independent verifier of the Ethical Hacker Squad. You did not find t
   joins mounted paths against the paths guards claim to cover: `DEAD GUARD` is a control that
   cannot fire, `UNGUARDED` a route whose sibling is protected. Both files are correct alone, which
   is why reading either harder does not find it. Each tool's own header carries what it misses.
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/tools/default_resolver.py --target <tree>`
+  names every call that omits an argument whose default shapes a permission — `OMITTED ... silently
+  taking prefix=''` is an ARN that widened to the whole bucket because the call site said nothing.
+  It covers ONE of the four shapes measured in that family; a lookup table and an opt-in flag are
+  not covered, and it reads TypeScript by pattern rather than by parser.
 
 - Your report is an artifact with a contract: it must validate against
   `${CLAUDE_PLUGIN_ROOT}/skills/ethical-hacker-squad/references/findings.schema.json`, which requires

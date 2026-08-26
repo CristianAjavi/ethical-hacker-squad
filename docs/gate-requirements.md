@@ -249,6 +249,19 @@ changed", and the page said "all eight reports ship". The evidence was on a lapt
 failed, which was the problem**, and an earlier round had already hit the same trap and left
 the lesson as a sentence of prose rather than a check.
 
+### shipped tools
+
+Three now ship and each is read by the inertness check above before it is allowed out:
+`log_escaper.py` (does an escaper reach the log sink), `path_coverage.py` (do the guards cover
+the routes), `default_resolver.py` (what does the permission become when the caller omits the
+argument). Each has a battery under `scripts/bench/*.selftest.sh` and each battery carries a
+mutant of its own subject, because a battery that passes with and without the mechanism is
+hollow.
+
+All three exist for the same measured reason: across six rounds, prose procedure moved this
+corpus along the precision/recall curve and never off it, while a deterministic join moved a
+number every time it was tried.
+
 ### reference reachable from a role
 
 A reference no role can reach is a rule that does not exist. `gate-reference-reachable.sh`
