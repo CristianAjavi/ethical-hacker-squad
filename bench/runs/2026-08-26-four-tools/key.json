@@ -1,0 +1,880 @@
+{
+  "planted": [
+    {
+      "id": "U-01",
+      "case": "billing-portal",
+      "path": "billing-portal/src/auth/admin-scope.guard.ts",
+      "symbol": "isStaffPath",
+      "line": 15,
+      "cwe": "CWE-863",
+      "class": "staff-only routes never checked",
+      "kind": "composition",
+      "mechanism": "guard predicate does not match where the routes are mounted",
+      "requires_files": [
+        "billing-portal/src/auth/admin-scope.guard.ts",
+        "billing-portal/src/main.ts",
+        "billing-portal/src/invoices/invoices.controller.ts"
+      ],
+      "note": "AdminScopeGuard only asserts user.staff for request paths starting with /admin, /internal or /ops. main.ts:23 sets a global prefix of api/v1, so every admin route is served at /api/v1/admin/reports and isStaffPath is always false: the guard returns true for the entire staff surface. The guard is correct for a service mounted at the root, and setting a version prefix is correct on its own."
+    },
+    {
+      "id": "U-02",
+      "case": "billing-portal",
+      "path": "billing-portal/src/app.module.ts",
+      "symbol": "AppModule.configure",
+      "line": 32,
+      "cwe": "CWE-306",
+      "class": "session middleware misses nested invoice routes",
+      "kind": "composition",
+      "mechanism": "middleware/plugin registered in a scope that does not cover sibling routes",
+      "requires_files": [
+        "billing-portal/src/app.module.ts",
+        "billing-portal/src/invoices/invoices.controller.ts"
+      ],
+      "note": "forRoutes({path:'invoices'}) matches the collection path exactly; Nest does not extend it to invoices/:id or invoices/search (the sibling admin entry uses the 'admin/*' wildcard, which does). Those handlers therefore run with req.user undefined, and tenantFor (invoices.controller.ts:25) treats a missing session as an internal mesh call and honours the ?tenant= selector, giving unauthenticated cross-tenant read and write. Neither the wiring nor the controller's mesh fallback is wrong in isolation."
+    },
+    {
+      "id": "U-03",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoices.service.ts",
+      "symbol": "InvoicesService.get",
+      "line": 28,
+      "cwe": "CWE-524",
+      "class": "invoice cache keyed without the tenant",
+      "kind": "composition",
+      "mechanism": "cache or memo keyed on less than the authorization depends on",
+      "requires_files": [
+        "billing-portal/src/invoices/invoices.service.ts",
+        "billing-portal/src/common/cache.ts"
+      ],
+      "note": "The memo key is `invoice:${invoiceId}` while the loader is repo.findForTenant(tenantId, invoiceId) - the tenant is part of the authorization but not of the key. TtlCache is a single process-wide Map shared by every request (cache.ts:12), so the first tenant to read an invoice populates it for all others. cache.ts is a correct generic memo; the service call reads as a normal cache-aside."
+    },
+    {
+      "id": "U-04",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoices.controller.ts",
+      "symbol": "AdminReportsController.updateDefinition",
+      "line": 97,
+      "cwe": "CWE-862",
+      "class": "report definitions guarded on create only",
+      "kind": "composition",
+      "mechanism": "permission checked on create but not on update/delete of the same resource",
+      "requires_files": [
+        "billing-portal/src/invoices/invoices.controller.ts",
+        "billing-portal/src/auth/roles.guard.ts"
+      ],
+      "note": "createDefinition carries @Roles('billing_ops') but updateDefinition and deleteDefinition carry no metadata. RolesGuard returns true whenever the reflector finds no ROLES_KEY (roles.guard.ts:25), so any authenticated session can rewrite or delete a report definition it could not create. The guard is a correct opt-in guard; the controller looks guarded because the first method in the class is."
+    },
+    {
+      "id": "U-05",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoice.repository.ts",
+      "symbol": "InvoiceRepository.bulkUpsert",
+      "line": 78,
+      "cwe": "CWE-863",
+      "class": "status invariant bypassed by the import writer",
+      "kind": "composition",
+      "mechanism": "invariant enforced on one write path, bypassed by a second writer to the same store",
+      "requires_files": [
+        "billing-portal/src/invoices/invoice.repository.ts",
+        "billing-portal/src/invoices/invoices.service.ts",
+        "billing-portal/src/invoices/invoices.controller.ts"
+      ],
+      "note": "changeStatus enforces ALLOWED_TRANSITIONS (invoices.service.ts:52), which forbids reopening a paid invoice, and always scopes by tenant_id. bulkUpsert merges caller-supplied rows onto the same table with neither the transition check nor a tenant predicate, and is reachable through importReconciled from POST /admin/reports/reconciliation, which only needs the billing_ops role. A bulk upsert helper is unremarkable; so is a service that guards its own transition method."
+    },
+    {
+      "id": "U-06",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoice.repository.ts",
+      "symbol": "InvoiceRepository.searchByMemo",
+      "line": 51,
+      "cwe": "CWE-89",
+      "class": "memo search interpolates the query string",
+      "kind": "single-file",
+      "mechanism": "SQL built by string interpolation of a query parameter",
+      "requires_files": [
+        "billing-portal/src/invoices/invoice.repository.ts"
+      ],
+      "note": "tenant_id is bound as a parameter but `term` is interpolated straight into the ILIKE literal, and the controller passes ?q= through untouched."
+    },
+    {
+      "id": "U-07",
+      "case": "edge-links",
+      "path": "edge-links/src/auth.ts",
+      "symbol": "authenticate",
+      "line": 50,
+      "cwe": "CWE-306",
+      "class": "production deploy takes the preview auth bypass",
+      "kind": "composition",
+      "mechanism": "feature flag or environment selector changes a security decision",
+      "requires_files": [
+        "edge-links/src/auth.ts",
+        "edge-links/wrangler.toml"
+      ],
+      "note": "authenticate short-circuits to a full-scope dashboard session whenever ENVIRONMENT is not exactly 'production'. wrangler.toml:40 configures the production environment with ENVIRONMENT = \"prod\". The deployed worker therefore hands every anonymous request owner scopes. The bypass is defensible for previews and the toml value is a normal short environment name; only together do they open the door."
+    },
+    {
+      "id": "U-08",
+      "case": "edge-links",
+      "path": "edge-links/src/index.ts",
+      "symbol": "default.fetch",
+      "line": 105,
+      "cwe": "CWE-807",
+      "class": "client headers forwarded into the Durable Object",
+      "kind": "composition",
+      "mechanism": "ACL expressed at one layer while another layer is reachable directly",
+      "requires_files": [
+        "edge-links/src/index.ts",
+        "edge-links/src/do/LinkStore.ts"
+      ],
+      "note": "The /do/* passthrough builds `new Request(url, request)`, which copies the client's headers verbatim into the object fetch. LinkStore reads its authorization from the X-Actor-Scopes header (do/LinkStore.ts:14), which the router sets itself on the API paths, so a viewer can send X-Actor-Scopes: links:admin and reach /do/delete and /do/list. The object trusting a router-stamped header is the normal Cloudflare pattern; the passthrough looks like an ordinary websocket relay."
+    },
+    {
+      "id": "U-09",
+      "case": "edge-links",
+      "path": "edge-links/src/index.ts",
+      "symbol": "default.fetch",
+      "line": 82,
+      "cwe": "CWE-307",
+      "class": "credential endpoint outside the rate limiter",
+      "kind": "composition",
+      "mechanism": "rate limit or lockout scoped so the credential endpoint falls outside it",
+      "requires_files": [
+        "edge-links/src/index.ts",
+        "edge-links/src/ratelimit.ts"
+      ],
+      "note": "consume() runs only when isLimited(pathname) is true, and LIMITED_PREFIXES is ['/api/', '/go/'] (ratelimit.ts:9). The workspace credential exchange is mounted at /auth/token on the next line, outside both prefixes, so workspace secrets can be guessed without any budget. The prefix list is a sensible description of the scraped surface; the route placement is conventional."
+    },
+    {
+      "id": "U-10",
+      "case": "edge-links",
+      "path": "edge-links/src/roles.ts",
+      "symbol": "scopesFor",
+      "line": 14,
+      "cwe": "CWE-1188",
+      "class": "missing role claim defaults to owner",
+      "kind": "composition",
+      "mechanism": "default parameter or lookup table decides a permission the call site never shows",
+      "requires_files": [
+        "edge-links/src/roles.ts",
+        "edge-links/src/index.ts",
+        "edge-links/src/auth.ts"
+      ],
+      "note": "scopesFor defaults its parameter to 'owner', so scopesFor(undefined) returns the full owner scope set while an unknown role string falls back to viewer. issueToken mints role: meta?.role from workspace metadata (index.ts:59), and workspaces created before the roles migration have no role key, so their tokens arrive at auth.ts:76 with role undefined and are granted links:admin. Each file reads as a reasonable fallback; the escalation only shows when the three are read together."
+    },
+    {
+      "id": "U-11",
+      "case": "edge-links",
+      "path": "edge-links/src/render.ts",
+      "symbol": "linkCard",
+      "line": 16,
+      "cwe": "CWE-79",
+      "class": "href sink fed a value escaped for text",
+      "kind": "composition",
+      "mechanism": "value sanitised at the wrong layer relative to where the sink actually is",
+      "requires_files": [
+        "edge-links/src/render.ts",
+        "edge-links/src/handlers/links.ts"
+      ],
+      "note": "parseLinkInput stores escapeHtml(target) (handlers/links.ts:49), which neutralises markup characters but leaves a javascript: URL untouched, and the URL constructor accepts it. linkCard drops that stored value into an href attribute, a URL context where entity escaping is not the relevant defence. Escaping on the way in is a normal policy; rendering an already-sanitised field is a normal assumption."
+    },
+    {
+      "id": "U-12",
+      "case": "edge-links",
+      "path": "edge-links/src/handlers/go.ts",
+      "symbol": "redirect",
+      "line": 26,
+      "cwe": "CWE-601",
+      "class": "redirect target taken from the query string",
+      "kind": "single-file",
+      "mechanism": "redirect target taken straight from a query parameter",
+      "requires_files": [
+        "edge-links/src/handlers/go.ts"
+      ],
+      "note": "?to= short-circuits the slug lookup and issues a 302 to any absolute URL, on a hostname users are trained to click."
+    },
+    {
+      "id": "U-13",
+      "case": "edge-links",
+      "path": "edge-links/src/queue.ts",
+      "symbol": "handleQueue",
+      "line": 23,
+      "cwe": "CWE-20",
+      "class": "queue consumer skips the link schema",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the message the worker consumes",
+      "requires_files": [
+        "edge-links/src/queue.ts",
+        "edge-links/src/handlers/links.ts",
+        "edge-links/src/do/LinkStore.ts"
+      ],
+      "note": "The HTTP path runs parseLinkInput (slug charset, URL parse, length caps, and owner taken from the session). The queue consumer reads owner, slug and target straight off message.body, derives the object id from the message's own owner field and stamps X-Actor-Scopes: links:write, so anything able to enqueue writes into any workspace with unvalidated slugs and targets. The producer-side schema is real; the consumer looks like a plain fan-out loop."
+    },
+    {
+      "id": "U-14",
+      "case": "ledger-stream",
+      "path": "ledger-stream/worker/consumer.py",
+      "symbol": "handle_message",
+      "line": 49,
+      "cwe": "CWE-20",
+      "class": "consumed payload never validated",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the message the worker consumes",
+      "requires_files": [
+        "ledger-stream/worker/consumer.py",
+        "ledger-stream/api/schemas.py",
+        "ledger-stream/worker/apply.py"
+      ],
+      "note": "TransferRequest pins the account id pattern, the direction literal, the currency and a 500_000 cent ceiling, and app.py sets org_id server-side from the verified token. The consumer json-decodes the record and hands the raw dict to apply_transfer, which reads payload['direction'] and payload['org_id'] as given, so any producer on the topic writes arbitrary directions and books entries against another org. The intake schema is genuinely enforced; the consumer looks like a thin decode-and-apply."
+    },
+    {
+      "id": "U-15",
+      "case": "ledger-stream",
+      "path": "ledger-stream/worker/consumer.py",
+      "symbol": "handle_message",
+      "line": 47,
+      "cwe": "CWE-1188",
+      "class": "pattern subscription inherits the open policy",
+      "kind": "composition",
+      "mechanism": "default parameter or lookup table decides a permission the call site never shows",
+      "requires_files": [
+        "ledger-stream/worker/consumer.py",
+        "ledger-stream/common/topics.py"
+      ],
+      "note": "policy_for falls back to OPEN_POLICY (topics.py:50), which sets require_signature=False, allow_account_override=True and a 10,000,000 cent ceiling. The consumer subscribes to the regex ^ledger\\..* (consumer.py:67), so every stream that is not spelled out in TOPIC_POLICY - including ledger.dlq.v1 - is processed unsigned and with cross-org account writes allowed. A permissive default for internal fan-out and a wildcard subscription are each ordinary choices."
+    },
+    {
+      "id": "U-16",
+      "case": "ledger-stream",
+      "path": "ledger-stream/common/store.py",
+      "symbol": "LedgerStore.append_raw",
+      "line": 69,
+      "cwe": "CWE-863",
+      "class": "backfill writer skips the posting policy",
+      "kind": "composition",
+      "mechanism": "invariant enforced on one write path, bypassed by a second writer to the same store",
+      "requires_files": [
+        "ledger-stream/common/store.py",
+        "ledger-stream/worker/apply.py",
+        "ledger-stream/admin/backfill.py"
+      ],
+      "note": "apply_transfer is where the signature check, the per-topic ceiling, the account-to-org ownership check and DAILY_ACCOUNT_LIMIT_CENTS live before post_entry runs. append_raw writes the same table with executemany and no checks, and backfill.py:50 feeds it rows whose account_id, org_id, direction and amount come straight from a CSV, so any operator export can book entries against any org past the daily limit. A bulk loader next to a single-row writer is unremarkable, and the policy code is complete where it lives."
+    },
+    {
+      "id": "U-17",
+      "case": "ledger-stream",
+      "path": "ledger-stream/worker/retry.py",
+      "symbol": "replay_one",
+      "line": 55,
+      "cwe": "CWE-347",
+      "class": "DLQ replay disables signature verification",
+      "kind": "composition",
+      "mechanism": "validator on the primary path skipped by a retry, fallback or bulk path",
+      "requires_files": [
+        "ledger-stream/worker/retry.py",
+        "ledger-stream/worker/apply.py",
+        "ledger-stream/worker/consumer.py"
+      ],
+      "note": "The main consumer calls apply_transfer with the default verify_signature=True, so require_signature topics are enforced. The replay path passes verify_signature=False on the premise that the message was already checked before being parked - but the DLQ topic is writable by anything that can produce to the cluster, and org and topic are read from replayable headers. apply.py's opt-out parameter is a normal ergonomic; the retry worker's premise is stated but never enforced."
+    },
+    {
+      "id": "U-18",
+      "case": "ledger-stream",
+      "path": "ledger-stream/common/serde.py",
+      "symbol": "decode_context",
+      "line": 27,
+      "cwe": "CWE-502",
+      "class": "trace context header unpickled",
+      "kind": "single-file",
+      "mechanism": "message header deserialised with pickle",
+      "requires_files": [
+        "ledger-stream/common/serde.py"
+      ],
+      "note": "pickle.loads runs on the x-ctx header of any consumed message, giving code execution to anything that can produce to a subscribed topic."
+    },
+    {
+      "id": "U-19",
+      "case": "ledger-stream",
+      "path": "ledger-stream/common/signing.py",
+      "symbol": "DEFAULT_SIGNING_KEY",
+      "line": 8,
+      "cwe": "CWE-798",
+      "class": "signature key falls back to a source constant",
+      "kind": "single-file",
+      "mechanism": "hardcoded fallback key used to verify signatures",
+      "requires_files": [
+        "ledger-stream/common/signing.py"
+      ],
+      "note": "When LEDGER_SIGNING_KEY is unset the module signs and verifies with a constant that is in the repository, so message signatures prove nothing."
+    },
+    {
+      "id": "U-20",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/on_mount/require_agent.ex",
+      "symbol": "@guarded",
+      "line": 15,
+      "cwe": "CWE-862",
+      "class": "live actions outside the hook's guarded list",
+      "kind": "composition",
+      "mechanism": "guard predicate does not match where the routes are mounted",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/live/on_mount/require_agent.ex",
+        "helpdesk-live/lib/helpdesk_web/router.ex"
+      ],
+      "note": "The hook only demands an agent when live_action is :edit, :delete or :new. The router declares :escalate and :assign in the same live_session (router.ex:30-31), and those are the mutating actions the LiveView actually implements. The router pipeline runs on the first HTTP render but not on a socket connect or a live navigation, so a socket opened straight at /tickets/:id/escalate mounts with current_agent nil and reaches handle_event(\"escalate\"). The hook's list is coherent with itself; the router's action names are coherent with the LiveView."
+    },
+    {
+      "id": "U-21",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/router.ex",
+      "symbol": "scope /attachments",
+      "line": 38,
+      "cwe": "CWE-306",
+      "class": "attachment scope omits the agent pipeline",
+      "kind": "composition",
+      "mechanism": "middleware/plugin registered in a scope that does not cover sibling routes",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/router.ex",
+        "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex"
+      ],
+      "note": "The console scope pipes through [:browser, :require_agent]; the sibling attachments scope pipes through :browser alone, so ensure_agent never runs there. AttachmentController states that it relies on the console pipeline and therefore performs no identity or ownership check of its own (it validates only the shape of the id and file name), which makes every ticket attachment world readable and writable to anyone who can guess a ticket UUID. Either file alone reads as a deliberate separation of concerns."
+    },
+    {
+      "id": "U-22",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex",
+      "symbol": "raw(@ticket.body_html)",
+      "line": 12,
+      "cwe": "CWE-79",
+      "class": "sanitiser strips scripts, template renders raw",
+      "kind": "composition",
+      "mechanism": "value sanitised at the wrong layer relative to where the sink actually is",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex",
+        "helpdesk-live/lib/helpdesk/sanitizer.ex"
+      ],
+      "note": "Sanitizer removes script blocks, javascript: and data:text/html on the way into the database but keeps all other markup on purpose, so attributes such as onerror or onload survive. The template renders the stored value through raw/1, which is the escaping HEEx would otherwise apply. The sanitiser is honest about what it removes; the template is written for a field described as already cleaned."
+    },
+    {
+      "id": "U-23",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+      "symbol": "handle_event \"update_note\"",
+      "line": 71,
+      "cwe": "CWE-862",
+      "class": "note editing skips the write policy",
+      "kind": "composition",
+      "mechanism": "permission checked on create but not on update/delete of the same resource",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "helpdesk-live/lib/helpdesk/policy.ex"
+      ],
+      "note": "create_note gates on Policy.can_write?/2, which rejects auditors and anyone outside the ticket's org. update_note takes note_id straight from the client event and calls Tickets.update_note/2, which loads the note by id with no scope, so a read-only agent can rewrite any note in any org. Policy.can_write? is correct and used correctly one clause above."
+    },
+    {
+      "id": "U-24",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+      "symbol": "TicketLive.mount",
+      "line": 20,
+      "cwe": "CWE-524",
+      "class": "ticket cache keyed without the org scope",
+      "kind": "composition",
+      "mechanism": "cache or memo keyed on less than the authorization depends on",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "helpdesk-live/lib/helpdesk/cache.ex"
+      ],
+      "note": "Authorization here is the scope passed into Tickets.get_scoped/2 - the query returns nil for a ticket the agent may not see, and mount has no further check. Cache.fetch_ticket keys only on {:ticket, id} in a :named_table, :public ETS table shared by every socket in the node (cache.ex:15,24), so the loader's org scope never reaches the key and the first agent to open a ticket serves it to agents of other orgs. The cache is a plain TTL memo; scoping through the query instead of a post-hoc check is a normal Ecto pattern."
+    },
+    {
+      "id": "U-25",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+      "symbol": "sort_key",
+      "line": 51,
+      "cwe": "CWE-770",
+      "class": "sort parameter converted to an atom",
+      "kind": "single-file",
+      "mechanism": "atoms created from an unbounded user-supplied string",
+      "requires_files": [
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex"
+      ],
+      "note": "String.to_atom on a query parameter lets a client exhaust the atom table and bring the node down."
+    },
+    {
+      "id": "U-26",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+      "symbol": "enrollmentRoutes /bulk",
+      "line": 36,
+      "cwe": "CWE-345",
+      "class": "bulk enrolment skips device attestation",
+      "kind": "composition",
+      "mechanism": "validator on the primary path skipped by a retry, fallback or bulk path",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt"
+      ],
+      "note": "POST /api/devices/enroll verifies the manufacturing attestation and the issued nonce before DeviceRegistry.enroll (Devices.kt:89). The bulk pallet route calls the same enroll for every entry with no attestation at all, on the stated premise that the pallet manifest was signed on the line - but nothing in the request carries or checks that signature, so any devices:write holder registers arbitrary serials and public keys. Both routes are internally consistent."
+    },
+    {
+      "id": "U-27",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+      "symbol": "enrollmentRoutes /retry",
+      "line": 56,
+      "cwe": "CWE-345",
+      "class": "retry replays a request that failed attestation",
+      "kind": "composition",
+      "mechanism": "validator on the primary path skipped by a retry, fallback or bulk path",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt"
+      ],
+      "note": "Devices.kt:95 stashes the enrolment request precisely when attestation fails, so the pending map holds requests that were rejected. The retry route re-enrolls that stored payload without re-running Attestation.verify, turning a rejected enrolment into a two-call bypass. The stash reads as failure bookkeeping; the retry reads as replaying something already checked."
+    },
+    {
+      "id": "U-28",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+      "symbol": "firmwareRoutes /publish",
+      "line": 47,
+      "cwe": "CWE-863",
+      "class": "service tokens accepted by default on firmware publish",
+      "kind": "composition",
+      "mechanism": "default parameter or lookup table decides a permission the call site never shows",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt"
+      ],
+      "note": "requireScope takes allowServiceToken with a default of true and returns early for any subject beginning with 'svc-' without ever looking at the scope claim (Permissions.kt:25,35). The publish call site omits the parameter, so any machine token - including a low-privilege telemetry uploader - can move a channel onto a new firmware build. The contrast is invisible at the call site: Devices.kt:108 passes allowServiceToken = false for decommission."
+    },
+    {
+      "id": "U-29",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+      "symbol": "Application.module",
+      "line": 72,
+      "cwe": "CWE-306",
+      "class": "internal routes registered outside the auth block",
+      "kind": "composition",
+      "mechanism": "middleware/plugin registered in a scope that does not cover sibling routes",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Internal.kt"
+      ],
+      "note": "device, enrollment and firmware routes are nested inside authenticate(\"fleet-jwt\"); internalRoutes is registered as a sibling of that block, so /internal/devices and /internal/devices/rotate-key are served with no principal at all. Internal.kt documents that it is only routed from inside the cluster, which is a deployment assumption the routing table does not encode."
+    },
+    {
+      "id": "U-30",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+      "symbol": "Application.module",
+      "line": 61,
+      "cwe": "CWE-307",
+      "class": "token endpoint outside the rate limit scope",
+      "kind": "composition",
+      "mechanism": "rate limit or lockout scoped so the credential endpoint falls outside it",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Token.kt"
+      ],
+      "note": "The RateLimit plugin is installed and a 60/minute bucket is registered, but only the block wrapping the authenticated routes calls rateLimit(RateLimitName(\"public\")). tokenRoutes is registered ahead of it, so the client_credentials grant - the one endpoint where guessing pays - has no budget. The registration is correct and the ordering is the natural one."
+    },
+    {
+      "id": "U-31",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/Config.kt",
+      "symbol": "FleetConfig.requireMutualTls",
+      "line": 26,
+      "cwe": "CWE-1188",
+      "class": "mutual TLS never demanded in production",
+      "kind": "composition",
+      "mechanism": "feature flag or environment selector changes a security decision",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/Config.kt",
+        "fleet-provision/src/main/resources/application.conf"
+      ],
+      "note": "requireMutualTls is true only when environment equals \"prod\"; application.conf:13 sets fleet.environment = \"production\". Device client certificates are therefore never demanded in the environment the flag exists for. The comparison is a plausible short form and the config value is the plausible long form."
+    },
+    {
+      "id": "U-32",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+      "symbol": "firmwareRoutes /artifact/{name}",
+      "line": 64,
+      "cwe": "CWE-22",
+      "class": "artifact name joined into a file path",
+      "kind": "single-file",
+      "mechanism": "file path joined from a user-supplied path segment",
+      "requires_files": [
+        "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt"
+      ],
+      "note": "File(config.firmwareDir, name) with an unnormalised path parameter reads any file the process can open."
+    },
+    {
+      "id": "U-33",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/docker-compose.yml",
+      "symbol": "services.objects.ports",
+      "line": 27,
+      "cwe": "CWE-668",
+      "class": "service port published past the proxy",
+      "kind": "composition",
+      "mechanism": "ACL expressed at one layer while another layer is reachable directly",
+      "requires_files": [
+        "mesh-gateway/docker-compose.yml",
+        "mesh-gateway/envoy/envoy.yaml",
+        "mesh-gateway/service/main.go"
+      ],
+      "note": "The envoy RBAC policy denies /internal/ and /admin/ to anything outside 10.20.0.0/16, which is the only control over the operator surface. docker-compose publishes the objects container's 8081 to the host, and main.go binds LISTEN_ADDR :8081 on all interfaces, so /internal/diag and /admin are reachable without ever traversing envoy. Publishing a port for local debugging and writing an edge ACL are each routine."
+    },
+    {
+      "id": "U-34",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/envoy/envoy.yaml",
+      "symbol": "rbac policy operator-surface",
+      "line": 28,
+      "cwe": "CWE-863",
+      "class": "admin surface mounted off the guarded prefix",
+      "kind": "composition",
+      "mechanism": "guard predicate does not match where the routes are mounted",
+      "requires_files": [
+        "mesh-gateway/envoy/envoy.yaml",
+        "mesh-gateway/service/main.go",
+        "mesh-gateway/service/admin.go"
+      ],
+      "note": "The DENY policy matches the prefix \"/admin/\" with a trailing slash. main.go:118 registers the whole operator API at the exact path \"/admin\", because handleAdmin dispatches on an action in the request body rather than on a sub-path. POST /admin therefore never matches the policy, and the restore, purge-cache and usage actions are reachable from the public virtual host. The prefix is the idiomatic envoy spelling; the single-endpoint dispatch is a normal batching design."
+    },
+    {
+      "id": "U-35",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/envoy/envoy.yaml",
+      "symbol": "virtual_host partner_vh",
+      "line": 73,
+      "cwe": "CWE-290",
+      "class": "identity headers stripped on one virtual host only",
+      "kind": "composition",
+      "mechanism": "value sanitised at the wrong layer relative to where the sink actually is",
+      "requires_files": [
+        "mesh-gateway/envoy/envoy.yaml",
+        "mesh-gateway/service/auth.go"
+      ],
+      "note": "public_vh removes x-fleet-user, x-fleet-roles and x-fleet-tenant so the client cannot forge them, and ext_authz repopulates them. partner_vh disables ext_authz and carries no request_headers_to_remove, so client-supplied identity headers pass through untouched to the same cluster. auth.go builds the Principal from exactly those headers and its HasRole treats 'admin' as a wildcard. The service is right to trust a header the edge is supposed to own; the partner host is right that mTLS identifies the caller."
+    },
+    {
+      "id": "U-36",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/cache.go",
+      "symbol": "withCache",
+      "line": 81,
+      "cwe": "CWE-524",
+      "class": "response cache keyed on path alone",
+      "kind": "composition",
+      "mechanism": "cache or memo keyed on less than the authorization depends on",
+      "requires_files": [
+        "mesh-gateway/service/cache.go",
+        "mesh-gateway/service/main.go",
+        "mesh-gateway/service/auth.go"
+      ],
+      "note": "The cache key is r.URL.Path, but handleObject resolves the tenant from the principal and returns that tenant's object bytes and listing for the same path (main.go:53). The middleware wraps the whole mux, so the first tenant to GET /v1/objects/<key> has the body served to every other tenant for the TTL, ahead of any role check. A path-keyed GET cache is textbook, and the handler's tenant check is correct on a miss."
+    },
+    {
+      "id": "U-37",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/store.go",
+      "symbol": "Store.putRaw",
+      "line": 78,
+      "cwe": "CWE-863",
+      "class": "snapshot writer bypasses quota and ownership",
+      "kind": "composition",
+      "mechanism": "invariant enforced on one write path, bypassed by a second writer to the same store",
+      "requires_files": [
+        "mesh-gateway/service/store.go",
+        "mesh-gateway/service/admin.go",
+        "mesh-gateway/service/main.go"
+      ],
+      "note": "Put refuses to overwrite an object owned by another tenant and enforces the per-tenant quota before writing. putRaw writes the same blob directory and the same meta map with neither check, and restoreSnapshot (admin.go:61) feeds it ObjectMeta taken verbatim from the request body, so a restore payload can retag any key to any tenant and blow through quota. A raw loader for snapshots and a checked front door are a normal pairing."
+    },
+    {
+      "id": "U-38",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/diag.go",
+      "symbol": "handleDiag",
+      "line": 24,
+      "cwe": "CWE-78",
+      "class": "ping probe built as a shell string",
+      "kind": "single-file",
+      "mechanism": "shell command string built from a query parameter",
+      "requires_files": [
+        "mesh-gateway/service/diag.go"
+      ],
+      "note": "The host query parameter is concatenated into a `sh -c` argument, so any shell metacharacter runs as the service user."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "V-01",
+      "case": "billing-portal",
+      "path": "billing-portal/src/main.ts",
+      "symbol": "allowedOrigins",
+      "line": 11,
+      "looks_like": "CORS allow-list built from an environment variable, so a wildcard could be configured in",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "billing-portal/src/main.ts:15 - the parsed list is filtered so '*' can never reach enableCors"
+    },
+    {
+      "id": "V-02",
+      "case": "billing-portal",
+      "path": "billing-portal/src/auth/jwt.middleware.ts",
+      "symbol": "JwtMiddleware.use",
+      "line": 47,
+      "looks_like": "session token decoded with jwt.decode instead of jwt.verify",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "billing-portal/src/auth/jwt.middleware.ts:30 - jwt.verify has already run on the same token and throws before this line; the decoded value is only used for a log correlation id"
+    },
+    {
+      "id": "V-03",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoice.repository.ts",
+      "symbol": "InvoiceRepository.listForTenant",
+      "line": 41,
+      "looks_like": "ORDER BY column that appears to come from a query parameter",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "billing-portal/src/invoices/invoices.controller.ts:19 - parseSort maps anything outside SORTABLE to 'created_at' before the repository is called"
+    },
+    {
+      "id": "V-04",
+      "case": "billing-portal",
+      "path": "billing-portal/src/invoices/invoices.service.ts",
+      "symbol": "InvoicesService.legacyLookup",
+      "line": 72,
+      "looks_like": "invoice fetched with an empty tenant id, i.e. an unscoped lookup",
+      "shape": "dead-path",
+      "ruled_out_by": "billing-portal/src/invoices/invoices.service.ts:72 - the method is private and has no call site anywhere under billing-portal/src"
+    },
+    {
+      "id": "V-05",
+      "case": "edge-links",
+      "path": "edge-links/src/do/LinkStore.ts",
+      "symbol": "LinkStore.delete",
+      "line": 54,
+      "looks_like": "deletion by a client-supplied slug with no owner comparison",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "edge-links/src/index.ts:99 - the object id is derived with idFromName(session.owner), so an instance only ever holds one workspace's links"
+    },
+    {
+      "id": "V-06",
+      "case": "edge-links",
+      "path": "edge-links/src/handlers/go.ts",
+      "symbol": "preview",
+      "line": 36,
+      "looks_like": "server-side fetch of a URL supplied in the query string",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "edge-links/src/handlers/go.ts:47 - the parsed URL must be https and its hostname must be in ALLOWED_PREVIEW_HOSTS before fetch runs"
+    },
+    {
+      "id": "V-07",
+      "case": "edge-links",
+      "path": "edge-links/src/auth.ts",
+      "symbol": "authenticate",
+      "line": 67,
+      "looks_like": "JWT payload base64-decoded and JSON-parsed directly from the token",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "edge-links/src/auth.ts:61 - verifySignature over header.payload has already returned and a false result exits with null"
+    },
+    {
+      "id": "V-08",
+      "case": "edge-links",
+      "path": "edge-links/src/ratelimit.ts",
+      "symbol": "bucketFor",
+      "line": 23,
+      "looks_like": "rate-limit bucket keyed on a request header a client could set",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "edge-links/src/ratelimit.ts:19 - CF-Connecting-IP is overwritten by the platform before the Worker sees the request"
+    },
+    {
+      "id": "V-09",
+      "case": "edge-links",
+      "path": "edge-links/wrangler.toml",
+      "symbol": "kv_namespaces.preview_id",
+      "line": 15,
+      "looks_like": "an opaque hex identifier committed to the repository",
+      "shape": "public-sample",
+      "ruled_out_by": "edge-links/wrangler.toml:10 - the comment identifies KV namespace ids as non-secret and this value as the quickstart placeholder"
+    },
+    {
+      "id": "V-10",
+      "case": "ledger-stream",
+      "path": "ledger-stream/admin/backfill.py",
+      "symbol": "resolve_export",
+      "line": 26,
+      "looks_like": "file path built from a command-line argument",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "ledger-stream/admin/backfill.py:29 - the resolved path must be a regular file with the drop root among its parents or the program exits"
+    },
+    {
+      "id": "V-11",
+      "case": "ledger-stream",
+      "path": "ledger-stream/common/topics.py",
+      "symbol": "ADMIN_TOPICS",
+      "line": 17,
+      "looks_like": "a wildcard entry in the list of operator-only topics",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "ledger-stream/worker/consumer.py:43 - admin topics are dropped unless the x-org header is in PLATFORM_ORGS, and that check uses the prefix helper, not this tuple"
+    },
+    {
+      "id": "V-12",
+      "case": "ledger-stream",
+      "path": "ledger-stream/api/app.py",
+      "symbol": "healthz",
+      "line": 96,
+      "looks_like": "Access-Control-Allow-Origin: * returned by an API that handles money",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "ledger-stream/api/app.py:91 - the header is set only on /healthz, whose body is a fixed status string; the transfer routes do not set it"
+    },
+    {
+      "id": "V-13",
+      "case": "ledger-stream",
+      "path": "ledger-stream/common/signing.py",
+      "symbol": "_compare_tokens_naive",
+      "line": 25,
+      "looks_like": "secret comparison with == rather than a constant-time helper",
+      "shape": "dead-path",
+      "ruled_out_by": "ledger-stream/common/signing.py:18 - verify() is the only comparison reachable from the workers and it uses hmac.compare_digest; this helper has no caller"
+    },
+    {
+      "id": "V-14",
+      "case": "ledger-stream",
+      "path": "ledger-stream/api/schemas.py",
+      "symbol": "TransferRequest.metadata",
+      "line": 22,
+      "looks_like": "free-form client dict accepted into the model and carried onto a ledger record",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "ledger-stream/worker/apply.py:12 - _statement_memo copies only the fixed STATEMENT_KEYS and truncates, so extra keys never reach the entry"
+    },
+    {
+      "id": "V-15",
+      "case": "ledger-stream",
+      "path": "ledger-stream/api/app.py",
+      "symbol": "module docstring",
+      "line": 7,
+      "looks_like": "a bearer token pasted into source",
+      "shape": "public-sample",
+      "ruled_out_by": "ledger-stream/api/app.py:5 - the line above names it as the sample token from RFC 7519 section 3.1"
+    },
+    {
+      "id": "V-16",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex",
+      "symbol": "download",
+      "line": 25,
+      "looks_like": "send_file on a path built from two URL segments",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex:50 - safe_name/1 takes Path.basename and requires the charset regex; safe_id/1 requires a UUID"
+    },
+    {
+      "id": "V-17",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex",
+      "symbol": "raw(@brand_css)",
+      "line": 1,
+      "looks_like": "raw/1 applied to an assign in a template",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex:6 - @brand_css is a module attribute literal and is the only value ever assigned to :brand_css"
+    },
+    {
+      "id": "V-18",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk/policy.ex",
+      "symbol": "can_read?",
+      "line": 30,
+      "looks_like": "auditor role granted read access to every ticket regardless of org",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "helpdesk-live/lib/helpdesk/tickets.ex:31 - apply_scope/2 for {:tenancy_of, org} joins orgs and confines the query to the auditor's own tenancy"
+    },
+    {
+      "id": "V-19",
+      "case": "helpdesk-live",
+      "path": "helpdesk-live/lib/helpdesk/cache.ex",
+      "symbol": "put_public",
+      "line": 41,
+      "looks_like": "cache write with no org or tenant component in the key",
+      "shape": "dead-path",
+      "ruled_out_by": "helpdesk-live/lib/helpdesk/cache.ex:41 - nothing under lib/ calls put_public/2; the only reader is fetch_ticket/2, which looks up {:ticket, id}"
+    },
+    {
+      "id": "V-20",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/Config.kt",
+      "symbol": "FleetConfig.from",
+      "line": 34,
+      "looks_like": "signing secret read with orEmpty(), which looks like a silent empty-key fallback",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "fleet-provision/src/main/kotlin/com/fleet/Config.kt:35 - require(secret.isNotBlank()) aborts start-up before the config object exists"
+    },
+    {
+      "id": "V-21",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt",
+      "symbol": "/_echo",
+      "line": 118,
+      "looks_like": "endpoint that reflects every request header back to the caller",
+      "shape": "dead-path",
+      "ruled_out_by": "fleet-provision/src/main/resources/application.conf:13 - environment is 'production', so FleetConfig.debugRoutesEnabled (Config.kt:30) is false and the route is never registered"
+    },
+    {
+      "id": "V-22",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+      "symbol": "isServiceToken",
+      "line": 17,
+      "looks_like": "trust decision driven by a string prefix on the subject claim",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "fleet-provision/src/main/kotlin/com/fleet/Application.kt:49 - the JWT verifier pins the issuer and audience and the validate block rejects a blank subject before any route sees the principal"
+    },
+    {
+      "id": "V-23",
+      "case": "fleet-provision",
+      "path": "fleet-provision/src/main/resources/application.conf",
+      "symbol": "jwks sample block",
+      "line": 31,
+      "looks_like": "key material committed into a configuration file",
+      "shape": "public-sample",
+      "ruled_out_by": "fleet-provision/src/main/resources/application.conf:29 - the comment names it the RFC 7517 appendix A.1 sample public key, and it is a public EC point, not a private key"
+    },
+    {
+      "id": "V-24",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/store.go",
+      "symbol": "Store.pathFor",
+      "line": 47,
+      "looks_like": "caller-supplied object key joined into a filesystem path",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "mesh-gateway/service/store.go:45 - tenant and key are hashed to SHA-256 first, so only hex characters ever reach filepath.Join"
+    },
+    {
+      "id": "V-25",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/diag.go",
+      "symbol": "handleResolve",
+      "line": 34,
+      "looks_like": "user-supplied name passed to the resolver, which looks like SSRF reconnaissance",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "mesh-gateway/service/diag.go:48 - only the count of returned addresses is emitted; no address is dialled and none is echoed"
+    },
+    {
+      "id": "V-26",
+      "case": "mesh-gateway",
+      "path": "mesh-gateway/service/auth.go",
+      "symbol": "Principal doc comment",
+      "line": 13,
+      "looks_like": "session identity header values written into source",
+      "shape": "public-sample",
+      "ruled_out_by": "mesh-gateway/service/auth.go:10 - the block documents the shape sessiond returns over ext_authz; the values are illustrative and nothing reads them"
+    }
+  ]
+}

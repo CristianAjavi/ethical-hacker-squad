@@ -1,0 +1,2292 @@
+{
+  "provenance": {
+    "corpus": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-four/ours",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v6",
+    "arm": "ours",
+    "run": 2,
+    "directories_audited": [
+      "billing-portal",
+      "edge-links",
+      "fleet-provision",
+      "helpdesk-live",
+      "ledger-stream",
+      "mesh-gateway"
+    ],
+    "roles_applied": [
+      "ehs-web-api (entry point; NestJS, Cloudflare Workers + Durable Objects, Ktor, Phoenix LiveView, aiohttp/Kafka, Go behind Envoy)"
+    ],
+    "packs_read": [
+      "references/triage.md (all ten FP rules)",
+      "references/coverage.md (COV-01..COV-03)",
+      "references/knowledge/README.md (selective-loading index)",
+      "references/knowledge/web-api.md §0-§5, WEB-01..WEB-12, WEB-24, WEB-25",
+      "references/knowledge/web-api-clientside-logic.md WEB-13, WEB-16, WEB-17, WEB-18, WEB-19, WEB-23, WEB-27 (index + cited sections)",
+      "references/knowledge/web-api-logging.md §11, WEB-28"
+    ],
+    "packs_skipped": [
+      "references/tooling.md - no external scanner was invoked; only the four corpus tools named in the role file's step 0 were run.",
+      "web-api-clientside-logic.md WEB-14, WEB-15, WEB-20, WEB-21, WEB-26 - no DOM/browser bundle, no cookie-based ambient auth (all six services are header/token or LiveView socket), no GraphQL, no WebSocket other than Phoenix LiveView which is covered under §2 authorization, and no wire-length-driven allocation.",
+      "All non-web-api packs (mobile, infra-cloud, supply-chain, ai-safety, privacy-abuse, local-app, remediation) - one role, one pack."
+    ],
+    "enumeration": {
+      "note": "Step 0 of the role file, run before any pack was opened.",
+      "files": 59,
+      "lines": 3823,
+      "top_level_directories": 6,
+      "route_and_handler_entry_points": 37,
+      "execute_or_interpolate_sinks": [
+        "billing-portal/src/invoices/invoice.repository.ts:47 db.raw with a template literal",
+        "mesh-gateway/service/diag.go:24 exec.CommandContext(\"sh\",\"-c\", ...)",
+        "ledger-stream/common/serde.py:20,27 pickle.dumps/pickle.loads",
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex:1,12,18 raw/1",
+        "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex:51 String.to_atom",
+        "edge-links/src/render.ts:16-19 HTML string interpolation",
+        "fleet-provision/.../Firmware.kt:64 File(dir, requestParam) + respondFile",
+        "helpdesk-live/.../attachment_controller.ex:21,37 filesystem path join from request params",
+        "ledger-stream/admin/backfill.py:28 filesystem path join from argv"
+      ],
+      "trust_boundary_first_reads": [
+        "billing-portal jwt.middleware.ts:17 Authorization header",
+        "edge-links auth.ts:54 Authorization header; index.ts:39 token request body; LinkStore.ts:15 X-Actor-Scopes",
+        "fleet-provision Permissions.kt:33 JWT subject; Token.kt:34 form parameters",
+        "helpdesk-live policy.ex:12 signed session; ticket_live.ex handle_event payloads",
+        "ledger-stream app.py:43 request[\"org_id\"]; consumer.py:41 x-org header; serde.py:26 x-ctx header",
+        "mesh-gateway auth.go:22-36 X-Fleet-User/-Roles/-Tenant headers"
+      ],
+      "list_items_not_worked_through": "none - every file in the tree was read in full and every entry point in the list above was traced."
+    },
+    "tools_run": [
+      {
+        "tool": "skills/ethical-hacker-squad/tools/log_escaper.py",
+        "command": "python3 log_escaper.py --target <target>",
+        "returned": "12 logging calls in 10 files, 8 with an uncleared argument. UNCLEARED: consumer.py:44 (topic, org_id), :52 (topic, ctx.get), :85, :90, :92; retry.py:41 (original_topic, attempts), :58 (exc), :61. cleared: consumer.py:83,84,85 and retry.py:72.",
+        "used_for": "Produced the log-injection finding at consumer.py:44 and its sibling at retry.py:41; it also surfaced retry.py:41 logging `original_topic`, which is what drew attention to that header also selecting the topic policy at retry.py:50.",
+        "limits_observed": "Python only. It did not see edge-links/src/queue.ts:46 console.log(row.slug) or mesh-gateway/service/main.go:130 log.Printf, both of which I checked by hand (the Go one interpolates a config value, not request data)."
+      },
+      {
+        "tool": "skills/ethical-hacker-squad/tools/path_coverage.py",
+        "command": "python3 path_coverage.py --target <target>",
+        "returned": "Partitioned into 5 trees (edge-links, fleet-provision, helpdesk-live, ledger-stream, mesh-gateway); 37 route paths, 3 guard paths across 49 files; 2 DEAD GUARD flags (edge-links/src/index.ts:104 '/do', :90 '/go'), 0 unguarded siblings.",
+        "used_for": "Both DEAD GUARD flags were triaged and rejected as tool artifacts - those two lines are the router's own dispatch, not guards. The tool contributed no finding.",
+        "limits_observed": "It did not parse billing-portal at all (NestJS decorator routing), which is where two of the strongest guard/route mismatches in this tree live: AdminScopeGuard's '/admin' prefix against setGlobalPrefix('api/v1'), and JwtMiddleware bound to 'invoices' but not 'invoices/*'. It also did not join across artifact kinds, so it did not see the Envoy '/admin/' rule against Go's exact '/admin' mux pattern. All three were found by reading."
+      },
+      {
+        "tool": "skills/ethical-hacker-squad/tools/writer_parity.py",
+        "command": "python3 writer_parity.py --target <target>",
+        "returned": "5 written entities in 34 files; 0 with one writer checked and another not. No flags.",
+        "used_for": "Nothing - it flagged nothing.",
+        "limits_observed": "A zero here is not an absence: seven writer-parity defects are reported above (billing bulkUpsert vs updateStatus, edge-links queue.ts vs parseLinkInput, fleet /bulk and /retry vs /enroll, helpdesk update_note vs add_note, ledger append_raw vs post_entry and retry.py vs consumer.py, mesh putRaw vs Put). The tool needs a declared class, model or table to group by; these writers group by a Durable Object key, an ETS/HTTP handler pair, a knex table string and a Go method pair, none of which it recognised."
+      },
+      {
+        "tool": "skills/ethical-hacker-squad/tools/default_resolver.py",
+        "command": "python3 default_resolver.py --target <target>",
+        "returned": "2 permission-shaped declarations with defaults in 18 files; 0 omitted arguments, 0 dangerous table values, 2 silent fallbacks: edge-links/src/roles.ts:15 (resolves to ROLE_SCOPES.viewer) and :19 (scopes.includes).",
+        "used_for": "The roles.ts:15 flag put me on the exact function carrying the escalation, though the dangerous default is the `role: string = \"owner\"` parameter on line 14 rather than the `?? viewer` fallback the tool named. Finding marked from_tool.",
+        "limits_observed": "TypeScript by pattern, not by parser, and it reads only the `??` fallback rather than the default parameter beside it - so on this tree it named the safe half of the line and missed the unsafe half. It did not read Kotlin, so it did not see `allowServiceToken: Boolean = true` at fleet-provision/.../Permissions.kt:25, which is the same family and is reported above."
+      }
+    ],
+    "unaided_pass": {
+      "note": "Written before any pack or tool was opened, per the role file. Every label below resolves to a finding carrying it as unaided_label, or appears in dropped with the reason.",
+      "candidates": [
+        "billing: JwtMiddleware forRoutes('invoices') does not cover invoices/:id; tenantFor falls back to a client-supplied tenant",
+        "billing: AdminScopeGuard startsWith('/admin') never matches because of setGlobalPrefix('api/v1')",
+        "billing: searchByMemo interpolates ${term} into raw SQL",
+        "billing: TtlCache key `invoice:${id}` omits tenant",
+        "billing: bulkUpsert has no tenant filter and bypasses ALLOWED_TRANSITIONS",
+        "billing: AdminReportsController PATCH/DELETE missing @Roles that POST has",
+        "billing: PATCH/DELETE /invoices/:id lack the @Roles the POST sibling has",
+        "billing: @Body() any defeats the global ValidationPipe whitelist",
+        "billing: legacyLookup queries with an empty tenant",
+        "billing: jwt.decode for the jti correlation id",
+        "edge-links: ENVIRONMENT !== 'production' but wrangler.toml sets 'prod' -> unauthenticated owner session",
+        "edge-links: /do/* passthrough lets the client set X-Actor-Scopes that LinkStore trusts",
+        "edge-links: scopesFor(role = 'owner') gives owner scopes when the role claim is missing",
+        "edge-links: queue.ts writes links bypassing parseLinkInput/escapeHtml while render.ts interpolates raw",
+        "edge-links: new URL() + escapeHtml accept javascript: URLs into href",
+        "edge-links: /go/?to= open redirect",
+        "edge-links: /auth/token not covered by LIMITED_PREFIXES",
+        "edge-links: KV rate limit counter races",
+        "edge-links: exp is optional in the verifier",
+        "edge-links: preview() SSRF",
+        "edge-links: constantTimeEquals returns early on a length mismatch",
+        "fleet: internalRoutes registered outside authenticate() - unauth device dump, key rotation, firmware pin",
+        "fleet: Attestation.verify returns digest.isNotEmpty() - always true",
+        "fleet: /enrollment/{serial}/retry replays attestation-failed requests from stashPending",
+        "fleet: /enrollment/bulk enrolls with no attestation while /devices/enroll requires one",
+        "fleet: requireScope returns true for any svc- subject, skipping the scope claim",
+        "fleet: /oauth/token signs the client-requested scope with no entitlement check",
+        "fleet: File(config.firmwareDir, name) with no traversal guard",
+        "fleet: requireMutualTls has zero readers and compares against 'prod' while the config says 'production'",
+        "fleet: /devices/enroll and /{serial}/nonce have no requireScope while siblings do",
+        "fleet: /api/devices/_echo returns all request headers",
+        "fleet: Token.kt mints HS256 while Application.kt verifies via JWKS",
+        "fleet: rate limit keyed on remoteHost collapses behind a proxy",
+        "helpdesk: @guarded lists :delete/:new which do not exist and omits :escalate/:assign",
+        "helpdesk: update_note has no can_write? and Repo.get!(Note, id) is unscoped",
+        "helpdesk: escalate has no can_write? and tier is unvalidated",
+        "helpdesk: Cache.fetch_ticket keyed by id only, ignoring org scope",
+        "helpdesk: sanitize_html is a 4-pattern denylist keeping all attributes, output rendered with raw/1",
+        "helpdesk: /attachments scope pipes through :browser only, no :require_agent, no ownership check",
+        "helpdesk: String.to_atom on the sort query parameter",
+        "helpdesk: can_read? grants auditors every ticket and is never called",
+        "helpdesk: content-disposition interpolates the filename",
+        "ledger: pickle.loads on the x-ctx Kafka header, outside the signed range",
+        "ledger: policy_for falls back to OPEN_POLICY with require_signature=False under a wildcard subscription",
+        "ledger: x-org header decides the admin gate and the cross-org check, outside the signature",
+        "ledger: retry.py passes verify_signature=False and picks the policy from the x-original-topic header",
+        "ledger: idempotency_key becomes the PK under INSERT OR REPLACE",
+        "ledger: DEFAULT_SIGNING_KEY hardcoded fallback",
+        "ledger: build_app registers no auth middleware though _org_of depends on one",
+        "ledger: backfill lets the CSV set org_id and bypasses every apply_transfer check via append_raw",
+        "ledger: `owning_org and` makes the cross-org check pass for unknown accounts",
+        "ledger: LOG.warning interpolates the raw x-org header",
+        "ledger: healthz returns Access-Control-Allow-Origin: *",
+        "ledger: consumer commits the offset even after an exception",
+        "ledger: ADMIN_TOPICS constant is never read",
+        "ledger: _compare_tokens_naive uses ==",
+        "ledger: backfill resolve_export containment check",
+        "mesh: exec.Command(\"sh\",\"-c\", ...+host) in handleDiag",
+        "mesh: partner_vh disables ext_authz and does not strip x-fleet-* which auth.go trusts",
+        "mesh: objects publishes 8081:8081, bypassing the Envoy edge entirely",
+        "mesh: /admin and /internal/* handlers never call requireRole",
+        "mesh: RBAC denies prefix /admin/ but the mux serves exact path /admin",
+        "mesh: putRaw skips the errNotOwner and quota checks that Put enforces",
+        "mesh: withCache keys on r.URL.Path with no tenant, and serves hits before requireRole",
+        "mesh: HasRole treats the literal role 'admin' as a wildcard",
+        "mesh: handleResolve performs DNS lookups on a caller-supplied name",
+        "mesh: Store.meta is a global keyspace shared across tenants",
+        "mesh: envoy admin listener on 127.0.0.1:9901"
+      ],
+      "dropped": [
+        {
+          "label": "billing: @Body() any defeats the global ValidationPipe whitelist",
+          "procedure": "WEB-06",
+          "reason": "merged",
+          "into": "billing-portal/src/invoices/invoice.repository.ts bulkUpsert - the only place an unvalidated body reaches a writer with security-relevant columns is importReconciled -> bulkUpsert, where it is already the reported mechanism. `create` selects its fields explicitly (invoices.service.ts:38-44), so the missing DTO has no separate effect there."
+        },
+        {
+          "label": "billing: legacyLookup queries with an empty tenant",
+          "procedure": "ad-hoc",
+          "reason": "refuted",
+          "control_at": "billing-portal/src/invoices/invoices.service.ts:72",
+          "detail": "Declared `private` and has zero call sites in the tree; it is unreachable from any route (FP-04)."
+        },
+        {
+          "label": "billing: jwt.decode for the jti correlation id",
+          "procedure": "WEB-01",
+          "reason": "refuted",
+          "control_at": "billing-portal/src/auth/jwt.middleware.ts:30",
+          "detail": "`jwt.verify` on the same token has already completed on line 30 before `jwt.decode` runs on line 47, and the decoded value feeds only a log correlation header, never an access decision - which is the exculpation WEB-01 names explicitly."
+        },
+        {
+          "label": "edge-links: preview() SSRF",
+          "procedure": "WEB-10",
+          "reason": "refuted",
+          "control_at": "edge-links/src/handlers/go.ts:47",
+          "detail": "`parsed.protocol !== \"https:\" || !ALLOWED_PREVIEW_HOSTS.has(parsed.hostname)` is a full-equality allowlist on the parsed hostname (not a startsWith/endsWith), applied to the same URL object that is then fetched, with `redirect: \"manual\"` so a redirect cannot walk out of the allowlist. This is the shape WEB-10 names as ruling itself out."
+        },
+        {
+          "label": "edge-links: constantTimeEquals returns early on a length mismatch",
+          "procedure": "WEB-03",
+          "reason": "refuted",
+          "control_at": "edge-links/src/index.ts:21",
+          "detail": "The early return leaks only the length of the stored workspace secret, not its content, and the loop over equal-length inputs is constant-time. Length disclosure of a server-generated secret is not exploitable on its own (FP-10 territory, and below the reporting bar)."
+        },
+        {
+          "label": "fleet: /api/devices/_echo returns all request headers",
+          "procedure": "WEB-22",
+          "reason": "refuted",
+          "control_at": "fleet-provision/src/main/kotlin/com/fleet/Config.kt:29",
+          "detail": "Gated on `environment == \"dev\"`, and application.conf:13 ships `environment = \"production\"`. FP-04 holds: the path does not exist in what ships. Noted in ruled_out so the flag is visible if FLEET_ENV is ever set to dev."
+        },
+        {
+          "label": "fleet: Token.kt mints HS256 while Application.kt verifies via JWKS",
+          "procedure": "WEB-01",
+          "reason": "probable",
+          "detail": "Not refuted - I could not settle it. Token.kt:59 signs with `Algorithm.HMAC256(config.signingSecret)` while Application.kt:47 builds the verifier from a JwkProvider, so either the minted tokens do not validate at all (a functional break, not a vulnerability) or the auth0 verifier resolves an algorithm in a way I cannot confirm without running it. What would settle it: the resolved `Algorithm` instance for a token whose header carries `alg: HS256` and no `kid`. Reported here rather than as a finding because an UNKNOWN of this kind is not evidence of a defect."
+        },
+        {
+          "label": "fleet: rate limit keyed on remoteHost collapses behind a proxy",
+          "procedure": "WEB-18",
+          "reason": "refuted",
+          "control_at": "fleet-provision/src/main/kotlin/com/fleet/Application.kt:35",
+          "detail": "`call.request.local.remoteHost` is the socket peer and is not client-forgeable, which is the property that matters for a limiter key. Whether a proxy sits in front is a deployment fact not in scope, and the failure mode would be over-limiting rather than under-limiting."
+        },
+        {
+          "label": "helpdesk: can_read? grants auditors every ticket and is never called",
+          "procedure": "WEB-23",
+          "reason": "refuted",
+          "control_at": "helpdesk-live/lib/helpdesk/tickets.ex:29",
+          "detail": "`can_read?` has zero call sites, but the read boundary it would enforce is enforced by `apply_scope/2`, which every read goes through: `{:org, org_id}` narrows with `where t.org_id == ^org_id` and `{:tenancy_of, org}` joins orgs on tenancy_id. The unused predicate is dead code, not a missing control - the real read gap on this service is the cache key, which is reported."
+        },
+        {
+          "label": "helpdesk: content-disposition interpolates the filename",
+          "procedure": "WEB-28",
+          "reason": "refuted",
+          "control_at": "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex:15",
+          "detail": "`@name_re ~r/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/` is applied by `safe_name/1` before the value reaches the header, and it admits no CR, LF, quote or semicolon. FP-02 holds."
+        },
+        {
+          "label": "ledger: healthz returns Access-Control-Allow-Origin: *",
+          "procedure": "WEB-16",
+          "reason": "refuted",
+          "control_at": "ledger-stream/api/app.py:94",
+          "detail": "The response body is the literal `{\"status\": \"ok\"}` and the handler sets no credentials header, so a wildcard origin exposes nothing. This is the exact exculpation WEB-16 names: identical data for every user, no credentials (FP-07)."
+        },
+        {
+          "label": "ledger: consumer commits the offset even after an exception",
+          "procedure": "ad-hoc",
+          "reason": "refuted",
+          "control_at": "ledger-stream/worker/consumer.py:93",
+          "detail": "Real (a message that raises is committed and lost) but it is a reliability defect with no security boundary crossed - it costs availability of a posting, and an attacker gains nothing by triggering it that they do not gain more directly through the unsigned paths already reported."
+        },
+        {
+          "label": "ledger: ADMIN_TOPICS constant is never read",
+          "procedure": "WEB-23",
+          "reason": "refuted",
+          "control_at": "ledger-stream/common/topics.py:53",
+          "detail": "The constant has zero readers, but the check it describes is implemented correctly beside it as `is_admin_topic`, which consumer.py:43 does call. A dead constant whose intent is enforced elsewhere is FP-09, not a missing control. The real defect on that gate is the forgeable `x-org` input, which is reported."
+        },
+        {
+          "label": "ledger: _compare_tokens_naive uses ==",
+          "procedure": "WEB-03",
+          "reason": "refuted",
+          "control_at": "ledger-stream/common/signing.py:25",
+          "detail": "Zero call sites; `verify` uses `hmac.compare_digest` (line 22). FP-04 holds - it is annotated as kept for a migration note."
+        },
+        {
+          "label": "ledger: backfill resolve_export containment check",
+          "procedure": "WEB-12",
+          "reason": "refuted",
+          "control_at": "ledger-stream/admin/backfill.py:29",
+          "detail": "`candidate = (root / name).resolve()` then `if not candidate.is_file() or root not in candidate.parents: raise`. Resolving before comparing defeats both `..` traversal and a symlink out of the drop directory, and `parents` is compared on the resolved path. This one is correct; the defect on this path is the trust in the file's contents, which is reported separately."
+        },
+        {
+          "label": "mesh: HasRole treats the literal role 'admin' as a wildcard",
+          "procedure": "WEB-05",
+          "reason": "merged",
+          "into": "mesh-gateway/envoy/envoy.yaml partner_vh - the wildcard is a design choice that is only exploitable because the roles header is client-settable, and it is quoted as the escalation mechanism inside that finding."
+        },
+        {
+          "label": "mesh: handleResolve performs DNS lookups on a caller-supplied name",
+          "procedure": "WEB-10",
+          "reason": "refuted",
+          "control_at": "mesh-gateway/service/diag.go:44",
+          "detail": "The handler returns `len(addrs)` and never dials or returns the addresses, so the primitive is a DNS-resolution oracle and an out-of-band signalling channel, not SSRF. Against the command injection in the same file it adds nothing an attacker would use (FP-10)."
+        },
+        {
+          "label": "mesh: Store.meta is a global keyspace shared across tenants",
+          "procedure": "ad-hoc",
+          "reason": "refuted",
+          "control_at": "mesh-gateway/service/store.go:56",
+          "detail": "`s.meta` is keyed by object key without the tenant, but `Put` rejects a cross-tenant overwrite with errNotOwner, `Get`'s caller compares `meta.Tenant != p.Tenant` (main.go:67) and `List` filters on tenant. The observable effect is a key-namespace collision (tenant B cannot use a key tenant A took), which is a correctness bug, not a boundary crossing. The write that does cross it is putRaw, reported separately."
+        },
+        {
+          "label": "mesh: envoy admin listener on 127.0.0.1:9901",
+          "procedure": "ad-hoc",
+          "reason": "refuted",
+          "control_at": "mesh-gateway/envoy/envoy.yaml:3",
+          "detail": "Bound to 127.0.0.1 and no host port is published for the edge container's 9901, so it is reachable only from inside that container. FP-05: intended and bounded. Worth noting only if a future change adds a shell or a second process to that container."
+        }
+      ]
+    },
+    "ruled_out": [
+      {
+        "assertion": "SSRF in the Open Graph preview fetcher",
+        "location": "edge-links/src/handlers/go.ts:47",
+        "rule": "FP-01",
+        "killed_by": "Full-equality hostname allowlist plus an https-only scheme check on the same URL object that is fetched, with redirect: \"manual\"."
+      },
+      {
+        "assertion": "Path traversal in the settlement export loader",
+        "location": "ledger-stream/admin/backfill.py:29",
+        "rule": "FP-01",
+        "killed_by": "`(root / name).resolve()` compared against `root not in candidate.parents` - resolution precedes comparison, so both `..` and symlinks are contained."
+      },
+      {
+        "assertion": "Path traversal in the attachment controller",
+        "location": "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex:51",
+        "rule": "FP-01",
+        "killed_by": "`Path.basename/1` followed by `@name_re`, and a UUID pattern on the ticket id; neither admits a separator or a dot segment. The defect on this route is the missing authentication, which is reported."
+      },
+      {
+        "assertion": "Header injection via the content-disposition filename",
+        "location": "helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex:24",
+        "rule": "FP-02",
+        "killed_by": "@name_re admits only [A-Za-z0-9._-], so no CR, LF, quote or semicolon can reach the header."
+      },
+      {
+        "assertion": "XSS via raw(@brand_css)",
+        "location": "helpdesk-live/lib/helpdesk_web/live/ticket_live.html.heex:1",
+        "rule": "FP-02",
+        "killed_by": "@brand_css is a module attribute holding a literal <style> block (ticket_live.ex:6-12); no request data reaches it."
+      },
+      {
+        "assertion": "Unused read predicate leaves reads unauthorized",
+        "location": "helpdesk-live/lib/helpdesk/policy.ex:30",
+        "rule": "FP-01",
+        "killed_by": "apply_scope/2 at tickets.ex:29-40 narrows every read query by org or tenancy; can_read? would be defence in depth."
+      },
+      {
+        "assertion": "SQL injection via the sort column",
+        "location": "billing-portal/src/invoices/invoice.repository.ts:38",
+        "rule": "FP-02",
+        "killed_by": "parseSort (invoices.controller.ts:19-23) tests membership in the SORTABLE tuple and falls back to 'created_at', so the value reaching orderBy is one of three literals."
+      },
+      {
+        "assertion": "Unverified JWT decode drives a request header",
+        "location": "billing-portal/src/auth/jwt.middleware.ts:47",
+        "rule": "FP-01",
+        "killed_by": "jwt.verify with an explicit algorithm allowlist and issuer has already run on the same token at line 30; the decode feeds a log correlation id only."
+      },
+      {
+        "assertion": "Wildcard CORS origin accepted from the environment",
+        "location": "billing-portal/src/main.ts:15",
+        "rule": "FP-01",
+        "killed_by": "allowedOrigins filters out '*' explicitly before the list reaches enableCors, and credentials are only enabled against that filtered list."
+      },
+      {
+        "assertion": "Dead legacy lookup queries with an empty tenant",
+        "location": "billing-portal/src/invoices/invoices.service.ts:72",
+        "rule": "FP-04",
+        "killed_by": "private method, zero call sites, unreachable from any route."
+      },
+      {
+        "assertion": "Naive string comparison used for a secret",
+        "location": "ledger-stream/common/signing.py:25",
+        "rule": "FP-04",
+        "killed_by": "_compare_tokens_naive has zero call sites; verify() uses hmac.compare_digest."
+      },
+      {
+        "assertion": "Unused admin topic list weakens the operator-stream gate",
+        "location": "ledger-stream/common/topics.py:17",
+        "rule": "FP-09",
+        "killed_by": "is_admin_topic implements the same intent as a prefix test and is the function consumer.py:43 calls; the constant is dead, not a bypass."
+      },
+      {
+        "assertion": "Wildcard CORS on the health endpoint",
+        "location": "ledger-stream/api/app.py:96",
+        "rule": "FP-07",
+        "killed_by": "The body is a literal status object with no credentials header; identical for every caller."
+      },
+      {
+        "assertion": "Hardcoded session signing key in the compose file",
+        "location": "mesh-gateway/docker-compose.yml:35",
+        "rule": "FP-02",
+        "killed_by": "`${SESSION_SIGNING_KEY:?set SESSION_SIGNING_KEY in .env}` is a required-variable reference that refuses to start without it - no material is present."
+      },
+      {
+        "assertion": "RBAC principal can be spoofed through X-Forwarded-For",
+        "location": "mesh-gateway/envoy/envoy.yaml:31",
+        "rule": "FP-01",
+        "killed_by": "The policy uses direct_remote_ip, which is the TCP peer address and ignores XFF, rather than remote_ip which would honour it. This is the correct choice of the two."
+      },
+      {
+        "assertion": "DNS-based SSRF in the resolve handler",
+        "location": "mesh-gateway/service/diag.go:44",
+        "rule": "FP-10",
+        "killed_by": "Returns only len(addrs); nothing is dialled and no address is disclosed. Bounded to an out-of-band signalling channel, and dominated by the command injection in the same file."
+      },
+      {
+        "assertion": "Envoy admin interface exposed",
+        "location": "mesh-gateway/envoy/envoy.yaml:3",
+        "rule": "FP-05",
+        "killed_by": "Bound to 127.0.0.1 and the edge container publishes only 8080; the admin port is not reachable from outside the container."
+      },
+      {
+        "assertion": "Debug header-echo route leaks the Authorization header",
+        "location": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt:118",
+        "rule": "FP-04",
+        "killed_by": "Registered only when config.debugRoutesEnabled, i.e. environment == \"dev\"; application.conf ships environment = \"production\"."
+      },
+      {
+        "assertion": "Timing leak in the workspace secret comparison",
+        "location": "edge-links/src/index.ts:21",
+        "rule": "FP-10",
+        "killed_by": "The early return discloses only the stored secret's length; the equal-length path is constant-time. Below the reporting bar on its own."
+      },
+      {
+        "assertion": "DEAD GUARD '/do' guards nothing (path_coverage.py)",
+        "location": "edge-links/src/index.ts:104",
+        "rule": "FP-09",
+        "killed_by": "Tool artifact: the line is the router's own dispatch to the Durable Object, not a guard. The real defect at that line is the header passthrough, reported separately."
+      },
+      {
+        "assertion": "DEAD GUARD '/go' guards nothing (path_coverage.py)",
+        "location": "edge-links/src/index.ts:90",
+        "rule": "FP-09",
+        "killed_by": "Tool artifact: the line is the router's dispatch to the public redirect handler, not a guard."
+      },
+      {
+        "assertion": "Offset committed after a failed apply loses the message",
+        "location": "ledger-stream/worker/consumer.py:93",
+        "rule": "FP-06",
+        "killed_by": "Reliability defect with no second principal - it costs the availability of a posting and grants an attacker nothing beyond what the unsigned write paths already grant."
+      },
+      {
+        "assertion": "Cross-tenant object key collision in the metadata map",
+        "location": "mesh-gateway/service/store.go:56",
+        "rule": "FP-06",
+        "killed_by": "Put rejects a cross-tenant overwrite with errNotOwner and handleObject compares meta.Tenant against the principal, so the collision denies service to the second tenant rather than crossing the boundary."
+      }
+    ],
+    "coverage_declaration": {
+      "files_read_in_full": 59,
+      "per_file_density": [
+        {
+          "file": "billing-portal/src/invoices/invoices.controller.ts",
+          "looked_for": "routing, tenant resolution, function-level authorization on all 11 handlers, body validation",
+          "found": 3,
+          "note": "returned after the first finding per COV-01; the tenantFor fallback, the AdminReports decorator asymmetry and the InvoicesController decorator asymmetry are three separate defects in one file"
+        },
+        {
+          "file": "billing-portal/src/invoices/invoice.repository.ts",
+          "looked_for": "injection in all 6 methods, tenant predicates on each",
+          "found": 2
+        },
+        {
+          "file": "billing-portal/src/app.module.ts",
+          "looked_for": "middleware binding, guard registration order",
+          "found": 1
+        },
+        {
+          "file": "billing-portal/src/auth/admin-scope.guard.ts",
+          "looked_for": "prefix correctness against mounted paths, staff assertion",
+          "found": 1
+        },
+        {
+          "file": "billing-portal/src/invoices/invoices.service.ts",
+          "looked_for": "cache keying, state machine, dead code",
+          "found": 1
+        },
+        {
+          "file": "billing-portal/package.json",
+          "looked_for": "enumerated key by key per COV-02: 6 scripts, 10 dependencies, 5 devDependencies",
+          "found": 0,
+          "note": "All ranges are caret on current majors; no install hooks, no registry override, no git or file dependency, private:true. Nothing to report."
+        },
+        {
+          "file": "edge-links/src/auth.ts",
+          "looked_for": "environment gate, signature verification, claim validation",
+          "found": 2
+        },
+        {
+          "file": "edge-links/src/index.ts",
+          "looked_for": "route ordering, forwarding, token issuance, comparison",
+          "found": 1
+        },
+        {
+          "file": "edge-links/src/roles.ts",
+          "looked_for": "defaults, fallbacks, wildcard scope",
+          "found": 1
+        },
+        {
+          "file": "edge-links/src/handlers/go.ts",
+          "looked_for": "redirect validation, SSRF allowlist",
+          "found": 1
+        },
+        {
+          "file": "edge-links/src/handlers/links.ts",
+          "looked_for": "validation completeness, escaping completeness, scheme",
+          "found": 1
+        },
+        {
+          "file": "edge-links/src/queue.ts",
+          "looked_for": "validation parity with the API writer, scope stamping, logging",
+          "found": 1
+        },
+        {
+          "file": "edge-links/src/ratelimit.ts",
+          "looked_for": "prefix coverage, atomicity, key forgeability",
+          "found": 2
+        },
+        {
+          "file": "edge-links/wrangler.toml",
+          "looked_for": "enumerated key by key per COV-02: name, main, compatibility_date, compatibility_flags, vars(2), kv_namespaces(id, preview_id), durable_objects, migrations, queues consumers/producers, env.staging vars, env.production vars",
+          "found": 1,
+          "note": "The ENVIRONMENT value in [env.production] is the finding; the KV namespace ids are identifiers, not secrets."
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+          "looked_for": "scope enforcement, service-token handling, attestation verification",
+          "found": 2
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt",
+          "looked_for": "scope checks on all 5 handlers, nonce lifecycle, debug route",
+          "found": 1
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+          "looked_for": "attestation parity with the single-device path on both handlers",
+          "found": 2
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+          "looked_for": "scope checks, digest validation, path handling",
+          "found": 1
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/routes/Internal.kt",
+          "looked_for": "authentication, effect parity with the public firmware route",
+          "found": 1
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/routes/Token.kt",
+          "looked_for": "secret comparison, scope grant, client id normalisation, algorithm",
+          "found": 1
+        },
+        {
+          "file": "fleet-provision/src/main/kotlin/com/fleet/Config.kt",
+          "looked_for": "readers of every declared flag, environment string values",
+          "found": 1
+        },
+        {
+          "file": "fleet-provision/src/main/resources/application.conf",
+          "looked_for": "enumerated key by key per COV-02: port, modules, environment, realm, issuer, audience, jwksUrl, signingSecret, firmwareDir, attestationRootFingerprint",
+          "found": 0,
+          "note": "The environment value is evidence inside the Config.kt finding rather than a finding of its own; the JWK in the comment is the RFC 7517 sample."
+        },
+        {
+          "file": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+          "looked_for": "authorization on each of the 4 handle_event clauses, cache use, param handling",
+          "found": 3
+        },
+        {
+          "file": "helpdesk-live/lib/helpdesk_web/router.ex",
+          "looked_for": "pipeline application per scope, live_session hooks, dev routes",
+          "found": 1
+        },
+        {
+          "file": "helpdesk-live/lib/helpdesk/cache.ex",
+          "looked_for": "key composition, table visibility, TTL",
+          "found": 1
+        },
+        {
+          "file": "helpdesk-live/lib/helpdesk/sanitizer.ex",
+          "looked_for": "attribute handling, recursion, truncation",
+          "found": 1
+        },
+        {
+          "file": "helpdesk-live/lib/helpdesk_web/live/on_mount/require_agent.ex",
+          "looked_for": "guarded action list against the router's actions",
+          "found": 1
+        },
+        {
+          "file": "helpdesk-live/mix.exs",
+          "looked_for": "enumerated key by key per COV-02: app, version, elixir, elixirc_paths, start_permanent, 7 deps",
+          "found": 0,
+          "note": "postgrex is >= 0.0.0, which is unpinned but is the documented idiom for a transitive adapter; no other range is open and no git or path dependency is present."
+        },
+        {
+          "file": "ledger-stream/common/serde.py",
+          "looked_for": "both encode and decode paths, signature coverage of headers",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/common/topics.py",
+          "looked_for": "default policy, subscription breadth, admin prefix",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/worker/consumer.py",
+          "looked_for": "identity source, policy selection, logging, offset handling",
+          "found": 2
+        },
+        {
+          "file": "ledger-stream/worker/retry.py",
+          "looked_for": "verification parity with the main consumer, policy selection, attempt cap",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/worker/apply.py",
+          "looked_for": "each of the 5 checks in sequence for a fail-open branch, id derivation",
+          "found": 2
+        },
+        {
+          "file": "ledger-stream/common/signing.py",
+          "looked_for": "key source, comparison, dead code",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/api/app.py",
+          "looked_for": "middleware chain, org resolution, CORS, producer config",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/admin/backfill.py",
+          "looked_for": "path containment, field trust, writer parity",
+          "found": 1
+        },
+        {
+          "file": "ledger-stream/common/store.py",
+          "looked_for": "parameterisation of all 5 statements, conflict policy",
+          "found": 0,
+          "note": "Every statement is parameterised; INSERT OR REPLACE is reported at its two call sites rather than here."
+        },
+        {
+          "file": "mesh-gateway/service/diag.go",
+          "looked_for": "both handlers: argument construction, authorization, output disclosure",
+          "found": 1
+        },
+        {
+          "file": "mesh-gateway/envoy/envoy.yaml",
+          "looked_for": "enumerated key by key per COV-02: admin address, listener address, use_remote_address, rbac action/permissions/principals, ext_authz allowed and upstream headers, router, both virtual hosts including headers_to_remove and per-filter config, both clusters",
+          "found": 2
+        },
+        {
+          "file": "mesh-gateway/service/main.go",
+          "looked_for": "authorization on each of the 5 registered handlers, middleware wrapping, config defaults",
+          "found": 1
+        },
+        {
+          "file": "mesh-gateway/service/store.go",
+          "looked_for": "both writers, path derivation, tenant filtering on all 4 readers",
+          "found": 1
+        },
+        {
+          "file": "mesh-gateway/service/cache.go",
+          "looked_for": "key composition, ordering against authorization, header copying, purge",
+          "found": 1
+        },
+        {
+          "file": "mesh-gateway/docker-compose.yml",
+          "looked_for": "enumerated key by key per COV-02: 3 services with image/command/build, volumes, 3 environment blocks, 2 port mappings, depends_on, network addresses, ipam subnet",
+          "found": 1
+        },
+        {
+          "file": "mesh-gateway/service/admin.go",
+          "looked_for": "authorization, action dispatch, body limits, snapshot scope",
+          "found": 0,
+          "note": "Its two defects are reported at their roots - main.go for the missing requireRole and store.go for putRaw - rather than duplicated here."
+        }
+      ],
+      "surfaces_not_covered": [
+        "Runtime behaviour: nothing was executed. The Ktor percent-decoding question in the firmware traversal finding, and the auth0 JWKS/HS256 resolution noted in unaided_pass.dropped, would both be settled by running the code, and are stated as preconditions rather than assumed.",
+        "Producers and clients outside the tree: the edge-links dashboard CSV importer, the ledger-stream intake auth middleware, the helpdesk email gateway and sessiond are referenced by the code but not present. Where a finding depends on one, FP-08 is answered UNKNOWN and the finding is capped at probable.",
+        "Dependency versions were read but not resolved against advisory data; no lockfiles are present in any of the six services, so no SCA triage was possible and none is claimed."
+      ]
+    }
+  },
+  "findings": [
+    {
+      "title": "Session middleware is bound to `invoices` but not `invoices/*`, leaving every per-invoice route unauthenticated",
+      "location": {
+        "path": "billing-portal/src/app.module.ts",
+        "symbol": "AppModule.configure",
+        "line": 32
+      },
+      "class": "broken authentication / missing authentication on route",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`consumer.apply(JwtMiddleware).forRoutes({ path: 'invoices', method: RequestMethod.ALL }, { path: 'admin/*', ... })`. The path string `invoices` matches only the collection path; nested paths need the wildcard, which the very next entry in the same call uses for `admin/*`. So `GET /invoices/:id`, `GET /invoices/search`, `PATCH /invoices/:id` and `DELETE /invoices/:id` never run JwtMiddleware and `req.user` is undefined on them. invoices.controller.ts:25 `tenantFor` handles exactly that case by returning `requested ?? DEFAULT_TENANT`, so an anonymous caller reaches `GET /api/v1/invoices/<id>?tenant=<any-tenant>` and the repository query is scoped to the tenant the caller named. RolesGuard returns true when no `@Roles` is present (roles.guard.ts:25) and AdminScopeGuard exits early for non-staff paths, so nothing else stops it.",
+      "impact": "Unauthenticated read, status change and void of any invoice in any tenant, given an invoice id. The `?tenant=` selector on the detail route makes the tenant an attacker-supplied parameter rather than a session fact.",
+      "recommendation": "Change the route entry to `{ path: 'invoices/*', method: RequestMethod.ALL }` alongside the existing `invoices` entry (or bind the middleware globally). Separately, make `tenantFor` throw when `req.user` is absent instead of falling back to a requested or default tenant.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only candidate compensating layers are the two APP_GUARDs. RolesGuard returns true for handlers with no @Roles metadata (roles.guard.ts:25-27) and AdminScopeGuard returns true for any non-staff path (admin-scope.guard.ts:24-27). Neither asserts a session on /invoices/:id."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The construct is exactly what it looks like: the sibling entry on line 33 of the same call uses `admin/*`, which shows the wildcard was understood and simply not applied here."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "app.module.ts is the shipped module wiring; there is no flag around it."
+        }
+      ],
+      "unaided_label": "billing: JwtMiddleware forRoutes('invoices') does not cover invoices/:id; tenantFor falls back to a client-supplied tenant",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "Staff-only guard tests a path prefix the global route prefix makes unreachable, so it can never fire",
+      "location": {
+        "path": "billing-portal/src/auth/admin-scope.guard.ts",
+        "symbol": "AdminScopeGuard.canActivate / isStaffPath",
+        "line": 22
+      },
+      "class": "dead authorization control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The guard reads `req.path` and calls `isStaffPath`, which tests `startsWith('/admin')`, `startsWith('/internal')` or `startsWith('/ops')` (line 12-16). main.ts:23 calls `app.setGlobalPrefix('api/v1')`, so the reporting controller mounted at `@Controller('admin/reports')` is registered on the root Express adapter at `/api/v1/admin/reports` and `req.path` is that full string. `'/api/v1/admin/reports'.startsWith('/admin')` is false, so `isStaffPath` returns false and the guard takes its early `return true` on every request in the application. The `user.staff !== true` check on line 30 is unreachable. Two of the three prefixes (`/internal`, `/ops`) additionally correspond to no controller in the tree.",
+      "impact": "The only control asserting `staff === true` is inert. Every route under /admin/reports is served to any caller the other guards allow, including the reconciliation drop point. This is the class where a named compensating control compensates nothing, so it also invalidates any triage that answers FP-01 with 'AdminScopeGuard covers it'.",
+      "recommendation": "Compare against the prefixed path (`'/api/v1/admin'`), or better, resolve staff-ness from route metadata via `Reflector` rather than from a string prefix, so the check cannot drift from where the routes are actually mounted. Add a negative test that a non-staff token receives 403 on a /admin route.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no other layer asserting `staff`. JwtMiddleware only populates req.user; RolesGuard checks named roles, not the staff flag, and the two ungated admin handlers carry no @Roles at all."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The benign reading would be that Nest strips the global prefix before Express computes req.path. It does not: global-prefix routes are registered on the root adapter, so req.baseUrl is empty and req.path carries `/api/v1`."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "main.ts:23 sets the prefix unconditionally in bootstrap(), which is the shipped entry point."
+        }
+      ],
+      "unaided_label": "billing: AdminScopeGuard startsWith('/admin') never matches because of setGlobalPrefix('api/v1')",
+      "procedure": "WEB-23"
+    },
+    {
+      "title": "SQL injection: the memo search term is string-interpolated into a raw query beside a bound parameter",
+      "location": {
+        "path": "billing-portal/src/invoices/invoice.repository.ts",
+        "symbol": "InvoiceRepository.searchByMemo",
+        "line": 51
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`this.db.raw(\"... where tenant_id = ? and memo ilike '%${term}%' ...\", [tenantId])`. `tenantId` is bound; `term` is spliced into the SQL text by a JavaScript template literal before knex ever sees the string. `term` is `@Query('q')` from `GET /invoices/search` (invoices.controller.ts:61-63) with no validation — the controller defaults it to `''` and passes it straight through. A value of `' or 1=1 --` terminates the literal, and the tenant binding on the preceding line is defeated by the same injection.",
+      "impact": "Read of any row the database user can reach, across every tenant, and — through stacked or boolean-inferred queries — disclosure of the whole invoices table. The route is also one of the paths left unauthenticated by the middleware binding defect above, so no credential is needed.",
+      "recommendation": "Bind the term: `... and memo ilike ?` with `[tenantId, '%' + term + '%']`. Nothing in this query needs dynamic SQL text.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`term` originates at invoices.controller.ts:61 as the raw `q` query parameter; there is no allowlist, cast or pattern between the request and the sink."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "knex only escapes values it is given as bindings. The template literal is evaluated by JavaScript before the driver is called, so the parameterisation on the same statement does not reach `term`."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`db.raw` sends the assembled text to Postgres for execution; it is a query sink, not a formatter."
+        }
+      ],
+      "unaided_label": "billing: searchByMemo interpolates ${term} into raw SQL",
+      "procedure": "WEB-07"
+    },
+    {
+      "title": "Invoice detail cache is keyed by invoice id only, so a cached row is served across tenants",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.service.ts",
+        "symbol": "InvoicesService.get",
+        "line": 28
+      },
+      "class": "cross-tenant data exposure through a shared cache",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`this.cache.wrap(`invoice:${invoiceId}`, () => this.repo.findForTenant(tenantId, invoiceId))`. The loader is tenant-scoped; the cache key is not. TtlCache (common/cache.ts:11-24) is one process-wide `Map` with a 30 s TTL shared by every request. Once tenant A has read invoice X, a request from tenant B for the same id hits `store.get` before the loader runs and receives A's row without any query being issued.",
+      "impact": "Any tenant that can name an invoice id belonging to another tenant reads that invoice's customer id, amount and memo for the TTL window — the tenant scoping in the repository is bypassed rather than enforced. `changeStatus` invalidates the same unscoped key, so the poisoned entry is not reliably cleared either.",
+      "recommendation": "Include the tenant in the key: `invoice:${tenantId}:${invoiceId}`. Make the key derivation a single helper so no future call site can omit the scope.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "findForTenant is the compensating control and the cache sits in front of it — the query that enforces the scope is exactly what the hit skips."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is another tenant: tenant_id is a first-class column on the row (invoice.repository.ts:8) and the guard code treats tenant mismatch as a 403 (invoices.controller.ts:33)."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The cached value is an invoice row: customer id, amount in cents and free-text memo."
+        }
+      ],
+      "unaided_label": "billing: TtlCache key `invoice:${id}` omits tenant",
+      "procedure": "WEB-16"
+    },
+    {
+      "title": "The reconciliation bulk writer skips both the tenant scope and the invoice state machine its single-row sibling enforces",
+      "location": {
+        "path": "billing-portal/src/invoices/invoice.repository.ts",
+        "symbol": "InvoiceRepository.bulkUpsert",
+        "line": 78
+      },
+      "class": "broken object-level authorization / business-logic bypass on a second writer",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "Two writers reach the `invoices` table. `updateStatus` (line 58) filters `where({ tenant_id: tenantId, id })` and is only called from `InvoicesService.changeStatus`, which first loads the row and enforces ALLOWED_TRANSITIONS (invoices.service.ts:52) — the comment on line 10-13 states that a paid invoice may never be reopened because the GL export depends on it. `bulkUpsert` takes `rows` and issues `insert(rows).onConflict('id').merge(['status','amount_cents','memo','updated_at'])` with no tenant predicate and no transition check. It is reached from `POST /admin/reports/reconciliation` -> `importReconciled(body.rows ?? [])` (invoices.controller.ts:110), and `body` is typed `any`, so the ValidationPipe registered in main.ts:25 has no DTO to whitelist against and strips nothing.",
+      "impact": "A caller who reaches the reconciliation endpoint rewrites the status and amount of arbitrary invoices in arbitrary tenants by id — including moving `paid` back to `open`, the exact transition the service layer exists to forbid. Because the rows are handed to knex unfiltered, `tenant_id` and any other column can also be set from the request body.",
+      "recommendation": "Route the import through `changeStatus`/a tenant-scoped upsert: add `where tenant_id = ?` to the merge, validate each row against a declared DTO, and reject transitions the state machine forbids rather than merging past it.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The state machine lives in InvoicesService.changeStatus and the tenant predicate lives in updateStatus; neither is on the path importReconciled takes."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The two writers reach the same effect on the same table and the same columns — status and amount_cents — so they are not distinguishable siblings."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The header comment claims the upstream bank matcher has already resolved every line to an invoice id. No artifact for that upstream is in scope, so its constraints cannot be credited; per FP-08 that is UNKNOWN, and the finding is capped accordingly."
+        }
+      ],
+      "unaided_label": "billing: bulkUpsert has no tenant filter and bypasses ALLOWED_TRANSITIONS",
+      "procedure": "WEB-25"
+    },
+    {
+      "title": "Two of the four admin report handlers carry no role decorator while their siblings do",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.controller.ts",
+        "symbol": "AdminReportsController.updateDefinition / deleteDefinition",
+        "line": 96
+      },
+      "class": "missing function-level authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "Inside one controller: `createDefinition` has `@Roles('billing_ops')` (line 91) and `reconcile` has `@Roles('billing_ops')` (line 108), while `updateDefinition` (line 96-99) and `deleteDefinition` (line 101-104) have no decorator at all. RolesGuard returns true when no metadata is present (roles.guard.ts:25-27), so those two mutating handlers are open to any principal that gets past the guards — and AdminScopeGuard, the layer that would have demanded `staff`, never fires (see the dead-prefix finding).",
+      "impact": "Modification and deletion of report definitions by any caller reaching /admin/reports, without the `billing_ops` role the sibling create path requires. The asymmetry is inside a single class, which is why neither an 'is the admin route protected' review nor a scanner reports it.",
+      "recommendation": "Apply `@Roles('billing_ops')` to updateDefinition and deleteDefinition, or move the decorator to the controller class so a new handler inherits it by default.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No base class, interceptor or before-hook applies a role check; the two APP_GUARDs are the whole authorization layer and both no-op for these handlers."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "All four handlers act on the same report-definition resource with the same shape of effect; the create/update pair is not distinguishable by what it writes."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both handlers are registered through AdminReportsController in app.module.ts:19."
+        }
+      ],
+      "unaided_label": "billing: AdminReportsController PATCH/DELETE missing @Roles that POST has",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "Voiding and status changes on invoices require no role, while creating one requires `billing_admin`",
+      "location": {
+        "path": "billing-portal/src/invoices/invoices.controller.ts",
+        "symbol": "InvoicesController.update / remove",
+        "line": 70
+      },
+      "class": "missing function-level authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`@Post()` create carries `@Roles('billing_admin')` (line 55). `@Patch(':id')` update (line 70) and `@Delete(':id')` remove (line 75) reach `changeStatus` and `void` on the same resource and carry no decorator, so RolesGuard passes them through. Any principal with a session for the tenant — not just a billing admin — can move an invoice to `void`.",
+      "impact": "Any authenticated tenant user can void or re-status invoices they can name, a destructive financial action the create path treats as privileged.",
+      "recommendation": "Decorate the mutating handlers with the role the resource family already declares, and add a test asserting a non-`billing_admin` session receives 403 on PATCH and DELETE.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No other layer checks roles for these handlers; RolesGuard is the only role-aware code and it is metadata-driven."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Create, update and delete all act on the invoices table through InvoicesService; the effect family is the same."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing in the tree declares invoice voiding as an intentionally unprivileged action; the state machine treats `void` as terminal."
+        }
+      ],
+      "unaided_label": "billing: PATCH/DELETE /invoices/:id lack the @Roles the POST sibling has",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "The production check compares `ENVIRONMENT` against `\"production\"` while every deployed environment sets `\"prod\"`, `\"staging\"` or `\"dev\"` — authentication is skipped everywhere",
+      "location": {
+        "path": "edge-links/src/auth.ts",
+        "symbol": "authenticate",
+        "line": 50
+      },
+      "class": "authentication bypass through a configuration/code string mismatch",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "auth.ts:50 `if (env.ENVIRONMENT !== \"production\") { return { sub: \"dashboard\", owner: \"dashboard\", role: \"owner\", scopes: SCOPES_ALL }; }` — a full owner session with every scope, returned before the Authorization header is read. wrangler.toml declares three values for that binding and none of them is `production`: `[vars] ENVIRONMENT = \"dev\"` (line 7), `[env.staging] ENVIRONMENT = \"staging\"` (line 36) and `[env.production] ENVIRONMENT = \"prod\"` (line 40). Both files are individually defensible; the token-verification branch on lines 54-77 is unreachable in every environment the deployment config defines.",
+      "impact": "Every non-public route of the worker — `POST /api/links`, `GET /api/links`, and the whole `/do/*` Durable Object passthrough — is served to unauthenticated callers as workspace owner with `links:read`, `links:write`, `links:delete` and `links:admin`. The signature verification code, the token issuer and the role table all become decoration.",
+      "recommendation": "Make the environment a closed set resolved in one place and fail closed on an unrecognised value, then assert at boot that the production deployment resolves to the authenticated branch. A test that calls `authenticate` with each value wrangler.toml can produce and asserts a null session for all but the dashboard case would have caught this.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The deciding value is not attacker-supplied, but the exculpation FP-02 offers is about a sink argument. Here the mismatch is between two artifacts in the tree, and both are quoted."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is precisely the shipped path: wrangler.toml `[env.production]` is the production deployment definition and it sets `prod`."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No external control is claimed for the production worker; the comment on lines 48-49 claims Access covers only preview and staging, which is the argument for the branch, not for production."
+        }
+      ],
+      "unaided_label": "edge-links: ENVIRONMENT !== 'production' but wrangler.toml sets 'prod' -> unauthenticated owner session",
+      "procedure": "WEB-01"
+    },
+    {
+      "title": "`/do/*` forwards the caller's own headers to the Durable Object, which authorizes on the `X-Actor-Scopes` header",
+      "location": {
+        "path": "edge-links/src/index.ts",
+        "symbol": "default.fetch (/do/ passthrough)",
+        "line": 104
+      },
+      "class": "privilege escalation through a client-controlled trust header",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "index.ts:105-109 builds `new Request(\"https://link-store\" + path, request)` — the second argument copies the client's method, body and headers — and calls `stub.fetch(forwarded)`. LinkStore.actorScopes (do/LinkStore.ts:14-19) derives the acting scopes from `request.headers.get(\"X-Actor-Scopes\")`, and the comment on line 13 asserts those scopes are 'stamped on by the router once it has authenticated the caller'. On the `/api/links` paths the router does stamp them (index.ts:118, handlers/links.ts:76); on `/do/*` it stamps nothing and the client's header survives.",
+      "impact": "Any caller who can reach `/do/*` sets `X-Actor-Scopes: links:admin` and gets `/do/put`, `/do/list` and `/do/delete` on their workspace's object regardless of the role in their token — a `viewer` gains write and delete. Combined with the environment-string defect above, that caller need not be authenticated at all.",
+      "recommendation": "Strip inbound `X-Actor-Scopes` before forwarding and re-stamp it from the session, or drop the passthrough and expose named operations. Defence in depth: have the Durable Object derive scopes from a value the router signs rather than from a plain header.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The scope check inside the object (LinkStore.ts:38, 47, 55) is the control, and its input is the header the client supplied; nothing between the two overwrites it."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`X-Actor-Scopes` arrives on the inbound Request and is copied verbatim into the forwarded one."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The `Request(url, init)` constructor with a Request as init inherits headers by specification; there is no reading in which the header is dropped."
+        }
+      ],
+      "unaided_label": "edge-links: /do/* passthrough lets the client set X-Actor-Scopes that LinkStore trusts",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "A token with no `role` claim resolves to the owner scope set through a default parameter",
+      "location": {
+        "path": "edge-links/src/roles.ts",
+        "symbol": "scopesFor",
+        "line": 14
+      },
+      "class": "privilege escalation through a permission-shaped default",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`export function scopesFor(role: string = \"owner\"): string[] { return ROLE_SCOPES[role] ?? ROLE_SCOPES.viewer; }`. The `?? viewer` fallback on line 15 only fires for a role string that is present and unknown; when the argument is `undefined` the default parameter substitutes `\"owner\"` first, returning `[links:read, links:write, links:delete, links:admin]`. The caller passes an optional claim: auth.ts:76 `scopes: scopesFor(claims.role)`, and the issuer sets `role: meta?.role` (index.ts:59) from `ws-meta:<workspace>` — when that KV entry is absent or has no `role`, JSON.stringify omits the key and the claim arrives undefined. The comment on lines 11-13 documents the fallback as intentional for pre-migration workspaces.",
+      "impact": "Any workspace with no `ws-meta` record — or whose metadata predates the role migration — mints tokens that resolve to full workspace administration, including `links:delete` and the `links:admin` wildcard that `hasScope` honours on line 19.",
+      "recommendation": "Remove the default and make the parameter required, resolving an absent role to the least-privileged set: `function scopesFor(role?: string) { return ROLE_SCOPES[role ?? \"viewer\"] ?? ROLE_SCOPES.viewer; }`. Backfill the missing metadata explicitly rather than inferring ownership from its absence.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The deciding input is the `role` claim, which is absent precisely when the workspace record is incomplete; an attacker who can create or reach such a workspace controls whether the default fires."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The comment declares the fallback intended, but what it bounds is a migration cohort, not the privilege: nothing limits the owner scopes to those legacy workspaces."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no server-side re-check behind this: `hasScope` and the Durable Object both consume this list as the authoritative scope set."
+        }
+      ],
+      "unaided_label": "edge-links: scopesFor(role = 'owner') gives owner scopes when the role claim is missing",
+      "procedure": "WEB-05",
+      "from_tool": "default_resolver.py"
+    },
+    {
+      "title": "The queue importer writes links to the same store without the validation and HTML escaping the API writer applies, and the renderer interpolates them raw",
+      "location": {
+        "path": "edge-links/src/queue.ts",
+        "symbol": "handleQueue",
+        "line": 26
+      },
+      "class": "stored cross-site scripting through an unvalidated second writer",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Two writers reach `link:<slug>` in the Durable Object. `createLink` runs `parseLinkInput` first (handlers/links.ts:67), which enforces `SLUG_RE`, a 2048-character URL check and `escapeHtml` on `target` and `title` (lines 45-52). `handleQueue` posts the CSV row straight through: `body: JSON.stringify({ slug: row.slug, target: row.target, title: row.title ?? row.slug, owner: row.owner })` with a hardcoded `X-Actor-Scopes: \"links:write\"`, calling neither `parseLinkInput` nor `escapeHtml`. render.ts:13-20 then builds `<a class=\"link-card__target\" href=\"${link.target}\">${link.title}</a>` and the comment on lines 9-12 states the fields 'arrive from the store already escaped by the API layer'. That premise is true of one writer and false of the other.",
+      "impact": "A row in an imported CSV whose title contains `<img src=x onerror=...>` is stored verbatim and executed in the dashboard of everyone who loads `GET /api/links`. The slug regex is also skipped on this path, so `slug` and `clicks` reach the same markup unconstrained.",
+      "recommendation": "Call `parseLinkInput` in `handleQueue` and reject the message on failure, or move the escaping to render time (escape in `linkCard` rather than on the way in) so no writer can bypass it. Escaping on write is the design that makes a second writer a vulnerability.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The escaping is in parseLinkInput, which is on the createLink path only; the Durable Object's `put` (LinkStore.ts:37-44) stores whatever JSON it is handed."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The message body is a parsed CSV row from the dashboard importer, i.e. user-supplied file content (queue.ts:12-15)."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`linkListPage` returns the string with `content-type: text/html; charset=utf-8` (render.ts:31), so the sink is HTML."
+        }
+      ],
+      "unaided_label": "edge-links: queue.ts writes links bypassing parseLinkInput/escapeHtml while render.ts interpolates raw",
+      "procedure": "WEB-13"
+    },
+    {
+      "title": "`escapeHtml` does not constrain the URL scheme, so a `javascript:` target reaches an `href` on the validated path too",
+      "location": {
+        "path": "edge-links/src/handlers/links.ts",
+        "symbol": "parseLinkInput",
+        "line": 39
+      },
+      "class": "cross-site scripting through an unrestricted URL scheme",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`parseLinkInput` validates the target with `new URL(target)` inside a try/catch — which accepts `javascript:alert(document.domain)` as a well-formed URL — and then passes it through `escapeHtml`, which replaces only `&`, `<`, `>`, `\"` and `'`. None of those characters appears in a `javascript:` payload, so the value survives intact and render.ts:16 places it in `href=\"...\"`. The same value is handed to `Response.redirect` on the `/go/` path.",
+      "impact": "A workspace member with `links:write` stores a link whose target executes script in the dashboard of any user who clicks it, from the application's own origin.",
+      "recommendation": "Allowlist the scheme after parsing: accept only `https:` (and `http:` if required) and reject everything else, in `parseLinkInput` and again before `Response.redirect`.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`target` is a body field of `POST /api/links` with no scheme constraint anywhere between the request and the sink."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is an `href` attribute in a text/html response, where `javascript:` is an executable scheme."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No server-side or CSP control offsets it: render.ts emits no Content-Security-Policy header."
+        }
+      ],
+      "unaided_label": "edge-links: new URL() + escapeHtml accept javascript: URLs into href",
+      "procedure": "WEB-13"
+    },
+    {
+      "title": "Open redirect: the `to` query parameter is redirected to without any validation",
+      "location": {
+        "path": "edge-links/src/handlers/go.ts",
+        "symbol": "redirect",
+        "line": 24
+      },
+      "class": "open redirect",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`const inline = url.searchParams.get(\"to\"); if (inline) { return Response.redirect(inline, 302); }` — checked before the stored-slug lookup, so it takes precedence on every `/go/*` request. Nothing constrains the host or scheme. The comment on lines 22-23 declares this deliberate for one-off campaign destinations. The neighbouring `preview` handler in the same file does maintain a host allowlist (lines 11-16, 47), which shows the allowlist idea was available here.",
+      "impact": "The link shortener's own domain becomes a redirector to any attacker destination, which is exactly the property that makes phishing links pass reputation and mail filters. `/go/` is one of the two prefixes served before authentication (index.ts:90).",
+      "recommendation": "Sign the inline destination, or hold it against the same allowlist `preview` uses, and refuse anything that is not an absolute `https:` URL on a permitted host.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`to` is read directly from the request query string."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exposure is intended — the comment says so — but nothing bounds it: no allowlist, no signature, no expiry. FP-05 requires the bound, and there is none."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no second layer that re-checks the destination; `Response.redirect` is the terminal action of the handler."
+        }
+      ],
+      "unaided_label": "edge-links: /go/?to= open redirect",
+      "procedure": "WEB-10"
+    },
+    {
+      "title": "The token endpoint is outside the rate-limited prefixes, leaving workspace secrets open to brute force",
+      "location": {
+        "path": "edge-links/src/ratelimit.ts",
+        "symbol": "LIMITED_PREFIXES / isLimited",
+        "line": 9
+      },
+      "class": "missing rate limit on a credential endpoint",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`const LIMITED_PREFIXES = [\"/api/\", \"/go/\"];` and `isLimited` tests those prefixes only. index.ts:82 applies the limiter before routing, then index.ts:86 dispatches `POST /auth/token` to `issueToken`, which compares a client-supplied `secret` against `ws-secret:<workspace>` in KV. `/auth/token` matches neither prefix, so the one endpoint in the worker that consumes a credential is the one endpoint with no budget, while the scraping surfaces it was written for are metered.",
+      "impact": "Unlimited guessing against workspace secrets from a single origin. A successful guess yields a signed token, and the workspace role in `ws-meta` then decides the scopes — or, per the default-parameter finding above, owner scopes when that record is missing.",
+      "recommendation": "Add `/auth/` to LIMITED_PREFIXES and meter failures per workspace identifier as well as per IP, so a distributed attempt against one workspace is also bounded.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No other limiter exists in the tree; `consume` is called from exactly one place, index.ts:82, and only when `isLimited` returns true."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Cloudflare offers platform-level rate limiting rules that could cover this path, but no such configuration is present in wrangler.toml or anywhere else in scope. Per FP-08 that is UNKNOWN, so this ships as probable."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A credential endpoint is not an intended-and-bounded exposure; the prefix list shows metering was considered and this path was not included."
+        }
+      ],
+      "unaided_label": "edge-links: /auth/token not covered by LIMITED_PREFIXES",
+      "procedure": "WEB-18"
+    },
+    {
+      "title": "The rate-limit counter is a non-atomic read-modify-write on eventually consistent KV",
+      "location": {
+        "path": "edge-links/src/ratelimit.ts",
+        "symbol": "consume",
+        "line": 30
+      },
+      "class": "ineffective rate limiting",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "`const current = Number((await env.LINKS.get(key)) ?? \"0\"); if (current >= MAX_PER_WINDOW) return false; await env.LINKS.put(key, String(current + 1), ...)`. Two requests that read before either writes both observe the same `current` and both store `current + 1`, so concurrent requests collapse into one increment. Workers KV is additionally eventually consistent across colos, so the counter a request reads may be stale by design.",
+      "impact": "The 120-per-minute budget is enforceable only against strictly serial traffic. Concurrent or geographically spread requests exceed it by an unbounded factor, which matters most on the endpoints the limiter is the only control for.",
+      "recommendation": "Use a Durable Object (one already exists in this worker) or the Workers rate-limiting binding for the counter, so the increment is atomic and consistent.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no second limiter; this function is the whole control."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "This is a degraded control rather than an absent one — the limiter still stops sustained serial abuse — so the severity is bounded to low rather than the finding being deleted."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The affected principals are other clients of a shared public endpoint."
+        }
+      ],
+      "unaided_label": "edge-links: KV rate limit counter races",
+      "procedure": "WEB-17"
+    },
+    {
+      "title": "Token verification treats `exp` as optional, so a token minted without it never expires",
+      "location": {
+        "path": "edge-links/src/auth.ts",
+        "symbol": "authenticate",
+        "line": 68
+      },
+      "class": "missing token expiry validation",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`if (typeof claims.exp === \"number\" && claims.exp * 1000 < Date.now()) return null;` — when `exp` is absent or is any non-number, the condition short-circuits and the token is accepted. Nothing else in the function checks lifetime, issuer, audience or the `alg` field of the header the caller supplied. The issuer does set `exp` (index.ts:60), but the verifier accepts a validly signed token that lacks it, so a token minted by any past or future code path with a different claim set is honoured forever.",
+      "impact": "No revocation and no lifetime: a leaked or logged token remains valid indefinitely, and the one-hour `expires_in` the issuer advertises is not enforced by the verifier.",
+      "recommendation": "Require `exp`: reject when it is missing or not a number, and validate `iss`/`aud` while you are there. Reject any header whose `alg` is not `HS256`.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no session store or introspection endpoint behind this; the token is self-contained and this function is the only verification."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claim set is supplied by the token holder; the signature binds it to a key but says nothing about which claims are present."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer behind this re-checks expiry: the returned Session carries only sub, owner, role and scopes."
+        }
+      ],
+      "unaided_label": "edge-links: exp is optional in the verifier",
+      "procedure": "WEB-01"
+    },
+    {
+      "title": "The `/internal` routes are registered outside the authentication and rate-limit blocks",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/Application.kt",
+        "symbol": "Application.module (routing)",
+        "line": 72
+      },
+      "class": "missing authentication on a privileged route family",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "The `routing { }` block puts `deviceRoutes`, `enrollmentRoutes` and `firmwareRoutes` inside `rateLimit(RateLimitName(\"public\")) { authenticate(\"fleet-jwt\") { ... } }` (lines 63-69), and then calls `internalRoutes(config)` at line 72, outside both. Nothing in Internal.kt re-establishes a principal: `GET /internal/devices` returns the whole registry (Internal.kt:38-40), `POST /internal/devices/rotate-key` mints a 32-byte provisioning key for any known serial (lines 42-50), and `POST /internal/firmware/pin` calls `FirmwareCatalog.publish` with a body-supplied release (lines 52-56) — the same effect as `POST /api/firmware/publish`, which does require the `firmware:publish` scope (Firmware.kt:47) and validates the digest length (line 50). The claim that these are 'only routed from inside the cluster network' (Internal.kt:28-31) is a comment; no `application.conf` binding, interceptor or network ACL in the tree implements it.",
+      "impact": "Unauthenticated fleet enumeration, provisioning-key issuance and firmware channel takeover. Pinning a channel to an attacker-named artifact and sha256 is the step that turns this into device compromise at fleet scale.",
+      "recommendation": "Move `internalRoutes(config)` inside `authenticate(\"fleet-jwt\")` and gate each handler with `requireScope`, mirroring the public siblings. If a network boundary is genuinely intended, bind those routes to a separate connector/port and prove it in configuration rather than in a comment.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The only authentication in the app is the `authenticate(\"fleet-jwt\")` wrapper, and these routes are lexically outside it; `requireScope` is never called in Internal.kt."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The comment asserts a cluster-network control. No ingress manifest, service mesh policy or firewall artifact is in scope, and FP-08 forbids crediting an unevidenced external control — which is why this is reported as probable rather than confirmed."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The routes are registered unconditionally; unlike the `_echo` route in Devices.kt:117 they are behind no environment flag."
+        }
+      ],
+      "unaided_label": "fleet: internalRoutes registered outside authenticate() - unauth device dump, key rotation, firmware pin",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "`Attestation.verify` computes a digest and returns whether it is non-empty — it has no failing path for a forged signature",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+        "symbol": "Attestation.verify",
+        "line": 71
+      },
+      "class": "inert security control / signature verification that cannot fail",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The final statement is `val digest = MessageDigest.getInstance(\"SHA-256\").digest(\"${blob.deviceSerial}:${blob.nonce}\".toByteArray()); return digest.isNotEmpty()`. A SHA-256 digest is always 32 bytes, so that expression is a constant `true`. The digest is never compared to anything and `blob.signature` is only length-checked (`< 64` on line 71). The two checks that do reject compare against values the caller can supply: `blob.nonce` against a nonce handed out by an unauthenticated-in-scope endpoint (`GET /api/devices/{serial}/nonce`), and `blob.certificateChainSha256` against `config.attestationRootFingerprint`, a constant printed in application.conf:27 and described there as a fingerprint of a public root.",
+      "impact": "Manufacturing attestation is decorative. A caller fetches a nonce for any serial, echoes it back with the public root fingerprint and any 64-character string as the signature, and `POST /api/devices/enroll` returns 201 Created — an arbitrary device with an arbitrary public key enrolls into the fleet. Because the function is named `verify` and is called on the right path, any triage that answers FP-01 with 'attestation covers it' is answering it wrongly.",
+      "recommendation": "Verify the signature over the serial and nonce against the device's public key, and validate the presented certificate chain up to the manufacturing root rather than comparing a caller-supplied fingerprint to a published constant. Add a negative test that a wrong signature is rejected; a control that no input can make fail is the defect.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This function is itself the compensating control the enrolment path relies on; there is no second verification between `call.receive<EnrollRequest>()` and `DeviceRegistry.enroll`."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no reading in which `digest.isNotEmpty()` can be false — `MessageDigest.digest()` returns a fixed-length array."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "It is the production code path: Devices.kt:89 calls it on every enrolment with no flag around it."
+        }
+      ],
+      "unaided_label": "fleet: Attestation.verify returns digest.isNotEmpty() - always true",
+      "procedure": "WEB-27"
+    },
+    {
+      "title": "The enrolment retry endpoint replays exactly the requests whose attestation was rejected",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+        "symbol": "enrollmentRoutes (/{serial}/retry)",
+        "line": 46
+      },
+      "class": "business-logic bypass of an attestation gate",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`DeviceRegistry.stashPending(request)` is called in exactly one place: the failure arm of the attestation check in Devices.kt:94-95, immediately before the 403 response. The pending map therefore contains only requests that failed verification. `POST /api/enrollment/{serial}/retry` reads that map and enrols the entry directly — `DeviceRegistry.enroll(parked.serial, parked.model, parked.publicKey)` (Enrollment.kt:56) — with no re-verification. The comment on lines 42-45 states the stored request 'is the one the device already sent, so it goes straight to the registry', which is true and is the problem: it is the one that was refused.",
+      "impact": "The rejection pile is an approval queue. Any caller with `devices:write` — or, per the service-token finding below, any machine token at all — converts a refused enrolment into a live device with an attacker-supplied public key, without ever satisfying the attestation the refusal was based on.",
+      "recommendation": "Do not park failed attestations, or re-run `Attestation.verify` against a freshly issued nonce on the retry path before calling `enroll`. If the parking lot is meant for transient infrastructure failures, populate it from that branch rather than from the verification failure branch.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`requireScope(\"devices:write\")` on line 47 authorizes the caller; nothing on this path re-checks the attestation, which is a different control."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`stashPending` has one call site and it is inside `if (!attested)`; there is no other producer for the pending map."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The route is registered unconditionally in enrollmentRoutes, which Application.kt:66 installs."
+        }
+      ],
+      "unaided_label": "fleet: /enrollment/{serial}/retry replays attestation-failed requests from stashPending",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "Bulk enrolment writes devices to the registry with no attestation at all, unlike its single-device sibling",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Enrollment.kt",
+        "symbol": "enrollmentRoutes (/bulk)",
+        "line": 27
+      },
+      "class": "missing verification on a second writer",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "Two paths reach `DeviceRegistry.enroll`. `POST /api/devices/enroll` (Devices.kt:85-105) receives an `EnrollRequest` carrying an `AttestationBlob` and calls `Attestation.verify` before enrolling. `POST /api/enrollment/bulk` (Enrollment.kt:27-40) receives `BulkEnrollRequest`, whose `BulkEnrollEntry` (line 15) has no attestation field at all, and maps straight to `DeviceRegistry.enroll(it.serial, it.model, it.publicKey)`. The only checks are the `devices:write` scope and a 500-entry cap. The comment on lines 22-26 justifies it — the pallet is 'sealed and signed as a whole on the line' — but no pallet signature is present in the request model or verified anywhere.",
+      "impact": "One authorized call enrols up to 500 devices with attacker-chosen serials and public keys, permanently, with no per-device proof of manufacture. Attestation is enforced only on the path a legitimate device takes.",
+      "recommendation": "Carry the pallet signature in `BulkEnrollRequest` and verify it before enrolling, or require per-entry attestation. Whichever is chosen, the invariant should be enforced inside `DeviceRegistry.enroll` so no writer can reach the registry around it.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`requireScope(\"devices:write\")` authorizes the caller but performs no attestation; `DeviceRegistry.enroll` (Devices.kt:51-57) writes unconditionally."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both handlers reach the same registry write with the same three fields, so they are not distinguishable siblings."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The claimed pallet signature would be the exculpation, but no artifact defining or verifying it exists in scope; per FP-08 that cannot be credited as HOLDS."
+        }
+      ],
+      "unaided_label": "fleet: /enrollment/bulk enrolls with no attestation while /devices/enroll requires one",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "Any subject beginning `svc-` is granted every scope without a scope check",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/security/Permissions.kt",
+        "symbol": "ApplicationCall.requireScope",
+        "line": 34
+      },
+      "class": "broken function-level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "```kotlin\nif (isServiceToken(subject)) {\n    if (allowServiceToken) { return true }\n    ...\n}\nval held = principal.payload.getClaim(\"scope\").asString().orEmpty().split(\" \")\nif (scope !in held) { ...403... }\n```\nThe early `return true` skips the scope comparison entirely, and `allowServiceToken` defaults to `true` (line 25), so every call site except `POST /api/devices/{serial}/decommission` (Devices.kt:108) takes it. `isServiceToken` is a `startsWith(\"svc-\")` test on the JWT subject, and the comment on lines 12-16 says the prefix 'is what picks the right audit label rather than a trust decision on its own' — while the code makes it exactly a trust decision. Token.kt:55 sets the subject from the client-supplied `client_id`.",
+      "impact": "One machine credential is authority over the whole fleet API: `devices:read`, `devices:write`, `firmware:read` and `firmware:publish` alike, regardless of what the token's `scope` claim says. The scope claim is unenforced for the entire class of caller the automation uses.",
+      "recommendation": "Delete the early return and evaluate the scope claim for service tokens too; if machine callers need broader defaults, grant them the scopes at issuance and keep one enforcement path. Make `allowServiceToken` an explicit argument at every call site rather than a default.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer behind `requireScope` re-checks scopes: each route's authorization is the single `requireScope` call at the top of its handler."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The doc comment claims machine tokens are accepted 'unless a route opts out', which describes an intended acceptance of the *caller*, not an intended grant of every *scope* — nothing bounds which scopes the bypass confers."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The audience pinning the comment relies on (Application.kt:49) proves the token was issued for this API; it says nothing about which operations the subject may perform."
+        }
+      ],
+      "unaided_label": "fleet: requireScope returns true for any svc- subject, skipping the scope claim",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "The OAuth token endpoint signs whatever scope the client asks for",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Token.kt",
+        "symbol": "tokenRoutes (/oauth/token)",
+        "line": 38
+      },
+      "class": "privilege escalation at credential issuance",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`val scope = form[\"scope\"] ?: \"devices:read\"` is read from the request form and, after the client secret matches, written into the token verbatim: `.withClaim(\"scope\", scope)` (line 56). Nothing compares the requested scope against an entitlement for that `client_id` — the only per-client state is the secret hash resolved from `System.getenv(\"FLEET_CLIENT_<ID>\")` (line 18). The default value shows the intent was a least-privileged read scope.",
+      "impact": "Any client with valid credentials — a read-only integration, a partner, a compromised low-privilege credential — requests `scope=devices:write firmware:publish` and receives a token the resource server honours. Firmware publication is the highest-value operation in the service.",
+      "recommendation": "Resolve the grantable scope set per client from configuration and intersect it with the request, rejecting (`invalid_scope`) anything outside it. Record the granted scope in the response, which the endpoint already does, only after the intersection.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The resource server's control is `requireScope`, which reads this claim; there is no second source of truth about what the client may do."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`scope` comes from `call.receiveParameters()` — the POST body of the token request."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A client-credentials grant does allow the client to *request* a scope, but RFC 6749 §4.4.2 requires the server to decide what it grants; there is no reading in which echoing the request is the specified behaviour."
+        }
+      ],
+      "unaided_label": "fleet: /oauth/token signs the client-requested scope with no entitlement check",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "Firmware artifacts are served from a path built by joining a request parameter to the artifact root with no containment check",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Firmware.kt",
+        "symbol": "firmwareRoutes (/artifact/{name})",
+        "line": 64
+      },
+      "class": "path traversal / arbitrary file read",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`val name = call.parameters[\"name\"].orEmpty(); val artifact = File(config.firmwareDir, name); if (!artifact.isFile) { 404 }; call.respondFile(artifact)`. `name` is used raw: there is no `canonicalPath.startsWith(root)` assertion, no `Path.normalize()`, and no filename pattern — compare the helpdesk service in this same tree, which constrains an equivalent parameter with `@name_re` before joining (helpdesk-live/lib/helpdesk_web/controllers/attachment_controller.ex:15). `java.io.File` resolves `..` segments, so a `name` carrying them escapes `config.firmwareDir` (`/var/lib/fleet/firmware` per application.conf:23). Ktor matches `{name}` against a single decoded path segment, so the traversal has to arrive percent-encoded (`..%2F..%2Fetc%2Fpasswd`); the missing containment check is decidable from the file regardless of which encoding survives routing.",
+      "impact": "Read of any file the service account can open — `/etc/passwd`, the signing secret if it is on disk, adjacent service configuration — by any caller holding `firmware:read`, which per the service-token finding is every machine token.",
+      "recommendation": "Resolve and contain: `val root = File(config.firmwareDir).canonicalFile; val artifact = File(root, name).canonicalFile; require(artifact.toPath().startsWith(root.toPath()))`. Better, look the artifact up by the catalogue entry rather than by a caller-supplied name.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`requireScope(\"firmware:read\")` authorizes the caller; it does not constrain the path. No normalising layer sits between the parameter and `File`."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`name` is a raw path parameter with no allowlist, pattern or catalogue lookup applied."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`respondFile` streams the file's bytes to the caller, which is the disclosure sink."
+        }
+      ],
+      "unaided_label": "fleet: File(config.firmwareDir, name) with no traversal guard",
+      "procedure": "WEB-12"
+    },
+    {
+      "title": "`requireMutualTls` is declared, its condition never matches the configured environment, and nothing reads it",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/Config.kt",
+        "symbol": "FleetConfig.requireMutualTls",
+        "line": 26
+      },
+      "class": "declared control that nothing enforces",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "`val requireMutualTls: Boolean get() = environment == \"prod\"`. Two independent defects in one property. First, a symbol search across the tree returns exactly one occurrence — the declaration — so no code path demands a client certificate; contrast `debugRoutesEnabled`, declared four lines below, which does have a reader at Devices.kt:117. Second, application.conf:12-13 documents the allowed values as 'One of: dev, staging, production' and sets `environment = \"production\"`, so even with a reader the getter would return false in production. The doc comment on lines 21-24 states devices present a manufacturing certificate and that 'the service terminates TLS itself, so it is the one that has to demand the client certificate'.",
+      "impact": "The documented device-identity boundary does not exist: the operator can read the knob in the code, and no deployment ever requires a client certificate. Any caller that can reach the port is on equal footing with a manufactured board, which is what makes the attestation defects above reachable over the network.",
+      "recommendation": "Either wire the flag into the Netty/Ktor TLS configuration and assert at boot that production resolves it to true, or delete it so it stops reading as a control that is present. Align the string with the documented value set (`production`) in the same change, and add a boot assertion that the environment string is a member of that set.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "mTLS could be terminated by an ingress or service mesh outside this repository. No such artifact is in scope and FP-08 forbids crediting it without one, so this ships as probable rather than confirmed — but the `prod`/`production` mismatch is established from files in the tree either way."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is not consumed by name, reflection or a config-tagged struct: it is a Kotlin computed property on a data class, and Kotlin has no mechanism that would read it without naming it."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "application.conf is the shipped resource and `environment = \"production\"` is its default."
+        }
+      ],
+      "unaided_label": "fleet: requireMutualTls has zero readers and compares against 'prod' while the config says 'production'",
+      "procedure": "WEB-23"
+    },
+    {
+      "title": "Device enrolment and nonce issuance carry no scope check while every sibling route does",
+      "location": {
+        "path": "fleet-provision/src/main/kotlin/com/fleet/routes/Devices.kt",
+        "symbol": "deviceRoutes (/enroll, /{serial}/nonce)",
+        "line": 85
+      },
+      "class": "missing function-level authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "Within `route(\"/api/devices\")`: `get` calls `requireScope(\"devices:read\")` (line 76) and `post(\"/{serial}/decommission\")` calls `requireScope(\"devices:write\", allowServiceToken = false)` (line 108). `get(\"/{serial}/nonce\")` (line 80) and `post(\"/enroll\")` (line 85) call neither — any principal the JWT plugin accepts reaches them. `issueNonce` additionally overwrites `nonces[serial]` unconditionally (line 45), so a caller can reset the pending nonce for a serial another party is mid-enrolment on.",
+      "impact": "Any valid token — of any scope, for any client — enrols devices and rewrites enrolment nonces. Combined with the inert `Attestation.verify`, the enrolment route is the least-guarded write in the service and the one with the most durable effect.",
+      "recommendation": "Add `requireScope(\"devices:write\")` to `/enroll` and a read scope to `/{serial}/nonce`, and make `issueNonce` refuse to replace a live nonce before it expires.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The `authenticate(\"fleet-jwt\")` wrapper establishes a principal but performs no scope check; the `validate` block (Application.kt:51-54) only requires a non-blank subject."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "All four handlers are in the same `route(\"/api/devices\")` block and act on the same registry; two guard and two do not."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing declares enrolment as an intentionally open operation — it is inside the authenticated block, which shows a credential was meant to matter."
+        }
+      ],
+      "unaided_label": "fleet: /devices/enroll and /{serial}/nonce have no requireScope while siblings do",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "The LiveView mount hook guards two live actions that do not exist and misses the two mutating ones that do",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/on_mount/require_agent.ex",
+        "symbol": "RequireAgent.on_mount / @guarded",
+        "line": 15
+      },
+      "class": "dead authorization guard",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`@guarded [:edit, :delete, :new]`, and the hook returns `{:cont, socket}` for any action outside that list. The router registers five live actions in the `:console` live_session: `:index`, `:show`, `:edit`, `:escalate` and `:assign` (router.ex:27-31). `:delete` and `:new` are not among them, so two of the three guarded names cover nothing; `:escalate` and `:assign` — the two mutating actions — are not guarded. The module's own doc says the hook 'is what keeps the mutating actions honest on a socket that reconnects without replaying the pipeline', which names the exact gap: the `:require_agent` pipeline (router.ex:24) covers the first HTTP render only, and the LiveView websocket mount runs the on_mount hooks instead.",
+      "impact": "A socket connecting on the `:escalate` or `:assign` action mounts with `current_agent` nil and is never halted. Because `handle_event(\"escalate\", ...)` performs no authorization of its own, the reconnect path the hook exists to protect is open on the actions it was written for.",
+      "recommendation": "Invert the list: guard everything except an explicit allowlist of read-only actions, so a new live action is protected by default. Then align the names with the router's actual actions and add a test that mounts each action with an empty session.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The `:require_agent` pipeline is the other layer, and it plugs into the HTTP pipeline only; a LiveView websocket mount does not replay `Plug` pipelines, which is why this hook exists."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no reading in which `:escalate` is a member of `[:edit, :delete, :new]`, and no other on_mount hook is registered on the live_session."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both the hook and the five routes are in the shipped router with no compile flag around them."
+        }
+      ],
+      "unaided_label": "helpdesk: @guarded lists :delete/:new which do not exist and omits :escalate/:assign",
+      "procedure": "WEB-23"
+    },
+    {
+      "title": "`update_note` performs no authorization and loads the note by id with no scope",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "TicketLive.handle_event(\"update_note\")",
+        "line": 71
+      },
+      "class": "broken object-level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`handle_event(\"create_note\", ...)` wraps its write in `if Policy.can_write?(agent, ticket)` (line 58), which enforces the org match and denies auditors outright (policy.ex:19-22). `handle_event(\"update_note\", %{\"note_id\" => note_id, \"body\" => body})` calls `Tickets.update_note(note_id, ...)` with no check at all, and `update_note` is `Repo.get!(Note, note_id) |> Note.changeset(...) |> Repo.update()` (tickets.ex:54-58) — no org scope, no ticket scope, not even a check that the note belongs to the ticket on the socket. `note_id` arrives in the event payload, which a client controls completely.",
+      "impact": "Any agent with a console socket rewrites the body of any note in any organisation by sending its id — including auditors, whom the policy explicitly forbids from writing. The stored body is then rendered with `raw/1` for every viewer of that ticket, so this is also a delivery vector for the sanitizer defect below.",
+      "recommendation": "Load the note through the caller's scope (`Tickets.get_note_scoped(note_id, Policy.org_scope(agent))`) and re-run `Policy.can_write?` against its ticket before updating, exactly as `create_note` does.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The on_mount hook does not cover the `:show` action the editor is reached from, and even where it fires it only asserts that *an* agent exists, never which objects that agent may write."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`note_id` is a field of the phx-submit payload; the hidden input at ticket_live.html.heex:26 is a client-side convenience, not a constraint."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is another organisation's agent — `org_id` is the tenancy boundary the whole Policy module is built around."
+        }
+      ],
+      "unaided_label": "helpdesk: update_note has no can_write? and Repo.get!(Note, id) is unscoped",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "`escalate` writes to the ticket with no authorization check and an unvalidated tier",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "TicketLive.handle_event(\"escalate\")",
+        "line": 77
+      },
+      "class": "missing function-level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`handle_event(\"escalate\", %{\"tier\" => tier}, socket)` calls `Tickets.escalate(socket.assigns.ticket, tier)` directly, which changesets `%{tier: tier, escalated_at: DateTime.utc_now()}` onto the ticket (tickets.ex:60-64). No `Policy.can_write?`, unlike the `create_note` sibling twenty lines above. `tier` comes from the submitted form; the two `<option>` values in the template (ticket_live.html.heex:42-43) are a client-side suggestion, and a phx event can carry any string.",
+      "impact": "Any agent with a socket on a ticket escalates it, including auditors, whose role is defined as read-only (`can_write?(%{role: \"auditor\"}, _) -> false`). The tier value is written unconstrained, so ticket state can be set to values the SLA logic does not model.",
+      "recommendation": "Wrap the write in `Policy.can_write?(agent, ticket)` like `create_note`, and validate `tier` against the permitted set in the changeset rather than trusting the select.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The `:escalate` live action is one of the two the on_mount hook does not guard, so no layer asserts even the presence of an agent on this path."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`tier` is a form field in the phx-submit payload."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`create_note` in the same module shows the intended pattern; the difference between the two handlers is the missing conditional, not a difference in effect."
+        }
+      ],
+      "unaided_label": "helpdesk: escalate has no can_write? and tier is unvalidated",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "The ticket cache is keyed by ticket id, so a ticket loaded under one org's scope is served to another",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk/cache.ex",
+        "symbol": "Cache.fetch_ticket",
+        "line": 24
+      },
+      "class": "cross-tenant data exposure through a shared cache",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "TicketLive.mount computes `scope = Policy.org_scope(agent)` and calls `Cache.fetch_ticket(id, fn -> Tickets.get_scoped(id, scope) end)` (ticket_live.ex:17-20). The loader is scope-aware; the key is `{:ticket, id}` and the ETS table is `:named_table, :public` shared by the whole node (cache.ex:15, 24, 30). Once any agent has opened a ticket, an agent in a different org mounting the same id gets the cached value before `get_scoped` runs, and `apply_scope({:org, org_id})` — the `where t.org_id == ^org_id` on tickets.ex:29 that is the entire read boundary — is never evaluated.",
+      "impact": "Cross-organisation disclosure of the ticket subject, body, notes and attachments for the 60-second TTL, by ticket id. The read authorization for this service exists only inside the query the cache short-circuits — `Policy.can_read?` is defined but has no caller anywhere in the tree.",
+      "recommendation": "Put the scope in the key: `{:ticket, scope, id}`, or cache the raw row and apply `can_read?/2` to every hit. Given `can_read?` already exists and is unused, applying it after the cache lookup would close both gaps.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating control is `apply_scope` inside `get_scoped`, and the cache hit is precisely the path that does not call it. `Policy.can_read?` would be the second layer and has zero call sites."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is `org_id`; policy.ex defines an agent as belonging to exactly one org and `visible?/2` treats a differing org as not visible."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The cached value is a ticket with its notes and attachments preloaded — customer correspondence, which is personal data."
+        }
+      ],
+      "unaided_label": "helpdesk: Cache.fetch_ticket keyed by id only, ignoring org scope",
+      "procedure": "WEB-16"
+    },
+    {
+      "title": "The HTML sanitizer is a denylist of four patterns applied in a single non-recursive pass",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk/sanitizer.ex",
+        "symbol": "Sanitizer.sanitize_html",
+        "line": 18
+      },
+      "class": "stored cross-site scripting",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`sanitize_html` removes `<script>...</script>`, stray `<script>` tags, the literal `javascript:` and `data:text/html`, then truncates. Everything else is preserved by design — the moduledoc says formatting is kept so the agent sees what the customer sent. Nothing removes event-handler attributes, so `<img src=x onerror=alert(document.domain)>`, `<svg onload=...>`, `<iframe src=...>` and `<body onload=...>` pass through untouched. The output is rendered with `raw/1` at ticket_live.html.heex:12 (`raw(@ticket.body_html)`) and :18 (`raw(note.body_html)`). Separately, the removals are single-pass over the original string, so a nested construction re-forms after the inner match is deleted: `javascjavascript:ript:` contains one match, and removing it leaves `javascript:`.",
+      "impact": "Script execution in the agent console under the application origin, delivered by an inbound customer email — an unauthenticated attacker against authenticated staff. The console session is the credential for every ticket the agent can reach, and the `update_note` defect above lets the payload be planted into any organisation's notes.",
+      "recommendation": "Replace the denylist with an allowlist parser that rebuilds the document from permitted elements and attributes (`html_sanitize_ex`'s `basic_html`/`markdown_html` or an equivalent), and drop every attribute not on the list rather than searching for dangerous ones. Escaping at render time is not sufficient here because the product requirement is to keep markup.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This function is the only sanitisation, and the template calls `raw/1` on its output, which explicitly disables Phoenix's automatic escaping."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The moduledoc states the body is the HTML part of a customer email handed over by the gateway — attacker-controlled by anyone who can email the helpdesk."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is `raw/1` inside a HEEx template rendered as text/html; it is the executing form."
+        }
+      ],
+      "unaided_label": "helpdesk: sanitize_html is a 4-pattern denylist keeping all attributes, output rendered with raw/1",
+      "procedure": "WEB-13"
+    },
+    {
+      "title": "Attachment download and upload are outside the authenticated pipeline",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/router.ex",
+        "symbol": "scope \"/attachments\"",
+        "line": 37
+      },
+      "class": "missing authentication on a data route",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`scope \"/attachments\" ... pipe_through :browser` — the `:browser` pipeline ends at `load_agent`, which only assigns whatever the session yields (router.ex:60-62). The `:require_agent` pipeline that halts on a nil agent (lines 64-69) is applied to the console scope on line 24 and is absent here. Both `GET /attachments/:ticket_id/:filename` and `POST /attachments/:ticket_id` are therefore reachable with no session. The controller's own moduledoc states the opposite — 'the console pipeline already gates' it, so it 'is concerned with picking the right file rather than with who is asking' (attachment_controller.ex:5-8) — and the controller accordingly performs no ownership check: `safe_id`/`safe_name` validate the *shape* of the identifiers, never the caller's relationship to the ticket.",
+      "impact": "Download of any ticket attachment by anyone who can guess or obtain a ticket UUID, with no session — customer correspondence and whatever files customers attach. The upload route is worse: an unauthenticated caller writes arbitrary file content into any ticket's attachment directory, planting files that agents will open from what they believe is a trusted pane.",
+      "recommendation": "Add `:require_agent` to the attachments scope, then authorize the object: load the ticket through `Tickets.get_scoped(ticket_id, Policy.org_scope(agent))` and 404 when it is out of scope, for both actions. Cross-check that the console's own attachment links (ticket_live.html.heex:51) still resolve.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claimed control is the console pipeline, and the scope declaration shows it is not applied to this scope. `protect_from_forgery` in `:browser` blocks a cross-site POST but does nothing about a direct request."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`ticket_id` and `filename` are path parameters; the regexes constrain their character set, not who may name them."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Attachments to support tickets are customer-supplied content and personal data by any reading of PRV-01."
+        }
+      ],
+      "unaided_label": "helpdesk: /attachments scope pipes through :browser only, no :require_agent, no ownership check",
+      "procedure": "WEB-04"
+    },
+    {
+      "title": "A query parameter is converted to an atom, which is unbounded and never garbage-collected",
+      "location": {
+        "path": "helpdesk-live/lib/helpdesk_web/live/ticket_live.ex",
+        "symbol": "TicketLive.sort_key",
+        "line": 51
+      },
+      "class": "resource exhaustion / denial of service",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`defp sort_key(value), do: String.to_atom(value)`, called from `handle_params` on `params[\"sort\"]` (line 47) — a URL query parameter on every `:index` and `:show` navigation. The BEAM atom table is a fixed-size global table (default 1,048,576 entries) that is never reclaimed; exhausting it aborts the VM. `String.to_existing_atom/1` exists for exactly this and is not used.",
+      "impact": "An unauthenticated-to-cheap request loop over `/tickets?sort=<random>` fills the atom table and crashes the node, taking down the console for every organisation on it. Recovery requires a restart, and the attack costs one request per atom.",
+      "recommendation": "Use `String.to_existing_atom/1` inside a `rescue`, or better, match the value against the explicit list of sortable columns and fall back to `:inserted_at` — the same allowlist shape the billing service uses for its sort parameter.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`params[\"sort\"]` is the raw query string value; nothing constrains it before the conversion."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no rate limiter, WAF configuration or request cap anywhere in the tree, and no Plug in the `:browser` pipeline bounds parameter values."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consequence is a VM abort, not a degraded check, so the impact reaches every user of the node rather than being bounded to informational."
+        }
+      ],
+      "unaided_label": "helpdesk: String.to_atom on the sort query parameter",
+      "procedure": "WEB-18"
+    },
+    {
+      "title": "Kafka trace context is deserialized with `pickle.loads` on every consumed message",
+      "location": {
+        "path": "ledger-stream/common/serde.py",
+        "symbol": "decode_context",
+        "line": 27
+      },
+      "class": "insecure deserialization / remote code execution",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`def decode_context(headers): for key, value in headers or (): if key == CONTEXT_HEADER and value: return pickle.loads(value)`. `CONTEXT_HEADER` is `\"x-ctx\"`, a Kafka message header. `worker/consumer.py:51` calls `decode_context(headers)` for every message it handles, before `apply_transfer` and therefore before any policy or signature check. `pickle.loads` executes `__reduce__` on the incoming object graph, so the header content is code. Critically, the detached HMAC in `common/signing.py` covers `raw_value` — the message *value* — only: `sign(value)` at api/app.py:54 and `verify(raw_value, signature)` at worker/apply.py:42. No header, including `x-ctx`, is inside the signed bytes, so signature verification does not constrain this input even on the topics where it is required.",
+      "impact": "Arbitrary code execution in every ledger worker, reached by anyone who can produce a message to any topic matching `^ledger\\..*` or tamper with one in flight. This is the highest-impact defect in the tree: the worker holds the ledger store and the signing key.",
+      "recommendation": "Replace pickle with JSON for the trace context — it carries `{topic, org}`, which is JSON-serializable — and reject any header that fails to parse. If a binary format is required, use one that does not execute, and bring the headers inside the signed byte range so tampering is detectable.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bytes come from a Kafka message header on a wildcard subscription; nothing validates or constrains them before `pickle.loads`."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`pickle.loads` is the executing form of deserialization by design — the module documents opcode-driven object reconstruction, not parsing."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The candidate compensating control is the `x-sig` HMAC, and it is computed over `encode_value(payload)` only (api/app.py:47, 54). The header is outside the signed range, so the signature cannot rule this out."
+        }
+      ],
+      "unaided_label": "ledger: pickle.loads on the x-ctx Kafka header, outside the signed range",
+      "procedure": "WEB-11"
+    },
+    {
+      "title": "The default topic policy disables signature verification, raises the ceiling twentyfold and allows cross-org account writes",
+      "location": {
+        "path": "ledger-stream/common/topics.py",
+        "symbol": "OPEN_POLICY / policy_for",
+        "line": 21
+      },
+      "class": "fail-open default policy",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`OPEN_POLICY = TopicPolicy(require_signature=False, max_amount_cents=10_000_000, allow_account_override=True)` and `def policy_for(topic): return TOPIC_POLICY.get(topic, OPEN_POLICY)`. The three named topics all set `require_signature=True` and two of them set `allow_account_override=False`, so the default is strictly weaker than every policy actually written. The consumer subscribes by pattern — `SUBSCRIPTION_PATTERN = \"^ledger\\\\..*\"` (line 46), consumed at worker/consumer.py:67 — with the stated intent that 'a new stream does not need a deploy'. Any topic under `ledger.` that is not one of the three keys therefore lands on the relaxed profile, and `worker/apply.py:42` skips `verify()` entirely when `policy.require_signature` is false.",
+      "impact": "Producing to any new `ledger.*` topic — `ledger.transfers.v3`, `ledger.anything` — yields unsigned postings up to 100,000.00 in any currency unit, against accounts belonging to any org, applied by the worker as genuine ledger entries. The comment justifying the default ('most new streams are internal fan-out of already-validated events') is an assumption the wildcard subscription makes unenforceable.",
+      "recommendation": "Invert the default: an unknown topic gets `require_signature=True`, the lowest ceiling and `allow_account_override=False` — or is refused outright. Pair the pattern subscription with an explicit allowlist so a new stream is a deliberate act rather than an implicit grant.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`apply_transfer` is the enforcement point and it reads its constraints from this object; there is no layer that re-imposes them."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The deciding input is the topic name, which the producer chooses, and the subscription accepts anything under the `ledger.` prefix."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The relaxation is intended, but FP-05 requires a bound: the wildcard subscription is precisely what removes the bound on which topics inherit it."
+        }
+      ],
+      "unaided_label": "ledger: policy_for falls back to OPEN_POLICY with require_signature=False under a wildcard subscription",
+      "procedure": "WEB-23"
+    },
+    {
+      "title": "The consumer's org identity — the input to the admin gate and the cross-org check — is an unsigned Kafka header",
+      "location": {
+        "path": "ledger-stream/worker/consumer.py",
+        "symbol": "handle_message",
+        "line": 41
+      },
+      "class": "authorization decision on an unauthenticated input",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "`org_id = header_value(headers, \"x-org\")` (line 41) is the sole source of caller identity, and it drives two decisions: `if is_admin_topic(topic) and org_id not in PLATFORM_ORGS` (line 43), and `consumer_org=org_id` passed to `apply_transfer` (line 60), where it is compared against the account's owning org (worker/apply.py:51) and used as the fallback `org_id` written onto the entry (line 61). `x-org` is a plain header set by the producer (api/app.py:55) and is outside the `x-sig` HMAC, which covers `encode_value(payload)` only.",
+      "impact": "Anyone who can produce to the ledger topics both bypasses the platform-org restriction on `ledger.admin.*` — where the ceiling is 1,000,000.00 and `allow_account_override=True` — and defeats the cross-org account check by naming the victim's org. The comment on line 23 ('Only the platform's own producers may write to the operator streams') describes an intent that the header cannot carry.",
+      "recommendation": "Bind the org to the signature: sign a canonical envelope that includes the org and the topic, and verify it before any use of `org_id`. Failing that, take the identity from the broker's authenticated principal (SASL/mTLS) via ACLs on the admin topics rather than from message content.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HMAC is the only integrity control and it does not cover headers; `verify(raw_value, signature)` at apply.py:42 takes the value bytes alone."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`header_value` decodes the raw header bytes with no validation (serde.py:31-35)."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "Broker-side ACLs restricting who may produce to `ledger.admin.*` would bound this, but no broker configuration is in scope; per FP-08 that cannot be credited, so the finding ships as probable."
+        }
+      ],
+      "unaided_label": "ledger: x-org header decides the admin gate and the cross-org check, outside the signature",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "The DLQ replay path applies messages with signature verification explicitly disabled and a caller-named policy",
+      "location": {
+        "path": "ledger-stream/worker/retry.py",
+        "symbol": "replay_one",
+        "line": 55
+      },
+      "class": "verification bypass on a second consumer path",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`apply_transfer(..., signature=header_value(headers, \"x-sig\"), consumer_org=header_value(headers, \"x-org\"), verify_signature=False)`. The flag short-circuits the check at apply.py:42 regardless of the topic policy. Worse, the policy itself is chosen by an attacker-supplied header: `original_topic = header_value(headers, \"x-original-topic\") or DLQ_TOPIC` (line 38) is passed to `policy_for` (line 50), so a message can name `ledger.admin.adjustments.v1` and inherit `max_amount_cents=100_000_000` with `allow_account_override=True`. The replay path also omits the `is_admin_topic`/`PLATFORM_ORGS` gate that consumer.py:43 applies. The header comment justifies it — the messages 'were already accepted by the intake service and checked by the main consumer before being parked' — but `DLQ_TOPIC = \"ledger.dlq.v1\"` is an ordinary topic under the same `ledger.` namespace, so nothing establishes that a message found there came from the main consumer.",
+      "impact": "One unsigned message produced directly to `ledger.dlq.v1`, with `x-original-topic: ledger.admin.adjustments.v1` and `x-org` set to the victim, posts a ledger entry of up to 1,000,000.00 against any account in any org. Every control in the system — signature, topic ceiling, cross-org check, platform-org gate — is bypassed on this one path.",
+      "recommendation": "Delete the `verify_signature=False` argument and verify on replay like everywhere else; derive the original topic from a signed field rather than a header; and apply the same admin-topic gate the main consumer applies. If the DLQ must hold pre-verified messages, re-sign them when parking them.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claimed compensating control is the earlier check in the main consumer, and nothing establishes that a message on this topic passed through it — the DLQ is a topic anyone who can reach the cluster can produce to."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`verify_signature=False` has one meaning at apply.py:42: the `and` short-circuits and `verify()` is never called."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`retry.run()` is a shipped entry point with its own consumer group (`ledger-retry`), not a test harness."
+        }
+      ],
+      "unaided_label": "ledger: retry.py passes verify_signature=False and picks the policy from the x-original-topic header",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "A client-chosen idempotency key becomes the primary key of an `INSERT OR REPLACE`, overwriting existing ledger entries",
+      "location": {
+        "path": "ledger-stream/worker/apply.py",
+        "symbol": "apply_transfer",
+        "line": 59
+      },
+      "class": "business-logic abuse / integrity violation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`id=str(payload.get(\"idempotency_key\") or uuid.uuid4())` sets the entry id from the request body — `TransferRequest.idempotency_key` is `Optional[str]` with only `max_length=64` and no format constraint (api/schemas.py:24). `store.post_entry` then issues `INSERT OR REPLACE INTO entries VALUES (...)` against a table whose `id` is `TEXT PRIMARY KEY` (common/store.py:9, 65). A colliding id therefore replaces the existing row — different account, different org, different amount — instead of being rejected as a duplicate. The daily ceiling is evaded by the same mechanism: `posted_today` sums existing rows (line 55), and replacing a row rather than adding one leaves the sum unchanged.",
+      "impact": "A client that knows or guesses an entry id rewrites that ledger entry: reassigning its account, its org and its amount, or erasing a posting by replacing it with a trivial one. In a ledger, silent replacement of a posted entry is the integrity failure the system exists to prevent, and the daily-limit bypass follows from it.",
+      "recommendation": "Give idempotency its own column with a uniqueness constraint scoped to the org, keep the primary key server-generated, and use `INSERT` (failing on conflict) rather than `INSERT OR REPLACE` — returning the existing entry when the idempotency key repeats, which is what idempotency means.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No layer detects the collision: `post_entry` documents that 'callers are expected to have run the policy checks' and `apply_transfer` performs no existence check before writing."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`idempotency_key` is a client body field; pydantic bounds its length and nothing else."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The affected records are financial ledger entries carrying account, org and amount."
+        }
+      ],
+      "unaided_label": "ledger: idempotency_key becomes the PK under INSERT OR REPLACE",
+      "procedure": "WEB-17"
+    },
+    {
+      "title": "The HMAC signing key falls back to a hardcoded default when the environment variable is unset",
+      "location": {
+        "path": "ledger-stream/common/signing.py",
+        "symbol": "SIGNING_KEY / DEFAULT_SIGNING_KEY",
+        "line": 8
+      },
+      "class": "hardcoded cryptographic key",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "`DEFAULT_SIGNING_KEY = \"ledger-stream-dev-signing-key\"` and `SIGNING_KEY = os.environ.get(\"LEDGER_SIGNING_KEY\", DEFAULT_SIGNING_KEY)`. A missing or misspelled variable produces a running, silently-insecure system rather than a failure: `sign` and `verify` both use it, so every signature validates against a key that is in the source tree. The comment ('Overridden per environment by the deploy manifest') states the intent; nothing asserts it. Contrast mesh-gateway/docker-compose.yml:35, which uses `${SESSION_SIGNING_KEY:?set SESSION_SIGNING_KEY in .env}` and refuses to start without the value.",
+      "impact": "If any environment starts without the variable, message signatures are forgeable by anyone with the repository — which defeats `require_signature=True` on the transfer, hold and admin topics, the one control those topics rely on.",
+      "recommendation": "Fail closed: `SIGNING_KEY = os.environ[\"LEDGER_SIGNING_KEY\"]`, so a misconfigured deployment cannot start. Remove the default string from the source entirely.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is a usable key material string, not a `${VAR}` placeholder or a `changeme` marker — `hmac.new` consumes it directly."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The fallback is in the module body and executes on import in every environment, not behind a debug flag."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "A deploy manifest that always sets the variable would bound this to a dev-only path. No manifest is in scope, and per FP-08 an unevidenced external control cannot be credited — but the finding is that the code cannot tell the difference, which stands regardless."
+        }
+      ],
+      "unaided_label": "ledger: DEFAULT_SIGNING_KEY hardcoded fallback",
+      "procedure": "WEB-19"
+    },
+    {
+      "title": "The intake service reads a caller org that no middleware in the application sets",
+      "location": {
+        "path": "ledger-stream/api/app.py",
+        "symbol": "build_app / _org_of",
+        "line": 100
+      },
+      "class": "missing authentication",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "`build_app()` creates the application, attaches a Kafka producer and calls `app.add_routes(routes)` — it registers no middleware. `_org_of` returns `request[\"org_id\"]` with the docstring 'Resolved by the auth middleware from the verified workspace token', and the module docstring says 'Clients authenticate with a workspace JWT'. No code in this tree verifies a token, populates `request[\"org_id\"]`, or references `aiohttp.web.middleware`. The value it produces is what stamps `payload[\"org_id\"]` and the `x-org` header on every published message (lines 70-71, 84-86), i.e. it is the tenancy of the whole pipeline.",
+      "impact": "As composed here the endpoints either serve unauthenticated callers or fail with a KeyError; either way the workspace boundary the downstream consumer relies on is not established anywhere in scope. Given the consumer treats `x-org` as authoritative, an intake with no authentication makes the org claim attacker-chosen end to end.",
+      "recommendation": "Register the authentication middleware in `build_app` — verifying the workspace JWT against the JWKS the docstring names and setting `request[\"org_id\"]` from a verified claim — and add a startup assertion that the middleware chain is non-empty.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "The middleware may be installed by a deployment wrapper or a factory outside the files provided. FP-08 forbids treating that as HOLDS without the artifact, and per the triage contract this UNKNOWN caps the finding at probable."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Within scope there is no mandatory layer: `build_app` is the composition root shown and it wires only routes and the producer."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`build_app` is the shipped factory, not a test fixture; the routes it registers are the production endpoints."
+        }
+      ],
+      "unaided_label": "ledger: build_app registers no auth middleware though _org_of depends on one",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "The reconciliation backfill lets the CSV override the org and writes rows past every ledger policy check",
+      "location": {
+        "path": "ledger-stream/admin/backfill.py",
+        "symbol": "rows_from / load",
+        "line": 40
+      },
+      "class": "unvalidated second writer to the ledger",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`record.get(\"org_id\") or org_id` (line 40) prefers a column in the file over the `--org` argument the operator supplied, and `int(record[\"amount_cents\"])` (line 42) accepts negatives and any magnitude. The rows go to `LedgerStore.append_raw`, which is `executemany(\"INSERT OR REPLACE INTO entries VALUES (...)\")` (common/store.py:69-76) — no signature check, no topic ceiling, no `DAILY_ACCOUNT_LIMIT_CENTS`, no cross-org check, and `INSERT OR REPLACE` so a row whose `entry_id` matches an existing entry silently replaces it. Every one of those controls exists on the other writer, `apply_transfer` -> `post_entry`.",
+      "impact": "A malicious or tampered settlement export writes and overwrites entries in any org, in any amount, including negative amounts the transfer path rejects outright (`amount <= 0` at apply.py:46). The path-containment check on line 29 is sound, so the file cannot come from outside the drop directory — but the content of a file inside it is trusted completely.",
+      "recommendation": "Pin `org_id` to the `--org` argument and ignore the column; validate direction, sign and magnitude with the same predicates `apply_transfer` uses; and use `INSERT` with an explicit conflict policy so a backfill can never overwrite a posted entry.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`append_raw` documents itself as the bulk loader and applies no checks; the policy logic lives in `apply_transfer`, which this path does not call."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The values come from a CSV produced by an external party (the settlement bank), which is outside the operator's control even though the directory is."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The rows carry `org_id`, so a single import crosses the tenancy boundary the rest of the system enforces."
+        }
+      ],
+      "unaided_label": "ledger: backfill lets the CSV set org_id and bypasses every apply_transfer check via append_raw",
+      "procedure": "WEB-25"
+    },
+    {
+      "title": "The cross-org account check is skipped whenever the account has no prior entry",
+      "location": {
+        "path": "ledger-stream/worker/apply.py",
+        "symbol": "apply_transfer",
+        "line": 51
+      },
+      "class": "fail-open authorization check",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "`owning_org = store.account_org(account_id)` then `if not policy.allow_account_override and owning_org and owning_org != consumer_org: raise PolicyRejected(...)`. `account_org` returns `\"\"` when no row exists for the account (common/store.py:52), and the empty string makes the conjunction false, so the check passes. The entry is then written with `org_id=str(payload.get(\"org_id\") or consumer_org)` (line 61) — the first posting *defines* the account's owning org, and it is taken from the message.",
+      "impact": "A producer claims any not-yet-seen account id for its own org by posting to it first, and every later check for that account then compares against the org the attacker established. The ownership record is built from the same unauthenticated input it is meant to constrain.",
+      "recommendation": "Resolve account ownership from an accounts table populated at account creation rather than inferring it from the first ledger entry, and reject a posting to an account with no ownership record instead of accepting it.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This conjunction is the only cross-org control on the apply path; nothing else compares the account to the caller."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`account_id` and `org_id` both come from the message payload, and `consumer_org` from the `x-org` header."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The `owning_org and` clause reads as a null-guard, and that is exactly what makes it fail open — there is no reading in which an unknown account is a safe one to accept."
+        }
+      ],
+      "unaided_label": "ledger: `owning_org and` makes the cross-org check pass for unknown accounts",
+      "procedure": "WEB-04"
+    },
+    {
+      "title": "Attacker-controlled Kafka headers are written into line-oriented logs without neutralisation",
+      "location": {
+        "path": "ledger-stream/worker/consumer.py",
+        "symbol": "handle_message",
+        "line": 44
+      },
+      "class": "log injection",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "`LOG.warning(\"dropping %s from non-platform org %s\", topic, org_id)` — `org_id` is `header_value(headers, \"x-org\")`, decoded from the raw header bytes with `errors=\"replace\"` (common/serde.py:34) and never escaped. The mechanical enumeration flags eight such calls; the ones whose argument an outside party controls are this line, `retry.py:41` (`original_topic`, from the `x-original-topic` header) and `consumer.py:52` (`ctx.get(\"trace_id\")`, from the pickled context). The loggers are stdlib `logging` with the default line-oriented formatter, so a `\\r\\n` in the value ends the record and begins a new one.",
+      "impact": "Forged records in the ledger's audit trail: an attacker who can produce a message writes lines that read as a different topic, a different org or a successful application, defeating exactly the alerting the drop-warning exists to feed. Where the log is rendered in a viewer, the same value reaches the page.",
+      "recommendation": "Escape control characters at the boundary (`value.encode(\"unicode_escape\")` or a `%r` conversion) or move to a structured JSON handler whose consumer parses JSON — both halves are required, per the procedure's own triage.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`x-org` is a producer-set Kafka header; `header_value` applies no allowlist and no pattern."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The handler is the stdlib default, which emits one text line per record and re-parses nothing — a newline in the value produces a second record."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "There is no evidence in scope of a log viewer that renders these lines as markup, so the impact is bounded to accountability loss rather than execution. Severity is set to low on that basis; the finding is not deleted."
+        }
+      ],
+      "unaided_label": "ledger: LOG.warning interpolates the raw x-org header",
+      "procedure": "WEB-28",
+      "from_tool": "log_escaper.py"
+    },
+    {
+      "title": "Command injection: the diagnostic probe interpolates a query parameter into `sh -c`",
+      "location": {
+        "path": "mesh-gateway/service/diag.go",
+        "symbol": "server.handleDiag",
+        "line": 24
+      },
+      "class": "OS command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`out, err := exec.CommandContext(ctx, \"sh\", \"-c\", \"ping -c 1 -W 2 \"+host).CombinedOutput()` where `host := r.URL.Query().Get(\"host\")` — the only check is that it is non-empty (line 16). Because the command runs through a shell, `?host=x;id` or `?host=$(...)` executes as the service account, and `CombinedOutput` is returned to the caller in the JSON response (line 28), so the result is read back directly.",
+      "impact": "Arbitrary command execution inside the object service container, with the output returned to the caller — a full interactive foothold. From there the object root, the tenant data volume and the mesh network are reachable.",
+      "recommendation": "Do not use a shell: `exec.CommandContext(ctx, \"ping\", \"-c\", \"1\", \"-W\", \"2\", host)` passes the argument as one argv element. Validate `host` against `net.ParseIP` or a hostname pattern first, and do not return raw command output to the caller.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`host` is read straight from the query string with no validation beyond a non-empty test."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No handler-level control exists: `handleDiag` calls neither `requireRole` nor `principalFrom`, unlike `handleObject` which calls `requireRole` on both methods."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`mux.HandleFunc(\"/internal/diag\", srv.handleDiag)` in main.go:120 is unconditional — there is no build tag or environment flag around it."
+        }
+      ],
+      "unaided_label": "mesh: exec.Command(\"sh\",\"-c\", ...+host) in handleDiag",
+      "procedure": "WEB-08"
+    },
+    {
+      "title": "The partner virtual host disables the session check and does not strip the identity headers the backend trusts",
+      "location": {
+        "path": "mesh-gateway/envoy/envoy.yaml",
+        "symbol": "partner_vh",
+        "line": 73
+      },
+      "class": "identity spoofing / authentication bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`public_vh` removes the three identity headers before routing (`request_headers_to_remove: x-fleet-user, x-fleet-roles, x-fleet-tenant`, lines 63-66) with the comment 'Identity is stamped by sessiond, never by the client'. `partner_vh` (lines 73-86) has no `request_headers_to_remove` block and additionally sets `ExtAuthzPerRoute { disabled: true }`, then routes `/v1/` to the same `object_service` cluster. The backend derives the whole principal from those headers: `principalFrom` reads `X-Fleet-User`, `X-Fleet-Roles` and `X-Fleet-Tenant` off the request (service/auth.go:22-37), and `HasRole` returns true for any principal holding the literal role `admin` (line 41).",
+      "impact": "A request to `partners.example.com` carrying `X-Fleet-User: x`, `X-Fleet-Tenant: <victim>` and `X-Fleet-Roles: admin` is accepted as that tenant with universal authority — reading and overwriting any tenant's objects through `/v1/objects/`. The mTLS identity the comment relies on is never converted into the headers the backend actually reads, so disabling ext_authz removes the only thing that set them.",
+      "recommendation": "Add the same `request_headers_to_remove` list to `partner_vh` (and to every virtual host, or at the listener level so it cannot be forgotten), and map the partner's client-certificate identity into those headers explicitly — with a filter, not by trusting the client. Treat header-stripping as a listener-wide invariant rather than a per-virtual-host option.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The header strip is the control and it is scoped to one virtual host; the RBAC filter above only covers `/internal/` and `/admin/` paths, not `/v1/`, and ext_authz is explicitly disabled on this route."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The headers arrive on the client request and, with no removal rule, are forwarded verbatim to the upstream."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`typed_per_filter_config ... disabled: true` on a virtual host disables that filter for the whole host; there is no route in `partner_vh` that re-enables it."
+        }
+      ],
+      "unaided_label": "mesh: partner_vh disables ext_authz and does not strip x-fleet-* which auth.go trusts",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "The object service publishes its port on the host, so every control in the Envoy edge can be walked around",
+      "location": {
+        "path": "mesh-gateway/docker-compose.yml",
+        "symbol": "services.objects.ports",
+        "line": 26
+      },
+      "class": "control bypassed by an alternative network path",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The `objects` service declares `ports: - \"8081:8081\"`, binding the container port to the host interface. Everything the edge enforces — the RBAC filter denying `/internal/` and `/admin/` from outside `10.20.0.0/16`, the ext_authz call to sessiond, and the `x-fleet-*` header strip — lives in the Envoy listener on 8080. A caller reaching `host:8081` speaks to the Go service directly, and the Go service performs no authentication of its own beyond reading the headers the edge was supposed to control. Note the contrast within the same file: `sessiond` publishes no ports and is reachable only on the mesh network.",
+      "impact": "Direct, unmediated access to the object service: forged `X-Fleet-*` identity on `/v1/objects/`, the unauthenticated `/admin` operator surface, and `/internal/diag` with its command injection. The entire security design of this service is 'the edge does it', and this line removes the edge.",
+      "recommendation": "Delete the host port mapping and let the service be reachable only on the `mesh` network, as `sessiond` already is. If direct access is needed for debugging, bind it to `127.0.0.1:8081:8081` and document it as a development-only override in a separate compose file.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A published port could be an intended bounded exposure, but nothing bounds it: the mapping has no interface prefix, so Docker binds 0.0.0.0, and the service behind it has no authentication of its own."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The compensating controls are all in envoy.yaml, and this path does not traverse Envoy."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the only compose file in scope and it carries the production-shaped configuration, including the mandatory `SESSION_SIGNING_KEY`."
+        }
+      ],
+      "unaided_label": "mesh: objects publishes 8081:8081, bypassing the Envoy edge entirely",
+      "procedure": "WEB-05"
+    },
+    {
+      "title": "The operator and diagnostic handlers perform no authorization, unlike the object handler in the same mux",
+      "location": {
+        "path": "mesh-gateway/service/main.go",
+        "symbol": "main (mux registration)",
+        "line": 118
+      },
+      "class": "missing function-level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`handleObject` calls `requireRole(w, r, \"reader\")` on GET and `requireRole(w, r, \"writer\")` on PUT (main.go:58, 76). The four handlers registered beside it — `/admin` (handleAdmin), `/internal/stats`, `/internal/diag`, `/internal/resolve` — call neither `requireRole` nor `principalFrom`; a `grep` for either symbol in admin.go and diag.go returns nothing. `handleAdmin` is the more consequential: a GET returns `store.Snapshot()`, the metadata of every object of every tenant (admin.go:47-55); `action: \"usage\"` lists objects for any `req.Tenant` the body names (line 41); `action: \"restore\"` writes arbitrary objects; `action: \"purge-cache\"` flushes the cache.",
+      "impact": "Anyone who reaches the service — via the published host port above, or via the `/admin` path the RBAC prefix does not cover — enumerates and rewrites every tenant's objects with no credential. The service's defence is entirely network-shaped, and both network assumptions are broken elsewhere in this same tree.",
+      "recommendation": "Call `requireRole(w, r, \"admin\")` at the top of `handleAdmin`, and gate the `/internal/*` handlers the same way. Application-layer authorization should be present regardless of the edge, since the edge is a separate artifact that can be misconfigured — as it is here.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claimed compensating layer is the Envoy RBAC filter, and it is defeated two ways in this same tree: the published host port bypasses Envoy entirely, and the `/admin/` prefix does not match the `/admin` path the mux registers."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The second principal is another tenant: `Snapshot` and `usage` return objects across the `Tenant` field that `List` otherwise filters on."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Nothing declares the operator surface as intentionally open; the comment at admin.go:19 calls it 'the whole operator surface', which is an argument for gating it."
+        }
+      ],
+      "unaided_label": "mesh: /admin and /internal/* handlers never call requireRole",
+      "procedure": "WEB-24"
+    },
+    {
+      "title": "The Envoy RBAC rule denies `/admin/` while the service registers `/admin`, so the operator path is not covered",
+      "location": {
+        "path": "mesh-gateway/envoy/envoy.yaml",
+        "symbol": "rbac.rules.policies.operator-surface",
+        "line": 28
+      },
+      "class": "guard whose path does not match the route it protects",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The DENY policy's permissions are `url_path: { path: { prefix: \"/internal/\" } }` and `url_path: { path: { prefix: \"/admin/\" } }`, with the comment 'Operator surface: reachable only from the mesh subnet'. The Go mux registers `mux.HandleFunc(\"/admin\", srv.handleAdmin)` (main.go:118) — a pattern without a trailing slash, which in `net/http.ServeMux` matches that exact path and nothing else. `/admin` does not carry the `/admin/` prefix, so the rule never matches the only URL the handler answers on, while `/admin/anything` matches the rule and 404s at the backend. `public_vh` routes prefix `/` to `object_service`, so `POST https://api.example.com/admin` reaches `handleAdmin`. The `/internal/` entry, by contrast, does match its routes (`/internal/stats`, `/internal/diag`, `/internal/resolve`) — the defect is in one of the two prefixes, which is why reading either file alone does not show it.",
+      "impact": "The operator surface the mesh-subnet restriction exists to protect is reachable from the public virtual host: a snapshot of every tenant's object metadata on GET, and `restore`/`purge-cache`/`usage` on POST, none of which the backend authorizes either.",
+      "recommendation": "Change the permission to `prefix: \"/admin\"` (or add an exact-path rule for `/admin`), and add a test that asserts a request to `/admin` from outside the subnet is denied. More durably: derive the deny list from the route table rather than restating it, so a path can never be registered without a matching rule.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ext_authz filter runs on `public_vh`, but it resolves a session identity and returns identity headers; nothing in the configuration makes it deny an unauthenticated request to `/admin`, and the backend handler performs no authorization at all."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Envoy's `path.prefix` is a literal string prefix match; `/admin` does not start with `/admin/`, and Go's `ServeMux` treats a pattern without a trailing slash as an exact match. Both semantics are unambiguous."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both the rule and the route registration are in the shipped artifacts, mounted read-only into the container at docker-compose.yml:8."
+        }
+      ],
+      "unaided_label": "mesh: RBAC denies prefix /admin/ but the mux serves exact path /admin",
+      "procedure": "WEB-23"
+    },
+    {
+      "title": "The snapshot restore writer skips the tenant-ownership and quota checks its sibling enforces",
+      "location": {
+        "path": "mesh-gateway/service/store.go",
+        "symbol": "Store.putRaw",
+        "line": 78
+      },
+      "class": "unvalidated second writer",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Two functions write an object. `Put` refuses to overwrite another tenant's key (`if existing, ok := s.meta[meta.Key]; ok && existing.Tenant != meta.Tenant { return errNotOwner }`, line 56) and enforces the quota (line 59), then recomputes `Size` and `Checksum` from the body it was given. `putRaw` calls `writeBlob` immediately and then credits `s.usage[meta.Tenant]` — no ownership check, no quota check, and `meta` (including `Tenant`, `Owner`, `Size` and `Checksum`) is taken from the caller verbatim. Its only caller is `restoreSnapshot`, which iterates `req.Objects` from the JSON request body (admin.go:60-61), so `ObjectMeta` is entirely request-controlled.",
+      "impact": "One POST to `/admin` with `action: \"restore\"` overwrites any object of any tenant, sets a false checksum on it (the value `handleObject` returns to readers as `X-Object-Checksum`), and writes past the tenant quota. Combined with the missing authorization on `/admin`, this is unauthenticated cross-tenant object replacement.",
+      "recommendation": "Have `restoreSnapshot` call `Put`, or move the ownership and quota invariants inside `writeBlob` so no writer can reach the disk around them. Recompute `Size` and `Checksum` from the body on every path rather than accepting them from the caller.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The invariants live in `Put`, and `putRaw` is a sibling that reaches the same `writeBlob` without them; `handleAdmin` adds no check of its own."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`adminEntry.Meta` is decoded straight from the request body (admin.go:14-17, 29), so `Tenant`, `Key` and `Checksum` are attacker-chosen."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The comment says the metadata 'comes from a previous export of this same store', but nothing establishes that provenance — the bytes arrive in an HTTP request body."
+        }
+      ],
+      "unaided_label": "mesh: putRaw skips the errNotOwner and quota checks that Put enforces",
+      "procedure": "WEB-25"
+    },
+    {
+      "title": "The response cache is keyed on the URL path alone, so one tenant's objects and listings are served to another",
+      "location": {
+        "path": "mesh-gateway/service/cache.go",
+        "symbol": "withCache",
+        "line": 81
+      },
+      "class": "cross-tenant data exposure through a shared cache",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "`key := r.URL.Path`, and the cache is consulted before `next.ServeHTTP` (lines 81-92), so a hit returns the stored body without the handler — and therefore without `requireRole` — ever running. The responses being cached are per-principal: `handleObject` returns `s.store.List(p.Tenant)` for the collection path and a tenant-checked body for an object path, where `p.Tenant` comes from the request headers, not from the URL. `withCache` wraps the whole mux (main.go:125), so `/admin` GET — the full cross-tenant metadata snapshot — is cached under that key too. Nothing sets `Vary`, and the stored header set is copied verbatim to the next caller.",
+      "impact": "Two defects in one line. Cross-tenant disclosure: tenant A reads `/v1/objects/report.pdf`, tenant B requests the same path within the 20-second TTL and receives A's bytes. And authorization bypass: an anonymous request to a cached path is served from memory before `requireRole` can reject it, since the hit branch returns first.",
+      "recommendation": "Include the identity in the key — `p.Tenant + \"\\x00\" + r.URL.Path` — and resolve the principal before the cache lookup so an unauthenticated request can never be answered from it. Do not cache `/admin` or `/internal/*` at all; restrict `withCache` to the object routes rather than wrapping the mux.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "`requireRole` is the control and the cache-hit branch returns before `next.ServeHTTP` is called, so the control is on the path that the hit skips."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The cached payloads are tenant object bodies and the cross-tenant metadata snapshot, not public content."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The boundary is the tenant: `Store.List` filters on `meta.Tenant` and `handleObject` compares `meta.Tenant != p.Tenant`, so the code treats a differing tenant as a second principal."
+        }
+      ],
+      "unaided_label": "mesh: withCache keys on r.URL.Path with no tenant, and serves hits before requireRole",
+      "procedure": "WEB-16"
+    }
+  ]
+}

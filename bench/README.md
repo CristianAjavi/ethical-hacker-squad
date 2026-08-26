@@ -86,6 +86,20 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The tools did not carry the round
+
+[2026-08-26, four tools](runs/2026-08-26-four-tools/) — **not supported**, seventh round, same
+failing half: **78.3% recall against 72.4%** (+5.9) and **3.00 decoys against 2.00**.
+
+The registered secondary answered the opposite of what was expected. This project leads on the
+mechanisms its tools address (+8.3) **and on the 29 defects no tool addresses (+5.2)**. And
+`from_tool`, required on every finding this round, counts **8 of 189** findings as coming from a
+tool: `path_coverage.py` and `writer_parity.py` contributed **zero**.
+
+That reverses what this repository was saying earlier the same day. The tools were fitted to the
+corpus they were built against, and on six stacks they had never seen, two of four were silent.
+**Overfitting, invisible until a corpus was commissioned that they could not dominate.**
+
 ## The join moves composition detection by a third of what was asked
 
 [2026-08-26, join effect](runs/2026-08-26-join-effect/) — **not supported.** With
