@@ -65,6 +65,14 @@ d=json.loads(p.read_text())
 d["properties"]["findings"]["items"]["properties"]["cvss_vector"]={"type":"string"}
 p.write_text(json.dumps(d,indent=2))'
 
+# The lane field exists because a lead twice wrote findings for a specialist that
+# never returned. Undocumenting it must go red, or the row in findings-artifact.md
+# is a line nobody could break on purpose.
+case_run lanes-field-undocumented 1 "engagement.lanes" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings-artifact.md"
+p.write_text(p.read_text().replace("`engagement.lanes`","`engagement_lanes_typo`"))'
+
 case_run field-documented-at-the-wrong-level 1 "does not explain it at that level" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings-artifact.md"

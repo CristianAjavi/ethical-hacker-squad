@@ -77,6 +77,8 @@ Build a short matrix: component, technology, attack surface, trust boundary, ass
 
 Staff two to four relevant specialists. Do not spend an agent on an absent domain: no `ehs-mobile` without a mobile artifact, no `ehs-ai-safety` without an LLM call. Run them in parallel when their files and tests do not collide. Reserve capacity for `ehs-remediator` and `ehs-verifier` in `harden` mode.
 
+**A lane whose specialist did not return was NOT RUN.** Declare it undone or audit it yourself; never write its findings as if reported. Record every lane in `engagement.lanes`.
+
 ### 4. Record what you found unaided
 
 Before a pack is opened, each specialist writes down what it would report with no corpus at all: `engagement.unaided_pass.candidates`. Each ends as a finding carrying its `unaided_label`, or in `dropped` with the reason your second reading overturned your first. **"No procedure covers it" is refused** — that is `procedure: ad-hoc`.
@@ -108,7 +110,7 @@ The verifier works from the finding and the diff, never from the fixer's conclus
 
 Every `confirmed` and `probable` finding goes to `ehs-verifier` under `VER-09`, in a fresh context that receives **the assertion and its location and not the finder's narrative**. Survivors ship; casualties go to `ruled_out` naming the line that killed them.
 
-The blindness is the whole mechanism, and it is measured. A version that handed the critic the entire finding cut ground-truth recall from 4/6 to 3/6 while posting the best precision in the bench — it was killing true defects. Blind to the prose, on the same target and model: **6/6 recall, nothing refuted by two adversarial passes.**
+The blindness is the whole mechanism, and it is measured; `references/team.md` carries the numbers and what a non-blind critic cost.
 
 ### 9. Deliver the report
 
