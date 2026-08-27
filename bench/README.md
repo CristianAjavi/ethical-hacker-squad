@@ -86,21 +86,26 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
-## Both products as they ship, and a round its own author spoiled
+## Both products as they ship, and the curve did not move
 
-[2026-08-26, as designed](runs/2026-08-26-as-designed/) — **not scored, and it says so.** The first
-round to launch each arm at its own entry point with no architectural constraint. It did not reach
-its registered floor of three valid runs per arm: three `ours` reports and one `mantis`, the rest
-lost to session limits and login failures.
+[2026-08-26, as designed](runs/2026-08-26-as-designed/) — **not supported.** The first round to
+launch each arm at its own entry point with no architectural constraint. Recall condition **met**
+by the widest stable margin yet — **+9.3 points**, ahead at every window — and the decoy condition
+failed by the largest: **10.00 against 3.67**.
 
-The cause is the harness author's, not either product's: **eight arms were launched in parallel,
-each designed to fan out six to thirteen ways** — fifty to a hundred sub-agents against a cap of
-twenty. So `mantis` ran with **zero** sub-agents despite the constraint being lifted, and one
-`ours` arm had five of six specialists refused. The pre-registration said a fallback would be
-recorded rather than corrected; it is recorded, and the round is not scored on top of it.
+The registered secondary is the reason it was worth running. **Findings scale with how much of the
+squad formed; recall does not** — 137/85/53 findings for 7/3/1 own contexts is monotone, 88.9%/61.1%/66.7%
+recall is not, and only the fully-formed squad stands out on one run. Meanwhile **`mantis`'s numbers
+barely move with its own fan-out** (zero sub-agents: 63.9%; six: 58.3%), which measures what the
+[inline correction](runs/CORRECTION-inline-constraint.md) could only fear: for that arm the
+constraint cost close to nothing.
 
-One thing was measured, within the `ours` arm, and it is the first evidence of what the
-architecture buys: **7 specialists in their own contexts → 137 findings; 3 of 7 → 85; one → 53.**
+What the squad buys is **volume** — 91.7 findings per run against 44.7, at 1.8× the wall time and
+2.7× the decoys. Movement along the curve this ledger has documented since round three, not off it.
+
+A first attempt is published as spoiled: eight arms in parallel, each fanning out six to thirteen
+ways against a cap of twenty, so neither product could run as designed. The cause was the harness
+author's design and it is written on the page.
 
 ## The precision half, met at last, and the recall half lost in the same breath
 

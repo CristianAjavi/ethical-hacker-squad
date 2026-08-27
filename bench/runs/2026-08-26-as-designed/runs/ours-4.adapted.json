@@ -1,0 +1,2331 @@
+{
+  "provenance": {
+    "corpus": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-design/ours",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v9",
+    "arm": "ours",
+    "run": 4,
+    "architecture": {
+      "sub_agents_spawned": 1,
+      "specialists_or_stages": [
+        "leader-inventory",
+        "ehs-web-api",
+        "ehs-mobile",
+        "ehs-infra-cloud",
+        "ehs-ai-safety",
+        "ehs-privacy-abuse",
+        "ehs-supply-chain",
+        "VER-09-blind-pass"
+      ],
+      "ran_in_separate_context": [
+        "ehs-web-api"
+      ],
+      "fell_back_and_why": "Followed SKILL.md from step 1. Inventory produced a six-component matrix and staffed six specialists, dispatched in ONE message so they would run in parallel per SKILL.md section 3 and team.md. The harness accepted only the FIRST (ehs-web-api, scoped to fieldops-api + settlement-worker) and rejected the other five with 'Concurrent subagent limit reached. You can run 20 subagents at once. Do not retry.' - the pool was saturated by agents outside this session, so only one slot was ever free. A single re-probe for ehs-mobile alone was also refused. The plugin subagent types (ehs-*) are not registered in this harness either, so team.md's documented fallback path was used: a general-purpose sub-agent instructed to read agents/ehs-web-api.md and follow it verbatim, with ${CLAUDE_PLUGIN_ROOT} substituted. Rather than silently dropping five of six components, the leader ran the remaining five specialist roles IN ITS OWN CONTEXT (mobile, infra-cloud, ai-safety, privacy-abuse, supply-chain), reading each role's pack sections that the inventory justified (mobile.md, mobile-runtime-trust.md section 7, infra-cloud.md, ai-safety.md sections 0-3, ai-safety-data-output.md index, privacy-abuse.md sections 1-3, plus the SUP/INF procedure indexes) and triage.md before writing any finding. Consequence to declare honestly: those five roles did NOT get an independent context, so they lack the context-isolation the skill relies on, and their VER-09 pass was self-administered rather than blind. The one component pair that DID get a separate context (fieldops-api, settlement-worker) is the only part of this report where the blind-critic property of section 8 genuinely holds. One cross-context integration was performed by the leader and is the clearest argument for the architecture: the sub-agent capped its proxy-header authentication bypass at 'probable' because the load-balancer configuration was outside its assigned scope; the leader, holding pulumi-platform, found edge.ts:35 dropInvalidHeaderFields:false with a comment stating the x-fieldops-* headers are deliberately forwarded untouched, which settles FP-08 and promotes that finding to confirmed."
+    },
+    "cost": {
+      "tool_calls": 38,
+      "wall_minutes": 78
+    },
+    "ruled_out": [
+      {
+        "assertion": "new Function() compiles an attacker-supplied 'template' query parameter into server-side code (RCE) in the printable work-order sheet",
+        "location": "fieldops-api/src/routes/workorders.ts:186",
+        "rule": "FP-11",
+        "killed_by": "workorders.ts:168 - printQuery is z.object({format}).strict(); @hono/zod-validator builds the validated object from the WHOLE query record, so an unrecognised 'template' key raises unrecognized_keys and returns 400 before the handler body runs. Retained in findings as 'probable' rather than deleted, because the shipped node_modules is absent from the tree and the framework behaviour could not be executed - per triage.md invariant 1 an UNKNOWN may not ship as confirmed, and per team.md a dismissal needs a control the reader can check in one step. The narrowing line is named; the single request that settles it is recorded in the finding."
+      },
+      {
+        "assertion": "createLegacyArchive provisions an S3 bucket with every PublicAccessBlock disabled and a Principal:'*' GetObject policy",
+        "location": "pulumi-platform/storage.ts:153",
+        "rule": "FP-04",
+        "killed_by": "pulumi-platform/index.ts:1-95 imports only createStorage from './storage'; createLegacyArchive has no call site anywhere in the program, so no such bucket is declared in any stack. The path does not exist in what ships."
+      },
+      {
+        "assertion": "run_sql executes model-supplied SQL against the snapshot schema with no parsing or allowlist",
+        "location": "atlas-rag/ragsvc/tools.py:53",
+        "rule": "FP-04",
+        "killed_by": "tools.py:91-94 - TOOL_REGISTRY maps only http_get and lookup_work_order, and tools.py:64-88 TOOL_SPECS advertises only those two. dispatch() at tools.py:99 resolves through TOOL_REGISTRY.get(name) and returns 'unknown tool' for anything else, so the model cannot reach run_sql. Its own docstring records that it never made it into the tool list."
+      },
+      {
+        "assertion": "partner_id is interpolated into a WHERE clause as a quoted string literal, permitting SQL injection through the dbt var",
+        "location": "warehouse-dbt/models/exports/partner_extract.sql:30",
+        "rule": "FP-02",
+        "killed_by": "partner_extract.sql:16 - modules.re.sub(\"[^a-z0-9-]\", \"\", requested_partner | lower) strips every character outside [a-z0-9-] before the value reaches line 30, removing quote, semicolon, backslash, space and comment characters. The sibling var on line 58 is coerced with |int. Not attacker-controlled and not injectable."
+      },
+      {
+        "assertion": "PUBLIC_TILE_KEY is a credential embedded in the shipped Android artifact",
+        "location": "atlas-android/app/build.gradle.kts:23",
+        "rule": "FP-02",
+        "killed_by": "build.gradle.kts:20-22 and AndroidManifest.xml:16 both document it as the publishable half of a map-tile credential, restricted at the provider to this package signature and rate-limited per install; ApiClient.kt:69-73 uses it only to build a tile URL. This is mobile.md MOB-12's named exculpation - a public-by-design client key. Documented, not reported as a secret."
+      },
+      {
+        "assertion": "paymentsSandboxKey is a payment credential committed to the stack configuration and re-exported as a stack output",
+        "location": "pulumi-platform/Pulumi.prod.yaml:14",
+        "rule": "FP-02",
+        "killed_by": "Pulumi.staging.yaml:18-19 documents it as the payments provider's publishable sandbox key from their own docs, embedded in the client booking widget and carrying no authority; the pk_test_ prefix is the provider's published marker for a non-secret test key. Identical literal in both stacks, which is what a docs sample looks like and not what a real key looks like."
+      },
+      {
+        "assertion": "SessionStore.exportSessionForSupport() returns the full unredacted bearer token for pasting into a support ticket",
+        "location": "atlas-android/app/src/main/java/co/atlas/field/data/SessionStore.kt:74",
+        "rule": "FP-04",
+        "killed_by": "grep over atlas-android/ returns no call site; the only caller of the support path is DeepLinkRouter.kt:96, which calls redactedSummary() (SessionStore.kt:65), and the docstring records it was replaced in 4.1. Dead code in the source tree. Recorded here rather than reported, because R8 strips an uncalled method and no principal can reach it."
+      },
+      {
+        "assertion": "grant_all_to_analysts grants ALL PRIVILEGES on every relation and its schema to analyst_role",
+        "location": "warehouse-dbt/macros/apply_grants.sql:42",
+        "rule": "FP-04",
+        "killed_by": "dbt_project.yml:32,41,48 register only apply_grants(this) as the post-hook for staging, marts and exports; grant_all_to_analysts appears in no hook, no model and no other macro. Its comment records it as superseded by the per-folder +grants blocks."
+      },
+      {
+        "assertion": "TEST_VECTOR_ACCOUNTS are live account numbers committed to the repository",
+        "location": "settlement-worker/settlement/schemas.py:49",
+        "rule": "FP-07",
+        "killed_by": "schemas.py:46-48 - the scheme's published sandbox certification range, reserved by the scheme and routed to its sandbox rather than to any institution. No security value."
+      },
+      {
+        "assertion": "The rate limiter takes the last hop of X-Forwarded-For, so a caller can spoof its bucket key",
+        "location": "fieldops-api/src/middleware/rateLimit.ts:15",
+        "rule": "FP-09",
+        "killed_by": "An AWS ALB APPENDS the address it observed to X-Forwarded-For, so the last hop is the one value in that header the caller cannot forge - taking hops[hops.length-1] is the correct read for this topology (edge.ts:27-37 confirms an application load balancer fronts the API). The exploitable residue is the no-XFF fallback on rateLimit.ts:17, which is folded into the rate-limiting finding rather than reported separately."
+      },
+      {
+        "assertion": "Content-Disposition is built with escapeHtml, the wrong escaper for a header context, permitting response-header injection through the attachment filename",
+        "location": "fieldops-api/src/routes/attachments.ts:103",
+        "rule": "FP-02",
+        "killed_by": "attachments.ts:50 with the class at attachments.ts:22 - display_name is written as file.name.replace(/[^A-Za-z0-9._ -]/g,'_'), which removes CR, LF, double-quote and every other character that could break the header, and attachments.ts:57-62 shows that write path is the column's only writer. A wrong-context escaper over an already-constrained value; latent, not exploitable."
+      },
+      {
+        "assertion": "The uploaded content-type is stored and echoed back on the raw download, allowing a stored HTML file to execute in the API origin",
+        "location": "fieldops-api/src/routes/attachments.ts:102",
+        "rule": "FP-01",
+        "killed_by": "attachments.ts:103-104 sets Content-Disposition: attachment and X-Content-Type-Options: nosniff on the same response, which is web-api.md WEB-12's stated exculpation: the browser downloads rather than renders, and cannot sniff its way to text/html."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Dead-letter drain re-applies messages that were rejected by the signature and scope checks",
+      "location": {
+        "path": "settlement-worker/settlement/retry.py",
+        "symbol": "replay_dead_letters",
+        "line": 43
+      },
+      "class": "Authorization Bypass Through an Alternate Path",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "consumer.py:114-117 catches EVERY exception and dead-letters the entry. Two of the things that raise there are the controls themselves: decode() raises ValueError('bad producer signature') at consumer.py:72, and _require_scope raises Forbidden at handlers.py:31. The drain then does msg=json.loads(entry['body']) (retry.py:25, no signature check) and calls handlers._apply_payout(msg) directly (retry.py:43) - the private mover, below both the dispatch table and the scope gate. _legacy_reprocess at retry.py:54-61 strips 'sig' and calls the same private function.",
+      "impact": "A payout rejected for a forged signature, or rejected because the actor lacks payouts:write, is applied in full the next time an operator drains the queue. The cheapest path needs no Redis access: publish a well-formed payout as an actor without the scope, collect the Forbidden, and wait for the routine drain. _apply_payout moves money on both legs and fires the settlement notification.",
+      "recommendation": "Replay through consumer.decode() and HANDLERS[msg['type']] so signature, dispatch and scope all re-run. Dead-letter REJECTED messages to a separate quarantine stream the drain tool refuses to read. Delete _legacy_reprocess.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the only signature check is consumer.py:69-72 and the replay path never calls decode; the only scope check is handlers.py:29 and the replay path enters below it at _apply_payout"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "settlement-retry is a declared console script at settlement-worker/pyproject.toml:16, so the drain ships"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no external control is claimed anywhere for this path"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "_apply_payout is the identical function handle_payout reaches at handlers.py:86"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/retry.py:43",
+          "settlement-worker/settlement/retry.py:61",
+          "settlement-worker/settlement/consumer.py:114"
+        ],
+        "established_by": "grep of every _apply_payout call site (4 in handlers.py, 2 in retry.py) cross-referenced against the _require_scope call sites",
+        "narrowed_by": "operator-triggered - requires the drain to be run, which pyproject.toml:16 registers as a routine entry point"
+      }
+    },
+    {
+      "title": "Attachments are served without authentication on the legacy /files mount",
+      "location": {
+        "path": "fieldops-api/src/index.ts",
+        "symbol": "legacy mount",
+        "line": 35
+      },
+      "class": "Missing Authentication for Critical Function",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The same attachments router is mounted twice. Under /api/v1/* it sits behind requireAuth (index.ts:28). Under /files it sits behind attachActor (index.ts:35), which calls next() unconditionally (auth.ts:74-78). Both read handlers then guard with `if (actor && actor.orgId !== row.orgId)` (attachments.ts:80, :97): with no token actor is undefined, the conjunction short-circuits and the row - or the file bytes - is returned. The comment at attachments.ts:78-79 justifies the soft gate with 'the grant rides on the link itself', but a grep for sign|hmac|presign|expires|nonce|signature across src/ returns only that comment. The claimed control does not exist.",
+      "impact": "GET /files/<id> and GET /files/<id>/raw are unauthenticated cross-tenant reads of any customer-site attachment's metadata and contents, from the internet, with no credential.",
+      "recommendation": "Put requireAuth on the legacy mount, or split out a read-only handler that actually verifies a signed link instead of reusing the session router.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requireAuth is registered only for /api/v1/* at index.ts:28; the /files mount deliberately uses the soft variant"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the same handler enforces the org check when an actor IS present, which is the code's own statement that this data is not public"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "second principal named: any org other than row.orgId, and any unauthenticated internet caller"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "work-order attachments are customer-site records including signature captures"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the mount is /files/* and covers every route the attachments router declares"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/index.ts:35",
+          "fieldops-api/src/index.ts:36",
+          "fieldops-api/src/routes/attachments.ts:80",
+          "fieldops-api/src/routes/attachments.ts:97",
+          "fieldops-api/src/routes/attachments.ts:38"
+        ],
+        "established_by": "joined the two app.route() calls in index.ts against the three handlers the attachments router declares",
+        "narrowed_by": "config.legacyFilesMount is the constant '/files' (config.ts:32), not environment-gated, so it ships in every deployment"
+      }
+    },
+    {
+      "title": "Load balancer forwards client-supplied x-fieldops-* headers and the API trusts them as an authenticated identity",
+      "location": {
+        "path": "fieldops-api/src/middleware/auth.ts",
+        "symbol": "requireAuth",
+        "line": 60
+      },
+      "class": "Authentication Bypass by Spoofed Header",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "auth.ts:59-61: `if (!actor && config.trustProxyIdentity) actor = fromProxyHeaders(c.req.raw.headers)`. fromProxyHeaders (auth.ts:45-53) reads x-fieldops-actor, x-fieldops-org, x-fieldops-role and x-fieldops-crews verbatim, casting role without checking it is one of the four valid values. trustProxyIdentity is true whenever NODE_ENV==='production' (config.ts:28). The fallback is EASIER to trigger than the token path - simply omit the Authorization header. The sub-agent capped this at probable because the balancer config was outside its scope; the leader resolved it from the infrastructure program: pulumi-platform/edge.ts:35 sets dropInvalidHeaderFields:false, with the comment at edge.ts:32-34 stating that the dispatcher fleet's identity 'reaches us as a set of x-fieldops-* headers, so the listener has to pass request headers through to the target group untouched'. The ALB is configured to forward, not to strip or overwrite.",
+      "impact": "Any internet caller reaching the public listener (network.ts:76, 0.0.0.0/0 on 443) sends x-fieldops-actor and x-fieldops-role: admin with no token and becomes an administrator of any org they name, on every /api/v1/* route.",
+      "recommendation": "Have the proxy sign what it asserts - an mTLS-derived principal in a signed JWT the API verifies - rather than asserting it in a plaintext header. At minimum set dropInvalidHeaderFields:true, strip x-fieldops-* at the listener, bind the fallback to a shared secret, and validate role against the Role union.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no in-repo control strips or validates these headers, and the one artifact that could - the ALB - is configured at edge.ts:35 to forward them untouched"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the values are request headers supplied by the caller"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the exculpating artifact IS in scope this time and says the opposite: edge.ts:35 dropInvalidHeaderFields:false with an explanatory comment. This is the answer that changed from UNKNOWN to DOES_NOT_HOLD on integration"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "requireAuth is mounted on /api/v1/* (index.ts:28), so the fallback applies to every authenticated route"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/middleware/auth.ts:60",
+          "fieldops-api/src/config.ts:28",
+          "pulumi-platform/edge.ts:35"
+        ],
+        "established_by": "traced trustProxyIdentity from config.ts:28 to its single reader, then joined it against the ALB header policy in the infrastructure program that fronts this service",
+        "narrowed_by": "NODE_ENV==='production' only (config.ts:28) - inert in dev and staging"
+      }
+    },
+    {
+      "title": "The consume path re-validates nothing: the payout ceiling and the destination-ownership check are publish-only",
+      "location": {
+        "path": "settlement-worker/settlement/consumer.py",
+        "symbol": "decode",
+        "line": 74
+      },
+      "class": "Improper Input Validation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "schemas.py:3-6 claims 'both are validated by pydantic on construction, so anything holding one of these objects is holding checked data'. Nothing on the consume path holds one: decode returns json.loads(body) as a bare dict and HANDLERS is typed dict[str, Callable[[dict[str,Any]],...]] (consumer.py:26). PayoutRequest is constructed only in publish_payout's signature. Two controls are lost. (1) amount_cents is Field(gt=0, le=5_000_000) on PayoutRequest (schemas.py:27) but a bare int on LedgerEntry (schemas.py:41); handlers do int(msg['amount_cents']) (handlers.py:44,94,117), so a negative amount inverts _apply_payout's signs and turns a payout into a credit. (2) _destination_is_registered (consumer.py:44-51), described at consumer.py:55-56 as 'the only thing left to prove', is called from publish_payout and nowhere else, so on the consume path any acct_-shaped account is accepted.",
+      "impact": "Anyone who can place an entry on the stream can exceed the 5,000,000-cent ceiling, send a negative amount that credits rather than debits, and direct funds to an account never registered to the tenant.",
+      "recommendation": "Re-parse into PayoutRequest inside decode and hand handlers the model rather than a dict; move the ceiling and the positivity bound onto LedgerEntry.amount_cents as well; call _destination_is_registered on the consume side.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the only re-validation on the consume path is LedgerEntry construction at handlers.py:47/56/96/119, and that model omits both bounds"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is the message body, controllable by anyone able to publish to the stream"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "all four handlers take the same unvalidated dict"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/consumer.py:74",
+          "settlement-worker/settlement/handlers.py:44",
+          "settlement-worker/settlement/handlers.py:94",
+          "settlement-worker/settlement/handlers.py:117",
+          "settlement-worker/settlement/schemas.py:41"
+        ],
+        "established_by": "diffed PayoutRequest against LedgerEntry field by field, then grepped every construction site of both models",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "The producer signature covers the body but not the type field that selects the handler",
+      "location": {
+        "path": "settlement-worker/settlement/consumer.py",
+        "symbol": "decode",
+        "line": 75
+      },
+      "class": "Insufficient Verification of Data Authenticity",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "consumer.py:61 builds fields = {'type':'payout','body':body,'sig':_signature(body)} and _signature (consumer.py:38-41) digests body alone. consumer.py:75 then does msg['type'] = entry.get('type','payout') - an unsigned field - and consumer.py:89 routes on it: handler = HANDLERS.get(msg['type']). The type travels beside the signature, uncovered by it, and is the sole input to dispatch.",
+      "impact": "Anyone able to alter a stream entry's fields, without holding the HMAC key, takes a legitimately signed 'payout' and re-routes it to 'payout.reissue' - which has no scope check and no idempotency check. Stripping the field entirely silently yields a payout because of the default.",
+      "recommendation": "Sign the whole envelope including type and compare against the recomputed digest of the full field set; drop the 'payout' default and reject entries with no type.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the signature is the only integrity control on the stream and it is computed over body alone at consumer.py:38-41"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "type is a stream field set by the producer and not covered by the digest"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the sink is a dispatch table reaching four money-moving functions"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no wrapper re-derives type from the signed body"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/consumer.py:75",
+          "settlement-worker/settlement/consumer.py:89",
+          "settlement-worker/settlement/retry.py:26"
+        ],
+        "established_by": "traced the field set built at consumer.py:61 against the fields _signature consumes",
+        "narrowed_by": "only effective while verify_producer_signature is on; where it is off the whole envelope is unauthenticated anyway"
+      }
+    },
+    {
+      "title": "handle_payout_reissue reaches the money-moving path with no scope check",
+      "location": {
+        "path": "settlement-worker/settlement/handlers.py",
+        "symbol": "handle_payout_reissue",
+        "line": 107
+      },
+      "class": "Missing Authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Three of four handlers open with _require_scope and the fourth does not: handle_payout:78 payouts:write, handle_payout_cancel:92 payouts:write, handle_refund:115 refunds:write, handle_payout_reissue:107 nothing. It goes straight to _apply_payout at handlers.py:109, whose own docstring (handlers.py:43) says 'Assumes the caller has already authorised the message'. consumer.process calls handler(msg) directly at consumer.py:95 with no wrapper, decorator or before-hook.",
+      "impact": "An actor with no payouts:write scope moves money by publishing type 'payout.reissue' - and the type field is unsigned, so the message need not even have been issued as a reissue.",
+      "recommendation": "Add _require_scope(msg,'payouts:write') at the top of handle_payout_reissue; better, move the check into consumer.process so a new handler cannot be added without one.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "consumer.process calls handler(msg) directly at line 95; there is no decorator, base class or before-hook"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no external gate is claimed; the sibling handlers do the check in-process"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "reissue reaches _apply_payout, the identical effect handle_payout reaches at line 86"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/handlers.py:107"
+        ],
+        "established_by": "listed every def handle_* against every _require_scope call site in the same file",
+        "narrowed_by": "reachable via the type field, which the signature does not cover"
+      }
+    },
+    {
+      "title": "Stored cross-site scripting in the printable work-order sheet",
+      "location": {
+        "path": "fieldops-api/src/routes/workorders.ts",
+        "symbol": "print handler",
+        "line": 197
+      },
+      "class": "Cross-Site Scripting (stored)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Two fields land in the HTML response unescaped while every field around them is escaped. Line 191 <header>${render(wo)}</header> interpolates wo.title through the compiled DEFAULT_SHEET (workorders.ts:162), while line 192 escapes the SAME field with escapeHtml - the proof it was meant to be escaped. Line 197 <section class=\"notes\">${wo.notes}</section> is raw. notes passes scrubNotes (policy.ts:57-63), a three-pattern denylist stripping <script>...</script>, <iframe> tags and the literal javascript:; <img src=x onerror=...> and <svg onload=...> pass untouched, and the non-recursive script replace is defeated by <scr<script></script>ipt>. title is never sanitised on either write path (workorders.ts:101, :138). secureHeaders() is applied with no options (index.ts:16) and Hono sets no CSP by default; a grep for content-security across src/ returns nothing.",
+      "impact": "A tech - the lowest role - stores markup that executes in the browser of any dispatcher or manager who opens the sheet, in the API's own origin. Defacement of a printed work order and keylogging of the print view are unconditional; further escalation depends on where the dispatch console keeps its bearer token.",
+      "recommendation": "escapeHtml both interpolations; replace the denylist with an allowlist sanitizer applied at render rather than at write; add a Content-Security-Policy without unsafe-inline.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "scrubNotes at policy.ts:57 is a three-pattern denylist and does not touch title at all; no CSP is set anywhere in src/"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "title and notes come from createBody/patchBody, i.e. the request body"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no server-side equivalent renders this safely; the sheet is the shipped output"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/workorders.ts:191",
+          "fieldops-api/src/routes/workorders.ts:197"
+        ],
+        "established_by": "compared every interpolation in the html template literal against the escapeHtml call sites",
+        "narrowed_by": "the print route requires an authenticated actor in the same org (workorders.ts:175), so the attacker must hold any role in the tenant"
+      }
+    },
+    {
+      "title": "The work-order list cache key omits the crew dimension the query authorizes on",
+      "location": {
+        "path": "fieldops-api/src/lib/cache.ts",
+        "symbol": "listKey",
+        "line": 11
+      },
+      "class": "Authorization Bypass via Cache Key",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "listKey(orgId,status,page) at cache.ts:11 is used at workorders.ts:53, but the rows returned depend on a fourth input the key does not carry: visibleCrewFilter (policy.ts:47-50) returns the actor's crewIds for a tech and null - no narrowing - for everyone else, and its docstring calls that 'rows a list query is allowed to return'. The cache read at workorders.ts:54-58 returns BEFORE visibleCrewFilter is consulted at line 60. The store is a process-wide Map (cache.ts:5) with a 45-second TTL (config.ts:38). limit is also absent from the key.",
+      "impact": "A dispatcher, manager or admin requesting (org,status,page) stores the whole org board under a key a tech then hits, and the tech is served work orders outside their crews with x-cache: hit. The reverse direction truncates a dispatcher's board to one crew.",
+      "recommendation": "Include the authorization dimension in the key - role plus a stable hash of the effective crew filter - and limit; or cache per-actor. Authenticated responses should also carry Cache-Control: private, no-store, which is set nowhere in the tree.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the cache read at workorders.ts:54-58 returns before visibleCrewFilter is ever consulted at line 60"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the payload is work-order rows for crews the caller is not cleared for"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the store is module-level and shared by every request in the process"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/workorders.ts:53",
+          "fieldops-api/src/routes/workorders.ts:76",
+          "fieldops-api/src/lib/cache.ts:11"
+        ],
+        "established_by": "compared the key's parameters against every input that changes the SQL at workorders.ts:60-72",
+        "narrowed_by": "45-second window and a single-process store, so the leak needs two roles hitting the same org/status/page inside the TTL on the same task"
+      }
+    },
+    {
+      "title": "Unauthenticated upload buffers and writes an unbounded file before the actor check fails",
+      "location": {
+        "path": "fieldops-api/src/routes/attachments.ts",
+        "symbol": "upload handler",
+        "line": 53
+      },
+      "class": "Uncontrolled Resource Consumption",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "No size limit exists at any layer - index.ts:15-16 registers only logger() and secureHeaders(), and no MAX_UPLOAD-shaped constant exists in the tree. The order of operations makes it reachable without a credential: attachments.ts:39 reads the actor (undefined, no throw), :40 parses the whole body, :53 buffers it entirely in memory, :54 commits it to disk, and only :62 dereferences actor.orgId and throws a TypeError. On the /files mount the actor is never required, so an anonymous caller reaches line 54; the request then 500s AFTER the bytes are on disk, and the DB row is never written, so the file is orphaned and invisible to any cleanup keyed on the attachments table.",
+      "impact": "Unauthenticated memory and disk exhaustion from the internet, with orphan files accumulating under config.attachmentRoot.",
+      "recommendation": "Enforce a byte limit before reading the body, move the actor check to the first line of the handler, and stream to disk rather than buffering.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no body-size middleware is registered; index.ts:15-16 adds only logger() and secureHeaders()"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the body is the request"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "unauthenticated internet caller via the /files mount"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "an ingress body-size limit would bound the unauthenticated variant; no such artifact is in scope, and per FP-08 absence of the evidence is UNKNOWN and never HOLDS. The missing in-app limit stands either way"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/attachments.ts:40",
+          "fieldops-api/src/routes/attachments.ts:53",
+          "fieldops-api/src/routes/attachments.ts:54"
+        ],
+        "established_by": "read the handler statement by statement and located the first dereference of actor relative to the write",
+        "narrowed_by": "the FP-08 UNKNOWN bounds only the anonymous-reach variant; the absent limit is unconditional"
+      }
+    },
+    {
+      "title": "The two-leg payout is not atomic, and the surviving leg is then replayed",
+      "location": {
+        "path": "settlement-worker/settlement/handlers.py",
+        "symbol": "_apply_payout",
+        "line": 46
+      },
+      "class": "Non-Atomic Financial Transaction",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "_apply_payout posts two independent movements (handlers.py:46 and :55). Each post_entry commits its own Redis WATCH/MULTI/EXEC and then its own Postgres insert on its own connection (ledger.py:59-83); nothing spans the pair. If leg two raises InsufficientFunds (ledger.py:67), leg one's credit to CLEARING_ACCOUNT is already committed, the exception reaches consumer.run_once, the entry is dead-lettered, and the drain calls _apply_payout again - re-crediting the clearing account each cycle. Separately the Redis commit at ledger.py:72 and the journal insert at ledger.py:78 are not in a common transaction, so a crash between them moves money with no audit row, against the module's own claim at ledger.py:4-5.",
+      "impact": "An attacker who arranges leg two to fail inflates the clearing balance on every drain cycle, because post_entry refuses only negative results. Independently, balances and the audit journal can diverge silently.",
+      "recommendation": "Make the pair one unit - a Lua script or a single MULTI over both keys - and journal inside the same commit, or write the journal first and reconcile forward.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no transaction, lock or compensating reversal wraps the two post_entry calls; the WATCH at ledger.py:62 covers one key for one call"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/handlers.py:46",
+          "settlement-worker/settlement/handlers.py:55",
+          "settlement-worker/settlement/ledger.py:72",
+          "settlement-worker/settlement/ledger.py:78"
+        ],
+        "established_by": "traced the commit boundaries of each post_entry call",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "PRODUCER_HMAC_SECRET defaults to the empty string, making the stream signature computable by anyone",
+      "location": {
+        "path": "settlement-worker/settlement/settings.py",
+        "symbol": "Settings.producer_hmac_secret",
+        "line": 38
+      },
+      "class": "Use of a Hard-coded or Empty Cryptographic Key",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "settings.py:38 os.getenv('PRODUCER_HMAC_SECRET',''). _signature (consumer.py:38-41) then calls hmac.new(b'', body, sha256), which is legal and produces a digest any attacker can compute. The verification at consumer.py:69-72 runs, uses compare_digest correctly, and decides nothing. Nothing asserts the secret is non-empty at boot.",
+      "impact": "Where the variable is unset, the only integrity control on the settlement stream is a control that cannot fail: any party able to write to the stream forges a valid signature and publishes payouts.",
+      "recommendation": "Fail startup when the secret is empty or shorter than 32 bytes - the one-line assertion that converts an apparent control into a real one.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "an empty key is a known value, so the digest is attacker-computable"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "whether the deployed task definition sets PRODUCER_HMAC_SECRET is decided outside the two components assigned; per FP-08 absence of that artifact is UNKNOWN and this caps the finding at probable"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the signature is the only integrity control on the stream, so it is load-bearing"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/consumer.py:40"
+        ],
+        "established_by": "traced the secret from its default to its single consumer",
+        "narrowed_by": "only bites where the environment variable is unset"
+      }
+    },
+    {
+      "title": "Idempotency is advisory: non-atomic in one handler, absent in two, and the atomic primitive is uncalled",
+      "location": {
+        "path": "settlement-worker/settlement/handlers.py",
+        "symbol": "handle_payout",
+        "line": 81
+      },
+      "class": "Insufficient Replay Protection (TOCTOU)",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "Three defects on one control. (1) handle_payout does lookup (:81), _apply_payout (:86), remember (:87); remember is a plain SET with a TTL (idempotency.py:35-39), not SET NX, so two entries carrying the same idempotency_key delivered to two consumers in parallel both see a miss. (2) handle_payout_cancel (:91) and handle_payout_reissue (:107) never call lookup at all, so each redelivery re-applies; cancel also credits destination_account without verifying the payout it names was ever applied, so the same cancel replayed N times credits N times. (3) idempotency.claim (:42) - SET NX EX, exactly the atomic guard this needs - and release (:47) have zero callers.",
+      "impact": "Duplicate stream delivery, which Redis Streams guarantees is possible, moves money more than once on three of the four handlers.",
+      "recommendation": "Route every handler through claim() before applying, remember() after, release() on failure; give the receipt store a unique constraint in Postgres rather than a Redis TTL.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no unique constraint, conditional update or lock exists on this path; the only atomic primitive present is uncalled"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/handlers.py:81",
+          "settlement-worker/settlement/handlers.py:87",
+          "settlement-worker/settlement/handlers.py:91",
+          "settlement-worker/settlement/handlers.py:107"
+        ],
+        "established_by": "listed every handler against the idempotency.* call sites, then grepped claim/release for callers",
+        "narrowed_by": "the parallel-consumer race needs duplicate keys on distinct entries; the reissue and cancel replay needs only one redelivery"
+      }
+    },
+    {
+      "title": "The brute-force limiter covers /login only; /token runs the same credential check unthrottled",
+      "location": {
+        "path": "fieldops-api/src/routes/session.ts",
+        "symbol": "token grant",
+        "line": 84
+      },
+      "class": "Improper Restriction of Excessive Authentication Attempts",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "index.ts:24 registers app.use('/api/v1/session/login', loginLimiter) on that exact non-wildcard path, and it is the only rateLimit use in the tree. POST /api/v1/session/token with grantType:'password' performs the identical findPrincipal + passwordMatches pair (session.ts:91-95) with no limiter. POST /api/v1/session/recover (session.ts:111) is likewise unthrottled and triggers a DB insert per call. Two aggravating details in the limiter itself: with no X-Forwarded-For it keys on cf-connecting-ip (rateLimit.ts:17), a header the caller supplies, so the bucket is rotatable; and the store is a per-process Map (rateLimit.ts:8), so the effective limit multiplies by the task count.",
+      "impact": "Password guessing against any account at full speed through the sibling endpoint, defeating the control the /login mount was added to provide.",
+      "recommendation": "Apply the limiter to /api/v1/session/*, key it on the submitted identity as well as the address, and move the store to Redis.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "loginLimiter appears exactly once in the tree, at index.ts:24, on a non-wildcard path"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the /token password grant reaches findPrincipal and passwordMatches, the same two calls /login makes"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/session.ts:84",
+          "fieldops-api/src/routes/session.ts:111"
+        ],
+        "established_by": "joined the mounted middleware paths in index.ts against the route table of session.ts",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Work-order PATCH omits the site-clearance gate that POST enforces",
+      "location": {
+        "path": "fieldops-api/src/routes/workorders.ts",
+        "symbol": "patch handler",
+        "line": 136
+      },
+      "class": "Missing Authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "POST checks both gates - sameOrgSite at :89 and canWriteSite at :92. PATCH checks only sameOrgSite at :133 and pushes site_id at :136 with no canWriteSite call. canWriteSite (policy.ts:36-41) is what restricts a dispatcher to the sites their crews are cleared for. body.crewId is likewise pushed at :140 with no clearance check at all.",
+      "impact": "A dispatcher on crew-north cannot create work on org-4:site-900 but can move an existing order onto it, and can reassign any order to any crew.",
+      "recommendation": "Call canWriteSite on the PATCH branch too, and validate crewId against the actor's clearances.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no middleware on the workorders router performs this check; requireRole is never registered anywhere"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no external gate is claimed"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "both handlers write work_orders.site_id - the same column, the same effect"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/workorders.ts:136",
+          "fieldops-api/src/routes/workorders.ts:140"
+        ],
+        "established_by": "diffed the guard prologues of the two handlers that write site_id",
+        "narrowed_by": "no effect for manager or admin, whom canWriteSite clears globally at policy.ts:37-38"
+      }
+    },
+    {
+      "title": "Object access ignores the crew narrowing the list path applies",
+      "location": {
+        "path": "fieldops-api/src/routes/workorders.ts",
+        "symbol": "patch and print handlers",
+        "line": 123
+      },
+      "class": "Broken Object Level Authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "GET / narrows rows by visibleCrewFilter for a tech (workorders.ts:60-70), whose docstring at policy.ts:44-46 calls that the set of rows the query is allowed to return. PATCH /:id filters on org alone (`if (wo.orgId !== actor.orgId)` at :123) and GET /:id/print filters on `id = $1 and org_id = $2` at :175.",
+      "impact": "A tech who can only list their own crew's orders can read and modify any order in the org by id - title, notes, status, crew assignment - and can render any order's printable sheet.",
+      "recommendation": "Apply the crew filter to single-object reads and writes, or state in policy.ts that crew narrowing is a view convenience and not a boundary; the two handlers currently contradict the docstring.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the org check at :123 and :175 is the only scoping on these paths"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "not intended exposure - the list path deliberately narrows the same data"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "work orders carry site identifiers and customer notes"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/workorders.ts:123",
+          "fieldops-api/src/routes/workorders.ts:175"
+        ],
+        "established_by": "compared the WHERE clauses of the three read paths against visibleCrewFilter's contract",
+        "narrowed_by": "only affects role tech; for dispatcher and above visibleCrewFilter returns null, so no narrowing is being skipped"
+      }
+    },
+    {
+      "title": "Attachment upload never authorizes the workOrderId it is handed",
+      "location": {
+        "path": "fieldops-api/src/routes/attachments.ts",
+        "symbol": "upload handler",
+        "line": 62
+      },
+      "class": "Broken Object Level Authorization",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "workOrderId is read from the multipart form at attachments.ts:42 and inserted as a foreign key at :62 with no query against work_orders - no existence check, no org check, no crew check. The route authorizes the actor; nothing authorizes the row the actor names.",
+      "impact": "Any authenticated caller - or via the /files mount, any caller at all - attaches arbitrary files to any work order in any tenant. The row stores the uploader's org_id, so cross-tenant read-back is not gained; what is gained is unauthorized association of attacker content with another tenant's work order and storage billed to the wrong org.",
+      "recommendation": "Select the work order first and reject unless org_id matches the actor and the crew clearance allows it.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "workOrderId is read straight from the multipart form at :42"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the named row is another tenant's work order"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the insert at :62 is the only write path for the column and applies to every upload"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/attachments.ts:62"
+        ],
+        "established_by": "answered who may name the row (any authenticated caller) against what happens to it (an attacker-supplied file is bound to it)",
+        "narrowed_by": "the inserted org_id is the uploader's, which bounds the impact to association rather than cross-tenant read"
+      }
+    },
+    {
+      "title": "Two declared controls have no reader: no route enforces function-level authorization, and the atomic idempotency guard is uncalled",
+      "location": {
+        "path": "fieldops-api/src/middleware/auth.ts",
+        "symbol": "requireRole",
+        "line": 81
+      },
+      "class": "Declared Control Not Enforced",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "requireRole (auth.ts:81) has zero callers - index.ts imports only attachActor and requireAuth - so NO route in the API enforces function-level authorization and no endpoint is admin-only; role influences behaviour only inside policy.ts helpers. idempotency.claim (idempotency.py:42), a SET NX EX that is exactly the atomic guard the payout handlers need, and release (:47) likewise have zero callers. Both trees were searched in full for each symbol, subtracting the declaration itself.",
+      "impact": "No function-level authorization exists anywhere in the API, so every authenticated actor reaches every route and the role gate the codebase declares is decoration. Separately the one primitive that would make payout idempotency atomic is present, correct and never called, which is why the replay defects in the handlers stand.",
+      "recommendation": "Register requireRole on the routes that need it, and route every payout handler through claim/release.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "NOT_APPLICABLE",
+          "reason": "no control outside the repository can supply an in-process middleware registration or a call to a local function; both symbols and both call graphs are fully inside the assigned scope, so there is no external artifact to wait for"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "none of the three is consumed by name, reflection or a settings struct read wholesale - all three are ordinary Python or TypeScript symbols"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/middleware/auth.ts:81",
+          "settlement-worker/settlement/idempotency.py:42",
+          "settlement-worker/settlement/idempotency.py:47"
+        ],
+        "established_by": "symbol search for each declaration across both assigned trees, subtracting the declaration itself and the docstring mention",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Reconciliation writes the balance directly, bypassing the overdraft invariant and the journal path",
+      "location": {
+        "path": "settlement-worker/settlement/reconcile.py",
+        "symbol": "apply_adjustment",
+        "line": 56
+      },
+      "class": "Invariant Bypass via an Alternate Writer",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "ledger.py:3-4 states 'Every movement goes through post_entry, which refuses to leave an account negative'. apply_adjustment does a plain _redis().set(balance_key(...), d.theirs_cents) at reconcile.py:56 - no non-negative check, no WATCH, and outside the transaction post_entry uses, so it can clobber or be clobbered by an in-flight payout. The value is int(row['closing_cents']) from the statement CSV (reconcile.py:47), and row['tenant_id'] and row['account'] skip the TenantId and AccountRef patterns every other path applies.",
+      "impact": "Whoever supplies the nightly statement file sets any account balance to any value, including negative, without passing the invariant the ledger module advertises.",
+      "recommendation": "Express the adjustment as a post_entry movement of delta so it passes the same invariant and lands in the journal by the same path; validate the CSV rows through the pydantic types.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the guard is inside post_entry at ledger.py:65 and this write does not call it"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "UNKNOWN",
+          "reason": "the statement file's provenance and integrity controls are decided outside the two assigned components; reconcile.run has no registered entry point in pyproject.toml, which declares only settlement-consume and settlement-retry. This caps the finding at probable"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the scheme, or anyone who can write the statement file, is a second principal"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/reconcile.py:56"
+        ],
+        "established_by": "grepped every writer of balance_key(...) - two: ledger.py:71 inside the WATCH/MULTI, and reconcile.py:56 outside it",
+        "narrowed_by": "operator-triggered nightly job with no declared entry point"
+      }
+    },
+    {
+      "title": "Session signing secret falls back to a hard-coded development key",
+      "location": {
+        "path": "fieldops-api/src/config.ts",
+        "symbol": "config.sessionSecret",
+        "line": 23
+      },
+      "class": "Use of a Hard-coded Cryptographic Key",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "config.ts:23 sessionSecret: env.SESSION_SECRET ?? 'local-development-session-key'. This is the HS256 key for both minting (session.ts:9,48-55) and verifying (auth.ts:20,26). Nothing asserts it at boot, and config.env itself defaults to 'development' (config.ts:19). fromBearer takes role, org and crews straight from the token payload (auth.ts:31-34).",
+      "impact": "Where SESSION_SECRET is unset in a deployed stack, anyone reading this repository forges a token with role:'admin' and any org, becoming an administrator of any tenant.",
+      "recommendation": "Throw at startup when SESSION_SECRET is unset or equals the literal.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the fallback is a literal in a versioned file"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "no task definition or deployment artifact is in scope to show production sets the variable; per FP-08 that is UNKNOWN, never HOLDS, and it caps this at probable"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/middleware/auth.ts:20",
+          "fieldops-api/src/routes/session.ts:9"
+        ],
+        "established_by": "traced config.sessionSecret to both its consumers",
+        "narrowed_by": "only bites where SESSION_SECRET is unset"
+      }
+    },
+    {
+      "title": "Journal bootstrap grant leaves UPDATE after revoking DELETE, so audit rows can be rewritten",
+      "location": {
+        "path": "settlement-worker/settlement/ledger.py",
+        "symbol": "BOOTSTRAP_SQL",
+        "line": 20
+      },
+      "class": "Incorrect Privilege Assignment",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "ledger.py:20 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA settlement TO settlement_app, then ledger.py:21-22 REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER. ALL includes UPDATE and the revoke list does not name it. The stated intent at ledger.py:16-18 - 'the destructive verbs are taken back so an application bug cannot erase audit history' - is not achieved. ON ALL TABLES also binds only to tables existing when it runs, with no ALTER DEFAULT PRIVILEGES for tables created later.",
+      "impact": "Journal rows can be rewritten in place, which defeats an append-only audit as thoroughly as deleting them.",
+      "recommendation": "Grant SELECT, INSERT explicitly instead of granting ALL and subtracting; add ALTER DEFAULT PRIVILEGES for future tables.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "UNKNOWN",
+          "reason": "the constant has no reader in scope - the comment says a migration job applies it and that job is outside the assigned components; this caps the finding at probable"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the reading is plain SQL grant arithmetic"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/ledger.py:20",
+          "settlement-worker/settlement/ledger.py:21"
+        ],
+        "established_by": "enumerated the privileges GRANT ALL confers against the four the REVOKE names",
+        "narrowed_by": "applies only where BOOTSTRAP_SQL is actually executed"
+      }
+    },
+    {
+      "title": "Producer signature verification is switched off in staging, on a stream shared with production",
+      "location": {
+        "path": "settlement-worker/settlement/settings.py",
+        "symbol": "verify_producer_signature",
+        "line": 43
+      },
+      "class": "Security Control Disabled by Environment",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "settings.py:43 verify_producer_signature: bool = _env() != 'staging' turns the only integrity control off wherever APP_ENV=='staging', and the comment at settings.py:32-33 records that 'staging reads the same stream so the shapes we test against are the shapes that actually flow'. The stream default is the same literal settlement.payouts on both sides (settings.py:34). It does fail closed on a typo: an unrecognised APP_ENV leaves verification on.",
+      "impact": "A staging worker consumes production traffic with no authenticity check, and an unsigned message injected by anyone who can reach the stream is applied by it.",
+      "recommendation": "Give staging its own stream, or its own signing key, rather than switching the verifier off.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the staging worker is a shipped deployment reading the shared stream, not a test fixture"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "UNKNOWN",
+          "reason": "whether the staging worker writes to the production ledger depends on DATABASE_URL per environment, which is not in scope; this caps the finding at probable"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/consumer.py:69",
+          "settlement-worker/settlement/settings.py:43"
+        ],
+        "established_by": "traced the flag to its single reader and read the stream defaults on both sides",
+        "narrowed_by": "APP_ENV=='staging' only"
+      }
+    },
+    {
+      "title": "new Function compiles a template read from the raw query string, around the validated object",
+      "location": {
+        "path": "fieldops-api/src/routes/workorders.ts",
+        "symbol": "print handler",
+        "line": 186
+      },
+      "class": "Code Injection",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "workorders.ts:185 reads c.req.query('template') - the RAW query - four lines after c.req.valid('query') is used at :181, and :186 compiles it: new Function('wo', 'return `'+template+'`;'), invoked at :191. A supplied template containing ${process.mainModule.require('child_process')...} inside the literal is arbitrary server-side execution. The candidate control is printQuery.strict() at :168: @hono/zod-validator builds its object from the whole query record, so an unrecognised 'template' key should raise unrecognized_keys and 400 before the handler runs. That could not be executed - node_modules is absent from the target - so the framework behaviour is recalled, not verified.",
+      "impact": "If the validator does not cover unknown query keys, this is unauthenticated-adjacent remote code execution on the API task, which holds the database credentials and the S3 role. If it does cover them, the residue is that a raw query read sits deliberately outside the validator.",
+      "recommendation": "Read the template from c.req.valid('query') or drop the parameter entirely; the operator-configurable sheet the comment describes belongs in server-side configuration keyed by org, never in a compiled string from the wire.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "UNKNOWN",
+          "reason": "the candidate control is .strict() at workorders.ts:168; its location can be named but its effect on unknown query keys could not be verified because the shipped dependency tree is absent. Per triage invariant 1 an UNKNOWN may not ship as confirmed"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "c.req.query('template') is the raw query string"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "new Function compiles and the result is invoked at :191"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/src/routes/workorders.ts:186"
+        ],
+        "established_by": "traced the one construct in either tree that compiles a string",
+        "narrowed_by": "printQuery.strict() at workorders.ts:168; one request settles it - GET /api/v1/workorders/<id>/print?format=html&template=x, where 400 means covered and 200 means confirmed critical"
+      }
+    },
+    {
+      "title": "reference is interpolated into the journal INSERT while its four siblings are bound",
+      "location": {
+        "path": "settlement-worker/settlement/ledger.py",
+        "symbol": "post_entry",
+        "line": 81
+      },
+      "class": "SQL Injection (not currently reachable)",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "ledger.py:81 binds four values with %s and interpolates the fifth with an f-string: values (%s, %s, %s, %s, '{entry.reference}'). The same INSERT in reconcile.py:60-63 binds all five, which is what makes this an anomaly rather than house style. The kill attempt succeeded: post_entry is typed entry: LedgerEntry, all four call sites (handlers.py:46,55,95,118) construct a fresh LedgerEntry through the validating constructor, model_construct appears nowhere, and Reference is ^[A-Za-z0-9:_.\\-]{1,64}$ (schemas.py:16, applied at :43) - a class with no quote, semicolon or space.",
+      "impact": "Not exploitable today. Reported rather than dropped because the only thing between this line and a critical is a regex annotation in another file, invisible at the sink, in a codebase that already loses a bound between two models on the consume path.",
+      "recommendation": "Bind the fifth parameter.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the database does not constrain the column"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "HOLDS",
+          "reason": "schemas.py:16 pins Reference to ^[A-Za-z0-9:_.\\-]{1,64}$ and schemas.py:43 applies it to LedgerEntry.reference; all four post_entry call sites construct through the validating constructor and no model_construct bypass exists in the tree"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/ledger.py:81"
+        ],
+        "established_by": "grepped every post_entry caller and every pydantic bypass constructor",
+        "narrowed_by": "the pydantic pattern on Reference, which is the control that rules out exploitation and is why this ships as low rather than high"
+      }
+    },
+    {
+      "title": "CSV-sourced values written into a line-oriented log without neutralization",
+      "location": {
+        "path": "settlement-worker/settlement/reconcile.py",
+        "symbol": "run",
+        "line": 71
+      },
+      "class": "Improper Output Neutralization for Logs",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "reconcile.py:70-72 log.info('adjusting %s/%s by %d cents', d.tenant_id, d.account, d.delta). Both string values come from csv.DictReader at reconcile.py:45-46 and, unlike every other path in this worker, never pass the TenantId or AccountRef patterns. A quoted CSV field may contain CR/LF, and logging.basicConfig (consumer.py:122, retry.py:65) emits one text line per record.",
+      "impact": "One statement field forges log records nobody wrote, destroying the accountability of the reconciliation trail.",
+      "recommendation": "Validate the CSV columns through the pydantic types before use, or emit structured JSON logs.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no pattern or allowlist is applied to row['tenant_id'] or row['account']"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "stdlib logging with basicConfig emits line-oriented text"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the deferred %s form still delivers the value into the record"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "no HTML log viewer or line-splitting downstream consumer is in scope, so the impact is record forgery and accountability loss rather than execution; severity is low accordingly and the finding still stands"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/reconcile.py:71"
+        ],
+        "established_by": "log_escaper.py UNCLEARED list, then traced each argument back to its source",
+        "narrowed_by": "reachable only through the statement file"
+      }
+    },
+    {
+      "title": "Settlement receipts posted over cleartext HTTP with redirects followed",
+      "location": {
+        "path": "settlement-worker/settlement/handlers.py",
+        "symbol": "_notify",
+        "line": 37
+      },
+      "class": "Cleartext Transmission of Sensitive Information",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "handlers.py:37 httpx.post(hook_url, json=payload, timeout=3.0, follow_redirects=True). settings.py:45-47 defaults notify_url to http://notifications.internal.fieldops/hooks/settlement. The payload built at handlers.py:65-72 carries tenant_id, destination_account, amount_cents and balance_after.",
+      "impact": "Settlement receipts cross the internal network in the clear, and follow_redirects=True means whoever controls or can spoof that host redirects the receipt body anywhere the worker can reach, including link-local metadata.",
+      "recommendation": "Use https, set follow_redirects=False, and allowlist the final host.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no egress proxy or allowlist is present in either component"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "NOT_APPLICABLE",
+          "reason": "this finding asserts cleartext transmission and redirect-following, not injection; whether the destination is attacker-controlled is not an exculpating condition for it. The constant destination is why the SSRF reading was NOT reported, which is recorded in the evidence rather than carried as an exculpation of this assertion"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "the residual impact is confidentiality of the receipt on an internal hop plus a redirect-following egress, not a reachable pivot from user input"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/handlers.py:37"
+        ],
+        "established_by": "traced hook_url back to the settings constant",
+        "narrowed_by": "the URL is configuration, not attacker-supplied"
+      }
+    },
+    {
+      "title": "Deep-link open redirect loads an attacker URL into a WebView whose JavaScript bridge returns the session bearer",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt",
+        "symbol": "routeWeb",
+        "line": 62
+      },
+      "class": "Deep Link Open Redirect to Credential-Exposing WebView Bridge",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "DeepLinkRouter.kt:62 val target = uri.getQueryParameter(\"target\") ?: \"${BuildConfig.API_BASE}${uri.path}\" and :63 starts ReportWebViewActivity with it. The comment at :56-60 claims the https filter is verified against the domain association file so 'anything arriving on the https scheme is one of our own report links' - but the intent filter at AndroidManifest.xml:47-52 declares <data android:scheme=\"https\" android:pathPrefix=\"/r/\"/> with NO android:host, so it matches /r/ on ANY host, and in any case the target parameter is read from the URI rather than derived from the verified host. The destination activity enables JavaScript (ReportWebViewActivity.kt:44) and registers addJavascriptInterface(ReportBridge(), \"Atlas\") at :57, whose @JavascriptInterface methods return SessionStore.bearer() (:96) and actorId() (:99).",
+      "impact": "Any web page, email or push payload that reaches the device sends the app to an attacker-controlled origin inside the app's own WebView, where one line of JavaScript - Atlas.sessionToken() - reads the signed-in technician's bearer token and posts it out. Full session takeover with no malware and no rooted device.",
+      "recommendation": "Delete the target parameter and derive the URL from the verified host and path only; add android:host to the App Link filter; restrict navigation with an allowlist in shouldOverrideUrlLoading; and remove the token accessor from the bridge - the WebView should receive a short-lived scoped URL rather than the ability to ask for the session.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no shouldOverrideUrlLoading override, no navigation allowlist and no origin check exist anywhere in ReportWebViewActivity.kt; SessionStore.isSignedIn() at DeepLinkRouter.kt:28 gates only that a session exists, which is a precondition of the attack rather than a control on it"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is a query parameter of an externally supplied VIEW intent; both the atlas:// filter (AndroidManifest.xml:39-44) and the https filter (:47-52) are BROWSABLE and exported"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "loadUrl on a JavaScript-enabled WebView with a registered bridge executes the remote page's script against that bridge"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is opening the organisation's own report links; an arbitrary target is outside what the comment claims is bounded"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the missing android:host widens rather than narrows the filter, and the bridge is registered unconditionally for every load"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt:62",
+          "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt:63",
+          "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt:57",
+          "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt:96",
+          "atlas-android/app/src/main/AndroidManifest.xml:47"
+        ],
+        "established_by": "traced every getQueryParameter in the router to its sink, then inventoried the @JavascriptInterface methods against the set of URLs the WebView can be made to load",
+        "narrowed_by": "requires an existing signed-in session (DeepLinkRouter.kt:28); asserted from source, not from a built artifact"
+      }
+    },
+    {
+      "title": "Offline report renderer interpolates unescaped notes into HTML loaded under the API origin",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt",
+        "symbol": "renderOffline",
+        "line": 79
+      },
+      "class": "Cross-Site Scripting (WebView, stored)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "ReportWebViewActivity.kt:78 escapes the title with TextUtils.htmlEncode(title) and :79 interpolates <section class=\"notes\">$notes</section> raw - the adjacent escaped field is the proof it was meant to be escaped. The document is then loaded with loadDataWithBaseURL(\"https://api.fieldops.example/\", ...) at :85-91, so the injected script executes with that base URL as its origin, with JavaScript enabled (:44) and the Atlas bridge registered (:57).",
+      "impact": "Work-order notes - which the API accepts through a three-pattern denylist that does not stop <img onerror> - execute inside the app WebView under the API's own origin and can call Atlas.sessionToken() to exfiltrate the bearer, or issue same-origin requests against api.fieldops.example carrying the app's credentials.",
+      "recommendation": "Escape notes with the same TextUtils.htmlEncode used on the title one line above, and stop granting the offline document the API origin as its base URL - use a null or opaque base for locally stitched HTML.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the server-side scrubNotes at fieldops-api/src/lib/policy.ts:57-63 is a three-pattern denylist that passes <img src=x onerror=>, and no client-side sanitizer exists in this file"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "notes originates from work-order content typed in the app and stored by the API, and the intent extra EXTRA_OFFLINE_NOTES is readable by any component able to start this activity"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the sink is loadDataWithBaseURL with mimeType text/html on a JavaScript-enabled WebView"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "renderOffline is the fallback branch taken whenever EXTRA_URL is absent (ReportWebViewActivity.kt:59-68), which is the normal offline path the class documents"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt:79",
+          "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt:86"
+        ],
+        "established_by": "compared the two interpolations inside the same HTML template literal against their escaping, then read the base URL the document is loaded under",
+        "narrowed_by": "the activity is android:exported=\"false\" (AndroidManifest.xml:57), so the intent extras are reachable only from inside the app; the stored-notes route remains"
+      }
+    },
+    {
+      "title": "Certificate and hostname validation disabled in the staging build distributed to field testers",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt",
+        "symbol": "applyTlsPolicy",
+        "line": 35
+      },
+      "class": "Improper Certificate Validation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "ApiClient.kt:28-32 declares an X509TrustManager whose checkServerTrusted and checkClientTrusted bodies are Unit, and applyTlsPolicy at :35-45 installs it together with hostnameVerifier { _, _ -> true } whenever BuildConfig.ALLOW_INSECURE_TLS is set, returning BEFORE certificatePinner(pinner) is applied - so the pin set at :23-26 and the network_security_config pin-set are both bypassed. build.gradle.kts:47 sets ALLOW_INSECURE_TLS true for the staging build type, which at :35-40 initWith(release), sets isDebuggable=false and only suffixes the applicationId - a signed, non-debuggable build handed to field testers, not a developer-only variant.",
+      "impact": "Every request from the staging build, including the sign-in that mints the bearer and every work-order payload, is readable and modifiable by any intermediary on the tester's network. The trust manager accepts any chain and the verifier accepts any hostname.",
+      "recommendation": "Ship the internal CA as a pinned trust anchor for the staging domain in network_security_config instead of disabling verification, and delete the permissive TrustManager from the source so no build type can reach it.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "applyTlsPolicy returns at ApiClient.kt:44 before certificatePinner is applied, so the pinner is not a compensating layer on this path; network_security_config.xml pins only api.fieldops.example and the staging build points at api.staging.fieldops.example (build.gradle.kts:42-43), which no domain-config covers"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "this is mobile.md MOB-10's named exculpation and it fails: the flag is not confined to the debug variant. build.gradle.kts:35-47 defines staging as a release-derived, non-debuggable, signed build with ALLOW_INSECURE_TLS true, and the comment at :45-46 says it is for field testers' devices"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the empty checkServerTrusted is read from source, not from a decompiler that might have dropped a body"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt:29",
+          "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt:30",
+          "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt:41",
+          "atlas-android/app/build.gradle.kts:47",
+          "atlas-android/app/build.gradle.kts:52"
+        ],
+        "established_by": "traced ALLOW_INSECURE_TLS from every buildConfigField declaration to its single reader, and checked which client builders call applyTlsPolicy (both api and uploads)",
+        "narrowed_by": "the release build type sets ALLOW_INSECURE_TLS false (build.gradle.kts:25), so the production artifact keeps pinning; asserted from source - the shipped artifact was not available to confirm"
+      }
+    },
+    {
+      "title": "Exported ContentProvider resolves a caller-supplied path segment against the attachment directory with no traversal check",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt",
+        "symbol": "AttachmentProvider.openFile",
+        "line": 35
+      },
+      "class": "Path Traversal via Exported Component",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "AndroidManifest.xml:62-66 declares the provider android:exported=\"true\" with android:grantUriPermissions=\"true\" and NO android:permission, android:readPermission or <path-permission>. openFile at AttachmentSync.kt:35-37 takes uri.lastPathSegment and does File(attachmentDir(context!!), name) with no canonicalisation and no containment check; Uri.getLastPathSegment returns the DECODED segment, so a percent-encoded %2F..%2F sequence yields a name containing separators that File resolves upward out of filesDir/attachments. query() at :47 repeats the pattern.",
+      "impact": "Any application installed on the device opens content://co.atlas.field.attachments/<encoded traversal> and reads arbitrary files from the app's private data directory - including the EncryptedSharedPreferences file backing the session - without holding any permission and without the user granting anything.",
+      "recommendation": "Give the provider a signature-level android:permission or set exported=false and share via FileProvider with per-URI grants; and in openFile resolve the candidate with File.canonicalPath and reject anything not under attachmentDir.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no permission attribute on the provider element and no caller check (no Binder.getCallingUid or callingPackage use) anywhere in the class; the manifest is the only gate and it is open"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the URI is supplied by whichever application invokes the provider"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the documented intent at AndroidManifest.xml:60-61 is to let a chosen share-sheet target open ONE attachment the technician selected, which grantUriPermissions already provides per-URI; blanket export is wider than the stated purpose"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "second principal named: any other application installed on the same device"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/AndroidManifest.xml:62",
+          "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt:35",
+          "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt:47"
+        ],
+        "established_by": "listed every exported component in the manifest and followed each handler to its first filesystem or data decision",
+        "narrowed_by": "reads are limited to the app's own uid, so the reachable set is the app sandbox rather than the whole device"
+      }
+    },
+    {
+      "title": "Session bearer is attached by hand to an upload URL the interceptor deliberately refuses to authenticate",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt",
+        "symbol": "AttachmentUploader.upload",
+        "line": 80
+      },
+      "class": "Credential Sent to an Unintended Host",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "AuthInterceptor documents the invariant at AuthInterceptor.kt:9-12 - 'Redirects and presigned URLs point at storage hosts we do not control, so the token must not follow them' - and enforces it at :19-21 by adding the header only when the host equals BuildConfig.API_HOST. AttachmentUploader.upload then bypasses that interceptor entirely: it runs on ApiClient.uploads (AttachmentSync.kt:85), which is built at ApiClient.kt:57-65 with no AuthInterceptor, and sets .header(\"Authorization\", \"Bearer $token\") by hand at AttachmentSync.kt:80 on a uploadUrl the API returns (documented at :66-69 as pointing wherever storage currently lives).",
+      "impact": "The technician's session bearer is transmitted to whatever host the attachment-intent response names - a storage provider outside the organisation - defeating the invariant the interceptor exists to hold. The same client sets followRedirects(true) at ApiClient.kt:62.",
+      "recommendation": "Use the presigned URL's own authorisation and send no bearer, or check the upload host against an allowlist before adding the header; route the upload through the same interceptor rather than hand-building the header.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the compensating control is AuthInterceptor's host check, and this request does not pass through AuthInterceptor at all - ApiClient.uploads is built without it"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "uploadUrl arrives in an API response body rather than from a constant; the code's own comment says it moves between regions without a new build"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is the file bytes to storage, not the session credential"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the header is added unconditionally at AttachmentSync.kt:80 for every upload"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt:80",
+          "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt:57"
+        ],
+        "established_by": "compared the two OkHttpClient builders against the invariant AuthInterceptor's own docstring states, then located every manual Authorization header in the module",
+        "narrowed_by": "the destination is chosen by the API rather than by an attacker directly, which is why this is medium rather than high"
+      }
+    },
+    {
+      "title": "Feature gates fail open: an unknown flag returns true, opening the crew administration surface",
+      "location": {
+        "path": "atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt",
+        "symbol": "isEnabled",
+        "line": 29
+      },
+      "class": "Client-Side Authorization Control Failing Open",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "FeatureGates.kt:29 fun isEnabled(name: String): Boolean = snapshot[name] ?: true, documented at :24-28 as meaning 'the feature is on and the server will tell us if it should not be'. canManageCrews() (:32) and canReopenClosed() (:35) both route through it, while demoMode() at :38 uses ?: false - the sibling default proving the fail-open choice was not uniform. The snapshot is empty until update() runs (:14-20) and is cleared on clear() (:22). DeepLinkRouter.kt:77 gates the crew-administration activity on canManageCrews() alone.",
+      "impact": "Before the first board refresh, after a clear, or whenever the server has not shipped a value for crew_admin, any technician who fires atlas://crew reaches the crew administration screen and the closed-work-order edit path. The app is not a trust boundary, so the real exposure depends on the API re-checking - but the API has no function-level authorization at all, since requireRole is registered on no route.",
+      "recommendation": "Default unknown flags to false, and treat the gate as presentation only - enforce crew administration server-side on the token identity.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the server-side equivalent that MOB-13 requires does not exist: fieldops-api/src/middleware/auth.ts:81 declares requireRole and index.ts imports only attachActor and requireAuth, so no route enforces role"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the map is populated from the API response body at FeatureGates.kt:14-20, and the default applies precisely when nothing populated it"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "this is not a client check with a working server-side twin; the twin is absent, so the impact reaches the user"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt:29",
+          "atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt:32",
+          "atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt:35",
+          "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt:77"
+        ],
+        "established_by": "read every caller of isEnabled and compared the two default branches in the same class",
+        "narrowed_by": "a populated snapshot carrying crew_admin=false closes it until the next clear; MAS-L1 adversary assumed"
+      }
+    },
+    {
+      "title": "Security-critical credential storage depends on an alpha-quality library release",
+      "location": {
+        "path": "atlas-android/app/build.gradle.kts",
+        "symbol": "dependencies",
+        "line": 75
+      },
+      "class": "Reliance on a Pre-Release Component for a Security Control",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "build.gradle.kts:75 implementation(\"androidx.security:security-crypto:1.1.0-alpha06\"). That artifact provides MasterKey and EncryptedSharedPreferences, which SessionStore.kt:23-33 uses as the sole protection for the bearer token, actor, org and role. It is the only pre-release dependency in the block; the other seven are stable.",
+      "impact": "The confidentiality of the stored session rests on an alpha release whose API and behaviour carry no stability guarantee and which receives no backported security fixes.",
+      "recommendation": "Move to a stable release of the library, or wrap the Keystore directly, and pin the version rather than tracking an alpha line.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "whether the organisation has accepted this specific alpha under a documented exception is a decision outside the repository; per FP-08 absence of that artifact is UNKNOWN and never HOLDS, which caps this at probable"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "no vulnerable symbol or advisory is demonstrated against this version, so the finding is bounded to the reliance itself rather than a reachable defect - severity low accordingly"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-android/app/build.gradle.kts:75"
+        ],
+        "established_by": "enumerated the dependency block line by line per COV-02 and separated pre-release from stable coordinates",
+        "narrowed_by": "no evidence of a vulnerable version was found, so this is a supply-chain posture finding rather than an exploitable one"
+      }
+    },
+    {
+      "title": "The settlement-worker task role falls through to an Action:* Resource:* administrator policy",
+      "location": {
+        "path": "pulumi-platform/iam.ts",
+        "symbol": "createRoles",
+        "line": 80
+      },
+      "class": "IAM Policy with Wildcard Action and Resource",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "SERVICES at iam.ts:50-55 lists four workloads: fieldops-api, reports-renderer, warehouse-loader, settlement-worker. SERVICE_POLICIES at iam.ts:15-42 defines only the first three. iam.ts:80 resolves the policy with `const statements = SERVICE_POLICIES[service] ?? BOOTSTRAP_STATEMENTS`, and BOOTSTRAP_STATEMENTS at iam.ts:45-47 is [{Effect:'Allow', Action:'*', Resource:'*'}]. The loop then attaches it as an inline RolePolicy at iam.ts:82-85. The comment at iam.ts:11-14 asserts 'everything the platform runs should have an entry here', which the missing fourth entry contradicts.",
+      "impact": "The settlement worker - the component that consumes an unauthenticated-in-staging stream and whose dead-letter drain re-applies rejected messages - runs with full administrative rights over the entire AWS account: every bucket, every secret, every database, and the ability to create further principals. Any code execution in that task is an account takeover. If an organisation-level SCP caps this account, the effective blast radius is bounded by that policy - but the over-broad grant still stands in the program and still violates least privilege.",
+      "recommendation": "Add an explicit least-privilege entry for settlement-worker and delete BOOTSTRAP_STATEMENTS; make the lookup fail closed - throw when a service has no policy - so a new workload cannot silently inherit administrator.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no permissions boundary, SCP or condition block is attached anywhere in the program; the RolePolicy at iam.ts:82-85 is applied directly with the wildcard statements"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is a literal in the program, not a placeholder - it is what Pulumi will render into the policy document"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nothing bounds it; the constant's own comment calls it a placeholder 'until a workload's real permission set has been worked out', which is an admission rather than a boundary"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "NOT_APPLICABLE",
+          "reason": "the assertion is that this program attaches an Action:* Resource:* inline policy to the role, which is established by reading iam.ts:80-85 and which no artifact outside the repository can make false. An organisation SCP could cap the EFFECTIVE permissions and so bound the blast radius, and that caveat is stated in the impact; it is not an exculpating condition for the over-broad grant itself"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the fallback applies to the whole role, not to a narrowed subset - and the tenant-scoped RolePolicy at index.ts:72-84 is attached to warehouse-loader, a different role, so it narrows nothing here"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/iam.ts:80",
+          "pulumi-platform/iam.ts:46",
+          "pulumi-platform/iam.ts:54"
+        ],
+        "established_by": "joined the SERVICES list against the keys of SERVICE_POLICIES and read the ?? fallback that covers the difference",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Analytics read replica is internet-facing and the database security group accepts 5432 from 0.0.0.0/0",
+      "location": {
+        "path": "pulumi-platform/data.ts",
+        "symbol": "createDataTier",
+        "line": 76
+      },
+      "class": "Network Rule Open to the Internet",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Three decisions compose. data.ts:54-57 places the replica's subnet group in network.publicSubnetIds - subnets whose route table carries 0.0.0.0/0 to the internet gateway (network.ts:30-33) and which set mapPublicIpOnLaunch:true (network.ts:51). data.ts:65 sets publiclyAccessible:true. data.ts:71-78 then adds a SecurityGroupIngressRule for tcp/5432 with cidrIpv4:'0.0.0.0/0' to network.dbSecurityGroup - the same group described at network.ts:99 as 'Postgres - application tier only' and whose only other rule (network.ts:100-107) admits the app security group. The comment at data.ts:69-70 gives the reason: the BI vendor rotates egress addresses, 'so match on the port instead of the source'.",
+      "impact": "A replica carrying every customer record replicated from the primary is reachable from any address on the internet, protected only by the Postgres password. The wildcard rule is attached to the shared database security group, so it also widens the group guarding the primary.",
+      "recommendation": "Put the replica in the private subnets with publiclyAccessible:false and reach it over PrivateLink or a VPN; if the BI vendor must connect, terminate it on a bastion or a dedicated security group with the vendor's prefix list, never 0.0.0.0/0 on the shared group.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no network ACL, WAF or other layer sits in front of the database - the WebACL at edge.ts:151-195 is associated with the ALB (edge.ts:192-195), not with RDS"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the CIDR is a literal '0.0.0.0/0' in the program"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "a public load balancer on 443 is the bounded case FP-05 contemplates; a database port open to the world is not, and the comment shows the width was chosen for convenience rather than as a designed exposure"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the replica carries the customer dimension - email, phone, bank account - replicated from the primary"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the rule names the shared dbSecurityGroup (data.ts:72), so it widens both instances rather than applying to less than it reads"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/data.ts:76",
+          "pulumi-platform/data.ts:65",
+          "pulumi-platform/data.ts:56"
+        ],
+        "established_by": "followed the replica's subnet group to the route table that gives those subnets a default route, then grepped every ingress rule attached to dbSecurityGroup",
+        "narrowed_by": "the primary sets publiclyAccessible:false and sits in the private subnets (data.ts:40,47), so the wildcard rule alone does not make the primary routable"
+      }
+    },
+    {
+      "title": "Staging publishes the export bucket to the world while replicating production export objects into it",
+      "location": {
+        "path": "pulumi-platform/storage.ts",
+        "symbol": "createStorage",
+        "line": 50
+      },
+      "class": "Object Storage Readable by Anyone",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Pulumi.staging.yaml:9 sets publicExports:'true' and :12 sets replicateProdExports:'true'. In storage.ts:42-48 every PublicAccessBlock field is set to !args.publicExports, so all four protections are DISABLED when the flag is on; storage.ts:50-68 then attaches a bucket policy with Principal:'*' and s3:GetObject on ${arn}/*. storage.ts:70-90 accepts inbound replication from the production replication role (storage.ts:20-21), with the comment at :71-72 stating the purpose is so 'this stack sees the same objects the partners are working against'. The bucket is tagged Contains:'work-order-and-billing-exports' (storage.ts:29).",
+      "impact": "Production work-order and billing export objects are copied into a bucket that is anonymously readable over the internet. No credential, no enumeration of the account, and no compromise is required - only the bucket name, which is the deterministic ${tenantSlug}-staging-exports and is emitted as a stack output at index.ts:89.",
+      "recommendation": "Never combine the two flags; drop publicExports entirely and serve exports through the console or a presigned URL, and populate staging from synthetic data rather than replicating production objects.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the PublicAccessBlock that would compensate is itself disabled by the same flag at storage.ts:44-47, and no CloudFront OAC or bucket-policy condition restricts the Principal:'*' statement"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the flag is set to the literal 'true' in the checked-in staging stack configuration"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the stated intent at Pulumi.staging.yaml:7-8 is convenience for support and partner integrators, not publication to anonymous callers; and the data replicated in is production data, which no reading makes public content"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the bucket tag names work-order and billing exports, and partner_extract in the warehouse ships customer name, email and destination account into that dataset"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the policy Resource is ${arn}/* - every object in the bucket - and the PublicAccessBlock disablement is bucket-wide"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/storage.ts:50",
+          "pulumi-platform/storage.ts:44",
+          "pulumi-platform/storage.ts:60",
+          "pulumi-platform/storage.ts:73",
+          "pulumi-platform/Pulumi.staging.yaml:9",
+          "pulumi-platform/Pulumi.staging.yaml:12"
+        ],
+        "established_by": "enumerated both stack configuration files key by key per COV-02 and traced each flag into the conditional resources it controls",
+        "narrowed_by": "Pulumi.prod.yaml:7-8 sets both flags false, so the production stack is not itself public - the exposure is the staging copy of production data"
+      }
+    },
+    {
+      "title": "The /internal/* listener rule forwards to the console target group without the OIDC authentication its sibling requires",
+      "location": {
+        "path": "pulumi-platform/edge.ts",
+        "symbol": "rule-internal",
+        "line": 127
+      },
+      "class": "Missing Authentication for Critical Function",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "edge.ts:102-122 routes /console/* through an authenticate-oidc action and then forwards to consoleTargetGroup, with the comment at :100-101 stating plainly that 'the dispatch console has no login of its own; the listener signs the user in against the identity provider before anything reaches the container'. edge.ts:127-132 routes /internal/* to the SAME consoleTargetGroup with a bare forward action and no authenticate-oidc step, because - per the comment at :124-126 - Grafana 'cannot follow the interactive redirect'. The WebACL at edge.ts:151-190 blocks only paths starting /ops/, so nothing else covers this prefix.",
+      "impact": "The dispatch console, which by its own configuration has no authentication of its own, is reachable unauthenticated from the internet under the /internal/ prefix on the public ALB - whose security group admits 0.0.0.0/0 on 443 (network.ts:76).",
+      "recommendation": "Give the internal panels a separate target group with service-to-service authentication, or authenticate Grafana with a signed header or mTLS at the listener; never expose the loginless console through an unauthenticated path pattern.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the console container performs no authentication of its own, which the sibling rule's own comment states as the reason the listener has to do it; and the ALB WebACL blocks only /ops/"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is a handful of embedded panels for Grafana; the rule pattern /internal/* forwards the whole prefix to the console for any caller"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "second principal named: any unauthenticated internet caller reaching the public listener"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the artifact that would settle this is in scope and says the opposite: edge.ts:27-37 builds an internet-facing application load balancer in network.publicSubnetIds, whose security group admits 0.0.0.0/0 on 443 (network.ts:76-77), and the WebACL associated with it (edge.ts:192-195) blocks only /ops/. No network restriction stands between an internet caller and this rule"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the ops-office-only WAF rule at edge.ts:160-188 narrows /ops/ only; its byteMatch searchString is '/ops/', so it does not touch /internal/"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/edge.ts:127",
+          "pulumi-platform/edge.ts:131"
+        ],
+        "established_by": "listed every ListenerRule on the HTTPS listener and compared each one's action array against the target group it forwards to",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "The reports bucket disables the two public-access protections that block a public bucket policy",
+      "location": {
+        "path": "pulumi-platform/storage.ts",
+        "symbol": "createStorage",
+        "line": 98
+      },
+      "class": "Missing Defence-in-Depth on Object Storage",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "storage.ts:98-104 sets blockPublicAcls:true and ignorePublicAcls:true but blockPublicPolicy:false and restrictPublicBuckets:false on the bucket tagged Contains:'rendered-customer-reports' (storage.ts:95). The asymmetry within one resource block is the signal: the ACL half is protected and the policy half is not. The bucket's current policy (storage.ts:114-132) grants only the partner analytics role, so nothing is public today; but the guard that would REFUSE a future public policy is switched off, and the same file shows a public policy being attached to a sibling bucket a few lines above.",
+      "impact": "Any principal able to call PutBucketPolicy - including the settlement-worker role, which holds Action:* Resource:* - can make every rendered customer report anonymously readable, and no account-level control would reject it.",
+      "recommendation": "Set all four PublicAccessBlock fields true on the reports bucket; the CloudFront distribution reaches it through Origin Access Control (edge.ts:199-203,240-245), which does not require public access.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no account-level Public Access Block or SCP is declared in the program; the bucket-level settings are the only ones present"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended distribution channel is the CloudFront distribution via OAC, which needs neither public policies nor public buckets"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the objects are rendered customer reports"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "the bucket is not public today - the only policy attached is partner-role scoped - so this is an absent defence in depth rather than a live exposure, which is why it ships at medium rather than high. Per FP-10 the finding is still written down"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/storage.ts:101",
+          "pulumi-platform/storage.ts:103"
+        ],
+        "established_by": "compared the four PublicAccessBlock fields across all three buckets declared in the file",
+        "narrowed_by": "no public policy is attached to this bucket in the current program, which bounds the impact to the missing guard"
+      }
+    },
+    {
+      "title": "Partner role trust policy admits Principal AWS:* gated only by a shared external id",
+      "location": {
+        "path": "pulumi-platform/iam.ts",
+        "symbol": "partnerAnalytics",
+        "line": 99
+      },
+      "class": "Overly Permissive Trust Policy",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "iam.ts:92-111 creates the partner-analytics role with an assume-role policy whose Principal is {AWS:'*'} - every AWS account in existence - narrowed only by StringEquals on sts:ExternalId and a SecureTransport condition. The external id is a stack secret (index.ts:22), so it is a shared bearer value rather than an identity. storage.ts:114-132 then grants that role s3:GetObject and s3:ListBucket on the whole rendered-reports bucket.",
+      "impact": "Any AWS principal anywhere that learns the external id - a value that travels to the partner, appears in their configuration and cannot be rotated without coordination - assumes the role and lists and downloads every rendered customer report. AWS documents external id as a confused-deputy defence, not an authentication mechanism.",
+      "recommendation": "Name the partner's account or role ARN as the Principal and keep the external id as the secondary condition, which is the pattern the external id was designed for.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the only other condition is Bool aws:SecureTransport, which constrains the transport rather than the caller; no account, ARN or organisation condition is present"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the Principal wildcard is a literal in the policy document; the external id is a secret, but a secret is a value that can leak, not a principal"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is one named analytics partner; Principal AWS:* is every account"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the StringEquals condition narrows WHO can assume only to whoever holds the value, not to a bounded set of identities; maxSessionDuration 3600 bounds the session, not the caller"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pulumi-platform/iam.ts:99",
+          "pulumi-platform/iam.ts:102",
+          "pulumi-platform/storage.ts:124"
+        ],
+        "established_by": "read the trust policy of every role created in the program and joined the partner role to the bucket policies that reference it",
+        "narrowed_by": "the sts:ExternalId StringEquals condition at iam.ts:102, which is what keeps this at medium rather than high"
+      }
+    },
+    {
+      "title": "Lethal trifecta: one agent holds tenant data, ingests untrusted documents, and can fetch any URL",
+      "location": {
+        "path": "atlas-rag/ragsvc/tools.py",
+        "symbol": "http_get",
+        "line": 20
+      },
+      "class": "Indirect Prompt Injection to Data Exfiltration",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "AI-01 inventory over the single answering agent in app.py:90-127. (1) Private data: lookup_work_order reads rag.work_order_snapshot for the principal's tenant (tools.py:29-50) and retriever.search returns tenant-docs chunk text into the prompt (retriever.py:45-84, prompt.py:22-26). (2) Untrusted ingestion: chunk text originates from documents posted to /v1/documents (app.py:173-192) and from the nightly manifest (app.py:195-201), and is interpolated straight into the system message at prompt.py:38 with no delimiter, no provenance marking and no instruction to distrust it. (3) Outbound channel: http_get (tools.py:20-26) performs an aiohttp GET on any url string the MODEL chooses, with no scheme check, no host allowlist and no private-range block. The system prompt at prompt.py:15-18 actively instructs the model to 'use http_get to follow a link the context points at', and the loop at app.py:101-121 dispatches tool calls for up to max_tool_turns iterations with no privilege degradation after untrusted content enters.",
+      "impact": "A document containing instructions - ingested by any tenant user, or by anyone holding the public demo key through the manifest route - causes the agent to read another document or work order and append it to a URL the attacker controls. No flaw is exploited; the agent is asked, and the system prompt has already told it to follow links found in the context. This is retrieval-driven exfiltration of tenant work-order and document data.",
+      "recommendation": "Break a leg rather than editing the prompt: remove http_get, or restrict it to a fixed allowlist the model cannot alter and strip the response to typed fields; alternatively isolate ingestion in a quarantined model with no tools (Dual LLM) and mark retrieved spans as data. Degrade the available tool set once untrusted content has entered the context.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no allowlist, no egress proxy and no taint mark exists - a grep for trust_level, tainted, untrusted or provenance across ragsvc/ returns nothing, and dispatch (tools.py:97-109) calls fn(principal, **arguments) with no destination check"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the three capabilities sit on ONE agent in one loop: app.py:97 retrieves, app.py:102-106 offers both tools in the same completion call, app.py:118 dispatches them with the same principal. There is no orchestrator boundary between the component that reads untrusted text and the component that can reach the network"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/tools.py:20",
+          "atlas-rag/ragsvc/tools.py:24",
+          "atlas-rag/ragsvc/app.py:118",
+          "atlas-rag/ragsvc/prompt.py:38",
+          "atlas-rag/ragsvc/prompt.py:15"
+        ],
+        "established_by": "built the AI-01 per-agent capability table - one row per tool - over TOOL_SPECS and TOOL_REGISTRY, then traced each mark to the line that grants it",
+        "narrowed_by": "max_tool_turns caps the loop at 4 iterations per query (settings.py:34), which limits the volume per request but not the exfiltration itself"
+      }
+    },
+    {
+      "title": "The http_get tool is an unrestricted server-side request forgery primitive driven by model output",
+      "location": {
+        "path": "atlas-rag/ragsvc/tools.py",
+        "symbol": "http_get",
+        "line": 24
+      },
+      "class": "Server-Side Request Forgery",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "tools.py:20-26 accepts a url string and performs session.get(url) with no validation whatsoever; the TOOL_SPECS declaration at tools.py:70-75 types it as a plain string with no format constraint. The principal argument is accepted and never used. The service runs inside the platform VPC and its model gateway is an internal host (settings.py:27 https://gateway.internal.fieldops/v1), so the network position is an internal one. Up to 4000 characters of the response body are returned into the model's context (tools.py:26), making it a read primitive rather than a blind one.",
+      "impact": "Text in any retrieved document steers the agent to fetch http://169.254.169.254/latest/meta-data/iam/security-credentials/ or any internal service - the RDS proxy, the notifications host, the ALB's internal paths - and the response body is returned into the conversation and thence into the answer. Combined with the platform's task-role wildcard this is a route from a poisoned document to cloud credentials.",
+      "recommendation": "Resolve the URL and reject non-public addresses (link-local, RFC1918, loopback, metadata), constrain the scheme to https, allowlist the hosts the corpus is permitted to cite, and disable redirect following; return an extracted summary rather than raw body text.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no allowlist, no SSRF filter and no egress proxy exists in ragsvc/; aiohttp.ClientSession is constructed at tools.py:23 with only a timeout"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the url comes from call.function.arguments (app.py:118, tools.py:104-109), i.e. from model output that retrieved documents influence"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the sink is an outbound HTTP GET whose response body is returned to the caller's context, so it both reaches and reads"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the documented purpose is fetching a document the context linked to, which does not require reaching link-local or private addresses"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/tools.py:24",
+          "atlas-rag/ragsvc/tools.py:26"
+        ],
+        "established_by": "traced the url parameter from the tool specification through dispatch to the request call",
+        "narrowed_by": "response is truncated to MAX_TOOL_RESULT_CHARS=4000 (tools.py:17), which bounds how much comes back per call but not how many calls are made"
+      }
+    },
+    {
+      "title": "The manifest endpoint writes chunks into any tenant and collection named in the request body, with a world-readable ACL by default",
+      "location": {
+        "path": "atlas-rag/ragsvc/app.py",
+        "symbol": "load_manifest",
+        "line": 195
+      },
+      "class": "Cross-Tenant Knowledge-Base Poisoning",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "app.py:198 calls await _require_principal(request) and DISCARDS the result - the return value is not assigned. app.py:200 then passes body.get('entries', []) straight to ingest.consume_manifest, which at ingest.py:96-103 reads entry['tenant_id'], entry.get('collection','tenant-docs'), entry.get('acl',['*']) and entry['text'] from the request body and persists them (ingest.py:52-78). The caller's own tenant is never consulted, no JSON schema is applied to this route - QUERY_SCHEMA and DOCUMENT_SCHEMA are used on the other two routes but not here - and _assert_collection is not called on this path either. The default ACL is ['*'], which retriever._acl_allows treats as 'allow everyone' at retriever.py:32-33. Any valid key reaches it, including the demo key hard-coded at settings.py:47 and documented at settings.py:46 as printed in the docs and on the sandbox page, which app.py:56-57 accepts without touching the database.",
+      "impact": "Anyone who reads the public documentation can write arbitrary text into any tenant's tenant-docs collection with an ACL that makes it visible to every principal in that tenant. That text is retrieved into the system message on the victim tenant's next query and, with the trifecta above, drives tool calls on their behalf. It is simultaneously a cross-tenant write, a retrieval-poisoning primitive and the delivery route for the exfiltration path.",
+      "recommendation": "Take tenant_id, collection and acl from the authenticated principal, never from the body; validate this route against a schema as the other two are; call _assert_collection; and default the ACL to the principal's tenant rather than ['*']. Give the shared-drive connector its own credential with an explicit tenant binding rather than letting any key assert one.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the only authorization on the route is _require_principal at app.py:198, whose result is discarded; no downstream check compares entry['tenant_id'] to the caller - _persist_chunks (ingest.py:52) inserts what it is given"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "every field consumed at ingest.py:97-102 is read from the posted JSON body"
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "second principal named: every other tenant in the deployment, reachable because tenant_id is caller-supplied"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the written content becomes retrieval context for other tenants' queries, and the read side exposes their document corpus"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the collections_for narrowing at retriever.py:37-42 constrains the demo principal's READS to the public FAQ, but it does not touch this WRITE path at all - the write is not narrowed by anything"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/app.py:198",
+          "atlas-rag/ragsvc/app.py:200",
+          "atlas-rag/ragsvc/ingest.py:97",
+          "atlas-rag/ragsvc/ingest.py:99",
+          "atlas-rag/ragsvc/ingest.py:100"
+        ],
+        "established_by": "compared the three ingestion and query routes field by field - which read the principal, which validate against a schema, and which take tenancy from the body",
+        "narrowed_by": "requires any accepted API key; the publicly documented demo key at settings.py:47 satisfies that, so in practice the route is unauthenticated"
+      }
+    },
+    {
+      "title": "Conversation history is replayed with a caller-controlled role, permitting system-instruction injection",
+      "location": {
+        "path": "atlas-rag/ragsvc/prompt.py",
+        "symbol": "build_messages",
+        "line": 42
+      },
+      "class": "Direct Prompt Injection via Unvalidated Message Role",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "QUERY_SCHEMA at app.py:27 declares history as {'type':'array','maxItems':20} with NO item schema, so each element is an arbitrary object. app.py:164 forwards body.get('history') unchanged, and prompt.py:41-42 appends {'role': turn['role'], 'content': turn['content']} verbatim into the message list, positioned after the system message and before the user's question.",
+      "impact": "A caller submits history entries with role 'system' carrying their own instructions, which the model receives as platform-level direction - overriding the citation requirement, the refusal-to-guess rule, and any tool-use constraint expressed in SYSTEM_INSTRUCTIONS. It also lets a caller forge prior 'assistant' turns to establish false context, and a missing key raises an unhandled KeyError.",
+      "recommendation": "Constrain history items in QUERY_SCHEMA to {role: enum['user','assistant'], content: string with a length cap} and enforce the same in build_messages; never let a request set the system role.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "jsonschema validate at app.py:149 enforces only the array and its maxItems; no item schema and no server-side role filter exists on the path to prompt.py:42"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "history is a field of the request body posted to /v1/query"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the sink is the messages array of a chat completion, where the role field carries meaning"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the tools offered in the same call reach tenant data and the network, so an instruction override is not merely cosmetic"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/prompt.py:42",
+          "atlas-rag/ragsvc/app.py:27",
+          "atlas-rag/ragsvc/app.py:164"
+        ],
+        "established_by": "compared each QUERY_SCHEMA property against how app.py forwards it and how prompt.py consumes it",
+        "narrowed_by": "requires a valid API key; the publicly documented demo key satisfies that"
+      }
+    },
+    {
+      "title": "Key rotation and token exchange mint credentials for whoever presents the publicly documented demo key",
+      "location": {
+        "path": "atlas-rag/ragsvc/app.py",
+        "symbol": "rotate_key",
+        "line": 222
+      },
+      "class": "Unauthenticated Credential Issuance",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "_principal_for_key at app.py:55-57 short-circuits on settings.demo_api_key before any database lookup and returns Principal(settings.demo_tenant,'playground',{'public'}). settings.py:46 documents that key as 'printed in the docs and on the sandbox page'. app.py:222-242 accepts an api_key in the BODY, resolves it through that same function, and inserts a brand-new row into rag.api_keys with the resolved tenant, subject and groups (app.py:237-241), returning the fresh key. app.py:204-219 does the equivalent for session tokens. Neither route is rate limited - limits.allow is called only on /v1/query (app.py:144).",
+      "impact": "Any reader of the documentation converts the shared demo key into an unlimited supply of durable, individually-issued API keys for the demo tenant, which then reach /v1/documents and the unscoped /v1/manifest route above. Unbounded credential issuance also gives an attacker keys that survive rotation of the demo key itself.",
+      "recommendation": "Exclude the demo principal from the rotate and token routes, require the presented key to exist in rag.api_keys, rate limit both routes, and treat the sandbox key as a read-only identity that cannot mint anything.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no check compares the presented key against the database on the demo branch - app.py:56 returns before the psycopg.connect at :59 - and no limiter is applied to either route"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the key is read from the request body at app.py:226 and 208"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is a public read-only playground; issuing persistent credentials is outside that boundary"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the issued value is a working credential, and the demo tenant shares the ingestion routes with real tenants"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "collections_for narrows what the demo principal can READ (retriever.py:39-41) but does not narrow what these two routes ISSUE"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/app.py:226",
+          "atlas-rag/ragsvc/app.py:237",
+          "atlas-rag/ragsvc/app.py:208",
+          "atlas-rag/ragsvc/app.py:56"
+        ],
+        "established_by": "traced every caller of _principal_for_key and separated the routes that read a credential from the routes that create one",
+        "narrowed_by": "issued credentials carry the demo tenant and the 'public' group, so the read side stays bounded to the public FAQ collection"
+      }
+    },
+    {
+      "title": "Document ingestion and embedding have no rate limit or cost ceiling",
+      "location": {
+        "path": "atlas-rag/ragsvc/app.py",
+        "symbol": "add_document",
+        "line": 173
+      },
+      "class": "Unbounded Resource and Cost Consumption",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "limits.allow is invoked on one route only, /v1/query (app.py:144). /v1/documents (app.py:173) accepts text up to 2,000,000 characters per DOCUMENT_SCHEMA (app.py:38) and passes it to embedder.split then embedder.embed (ingest.py:59-60), which calls the paid embeddings API (embedder.py:49-53). /v1/manifest (app.py:195) accepts an unbounded entries array with no schema at all, each element embedded the same way. The limiter itself is an in-process dict (limits.py:15) and the module docstring at limits.py:3-6 concedes it relies on sticky sessions, so the effective ceiling multiplies by the process count.",
+      "impact": "A single caller drives unbounded third-party embedding spend and database growth, and the manifest route does so with no per-request bound at all. This is the cost surface the squad's own safety contract rule 9 names.",
+      "recommendation": "Apply limits.allow to every mutating route keyed by tenant, cap entries per manifest request and total characters per request, and move the window to a shared store so the limit is not per process.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "limits.allow appears exactly once in the tree, at app.py:144; no gateway or quota layer is present in the repository"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the document text and the entries array are request body fields"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "a provider-side spend cap or an API gateway quota could bound the cost, but no exported configuration or written statement is in scope; per FP-08 that is UNKNOWN and never HOLDS"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the impact is direct third-party spend and unbounded storage growth, not a defence-in-depth gap"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/app.py:173",
+          "atlas-rag/ragsvc/app.py:195",
+          "atlas-rag/ragsvc/ingest.py:60",
+          "atlas-rag/ragsvc/embedder.py:52"
+        ],
+        "established_by": "listed every route against the single limits.allow call site, then followed each unlimited route to the paid API call",
+        "narrowed_by": "requires a valid API key, which the documented demo key provides"
+      }
+    },
+    {
+      "title": "Access-Control-Allow-Origin is set to a wildcard on every response including authenticated ones",
+      "location": {
+        "path": "atlas-rag/ragsvc/app.py",
+        "symbol": "cors",
+        "line": 256
+      },
+      "class": "Permissive Cross-Origin Resource Sharing",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "settings.py:41 cors_allow_origins: tuple[str, ...] = ('*',) and app.py:256 sets the header to cors_allow_origins[0] - the wildcard - on the response of every route, not only on a health or public endpoint. The middleware is registered globally at app.py:263.",
+      "impact": "Bounded by the authentication design rather than by the CORS configuration: settings.py:42-44 records, and the code confirms, that the API is bearer-only with no cookie read anywhere, and cors_allow_credentials is False, so a hostile origin cannot ride an ambient credential and a wildcard origin cannot be combined with credentials by the browser. The residual exposure is that any origin may issue unauthenticated or attacker-token requests and read the responses.",
+      "recommendation": "Serve the configured per-tenant portal origins by echoing a validated Origin against an allowlist rather than emitting a wildcard, which also prepares the service for any future cookie or credentialed flow.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no gateway rewrites the header; this middleware is the only place it is set"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the wildcard is a literal in settings.py:41"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "there is no ambient credential to abuse - no endpoint reads a cookie, authentication is a bearer header, and cors_allow_credentials is False (settings.py:44) - so a hostile page cannot make an authenticated cross-origin request on a victim's behalf. Per FP-10 the finding is written down but bounded to low"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "unlike the narrow decoy shape this rule was derived from, the header here is set by a middleware registered on the whole application (app.py:263), so it genuinely applies to every route"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "atlas-rag/ragsvc/app.py:256",
+          "atlas-rag/ragsvc/settings.py:41"
+        ],
+        "established_by": "read the middleware registration and confirmed no route sets or overrides the header itself",
+        "narrowed_by": "bearer-only authentication with cors_allow_credentials False, which is what holds this at low"
+      }
+    },
+    {
+      "title": "The full-refresh branch of customer_pii_masked emits raw email, phone and bank account",
+      "location": {
+        "path": "warehouse-dbt/models/marts/customer_pii_masked.sql",
+        "symbol": "else branch",
+        "line": 40
+      },
+      "class": "Masking Control Bypassed on an Alternate Build Path",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The incremental branch (customer_pii_masked.sql:19-33) applies masked_email, masked_phone and masked_account to the three sensitive columns. The {% else %} full-rebuild branch at :35-53 selects email, phone and bank_account RAW from the same source, keeping the identical column names, so the relation's contract is unchanged while its contents are not. The comment at :37-39 states this branch 'runs on the first build of a new environment and whenever the masking policy version changes' - and a policy-version change is exactly when the masking is being tightened. The model's own description at models/marts/schema.yml:34 calls it 'The customer view every downstream consumer is pointed at', and schema.yml:41,43 document email as 'First character plus domain' and bank_account as 'Last four digits only', which the else branch does not deliver. dbt tests declared for the model (schema.yml:36-46) check uniqueness and not_null only; nothing asserts that the values are masked.",
+      "impact": "After any dbt run --full-refresh, after a pii_policy_version bump, and on the first build of every new environment, the table the whole warehouse treats as the masked customer view contains unmasked contact details and complete bank account numbers - and it stays that way until an incremental run happens to overwrite each row.",
+      "recommendation": "Apply the same three macros in the else branch; add a dbt test that fails when email does not match the masked shape, so the two branches cannot diverge silently again.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no downstream layer re-masks: partner_extract selects c.email and c.bank_account directly from this relation (partner_extract.sql:40-41,53-54), and no post-hook in dbt_project.yml:37-43 performs masking"
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the else branch is the standard dbt full-refresh path, reached by a documented and routine operation, not by a debug flag"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "email, phone and bank_account are personal data under PRV-01, and schema.yml:29-31 labels them raw contact and raw destination account"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the branch produces the entire relation - the comment at :38-39 says it carries the whole history rather than a tail - so it applies to every row, not to a subset"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/models/marts/customer_pii_masked.sql:43",
+          "warehouse-dbt/models/marts/customer_pii_masked.sql:44",
+          "warehouse-dbt/models/marts/customer_pii_masked.sql:45"
+        ],
+        "established_by": "diffed the two branches of the is_incremental conditional column by column against the macro applications in the first branch",
+        "narrowed_by": "the incremental branch does mask, so a steady-state environment that has never been full-refreshed since its first build is not affected"
+      }
+    },
+    {
+      "title": "Partner extract ships customer name, email and destination account across every tenant with no tenant predicate",
+      "location": {
+        "path": "warehouse-dbt/models/exports/partner_extract.sql",
+        "symbol": "final select",
+        "line": 45
+      },
+      "class": "Cross-Tenant Personal Data Disclosure to a Third Party",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The events CTE (partner_extract.sql:18-32) filters on partner_id only; tenant_id is selected but never constrained. The customers CTE (:34-43) reads customer_pii_masked with no filter at all, and the join at :56 is on customer_id alone with no tenant predicate on either side. The final projection at :45-57 emits display_name, email and bank_account as customer_name, customer_email and destination_account. The model materialises into the exports schema, which dbt_project.yml:45-50 grants to partner_readers, and the header comment at :13 states 'the partner's own BI tool reads the table straight out of the exports schema'. Crucially, dbt_project.yml:45-50 configures exports with a post-hook only - unlike staging (:32) and marts (:40), it has NO +pre-hook running enable_row_security - so the tenant isolation policy is never applied to this relation.",
+      "impact": "A partner receives settlement rows and the attached customer identity for every tenant whose payout events carry that partner_id, with no row-level policy standing behind it. Combined with the full-refresh finding above, after any full rebuild the columns labelled masked carry raw email addresses and complete bank account numbers, so the export becomes a cross-tenant disclosure of unmasked financial contact data to an external party.",
+      "recommendation": "Add an explicit tenant predicate to the events CTE and to the customer join, driven by a required var; add the enable_row_security pre-hook to the exports folder as the other two folders have; and select the masked columns explicitly rather than inheriting whatever the upstream relation happens to contain.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "row-level security is the candidate compensating layer and it is not applied here - dbt_project.yml:45-50 omits the enable_row_security pre-hook that :32 and :40 declare, so no policy exists on this relation"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the intended exposure is one partner's own settlement rows; spanning every tenant that shares a partner_id is wider than the stated purpose"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "name, email and destination account are personal and financial data under PRV-01"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the partner_id filter narrows by PARTNER, which is a different axis from tenant; it does not narrow the tenant span at all, and the customers CTE is unfiltered"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/models/exports/partner_extract.sql:30",
+          "warehouse-dbt/models/exports/partner_extract.sql:41",
+          "warehouse-dbt/models/exports/partner_extract.sql:56",
+          "warehouse-dbt/models/exports/partner_extract.sql:53",
+          "warehouse-dbt/models/exports/partner_extract.sql:54",
+          "warehouse-dbt/dbt_project.yml:45"
+        ],
+        "established_by": "traced every column of the final projection back to its source relation and listed which CTEs carry a tenant predicate, then compared the three folder configurations in dbt_project.yml for pre-hooks",
+        "narrowed_by": "the limit at :58 caps the extract at max_rows (default 5000), which bounds the volume per build but not the tenant span"
+      }
+    },
+    {
+      "title": "Row-level security is enabled without FORCE, so the owning role the pipeline runs as bypasses every policy",
+      "location": {
+        "path": "warehouse-dbt/macros/row_security.sql",
+        "symbol": "enable_row_security",
+        "line": 18
+      },
+      "class": "Row-Level Security Not Enforced Against the Table Owner",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "row_security.sql:18 emits `alter table {{ relation }} enable row level security` with no accompanying FORCE ROW LEVEL SECURITY. In PostgreSQL, ENABLE alone leaves the table owner exempt from all policies. dbt creates and therefore owns these relations, and profiles.yml:32-42 shows the prod target connecting as WAREHOUSE_USER - the same role that owns the objects. apply_grants.sql:25-26 then grants insert and update on every relation to settlement_app and warehouse_loader on top. The policy itself (row_security.sql:22-24) is otherwise sound and fails closed, since current_setting('app.tenant_id', true) returns NULL when unset and tenant_id = NULL matches nothing.",
+      "impact": "The tenant_isolation policy the macro exists to install does not constrain the pipeline role or any other owner-equivalent principal, so the isolation the module docstring promises - 'a tenant's session can only ever address its own rows' - holds only for non-owner readers.",
+      "recommendation": "Emit `alter table ... force row level security` alongside the enable, and confirm that the role reading on behalf of tenants is neither the owner nor a superuser.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no other layer restores the constraint for the owner; apply_grants.sql adds privileges rather than removing them"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "NOT_APPLICABLE",
+          "reason": "the assertion is that the emitted DDL omits FORCE ROW LEVEL SECURITY, established by reading row_security.sql:18, and PostgreSQL's exemption of the table owner under ENABLE alone is documented behaviour rather than a deployment fact. Whether the tenant-facing reader is ALSO the owner changes how much the omission costs, which is stated in the impact, and is not an exculpation of the omission"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the reading is a documented PostgreSQL behaviour: ENABLE exempts the owner, FORCE does not"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the omission applies to every relation the macro is run against - all of staging and marts per dbt_project.yml:32,40"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/macros/row_security.sql:18"
+        ],
+        "established_by": "read the emitted DDL statement by statement and compared it against what PostgreSQL requires for owner enforcement",
+        "narrowed_by": "the policy predicate itself fails closed for non-owner roles, so non-owner readers are correctly isolated; how far the owner exemption reaches depends on the deployed grant state, which is outside this repository"
+      }
+    },
+    {
+      "title": "Grant macro falls back to the public role and hands write verbs on every relation to two application roles",
+      "location": {
+        "path": "warehouse-dbt/macros/apply_grants.sql",
+        "symbol": "apply_grants",
+        "line": 17
+      },
+      "class": "Incorrect Privilege Assignment",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "apply_grants.sql:11-15 maps prod, ci and dev to reader roles and :17 resolves anything else with reader_by_target.get(target.name, \"public\") - PUBLIC in PostgreSQL being every role in the cluster. :20-21 then grants usage on the schema and select on the relation to that resolved name. Independently, :25-26 unconditionally grants insert and update on EVERY relation to settlement_app and warehouse_loader, and dbt_project.yml:32,41,48 registers this macro as the post-hook for all three folders - so those two application roles receive write access to the PII marts and to the partner exports, not only to the staging tables they load.",
+      "impact": "A dbt run executed against any target name outside the three mapped ones publishes that relation to every database role, including customer_pii_masked and partner_extract. Separately, the settlement application can rewrite the masked customer mart and the partner extract in place, which no part of its job requires and which no audit would surface.",
+      "recommendation": "Fail the run when target.name is unmapped instead of defaulting to public, and scope the insert/update grants to the staging relations those two roles actually load.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no later revoke narrows these grants; the macro is the last statement to touch the relation's privileges in each post-hook"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "target.name is operator-supplied at run time via --target and is not constrained to the three mapped values anywhere"
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "granting to PUBLIC is not a bounded intended exposure; the mapping's own structure shows a named reader role was intended per environment"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the relations include the customer PII marts and the partner export"
+        },
+        {
+          "rule": "FP-11",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the +grants blocks in dbt_project.yml are a separate mechanism that does not undo what this macro executes through run_query"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/macros/apply_grants.sql:17",
+          "warehouse-dbt/macros/apply_grants.sql:25",
+          "warehouse-dbt/macros/apply_grants.sql:26"
+        ],
+        "established_by": "enumerated dbt_project.yml key by key per COV-02 to find every post-hook registration, then read the macro's grant statements against the reader map",
+        "narrowed_by": "profiles.yml declares exactly dev, ci and prod (profiles.yml:9,20,32), so the public fallback needs a run with a target name outside those three"
+      }
+    },
+    {
+      "title": "Deterministic pseudonym is an unsalted hash of the customer id, reversible by enumeration",
+      "location": {
+        "path": "warehouse-dbt/macros/mask_pii.sql",
+        "symbol": "pseudonym",
+        "line": 33
+      },
+      "class": "Insufficient De-identification",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "mask_pii.sql:33 encode(digest(customer_id || 'v3', 'sha256'), 'hex') - the only entropy added to the identifier is var('pii_policy_version'), which is the literal v3 declared in plain text at dbt_project.yml:18 and therefore not a secret. models/marts/schema.yml:44-46 describes the output as a 'Stable hash, safe to join on across environments'.",
+      "impact": "Anyone holding the pseudonym column and the customer id space recomputes the mapping directly, because the transform is a public function of a public value. The pseudonym re-identifies rather than de-identifies, and because it is stable across environments the same value links records in lower environments back to production subjects.",
+      "recommendation": "Key the digest with a secret held outside the repository (HMAC with a warehouse-side key), or use a random surrogate stored in a mapping table with restricted access; do not treat a version string as a salt.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no access restriction compensates - the column is granted to analyst_role via dbt_project.yml:42-43 and to partner-adjacent roles through the export path"
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the salt is a literal in a versioned configuration file"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "a value that maps one-to-one to a customer identifier is personal data under PRV-01, whatever it is called"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the column is presented as the safe join key, so the impact reaches whoever relies on that claim"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/macros/mask_pii.sql:33",
+          "warehouse-dbt/models/marts/customer_pii_masked.sql:28",
+          "warehouse-dbt/models/marts/customer_pii_masked.sql:47"
+        ],
+        "established_by": "read the digest expression and traced its only variable input to the plain-text var declaration",
+        "narrowed_by": "requires knowledge of the customer id space to enumerate, which any holder of a downstream extract already has"
+      }
+    },
+    {
+      "title": "Staging model pulls raw contact details and full bank account numbers it never uses downstream",
+      "location": {
+        "path": "warehouse-dbt/models/staging/stg_payout_events.sql",
+        "symbol": "final select",
+        "line": 66
+      },
+      "class": "Violation of Data Minimization",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "stg_payout_events.sql:44-53 joins the raw CRM customers source and :31-42 joins settlement.tenant_accounts, and the projection at :55-73 carries bank_account_number, customer_name, customer_email and customer_phone into the staging relation. The model's stated purpose at :9-11 is to flatten the journal and pin the customer and partner an event belongs to - which needs the identifiers, not the contact details. The only downstream consumer, partner_extract.sql:18-32, selects payout_id, tenant_id, partner_id, amount_cents, currency, reference, created_at and customer_id from it and uses none of the four. dbt_project.yml:34-36 grants the staging schema to loader_role and analyst_role.",
+      "impact": "A second unmasked copy of customer contact details and complete bank account numbers exists in the staging schema, exposed to a broader set of roles than the marts, purely as a by-product of a join that only needed keys. It widens the blast radius of any warehouse compromise and sits outside the masking the marts layer applies.",
+      "recommendation": "Drop the four columns from the projection and keep customer_id and partner_id; if a downstream model later needs contact details, take them from the masked mart rather than the raw source.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "no masking macro is applied in the staging folder - dbt_project.yml:29-36 registers only enable_row_security and apply_grants"
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the columns are materialised into an incremental table, not computed and discarded"
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "bank account numbers and contact details are personal and financial data under PRV-01"
+        },
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "a consumer outside this repository - a BI query or notebook against the staging schema - could use these columns; per FP-08 that possibility cannot be resolved from the tree, and it is why this is reported as minimization rather than as dead data"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "warehouse-dbt/models/staging/stg_payout_events.sql:66",
+          "warehouse-dbt/models/staging/stg_payout_events.sql:67",
+          "warehouse-dbt/models/staging/stg_payout_events.sql:68",
+          "warehouse-dbt/models/staging/stg_payout_events.sql:69"
+        ],
+        "established_by": "listed the projection of the staging model against the column list its only in-repo consumer selects",
+        "narrowed_by": "the relation carries the row-level security pre-hook (dbt_project.yml:32), so non-owner readers are tenant-scoped"
+      }
+    },
+    {
+      "title": "No dependency is pinned and no lockfile is present in any of the four language manifests",
+      "location": {
+        "path": "fieldops-api/package.json",
+        "symbol": "dependencies",
+        "line": 13
+      },
+      "class": "Non-Reproducible Dependency Resolution",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "Enumerated key by key per COV-02. fieldops-api/package.json:13-25 uses caret ranges on all six runtime and three dev dependencies; pulumi-platform/package.json:11-19 the same on five. atlas-rag/pyproject.toml:6-13 and settlement-worker/pyproject.toml:6-12 use >= with no upper bound on six and five dependencies respectively. No package-lock.json, yarn.lock, poetry.lock, uv.lock or requirements.txt exists anywhere in the tree.",
+      "impact": "Two builds of the same commit can resolve different code, so what is reviewed is not necessarily what ships, and a compromised or malicious release published to any of these names is picked up on the next install with no review step. Nothing here demonstrates a currently vulnerable version.",
+      "recommendation": "Commit a lockfile per component and install with the frozen flag in CI, so resolution is a reviewed artifact rather than a build-time decision.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "lockfiles could be generated and pinned in a pipeline outside this tree; no CI configuration is present anywhere in the target to show it, and per FP-08 absence of the artifact is UNKNOWN, never HOLDS"
+        },
+        {
+          "rule": "FP-10",
+          "answer": "HOLDS",
+          "reason": "no vulnerable or malicious version is demonstrated and no vulnerable symbol is shown to be imported, so per supply-chain triage this stays informational in impact and is reported at low severity rather than escalated"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldops-api/package.json:13",
+          "pulumi-platform/package.json:11",
+          "atlas-rag/pyproject.toml:6",
+          "settlement-worker/pyproject.toml:6"
+        ],
+        "established_by": "enumerated every dependency key in all four manifests and searched the whole tree for lockfiles of any ecosystem",
+        "narrowed_by": "presence of a floating range is not exploitability; nothing in this finding asserts a vulnerable version is resolved today"
+      }
+    },
+    {
+      "title": "max_delivery_attempts is configured but never read, so a single exception dead-letters a message immediately",
+      "location": {
+        "path": "settlement-worker/settlement/settings.py",
+        "symbol": "Settings.max_delivery_attempts",
+        "line": 51
+      },
+      "class": "Declared Control Not Enforced",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "settings.py:51 declares max_delivery_attempts with a default of 5 and the consumer docstring at consumer.py:5-6 states that failures 'go to the dead-letter stream after max_delivery_attempts'. A search of both assigned trees finds the symbol only in that declaration and that docstring - there is no reader. consumer.run_once at consumer.py:112-117 catches the first exception of any kind and dead-letters the entry on the spot.",
+      "impact": "The documented retry budget does not exist: one transient database timeout, and equally one signature rejection or one authorization failure, promotes a message straight into the dead-letter stream. This is the mechanism the dead-letter replay bypass depends on, since it is what puts a REJECTED message where the drain will re-apply it.",
+      "recommendation": "Honour the retry budget by tracking delivery count (XAUTOCLAIM or the entry's delivery counter) before dead-lettering, and send control-rejected messages to a separate quarantine stream the drain refuses.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "UNKNOWN",
+          "reason": "a reader could exist in a deployment wrapper or supervisor outside the two assigned components; both trees were grepped and only the declaration and the docstring were found, and per FP-08 absence of that artifact is UNKNOWN and never HOLDS. This is what caps the finding at probable"
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "the value is an ordinary dataclass field, not consumed by reflection or by a settings struct read wholesale"
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "settlement-worker/settlement/settings.py:51",
+          "settlement-worker/settlement/consumer.py:114"
+        ],
+        "established_by": "symbol search across both assigned trees, subtracting the declaration and the docstring mention, then read the only exception handler on the consume path",
+        "narrowed_by": "scope is the two assigned components"
+      }
+    }
+  ]
+}
