@@ -4,9 +4,30 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 > **Authorized use only.** This skill is for auditing systems you own or have explicit permission to test. Its safety contract forbids persistence, exfiltration, destruction, denial of service, real phishing, stealth evasion and lateral movement, and requires authorization before scanning remote targets, exploiting a vulnerability, or touching production.
 
+## The part no competing product does
+
+Every tool in this field claims to find things. **This one publishes the measurements, including
+the ones it loses.**
+
+Against the five other products in this field, on a rubric fixed before any of them was opened — a
+measured detection number, its method, a comparison against not using it, a published negative
+result, a retraction, a pre-registration — [this project answers yes to all six and no other
+exceeds one](bench/runs/2026-08-21-field-transparency/).
+
+What that buys a reader is unusual and worth being precise about: **eight pre-registered rounds
+against `google/mantis`, and this project has not met its own bar in any of them.** The bar was
+fixed before the first round, lowered once with the lowering declared, and never raised. Each round
+names in advance what result would refute it, retires its corpus afterwards so no number can be
+re-rolled, and publishes the losses with the same care as the wins — including the rounds where the
+author found that his own harness had disabled the control being measured, and
+[said so](bench/runs/CORRECTION-inline-constraint.md).
+
+You are not being asked to believe a claim. You are being handed the reports, the keys, the scoring
+script and the pre-registrations, and invited to disagree with them.
+
 ## What it is measured to do, and what it is not
 
-This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
+The honest summary comes before the sales pitch.
 
 **Eighteen blinded measurements — against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
 
@@ -45,7 +66,7 @@ Still **one model scale**, both targets authored here, and every competitor run 
 
 The second dimension is not capability at all.
 
- Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+ That survey also corrected an error in this repository's own competitive analysis, which is the point of running it.
 
 ## What makes it different
 
