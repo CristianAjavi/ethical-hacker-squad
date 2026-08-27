@@ -22,10 +22,23 @@ WHAT IT DOES
     where at least one caller runs a validator and at least one runs none. It
     names both, because the finding is the asymmetry and not either line.
 
-WHAT IT COSTS, MEASURED
+WHAT IT COSTS, MEASURED - AND WHAT IT MISSES, ALSO MEASURED
     On the six-service corpus it makes **8 distinct flags**. Three fall within
     five lines of a planted defect, four within ten. That is roughly a 40-50%
     hit rate, and it is the number to plan around.
+
+    Its RECALL was published a day later than its precision, and it is worse.
+    On a later six-service corpus, independent readers found **five** writer
+    asymmetries - including one that is this check's own headline shape, an
+    entity written by three functions where two call a validator and one does
+    not. This check reported **zero of the five**. The cause is structural, not
+    a tuning error: `WRITE` matches CALLS, and an ORM write is frequently an
+    attribute assignment on an already-loaded instance (`note.body = x`, then
+    `flush()`), which offers no call to match. Two of the six services were
+    TypeScript and yielded no entities at all.
+
+    So a clean run of this check is a fact about the check. It is a worklist
+    that misses, not a clearance, and the summary now says so on every run.
 
     A first count put it at 100%, using a forty-line window on files of sixty to
     a hundred lines - a window that catches almost anything in the file. The
@@ -230,6 +243,17 @@ def main(argv=None) -> int:
                   f"while {v['c']['fn']}() at {cw} calls {', '.join(v['c']['validators'][:2])}")
         print(f"  {len(writers)} written entit(ies) in {len(files)} file(s); "
               f"{len(asym)} with one writer checked and another not")
+    # A zero here is NOT "no asymmetry exists", and saying so is the difference
+    # between a worklist and a clearance. Measured: on a six-service corpus that
+    # independent readers found FIVE asymmetries in - one of them the exact
+    # shape this tool describes - it reported zero. The cause is that WRITE
+    # matches CALLS, and an ORM write is often an attribute assignment on a
+    # loaded instance (`note.body = x` then `flush()`), which has no call to
+    # match. So the recall of this check on that corpus was 0 of 5.
+    print("  NOT SEEN BY THIS CHECK: a write performed as attribute assignment on a")
+    print("  loaded object, and any language whose writes it does not pattern-match.")
+    print("  Measured recall on the one corpus where the asymmetries were known "
+          "independently: 0 of 5. Zero flags is a fact about this check, not about the tree.")
     return 1 if asym else 0
 
 

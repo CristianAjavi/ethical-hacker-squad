@@ -100,5 +100,26 @@ echo "== could not measure is never a pass =="
 run "$TMP/absent"; rc=$?
 [ "$rc" -eq 2 ] && ok "an absent target gives rc 2" || bad "expected rc 2, got $rc"
 
+# --- the limit must be printed on EVERY run, including a clean one ------------
+# Zero flags reading as "no asymmetry exists" is the exact failure this project
+# spends its rounds hunting elsewhere. Measured: on a corpus where independent
+# readers found five asymmetries, this check found none - so the line saying what
+# it cannot see is load-bearing, not decoration.
+mkdir -p "$TMP/clean"
+cat > "$TMP/clean/m.py" <<'PYEOF'
+class Widget:
+    pass
+
+def make(db, w):
+    db.add(w)
+PYEOF
+run "$TMP/clean"
+grep -q "NOT SEEN BY THIS CHECK" "$TMP/out" \
+  && ok "a clean run still declares what the check cannot see" \
+  || bad "a clean run printed no limit: zero flags reads as a clearance"
+grep -q "0 of 5" "$TMP/out" \
+  && ok "the measured recall travels with the result, not only the precision" \
+  || bad "the recall number is missing from the output"
+
 echo; echo "$pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
