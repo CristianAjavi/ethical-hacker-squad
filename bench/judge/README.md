@@ -145,3 +145,39 @@ engage the exculpation, how many assert something it does not cover?* That is th
 build a control for, and the failed judge above is the evidence that it will not be built by asking
 a model the question directly.
 
+## Third addendum: the question resists measurement, and that is the answer for today
+
+A third attempt, chosen because it needs no model at all. If a decoy location attracts **different
+claims from different runs**, at most one of them can be the claim the decoy baited. And it carries
+its own control: at a **planted** location every run is describing the same real defect, so their
+claims should converge.
+
+| sites hit by ≥3 runs | n | mean claim similarity | sites where claims barely match (<0.20) |
+|---|---|---|---|
+| **planted** *(the control)* | 54 | 0.250 | **30%** |
+| decoy *(the question)* | 13 | 0.210 | 62% |
+
+The direction is what the hypothesis predicted — decoy locations attract more divergent claims than
+planted ones. **And the control refuses to validate it.** At sites where every run is describing
+the *same planted defect*, the measure calls 30% of them different claims. A measure that wrong on
+the case with a known answer cannot carry the case without one, and 13 decoy sites is a thin sample
+besides.
+
+So the count is not reported as a finding. What is reported is the pattern across the day:
+
+| attempt | control | outcome |
+|---|---|---|
+| blind judge, open question | 10 planted + 10 decoys, sealed | **failed** — 3/10 decoys called false |
+| blind judge, disqualifying search forced | same sealed answers | **failed identically** — 3/10 |
+| word overlap against `looks_like` | inspection of four cases | **refuted by its own example** — hyphenation |
+| claim divergence across runs | planted sites should converge | **control mislabels 30%** |
+
+**Four methods, four controls, nothing established.** The one thing measured without a control
+failing is the 85–91% who cite the exculpation — because that measure asks a mechanical question
+(does this string appear) rather than a semantic one (does this claim mean the same thing).
+
+That is the shape of the day's answer: **the semantic question — is this claim the one the decoy
+baited — has resisted every method tried, including two that this ledger's own findings
+recommended.** It is left open, the decoy figures stay marked as an upper bound, and the next
+attempt should be a different kind of thing rather than a fifth phrasing.
+
