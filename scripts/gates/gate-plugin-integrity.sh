@@ -339,7 +339,12 @@ for _f in "${MD_FILES[@]}"; do
     *) _KEPT+=("$_f") ;;
   esac
 done
-MD_FILES=("${_KEPT[@]}")
+# bash 3.2 (the macOS default) treats an empty array as UNSET under `set -u`, so
+# a bare "${_KEPT[@]}" aborts the gate the moment every .md is a fixture. This
+# crashed on the very first fixture that exercised it, an hour after the
+# exclusion shipped, and the repository itself could never have shown it: it has
+# 171 links and would never hit the empty case.
+if ((${#_KEPT[@]} > 0)); then MD_FILES=("${_KEPT[@]}"); else MD_FILES=(); fi
 if ((FIXTURE_MD > 0)); then
   info "$FIXTURE_MD .md file(s) under scripts/gates/fixtures/ excluded: they are gate inputs, some malformed on purpose"
 fi

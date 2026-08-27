@@ -79,12 +79,20 @@ m_tool_compile()    { m_tool_inert "$1"; printf 'compile("x=1", "<s>", "exec")\n
 m_tool_recompile()  { m_tool_inert "$1"; printf 'import re\nPAT = re.compile(r"x")\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_ossystem()   { m_tool_inert "$1"; printf 'import os\nos.system("id")\n' >> "$1/skills/mypack/tools/t.py"; }
 # A compiled artifact git ignores is on the disk and never in the package.
+# `git add -A` is the whole fix for the two cases below, and the reason they were
+# once withdrawn as COULD NOT MEASURE: the gate builds its file set from
+# `git ls-files`, so a fixture that is a git repo with NOTHING staged presents no
+# files at all and the gate correctly answers that it could not measure. That was
+# never the rule failing - it was the fixture never showing it anything. Staging
+# needs no commit and no git identity, and `add -A` honours .gitignore, so the
+# ignored artifact stays out on its own merits rather than by being left behind.
 m_ignored_pyc() {
   m_tool_inert "$1"
   git -C "$1" init --quiet 2>/dev/null
   printf '__pycache__/\n' > "$1/.gitignore"
   mkdir -p "$1/skills/mypack/tools/__pycache__"
   printf 'x\n' > "$1/skills/mypack/tools/__pycache__/t.cpython-312.pyc"
+  git -C "$1" add -A 2>/dev/null
 }
 # The same bytes where git would ship them must still fail.
 m_tracked_pyc() {
@@ -92,6 +100,7 @@ m_tracked_pyc() {
   git -C "$1" init --quiet 2>/dev/null
   printf '# nothing ignored\n' > "$1/.gitignore"
   printf 'x\n' > "$1/skills/mypack/tools/t.pyc"
+  git -C "$1" add -A 2>/dev/null
 }
 m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
@@ -175,17 +184,16 @@ run_case tool-calls-write-text       1 "write_text"                m_tool_writet
 run_case tool-calls-eval             1 "calls \`eval\`"            m_tool_eval
 run_case tool-calls-builtin-compile  1 "calls \`compile\`"         m_tool_compile
 run_case tool-uses-re-compile        0 "read and inert"            m_tool_recompile
-# NOT COVERED HERE, and said rather than faked: the git-ignored-paths rule added
-# 2026-08-26 has no fixture case. Two were written and both came back
-# "COULD NOT MEASURE - I found no .md file to analyse", for a reason not isolated:
-# `git check-ignore` behaves correctly in isolation (rc 1 for SKILL.md, rc 0 for
-# a .pyc) but drops every file inside this harness. Shipping a battery with two
-# red cases is worse than shipping without them.
-#
-# The rule IS verified, by direct reproduction on the real repository: a
-# __pycache__/*.pyc under skills/ is excluded and the gate passes, and removing
-# the exclusion makes it fail naming that file. That is a manual check, which is
-# exactly the weaker thing this file exists to replace, and it is filed.
+# The git-ignored-paths rule now has both cases, and the reason it did not is
+# worth keeping: they were withdrawn as "COULD NOT MEASURE - I found no .md file
+# to analyse" with the cause unisolated, and the guess in this comment - that
+# `git check-ignore` was dropping every file - was WRONG. The gate builds its
+# file set from `git ls-files`, and the fixtures ran `git init` and staged
+# nothing, so there were no files to judge and the gate said so correctly. One
+# `git add -A` per builder fixes it. A manual check stood in for these two for a
+# day, which is exactly the weaker thing this file exists to replace.
+run_case pyc-git-ignored            0 "git-ignored"              m_ignored_pyc
+run_case pyc-tracked-still-fails    1 "extension"                m_tracked_pyc
 run_case tool-calls-os-system        1 "calls \`system\`"          m_tool_ossystem
 run_case tool-relative-import        1 "stand alone"               m_tool_relative
 run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable
