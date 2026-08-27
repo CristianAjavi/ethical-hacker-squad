@@ -86,6 +86,26 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The aim worked, and the excess moved somewhere nobody was aiming
+
+[2026-08-27, negative search](runs/2026-08-27-negative-search/) — **not supported**, and the first
+round in which a **registered prediction was met.** Recall ahead 7.9; decoys 8.33 against 7.67,
+failing by **0.66 per run**, the narrowest margin recorded.
+
+The three decoy shapes named in the pre-registration — `constrained-elsewhere`,
+`unreachable-earlier-layer`, `coerced-upstream` — carry a combined excess of **exactly zero**,
+down from +2.00, +1.67 and +1.33. And the total excess is +0.66, carried by **`dead-path`, which
+nobody aimed at.**
+
+That makes two rounds where the aim worked locally and the total did not follow: the ninth
+targeted `narrowed-sibling` and its gains came from unaimed shapes; this one hit three targets and
+the excess reappeared in a fourth. **The false positives are not a property of a shape that can be
+fixed shape by shape.** Both rounds only caught it because they named their target in advance.
+
+The required `searched` field was used as an action rather than a sentence in both arms — three
+distinct places per finding, 45% of entries recording a negative result — so the failure mode that
+killed `narrowed_by` did not repeat.
+
 ## Both products as they ship, and the curve did not move
 
 [2026-08-26, as designed](runs/2026-08-26-as-designed/) — **not supported.** The first round to
