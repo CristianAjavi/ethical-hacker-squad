@@ -86,6 +86,26 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The decoy rate measures a fifth of what one arm reports
+
+[2026-08-27, what the key cannot see](runs/2026-08-27-what-the-key-cannot-see/) — **not a round,
+not pre-registered**, computed from the twelve reports already published. It changes how every band
+verdict here should be read.
+
+Classifying every finding of both arms: they land on **nearly the same planted defects** (27.7
+against 26.3 in the eleventh round), and this project reports **three times as many findings the
+key says nothing about** — 51.0 against 16.3, then 30.3 against 9.0. That gap is larger than the
+recall gap and the decoy gap combined, and the bench cannot say whether any of it is worth having.
+
+The band's decoy half counts only findings that hit a **planted** decoy: 10.0 of 68.0 findings.
+**The measure sees about one finding in eight.** So it is not a precision measure — it measures how
+often an arm walks into a trap the corpus author set.
+
+No verdict is revised: each was measured as registered, and rewriting them on an unregistered
+analysis is the move these pages refuse. What changes is what they mean. And "outside the key" is
+**not** "false" — these are plausible services, real unplanted defects certainly exist in them, and
+nothing here decides which way those 51 findings fall.
+
 ## The aim worked, and the excess moved somewhere nobody was aiming
 
 [2026-08-27, negative search](runs/2026-08-27-negative-search/) — **not supported**, and the first
