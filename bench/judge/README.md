@@ -81,3 +81,33 @@ author planted**, and nobody has measured how many.
    attempt should not be a fourth phrasing.
 3. Until 1 is answered, **every "decoy rate" figure in this ledger should be read as an upper
    bound**, and the pages that quote it say so.
+
+## Addendum, measured mechanically: how often is a decoy hit not the baited claim?
+
+The page above says the size of the location-scoring defect is unmeasured. Here is a **lower-effort
+lower-confidence** attempt that needs no judge: compare the words of the finding's title and class
+against the words of the decoy's own `looks_like`, which is the key's statement of what the decoy
+is supposed to be mistaken for.
+
+Across the 98 decoy hits in the twelve published runs:
+
+| arm | decoy hits | sharing **no** vocabulary with the baited claim |
+|---|---|---|
+| this project | 66 | 21 (32%) |
+| `mantis` | 32 | 6 (19%) |
+
+Two of the four examples inspected are plainly different claims — a masking function that returns
+its input unchanged, counted as walking into a **SQL-injection** decoy; a stored **XSS** in a print
+sheet, counted as walking into a **remote-code-execution** decoy. Both were scored as false
+positives for asserting something the decoy was not built to bait.
+
+**And the third example refutes the measure.** "A hardcoded public demo API key" against "A
+hard-coded API key in source" — the same claim, scored as sharing no vocabulary because the
+tokeniser split on the hyphen. So the proxy has demonstrable false positives of its own and **32%
+is an upper bound on the mismatch, not an estimate of it.**
+
+What can be said: the defect is real, it is not rare, and it affects **both** arms. What cannot:
+its size. Correcting it would move this project's decoy rate down more than `mantis`'s, which is
+precisely why the correction does not get made on the strength of a word-overlap heuristic written
+by the party it would favour.
+
