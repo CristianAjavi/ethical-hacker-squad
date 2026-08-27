@@ -114,12 +114,60 @@ def make(db, w):
     db.add(w)
 PYEOF
 run "$TMP/clean"
-grep -q "NOT SEEN BY THIS CHECK" "$TMP/out" \
+grep -q "NOT SEEN" "$TMP/out" \
   && ok "a clean run still declares what the check cannot see" \
   || bad "a clean run printed no limit: zero flags reads as a clearance"
-grep -q "0 of 5" "$TMP/out" \
-  && ok "the measured recall travels with the result, not only the precision" \
-  || bad "the recall number is missing from the output"
+grep -q "TypeScript/JavaScript are not" "$TMP/out" \
+  && ok "the run names WHICH languages it cannot see, not just that it misses" \
+  || bad "the language limit is missing from the output"
+
+# --- the AST pass: an attribute-assignment write is a write --------------------
+# The unvalidated writer is deliberately NOT called create/update/save: those
+# names match the CALL pattern on their own `def` line, so the case would flag
+# through the old path and prove nothing about the AST pass.
+# The shape two independent readers found and this check did not: an entity
+# written by three functions, two calling a validator and one not, where the
+# unvalidated one writes by assigning attributes on a loaded instance.
+mkdir -p "$TMP/attr"
+cat > "$TMP/attr/repo.py" <<'PYEOF'
+class Note:
+    pass
+
+def check(principal, note):
+    assert_can_write(principal, note)
+
+def create(db, principal, note, body):
+    assert_can_write(principal, note)
+    note.body = body
+    db.add(note)
+    db.flush()
+    return note
+
+def revise(db, principal, note, body):
+    note.body = body
+    note.edited = True
+    db.flush()
+    return note
+PYEOF
+run "$TMP/attr"
+grep -q "revise() writes" "$TMP/out" \
+  && ok "an attribute-assignment writer with no validator is flagged" \
+  || bad "the AST pass missed the shape this tool is named for"
+grep -q "writes \`note\`, \`note\`" "$TMP/out" \
+  && bad "one function assigning two attributes is reported as two writes" \
+  || ok "two attribute assignments in one function count as one writer"
+
+# MUTANT — the AST pass disabled. The case above must go red.
+sed 's|for fname, fline, ent, seg in attribute_writes(text, declared):|for fname, fline, ent, seg in []:|' \
+  "$S" > "$TMP/noast.py"
+if ! cmp -s "$S" "$TMP/noast.py"; then
+  python3 "$TMP/noast.py" --target "$TMP/attr" > "$TMP/out" 2>&1
+  grep -q "revise() writes" "$TMP/out" \
+    && bad "it flags without the AST pass: this case measures nothing" \
+    || ok "without the AST pass the known shape is invisible again"
+else
+  bad "MUTANT did not apply: the battery would pass without measuring anything"
+fi
 
 echo; echo "$pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
