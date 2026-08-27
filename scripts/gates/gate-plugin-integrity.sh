@@ -326,6 +326,24 @@ else
   skip "not a git repo: using find instead of 'git ls-files' (may include unversioned .md)"
 fi
 
+# Gate fixtures are deliberately malformed inputs, not content: a fixture whose
+# whole purpose is to carry a broken link would otherwise make this section red
+# forever, and the cheap way out would be to delete the fixture - losing the
+# only proof that the other gate fails when it must. The exclusion is counted
+# and printed, because an unstated limit reads like coverage.
+FIXTURE_MD=0
+_KEPT=()
+for _f in "${MD_FILES[@]}"; do
+  case "$_f" in
+    */scripts/gates/fixtures/*) FIXTURE_MD=$((FIXTURE_MD + 1)) ;;
+    *) _KEPT+=("$_f") ;;
+  esac
+done
+MD_FILES=("${_KEPT[@]}")
+if ((FIXTURE_MD > 0)); then
+  info "$FIXTURE_MD .md file(s) under scripts/gates/fixtures/ excluded: they are gate inputs, some malformed on purpose"
+fi
+
 if ((${#MD_FILES[@]} == 0)); then
   unmeasurable "I found no .md file to analyse"
 fi

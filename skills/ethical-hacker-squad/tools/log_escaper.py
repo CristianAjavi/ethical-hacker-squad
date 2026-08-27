@@ -53,7 +53,19 @@ ESCAPERS = {
     "dumps", "json_dumps", "quote", "quote_plus", "urlencode", "escape",
     "unicode_escape", "repr", "sanitize", "sanitise", "sanitized", "sanitised",
     "neutralise", "neutralize", "encode_control", "escape_controls",
+    # CKAN's own helper, added after checking what it does rather than what it
+    # is called: ckan/common.py repr_untrusted() is `repr(danger)` truncated to
+    # 200 characters, so it escapes a newline exactly as `repr` does. Without
+    # it this check flags ckan/views/user.py:679 and :720 - the code that FIXED
+    # CVE-2024-27097 - which is a false positive on a fix, the worst kind for a
+    # worklist a reviewer is meant to trust.
+    "repr_untrusted",
 }
+
+# A project's own escaper cannot be guessed. --escaper adds one by name for a
+# run; it is deliberately NOT pattern matching on names that merely look like
+# escapers, because over-crediting is how this check once cleared both keyed
+# sites of a published advisory. A name is credited only if someone names it.
 
 
 def is_log_call(node) -> bool:
@@ -135,7 +147,18 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--target", type=Path, required=True)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--escaper", action="append", default=[], metavar="NAME",
+        help="credit NAME as an escaper for this run (repeatable). For a "
+             "project helper this check cannot know about. What it credits is "
+             "printed per cleared call, so the choice stays arguable.")
     args = ap.parse_args(argv)
+
+    # Extra escapers are added to the module-level set for this process only.
+    # The run prints which name cleared each call, so a name added here is
+    # visible in the output rather than silently widening what counts as safe.
+    for name in args.escaper:
+        ESCAPERS.add(name)
 
     if not args.target.exists():
         print(f"UNMEASURED the target does not exist: {args.target}")

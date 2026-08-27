@@ -166,6 +166,70 @@ else
   bad "MUTANT 3 did not apply: the battery would pass without measuring anything"
 fi
 
+# --- the fix must clear, and the flag must be needed -------------------------
+# CKAN fixed CVE-2024-27097 by wrapping the value in its own repr_untrusted().
+# A check that flags the code that FIXED an advisory is a false positive on a
+# fix, which is the worst kind for a worklist. Verified against upstream before
+# crediting: ckan/common.py repr_untrusted() is repr() truncated to 200 chars.
+mkdir -p "$TMP/fixed"
+cat > "$TMP/fixed/reset.py" <<'PYEOF'
+import logging
+log = logging.getLogger(__name__)
+
+def repr_untrusted(danger):
+    r = repr(danger)
+    return r[:200]
+
+def post(id):
+    log.info('Password reset requested for user %s', repr_untrusted(id))
+
+def house(v):
+    return v.replace('\n', ' ')
+
+def other(id):
+    log.info('user %s', house(id))
+PYEOF
+
+run "$SUBJECT" "$TMP/fixed"
+grep -q "cleared.*repr_untrusted" "$TMP/out" \
+  && ok "CKAN's own fix clears, and the credited name is printed" \
+  || bad "the code that fixed CVE-2024-27097 is still flagged"
+
+grep -q "UNCLEARED.*house" "$TMP/out" \
+  && ok "a house helper this check has never heard of stays UNCLEARED by default" \
+  || bad "an unknown helper was credited without anyone naming it"
+
+run_flag() { python3 "$1" --target "$2" --escaper house > "$TMP/out" 2>&1; RC=$?; }
+run_flag "$SUBJECT" "$TMP/fixed"
+grep -q "cleared.*house" "$TMP/out" \
+  && ok "--escaper credits a declared helper, and prints what it credited" \
+  || bad "--escaper did not credit the name it was given"
+
+# MUTANT 4 — repr_untrusted removed from ESCAPERS. The battery must go red, or
+# the entry above is a line nobody could break on purpose.
+sed 's|^    "repr_untrusted",|    "definitely_not_an_escaper_name",|' "$SUBJECT" > "$TMP/norepr.py"
+if ! cmp -s "$SUBJECT" "$TMP/norepr.py"; then
+  run "$TMP/norepr.py" "$TMP/fixed"
+  grep -q "cleared.*repr_untrusted" "$TMP/out" \
+    && bad "it clears WITHOUT the entry: this case measures nothing" \
+    || ok "without the entry the fixed code is flagged again — the entry is load-bearing"
+else
+  bad "MUTANT 4 did not apply: the battery would pass without measuring anything"
+fi
+
+# MUTANT 5 — --escaper widened to credit any name that merely LOOKS like an
+# escaper. That is the over-crediting that once cleared both keyed sites of a
+# published advisory, so the battery holds the door shut on it.
+sed 's|^    for name in args.escaper:|    for name in args.escaper + ["house", "scrub", "clean"]:|' "$SUBJECT" > "$TMP/widened.py"
+if ! cmp -s "$SUBJECT" "$TMP/widened.py"; then
+  run "$TMP/widened.py" "$TMP/fixed"
+  grep -q "UNCLEARED.*house" "$TMP/out" \
+    && bad "the widened version behaves identically: this case measures nothing" \
+    || ok "the widened version credits a name nobody declared — which is why it is refused"
+else
+  bad "MUTANT 5 did not apply: the battery would pass without measuring anything"
+fi
+
 echo
 echo "$pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
