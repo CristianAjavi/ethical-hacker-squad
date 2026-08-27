@@ -86,6 +86,22 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## Both products as they ship, and a round its own author spoiled
+
+[2026-08-26, as designed](runs/2026-08-26-as-designed/) — **not scored, and it says so.** The first
+round to launch each arm at its own entry point with no architectural constraint. It did not reach
+its registered floor of three valid runs per arm: three `ours` reports and one `mantis`, the rest
+lost to session limits and login failures.
+
+The cause is the harness author's, not either product's: **eight arms were launched in parallel,
+each designed to fan out six to thirteen ways** — fifty to a hundred sub-agents against a cap of
+twenty. So `mantis` ran with **zero** sub-agents despite the constraint being lifted, and one
+`ours` arm had five of six specialists refused. The pre-registration said a fallback would be
+recorded rather than corrected; it is recorded, and the round is not scored on top of it.
+
+One thing was measured, within the `ours` arm, and it is the first evidence of what the
+architecture buys: **7 specialists in their own contexts → 137 findings; 3 of 7 → 85; one → 53.**
+
 ## The precision half, met at last, and the recall half lost in the same breath
 
 [2026-08-26, scope field](runs/2026-08-26-scope-field/) — **inconclusive.** For the first time in
