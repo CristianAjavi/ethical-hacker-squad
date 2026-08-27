@@ -71,4 +71,40 @@ if orphans:
     print("      measured runs.")
     sys.exit(1)
 print("OK    every reference is reachable by citation from at least one agent")
+
+# --- second question, same subject -------------------------------------------
+# A file can be reachable while a RULE INSIDE IT is not. VER-09 is the measured
+# case: it lives in the leader's workflow, SKILL.md is the entry point so
+# nothing above was ever going to flag it, and no role file named it. It fired
+# ZERO times in four blinded runs and the round it would have won was lost on
+# precision. The check above would have stayed green throughout.
+# Overridable so a throwaway tree can exercise this section too. A check that
+# quietly skips when it cannot find its input is the same failure it exists to
+# catch, so an absent SKILL.md is UNMEASURABLE and never a pass.
+skill = Path(os.environ.get("EHS_SKILL_MD") or
+             agents.parent / "skills" / "ethical-hacker-squad" / "SKILL.md")
+if not skill.is_file():
+    print("UNMEASURABLE cannot find SKILL.md to read the leader workflow from"); sys.exit(2)
+text = skill.read_text(errors="ignore")
+marker = "## Leader workflow"
+if marker not in text:
+    print(f"UNMEASURABLE SKILL.md has no '{marker}' section to read"); sys.exit(2)
+
+ID = re.compile(r"\b[A-Z]{2,4}-[0-9]{2}\b")
+workflow_ids = sorted(set(ID.findall(text.split(marker, 1)[1])))
+agent_text = "\n".join(a.read_text(errors="ignore") for a in seeds)
+unseen = [i for i in workflow_ids if i not in agent_text]
+
+print(f"  {len(workflow_ids)} rule id(s) named in the leader workflow; "
+      f"{len(workflow_ids) - len(unseen)} cited by at least one agent")
+if unseen:
+    print(f"FAIL  {len(unseen)} rule(s) the executor is never shown:")
+    for i in unseen:
+        print(f"        {i} — named in SKILL.md's workflow, cited by no agent")
+    print("      The leader reads SKILL.md; the specialist reads its role file. A step only")
+    print("      the leader can see is a step the specialist will not take, and that is not")
+    print("      a hypothesis: VER-09 fired zero times in four measured runs while written.")
+    sys.exit(1)
+if workflow_ids:
+    print("OK    every rule the leader workflow names is cited by at least one agent")
 PY

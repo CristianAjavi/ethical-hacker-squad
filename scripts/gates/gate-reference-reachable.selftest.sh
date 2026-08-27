@@ -17,7 +17,14 @@ bad(){ fail=$((fail+1)); echo "  FAIL  $1"; }
 mk() { # mk <name>; then callers write files
   mkdir -p "$TMP/$1/agents" "$TMP/$1/refs"; echo "$TMP/$1"
 }
-run() { EHS_AGENTS_DIR="$1/agents" EHS_REFS_DIR="$1/refs" bash "$GATE" >"$TMP/out" 2>&1; }
+# Every tree gets a SKILL.md: the second section reads the leader workflow from
+# it, and a tree without one is UNMEASURABLE rather than a silent pass. Cases
+# that care about the workflow overwrite it.
+mkskill() { mkdir -p "$(dirname "$1")"; printf '## Leader workflow\n\n### 1. Do the thing\n' > "$1"; }
+run() {
+  [ -f "$1/SKILL.md" ] || mkskill "$1/SKILL.md"
+  EHS_AGENTS_DIR="$1/agents" EHS_REFS_DIR="$1/refs" EHS_SKILL_MD="$1/SKILL.md" bash "$GATE" >"$TMP/out" 2>&1
+}
 
 echo "== everything cited directly =="
 d="$(mk direct)"
@@ -68,6 +75,29 @@ run "$TMP/absent"; rc=$?
 d="$(mk emptyrefs)"; printf 'x\n' > "$d/agents/one.md"
 run "$d"; rc=$?
 [ "$rc" -eq 2 ] && ok "no references at all is rc 2, not a silent green" || bad "expected rc 2, got $rc"
+
+echo "== a rule the leader names and the executor never sees =="
+d="$(mk unseenrule)"
+printf 'see references/a.md\n' > "$d/agents/one.md"; printf '# a\n' > "$d/refs/a.md"
+printf '## Leader workflow\n\n### 8. Attack the list\n\nEvery finding goes to VER-09.\n' > "$d/SKILL.md"
+run "$d"; rc=$?
+[ "$rc" -eq 1 ] && grep -q 'VER-09' "$TMP/out" \
+  && ok "a workflow rule no agent cites is caught — the VER-09 shape" \
+  || bad "the unseen rule was missed: rc $rc"
+
+echo "== the same rule, cited by the role that must follow it =="
+d="$(mk seenrule)"
+printf 'see references/a.md and apply VER-09 last\n' > "$d/agents/one.md"; printf '# a\n' > "$d/refs/a.md"
+printf '## Leader workflow\n\n### 8. Attack the list\n\nEvery finding goes to VER-09.\n' > "$d/SKILL.md"
+run "$d"; rc=$?
+[ "$rc" -eq 0 ] && ok "citing it from the role clears it — the fix is the citation" \
+  || bad "expected rc 0 once the role cites it, got $rc"
+
+echo "== no SKILL.md at all is not a silent green =="
+d="$(mk noskill)"
+printf 'see references/a.md\n' > "$d/agents/one.md"; printf '# a\n' > "$d/refs/a.md"
+EHS_AGENTS_DIR="$d/agents" EHS_REFS_DIR="$d/refs" EHS_SKILL_MD="$d/nothing-here.md" bash "$GATE" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "an absent SKILL.md is rc 2, not a pass" || bad "expected rc 2, got $rc"
 
 echo; echo "$pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
