@@ -71,6 +71,40 @@ met. The spoiled attempt is not deleted and its diagnosis stands above.
 Roughly 1.8× the wall time for 2.1× the findings — and 2.7× the decoys. The ledger had never
 printed a cost figure beside a recall figure before; it does now, and it does not flatter.
 
+## Post-hoc, and labelled as such: the excess has one shape, not one component
+
+**Not registered before the runs.** It was computed from the scored reports afterwards, so it is
+a hypothesis for the next round and not a result of this one. It is published because it is the
+first specific account this ledger has of *why* the precision half keeps failing.
+
+The decoy excess is **not** concentrated in a component — it is positive in five of six — and the
+recall lead is not either, standing in five of six domains. What concentrates is the **shape**:
+
+| decoy shape | this project | `mantis` | excess |
+|---|---|---|---|
+| `constrained-elsewhere` | 2.33 | 0.33 | **+2.00** |
+| `unreachable-earlier-layer` | 2.33 | 0.67 | **+1.67** |
+| `coerced-upstream` | 1.33 | 0.00 | **+1.33** |
+| `narrowed-sibling` | 2.00 | 1.00 | +1.00 |
+| `dead-path` | 0.67 | 0.67 | 0.00 |
+| `public-sample` | 0.33 | 0.67 | −0.33 |
+
+The three largest excesses share exactly one property: **what disqualifies them lives in a
+different file or a different layer from the line that was flagged.** `public-sample` and
+`dead-path` — the two whose exculpation is visible at or near the flagged line — show no excess
+at all.
+
+So the honest reading is uncomfortable and symmetric. This project's measured strength is reading
+across files: the composition round put the field's blind spot at 40 points and this corpus
+planted 25 composition defects deliberately. The same reading appears to manufacture the
+false positives. **It searches other files to build a case and does not search them to kill one.**
+
+`scope.narrowed_by` was added for exactly this and evidently does not force the search — a field
+can be filled with what the auditor happened to notice. What it does not ask is where the auditor
+*looked* for a constraint and failed to find one. That is a negative search, it is the thing a
+finder never does spontaneously, and it is the next round's registered hypothesis rather than a
+claim here.
+
 ## Where the ledger stands after ten rounds
 
 | round | recall | decoys | band |
