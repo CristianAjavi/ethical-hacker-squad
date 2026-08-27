@@ -1,0 +1,481 @@
+{"verdicts": [
+{"id": "J-001", "ruling": "true",
+ "why": "The negative lookahead (?!\\S*\\.beacon\\.internal) is unbounded: \\S* spans the entire URL token, so any occurrence of .beacon.internal anywhere in the non-space run kills the match. I ran the regex: 'https://evil.example/aaaaaaaaaaaaaaaaaa' matches, 'https://evil.example/aaaaaaaaaaaaaaaaaa?x=.beacon.internal' does not. So the rule can be walked past by appending the internal marker as a query fragment or path segment. Shadow mode today (beacon.yaml:32) is why it blocks nothing now, but the assertion is explicitly about the rule being useless once mode flips to enforce, and _screen (assistant.py:45) does raise in that mode.",
+ "decided_at": "beaconindex/beaconindex/assistant.py:31",
+ "searched": [
+  {"looked_in": "beaconindex/config/beacon.yaml:29-36", "for": "an enforcement setting or a second rule that would still catch the URL", "found": "mode: shadow and three rule names; nothing else screens URLs, so no backstop when enforce is switched on"},
+  {"looked_in": "beaconindex/beaconindex/tools.py:14-27", "for": "a host allowlist that would stop the exfiltration anyway", "found": "_assert_allowed_host guards only the fetch_url tool, not the text the guardrail screens"},
+  {"looked_in": "beaconindex/beaconindex/assistant.py:35-46,107", "for": "a caller that normalises the text before the regex runs", "found": "nothing - _screen passes the raw question straight to rx.search"}]},
+
+{"id": "J-002", "ruling": "true",
+ "why": "run() logs d.tenant_id and d.account with %s into a stdlib line-oriented logger. Both come straight out of csv.DictReader in read_statement (reconcile.py:45-46) with no validation at all - only closing_cents is coerced (int()). A CR/LF or a fake log prefix inside the CSV fields forges log lines.",
+ "decided_at": "settlement-worker/settlement/reconcile.py:71",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/reconcile.py:40-51", "for": "validation/coercion of tenant_id and account before they become a Discrepancy", "found": "nothing - Discrepancy is a plain dataclass, only closing_cents is parsed"},
+  {"looked_in": "settlement-worker/settlement (grep escape|sanitiz|.replace|strip)", "for": "any neutralisation helper applied to log arguments", "found": "no hits anywhere in the package"},
+  {"looked_in": "settlement-worker/settlement/consumer.py:122, pyproject.toml:11", "for": "a structured formatter that would encode newlines", "found": "logging.basicConfig default StreamHandler; structlog is a declared dependency but is never imported"}]},
+
+{"id": "J-003", "ruling": "false",
+ "why": "The 'public' default cannot be selected. reader_by_target has keys dev, ci and prod, and profiles.yml declares exactly those three outputs and no others - dbt refuses to run against a target that is not in the profile, so target.name can never take a value the .get() default would answer for. The fallback is dead today; it only becomes live if someone adds a fourth output.",
+ "decided_at": "warehouse-dbt/profiles.yml:8",
+ "searched": [
+  {"looked_in": "warehouse-dbt/profiles.yml:7-43", "for": "a target name outside {dev, ci, prod}", "found": "only dev, ci, prod - all three are keys in reader_by_target (apply_grants.sql:11-15); the file header states these three are the complete set"},
+  {"looked_in": "warehouse-dbt/dbt_project.yml:20-51", "for": "a second invocation path or a var that could change target.name", "found": "apply_grants is a post-hook on every folder, but target.name comes from the profile, not from project vars"},
+  {"looked_in": "warehouse-dbt (whole tree)", "for": "another profiles file or a --target override committed anywhere", "found": "nothing"}]},
+
+{"id": "J-004", "ruling": "true",
+ "why": "The retry at client.ts:70-75 calls send() with an empty pin array against PROFILE.fallbackBase. The catch swallows every non-ApiError failure, which includes a pin failure or any network error an attacker can force, so blackholing the primary host is enough to move the call onto the unpinned path - with the bearer token attached by headers().",
+ "decided_at": "harborlight-mobile/src/api/client.ts:74",
+ "searched": [
+  {"looked_in": "harborlight-mobile/src/config/env.ts:21-37", "for": "whether an empty certificatePins array means 'pin with defaults' in this codebase", "found": "staging/local set certificatePins: [] with the comment 'pinning is left off there' - empty array is this codebase's own way of saying unpinned; production carries two real pins"},
+  {"looked_in": "harborlight-mobile/src/api/client.ts:30-38", "for": "a wrapper that would re-add pins or refuse an empty set", "found": "send() passes pins straight into sslPinning.certs with no check"},
+  {"looked_in": "harborlight-mobile/src (grep fallbackBase)", "for": "another guard on the failover host", "found": "only this one use; no host allowlist, no response-signature check"}]},
+
+{"id": "J-005", "ruling": "true",
+ "why": "The provider is exported with grantUriPermissions and no android:permission / readPermission, and AttachmentProvider.openFile builds File(attachmentDir, uri.lastPathSegment). Uri.lastPathSegment is URL-decoded, so a caller-supplied segment containing %2F..%2F escapes the attachments directory into app-private storage. Any app on the device can call it.",
+ "decided_at": "corpus-v9/atlas-android/app/src/main/AndroidManifest.xml:62",
+ "searched": [
+  {"looked_in": "atlas-android/app/src/main/AndroidManifest.xml:62-66", "for": "android:permission, android:readPermission, or <path-permission> on the provider", "found": "none - only authorities, exported=true, grantUriPermissions=true"},
+  {"looked_in": "atlas-android/.../sync/AttachmentSync.kt:34-51", "for": "canonical-path validation or a name allowlist in openFile/query", "found": "nothing - the segment is joined into the directory unchecked"},
+  {"looked_in": "atlas-android/app/build.gradle.kts:12-14", "for": "a targetSdk that would change the export default", "found": "targetSdk 35, and exported is declared explicitly anyway"}]},
+
+{"id": "J-006", "ruling": "true",
+ "why": "_signature covers only the body field (consumer.py:38-41, 60-61), then decode overwrites msg['type'] from the unsigned stream field and process dispatches on it. Someone who can rewrite a stream entry keeps a valid signature while changing which handler runs - e.g. re-labelling a signed payout as payout.reissue, which skips _require_scope entirely (handlers.py:107) and re-applies the money movement.",
+ "decided_at": "settlement-worker/settlement/consumer.py:75",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/consumer.py:38-41,60-62", "for": "the signed material - whether type is inside the MAC", "found": "the HMAC is over `body` only; type is a sibling stream field"},
+  {"looked_in": "settlement-worker/settlement/handlers.py:77-127", "for": "a handler-side check that the message type matches the signed body", "found": "none; handlers read msg fields and never re-derive the type"},
+  {"looked_in": "settlement-worker/settlement/schemas.py:21-33", "for": "a model that would pin the type on decode", "found": "PayoutRequest has no type field and is not used on the consume path"}]},
+
+{"id": "J-007", "ruling": "true",
+ "why": "replay_dead_letters decodes with _entry_to_message (no HMAC check, unlike consumer.decode) and calls handlers._apply_payout directly, skipping the _require_scope that handle_payout performs. Worse, run_once puts entries into the dead-letter stream on ANY exception including 'bad producer signature' (consumer.py:114-117), so a forged unsigned message is parked and then applied unverified by the operator's drain.",
+ "decided_at": "settlement-worker/settlement/retry.py:43",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/consumer.py:65-76,112-118", "for": "whether only already-verified entries can reach the DLQ", "found": "the opposite - the signature ValueError is caught and the raw entry is copied to the dead-letter stream"},
+  {"looked_in": "settlement-worker/settlement/handlers.py:42-88", "for": "an authorisation check inside _apply_payout itself", "found": "none; the scope check lives in handle_payout, which replay bypasses"},
+  {"looked_in": "settlement-worker/settlement/retry.py:64-73", "for": "an operator confirmation or dry-run default that would gate the write", "found": "--dry-run defaults to False"}]},
+
+{"id": "J-008", "ruling": "true",
+ "why": "ledger.post.v1 is wired to makeLedgerPostingHandler with {ledger, pool, log} - no idempotency, unlike both payout handlers on lines 29-30. handleLedgerPosting applies the balance every time it runs, so the same credit message replayed onto the stream (or re-injected by dlq.replay with verified=1) adds the amount again.",
+ "decided_at": "corpus-v10/tallyflow-consumer/src/consumer.js:28",
+ "searched": [
+  {"looked_in": "tallyflow-consumer/src/idempotency.js", "for": "any other caller of claim/complete", "found": "only handlers/payoutRelease.js uses it; the ledger posting path never touches it"},
+  {"looked_in": "tallyflow-consumer/src/ledger.js:30-39 and handlers/ledgerPosting.js:33-38", "for": "a unique key / on-conflict clause that would swallow a duplicate", "found": "on conflict do nothing exists only on posting_tags; the postings insert and the balances upsert are unconditional"},
+  {"looked_in": "tallyflow-consumer/src/dlq.js:31-44", "for": "a dedupe on replay", "found": "replay re-adds entries to the live stream marked verified=1, which makes duplication easier, not harder"}]},
+
+{"id": "J-009", "ruling": "true",
+ "why": "The upload takes workOrderId from the multipart form and inserts it with the caller's own org_id, never querying whether that work order belongs to the caller's org. requireAuth establishes who the caller is but nothing checks the object the body names.",
+ "decided_at": "corpus-v9/fieldops-api/src/routes/attachments.ts:62",
+ "searched": [
+  {"looked_in": "fieldops-api/src/routes/attachments.ts:38-63", "for": "a select against work_orders before the insert", "found": "none - the only DB call is the insert itself"},
+  {"looked_in": "fieldops-api/src/index.ts:28-36", "for": "middleware that would resolve/authorise the work order", "found": "only requireAuth on /api/v1/*, and the legacy /files mount uses the soft attachActor"},
+  {"looked_in": "fieldops-api/src/lib/policy.ts", "for": "an ownership helper the route should have called", "found": "sameOrgSite/canWriteSite exist for sites but are never applied here"}]},
+
+{"id": "J-010", "ruling": "true",
+ "why": "The rescue re-downloads from stanchion_artifact_mirror with no checksum: and unarchives it into the release tree, under become=root (ansible.cfg:15-19). The block it rescues is the app role, whose own get_url does pass checksum (roles/app/tasks/main.yml:26) - so the fallback fires precisely on a checksum/download failure and then installs the same artifact unverified.",
+ "decided_at": "corpus-v10/stanchion-ansible/playbooks/site.yml:25",
+ "searched": [
+  {"looked_in": "stanchion-ansible/group_vars/all.yml:10-13", "for": "a checksum variable the rescue could have used", "found": "stanchion_artifact_sha256 is defined and simply not referenced by the rescue"},
+  {"looked_in": "stanchion-ansible/roles/app/tasks/main.yml:22-37", "for": "a later verification step (gpg, signature, hash) after unpack", "found": "none; unarchive runs straight into stanchion_root/releases"},
+  {"looked_in": "stanchion-ansible/ansible.cfg:15-19", "for": "whether the task really runs as root", "found": "become=True, become_user=root globally"}]},
+
+{"id": "J-011", "ruling": "true",
+ "why": "HANDLERS registers payout.release.v2, EVENT_SCHEMAS has no entry for it, and validatePayload returns null (meaning 'valid') when validatorFor finds no validator. So a v2 message reaches the payout handler with no accountId pattern, no amount ceiling, no currency enum and no additionalProperties bound. The envelope schema types `type` as a free string up to 64 chars, so nothing rejects the label.",
+ "decided_at": "corpus-v10/tallyflow-consumer/src/consumer.js:30",
+ "searched": [
+  {"looked_in": "tallyflow-consumer/src/schema.js:26-73", "for": "a v2 payload schema or a strict unknown-type rejection", "found": "EVENT_SCHEMAS has only ledger.post.v1 and payout.release.v1; validatePayload:69-70 returns null for an unknown type"},
+  {"looked_in": "tallyflow-consumer/src/schema.js:14-24", "for": "an enum on the envelope type field", "found": "type is {string, maxLength 64} - no enum"},
+  {"looked_in": "tallyflow-consumer/src/handlers/payoutRelease.js", "for": "handler-side validation of the payload", "found": "none - it reads p.accountId/p.amountCents/p.destination directly"}]},
+
+{"id": "J-012", "ruling": "true",
+ "why": ".listen(Number(PORT)) hands Elysia only a port, so Bun.serve binds its default hostname 0.0.0.0. The edge config states the upstream is 'the Bun process bound to loopback' (edge.conf:7, upstream 127.0.0.1:3000) and the whole identity model rests on that: actorFromHeaders trusts x-forwarded-subject/account/roles, which the edge overwrites on every proxied request. Anyone who can reach port 3000 directly sets those headers themselves and becomes any account, including ops-admin.",
+ "decided_at": "corpus-v10/pulsegate-api/src/index.ts:37",
+ "searched": [
+  {"looked_in": "pulsegate-api/src/auth.ts:14-28,49-59", "for": "a check that the request actually came through the edge", "found": "none - requireSession falls back to actorFromHeaders whenever the bearer path yields nothing"},
+  {"looked_in": "pulsegate-api/edge.conf:37-48", "for": "the header-stripping contract", "found": "the edge overwrites the three x-forwarded-* identity headers, which only helps for traffic that goes through it"},
+  {"looked_in": "corpus-v10 (whole tree)", "for": "a firewall, container publish restriction or HOST env for pulsegate", "found": "nothing - stanchion-ansible deploys a different application"}]},
+
+{"id": "J-013", "ruling": "true",
+ "why": "case 'open' JSON-parses the attacker-supplied state, funnels state.returnTo through assertAllowedRoute, and then passes state.params straight into nav.navigate with no shape, type or content check. The route name is guarded, the payload beside it is not, and both come from the same untrusted link.",
+ "decided_at": "corpus-v10/harborlight-mobile/src/deeplink/router.ts:47",
+ "searched": [
+  {"looked_in": "harborlight-mobile/src/deeplink/router.ts:21-36", "for": "a validator applied to params as well as the route", "found": "assertAllowedRoute covers only the route string; sanitizeText is applied in case 'web' but never to state.params"},
+  {"looked_in": "harborlight-mobile/src (grep navigate/Navigation)", "for": "an implementation of Navigation that coerces params", "found": "Navigation is only an interface here; no in-tree implementation sanitises"},
+  {"looked_in": "harborlight-mobile/src/storage/secureStore.ts:22-27", "for": "a downstream allowlist that would blunt a hostile param", "found": "the RawKey allowlist covers storage writes only, not navigation params"}]},
+
+{"id": "J-014", "ruling": "true",
+ "why": "apply_adjustment writes the balance key in Redis directly from the CSV's closing_cents, so it never passes through post_entry, the writer that refuses to leave an account negative (ledger.py:54-69). Nothing validates tenant_id, account or the amount beyond int(), and there is no authorisation check anywhere on the path.",
+ "decided_at": "corpus-v9/settlement-worker/settlement/reconcile.py:56",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/ledger.py:54-69", "for": "whether the overdraw guard lives somewhere reconcile still crosses", "found": "the guard is inside post_entry, which apply_adjustment does not call - it only imports balance and balance_key"},
+  {"looked_in": "settlement-worker/settlement/reconcile.py:40-51", "for": "a schema or allowlist on the statement file", "found": "raw csv.DictReader; no pydantic model, unlike the stream path"},
+  {"looked_in": "settlement-worker/settlement/schemas.py:18-33", "for": "MAX_PAYOUT_CENTS or account-pattern enforcement on this path", "found": "those bounds exist only on PayoutRequest, which reconcile never constructs"}]},
+
+{"id": "J-015", "ruling": "true",
+ "why": "consume_batch does Document(**message['doc']) - Document is a bare dataclass with no validation, while the HTTP path goes through DocumentIn, which enforces the tenant pattern, the acl_groups wildcard rejection and the size limit. A queue message therefore sets tenant and acl_groups freely and the chunks are written with that payload by store.upsert.",
+ "decided_at": "corpus-v10/beaconindex/beaconindex/ingest.py:123",
+ "searched": [
+  {"looked_in": "beaconindex/beaconindex/ingest.py:28-61", "for": "validators on Document itself", "found": "DocumentIn has the pattern/wildcard/size validators; Document (54-61) has none"},
+  {"looked_in": "beaconindex/beaconindex/store.py:28-42", "for": "payload validation at the write boundary", "found": "upsert trusts p['payload'] verbatim; the docstring only asserts the fields must be present"},
+  {"looked_in": "beaconindex/beaconindex/ingest.py:107-110", "for": "a gate on the queue path strong enough to substitute for validation", "found": "_verify_producer only checks that a signature field is non-empty"}]},
+
+{"id": "J-016", "ruling": "true",
+ "why": "The migration inserts firm_demo and prn_demo into whatever database it is applied to, with no environment guard, and the comment justifying it ('skipped by every production query filter') describes a filter that does not exist: grepping the package for 'demo' returns only this migration, and the tenant scope in session.py narrows by current_firm rather than excluding demo rows.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/migrations/0007_case_notes.py:29",
+ "searched": [
+  {"looked_in": "corpus-v10/quarrystore (grep demo)", "for": "the claimed production filter that skips the demo firm", "found": "no hits outside this migration - the filter does not exist"},
+  {"looked_in": "quarrystore/quarrystore/session.py:34-55", "for": "a scope hook that would exclude seeded rows", "found": "_apply_firm_scope adds firm_id == current_firm; a request scoped to firm_demo sees the seeded rows normally"},
+  {"looked_in": "quarrystore/quarrystore/migrations/0007_case_notes.py:18-45", "for": "an env/target guard around the inserts", "found": "none - the op.execute calls run unconditionally in upgrade()"}]},
+
+{"id": "J-017", "ruling": "true",
+ "why": "pseudonym() is encode(digest(column || var('pii_policy_version'), 'sha256')). The only thing standing in for a salt is the literal 'v3' committed in dbt_project.yml:18, so the digest of a low-entropy customer_id is trivially reversible by anyone with the repo - which is exactly what schema.yml:44-46 advertises as 'safe to join on across environments'.",
+ "decided_at": "corpus-v9/warehouse-dbt/macros/mask_pii.sql:33",
+ "searched": [
+  {"looked_in": "warehouse-dbt/dbt_project.yml:14-18", "for": "whether pii_policy_version is a secret", "found": "vars: pii_policy_version: v3, committed in clear"},
+  {"looked_in": "warehouse-dbt/profiles.yml and macros/", "for": "an env_var-sourced salt or a keyed HMAC variant", "found": "no env_var anywhere except host/user/password; no hmac macro"},
+  {"looked_in": "warehouse-dbt/models/marts/customer_pii_masked.sql:28,47", "for": "whether the pseudonym is actually materialised", "found": "yes, in both branches of the model"}]},
+
+{"id": "J-018", "ruling": "true",
+ "why": "Every link holds. verifySignature returns true unless mode is 'enforce' and config/default.json:21 pins mode to 'warn', so a forged entry with no signature passes. payout.release.v2 has no payload schema and validatePayload treats that as valid. The handler then calls ledger.adjustBalance, which has neither the solvency check nor the per-entry ceiling that applyPosting enforces. The stream is reached through a Redis URL that carries no credentials.",
+ "decided_at": "corpus-v10/tallyflow-consumer/src/consumer.js:60",
+ "searched": [
+  {"looked_in": "tallyflow-consumer/src/signing.js:33-46", "for": "a fail-closed branch", "found": "the only return false is guarded by mode === 'enforce'; the default config says warn"},
+  {"looked_in": "tallyflow-consumer/src/ledger.js:9-28 vs 59-65", "for": "a shared invariant both writers enforce", "found": "applyPosting checks integer/ceiling/overdraw; adjustBalance does none of it"},
+  {"looked_in": "tallyflow-consumer/config/default.json:2-8", "for": "authentication on the stream the forged message must land on", "found": "redis://tallyflow-redis:6379 with no credentials"}]},
+
+{"id": "J-019", "ruling": "false",
+ "why": "tokenFor does ignore its host argument, but the control it implies is implemented one line up in its only caller: AuthInterceptor returns chain.proceed(request) unchanged whenever request.url.host != BuildConfig.API_HOST, so the token is never attached to a foreign host. Grep shows AuthInterceptor.kt:23 is the sole call site; every other consumer uses bearer() and is explicit about it. The misleading signature is a code smell with no reachable consequence.",
+ "decided_at": "corpus-v9/atlas-android/app/src/main/java/co/atlas/field/net/AuthInterceptor.kt:19",
+ "searched": [
+  {"looked_in": "atlas-android/app/src (grep tokenFor)", "for": "a caller that trusts tokenFor to do the host filtering", "found": "only AuthInterceptor.kt:23, which performs the host check itself at lines 19-21"},
+  {"looked_in": "atlas-android/.../net/ApiClient.kt:47-65", "for": "a redirect path that would carry the header to another host", "found": "AuthInterceptor is an application interceptor, and OkHttp drops Authorization on cross-host redirects; uploads client does not install it at all"},
+  {"looked_in": "atlas-android/.../sync/AttachmentSync.kt:76-83", "for": "a place that sends the bearer to an API-supplied URL via tokenFor", "found": "it uses bearer() directly - a separate issue, not this API's"}]},
+
+{"id": "J-020", "ruling": "true",
+ "why": "The term is interpolated into a text() string literal and escape_like only escapes % and _, never the single quote, so a term containing a quote closes the literal and appends SQL. The sibling search_docket in the same file shows the correct bound-parameter form, so nothing upstream is expected to have bound it.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/search.py:34",
+ "searched": [
+  {"looked_in": "quarrystore/quarrystore/search.py:13-17", "for": "quote escaping in escape_like", "found": "LIKE_METACHARACTERS is only ('%','_') - quotes pass through untouched"},
+  {"looked_in": "quarrystore/quarrystore/search.py:44-57", "for": "whether the project binds parameters elsewhere (i.e. this one is an outlier)", "found": "search_docket binds :needle and :limit properly, confirming the raw f-string here is the deviation"},
+  {"looked_in": "corpus-v10/quarrystore (grep search_notes)", "for": "a caller that sanitises or type-restricts term", "found": "no in-tree caller - it is a library entry point with a plain str parameter"}]},
+
+{"id": "J-021", "ruling": "true",
+ "why": "http_get fetches any URL the model asks for: no scheme check, no host allowlist, no private-address filter, and it is registered in TOOL_REGISTRY and advertised in TOOL_SPECS. The system prompt actively instructs the model to use it (prompt.py:15-18), the question and the unvalidated history array let the caller steer the model, and the tool result is appended to the conversation so the final answer carries the fetched body back. settings.demo_api_key makes an API key effectively public.",
+ "decided_at": "corpus-v9/atlas-rag/ragsvc/tools.py:24",
+ "searched": [
+  {"looked_in": "atlas-rag/ragsvc/tools.py:14-27,97-105", "for": "an allowlist or SSRF filter like beaconindex's _assert_allowed_host", "found": "none - dispatch json-loads the arguments and calls the function with them"},
+  {"looked_in": "atlas-rag/ragsvc/app.py:101-121", "for": "a step that withholds tool output from the answer", "found": "the result is appended as a tool message and the model's next reply is returned to the caller"},
+  {"looked_in": "atlas-rag/ragsvc/settings.py:26-49", "for": "an egress proxy or network restriction on the service", "found": "nothing; host defaults to 0.0.0.0 and the demo key is a source constant"}]},
+
+{"id": "J-022", "ruling": "true",
+ "why": "normalise strips the tags with TAG_RE.sub(' ') and keeps what was between them, so text inside a hidden element becomes ordinary prose in the chunk, and there is no Unicode normalisation, zero-width or bidi filtering anywhere on the path. Those chunks are what retrieve.as_context pastes into the system prompt, and the only screening the assistant does runs on the question, not on the retrieved material.",
+ "decided_at": "corpus-v10/beaconindex/beaconindex/chunker.py:23",
+ "searched": [
+  {"looked_in": "beaconindex/beaconindex (grep unicodedata/normalize/zero-width)", "for": "any codepoint-level sanitisation on ingest", "found": "nothing - normalise handles &nbsp;/&amp; and whitespace only"},
+  {"looked_in": "beaconindex/beaconindex/assistant.py:40-46,107-110", "for": "screening of the context block before it reaches the model", "found": "_screen is called on the question only; the context is interpolated into SYSTEM_TEMPLATE unscreened"},
+  {"looked_in": "beaconindex/config/beacon.yaml:29-36", "for": "an enforcing guardrail that would catch injected instructions later", "found": "mode: shadow - the untrusted-instruction rule records and does not block"}]},
+
+{"id": "J-023", "ruling": "true",
+ "why": "There is no lockfile of any kind anywhere in the tree (searched for package-lock.json, bun.lockb, yarn.lock, pnpm-lock, poetry.lock, uv.lock, requirements*.txt - zero hits), and all five manifests resolve dependencies through floating ranges: ^ in pulsegate-api, tallyflow-consumer and harborlight-mobile, >= in beaconindex and quarrystore. Every install therefore resolves whatever the registry serves at that moment.",
+ "decided_at": "corpus-v10/pulsegate-api/package.json:12",
+ "searched": [
+  {"looked_in": "corpus-v10 (find for any lock/requirements file)", "for": "a resolved dependency graph pinning transitive versions", "found": "none anywhere in the tree"},
+  {"looked_in": "corpus-v10/*/package.json and */pyproject.toml", "for": "exact pins", "found": "harborlight pins react and react-native only; every other entry is ^ or >="},
+  {"looked_in": "corpus-v10 (grep for CI config / vendored deps)", "for": "a pipeline that installs from a frozen manifest", "found": "no CI configuration and no vendor directory in the tree"}]},
+
+{"id": "J-024", "ruling": "true",
+ "why": "In staging both config flags are true, so createStorage attaches a bucket policy with Principal '*' allowing s3:GetObject on the whole exports bucket and, in the same call, a policy accepting inbound replication of the production export objects. The bucket holds work-order and billing exports (its own tag), and the public-access block is disabled by the same flag so nothing stops the policy taking effect.",
+ "decided_at": "corpus-v9/pulumi-platform/storage.ts:50",
+ "searched": [
+  {"looked_in": "pulumi-platform/Pulumi.staging.yaml:7-12", "for": "whether both flags are actually set", "found": "publicExports true and replicateProdExports true, with a comment explaining both"},
+  {"looked_in": "pulumi-platform/storage.ts:42-48", "for": "a public-access block that would neutralise the policy", "found": "all four flags are set to !publicExports, i.e. all false in staging"},
+  {"looked_in": "pulumi-platform/index.ts:13-14,45-50", "for": "an override before the flags reach createStorage", "found": "they are read straight from stack config and passed through"}]},
+
+{"id": "J-025", "ruling": "true",
+ "why": "Same construct viewed at the public-access block: with publicExports true, blockPublicAcls, blockPublicPolicy, ignorePublicAcls and restrictPublicBuckets are all false, and the anonymous s3:GetObject policy on lines 51-67 is declared in the same branch, over a bucket that the replication branch is simultaneously loading with production export objects.",
+ "decided_at": "corpus-v9/pulumi-platform/storage.ts:44",
+ "searched": [
+  {"looked_in": "pulumi-platform/Pulumi.prod.yaml:7-8", "for": "whether this is a config accident or a deliberate per-stack value", "found": "prod sets both to false, so the flags are live inputs and staging is deliberately open"},
+  {"looked_in": "pulumi-platform (whole stack)", "for": "an account-level PublicAccessBlock or SCP that would override the bucket-level one", "found": "none declared anywhere"},
+  {"looked_in": "pulumi-platform/storage.ts:32-40", "for": "another control that would keep objects unreadable", "found": "SSE-S3 and versioning only - neither prevents anonymous GetObject"}]},
+
+{"id": "J-026", "ruling": "true",
+ "why": "Same defect as J-002 at the log call: statement-sourced tenant_id and account reach a stdlib line-oriented log with %s and no neutralisation. read_statement coerces only closing_cents, so the two string fields arrive exactly as the CSV had them, newlines included.",
+ "decided_at": "corpus-v9/settlement-worker/settlement/reconcile.py:70",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/reconcile.py:40-51", "for": "field validation before logging", "found": "none - raw csv.DictReader values"},
+  {"looked_in": "settlement-worker/settlement (grep for escape/sanitiz/replace)", "for": "a shared log-neutralisation helper", "found": "no hits"},
+  {"looked_in": "settlement-worker/settlement/consumer.py:122", "for": "a JSON/structured handler that would escape control characters", "found": "logging.basicConfig with the default text formatter"}]},
+
+{"id": "J-027", "ruling": "true",
+ "why": "The batch body is t.Array(t.Object(...)) with no maxItems, and the handler awaits one insertMember per row sequentially before returning. Nothing else caps the row count: the per-IP rate limit counts requests, not rows, and the edge body cap of 8m still permits on the order of 10^5 rows in a single request, held against a pool of 8 connections.",
+ "decided_at": "corpus-v10/pulsegate-api/src/routes/accounts.ts:75",
+ "searched": [
+  {"looked_in": "pulsegate-api/edge.conf:35", "for": "an upstream limit that would bound the array", "found": "client_max_body_size 8m - it bounds bytes, not the work per request, and still allows a very large member array"},
+  {"looked_in": "pulsegate-api/src/index.ts:13 and src/middleware.ts:15-32", "for": "a request-cost or concurrency limit", "found": "fixed-window counter of 120 requests/min per IP; it does not look inside the body"},
+  {"looked_in": "pulsegate-api/src/db.ts:4-11,55-61", "for": "a batched/limited insert", "found": "insertMember is a single-row statement, called in a loop, against max 8 pooled connections"}]},
+
+{"id": "J-028", "ruling": "false",
+ "why": "The uploader does choose the stored content type and the download does echo it, but the same response sets content-disposition: attachment and x-content-type-options: nosniff on the two lines directly below. With an attachment disposition the browser saves the bytes instead of rendering them, so an uploaded text/html or image/svg+xml cannot execute in the app origin, and nosniff blocks type confusion. The filename cannot break the header either: SAFE_NAME strips quotes at upload time. No in-tree consumer renders the bytes by content type.",
+ "decided_at": "corpus-v9/fieldops-api/src/routes/attachments.ts:103",
+ "searched": [
+  {"looked_in": "fieldops-api/src/routes/attachments.ts:101-105", "for": "whether anything downstream makes the echoed type dangerous", "found": "content-disposition: attachment plus x-content-type-options: nosniff - the response is a download, never a rendered document"},
+  {"looked_in": "fieldops-api/src/routes/attachments.ts:22,50", "for": "a header-injection path through the filename", "found": "SAFE_NAME strips everything outside [A-Za-z0-9._ -] before storage, and escapeHtml is applied again on output"},
+  {"looked_in": "fieldops-api/src (grep for a viewer/render of attachment bytes)", "for": "a consumer that would honour the content type in a rendering context", "found": "none - the only other route returns JSON metadata"}]},
+
+{"id": "J-029", "ruling": "true",
+ "why": "Same integrity gap seen at the verification site: the HMAC is computed over `body` alone, so the `type` stream field that selects the handler at consumer.py:89 is outside the signed material. A captured, validly signed entry can be re-labelled to route into a handler with different (or absent) authorisation, e.g. payout.reissue.",
+ "decided_at": "corpus-v9/settlement-worker/settlement/consumer.py:69",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/consumer.py:54-62", "for": "whether the publisher signs a canonical form that includes the type", "found": "publish_payout signs json.dumps(req.model_dump()) only; type is added as a separate field"},
+  {"looked_in": "settlement-worker/settlement/settings.py:38-43", "for": "a configuration that closes the gap", "found": "verify_producer_signature is disabled outright in staging, which widens it"},
+  {"looked_in": "settlement-worker/settlement/handlers.py", "for": "a per-handler re-check of the signed body", "found": "none"}]},
+
+{"id": "J-030", "ruling": "false",
+ "why": "p.currency cannot carry a quote on this path. handleLedgerPosting is registered only for ledger.post.v1 (consumer.js:28), that type does have a payload schema, and the schema constrains currency to enum ['EUR','USD','GBP','CHF'] with additionalProperties:false. validatePayload runs at consumer.js:66 and DLQs the message before the handler is looked up, so the only strings that can reach the interpolation are the four literals. The schema-less payout.release.v2 type routes to payoutRelease, which never touches this INSERT.",
+ "decided_at": "corpus-v10/tallyflow-consumer/src/schema.js:8",
+ "searched": [
+  {"looked_in": "tallyflow-consumer/src/consumer.js:66-79", "for": "whether validation really precedes dispatch", "found": "validatePayload is called and returns before the HANDLERS lookup on a non-null error"},
+  {"looked_in": "tallyflow-consumer/src/schema.js:28-39", "for": "the constraint on currency for ledger.post.v1", "found": "currency: enum EUR/USD/GBP/CHF, required, additionalProperties false"},
+  {"looked_in": "tallyflow-consumer/src/consumer.js:27-31", "for": "another type that would reach handleLedgerPosting without a schema", "found": "only ledger.post.v1 maps to it; v1/v2 payout types map to the payout handler"}]},
+
+{"id": "J-031", "ruling": "true",
+ "why": "PATCH loads the order and stops at wo.orgId !== actor.orgId, while the list route it mirrors narrows techs to their own crews via visibleCrewFilter, and the create route additionally requires canWriteSite. So a tech can patch - including re-siting and re-crewing - any order in the org, including ones they cannot see in the board. requireRole is defined in auth.ts:81 and, per grep, used by no route at all.",
+ "decided_at": "corpus-v9/fieldops-api/src/routes/workorders.ts:123",
+ "searched": [
+  {"looked_in": "fieldops-api/src (grep requireRole)", "for": "any route or router that installs the role gate", "found": "only the definition at middleware/auth.ts:81 - zero call sites"},
+  {"looked_in": "fieldops-api/src/routes/workorders.ts:60,89-94", "for": "the checks the sibling routes apply", "found": "list applies visibleCrewFilter; create applies sameOrgSite AND canWriteSite; PATCH applies sameOrgSite only on a site change"},
+  {"looked_in": "fieldops-api/src/index.ts:27-30", "for": "a role-based middleware mounted globally", "found": "only requireAuth on /api/v1/*"}]},
+
+{"id": "J-032", "ruling": "true",
+ "why": "crewSites is a const object literal in source. Grep shows no writer, no loader, no fetch and no scheduled job anywhere in the repo, so the comment claiming it is loaded at boot from the dispatch planner and refreshed nightly is false, and a crew's site clearance can only be withdrawn by shipping a new build. The table is live authorisation data - canWriteSite consults it on POST /workorders.",
+ "decided_at": "corpus-v9/fieldops-api/src/lib/policy.ts:18",
+ "searched": [
+  {"looked_in": "fieldops-api/src (grep crewSites)", "for": "an assignment, refresh or loader", "found": "only the literal at policy.ts:18 and the read at policy.ts:40"},
+  {"looked_in": "fieldops-api/src/config.ts", "for": "an env var or fetch URL for the planner data", "found": "nothing - config has no planner/policy source at all"},
+  {"looked_in": "fieldops-api/src/routes/workorders.ts:92", "for": "whether the stale table is actually enforced", "found": "yes, canWriteSite gates work-order creation"}]},
+
+{"id": "J-033", "ruling": "unresolvable",
+ "why": "In this tree LEGACY_ENDPOINTS is a dead export - grep shows it is defined at endpoints.ts:37 and imported by nothing, so the app never calls the impersonation route. Whether /legacy/support/impersonate is actually still answered, and whether it is authenticated, is decided entirely by the gateway, and no gateway configuration or server for harborlight exists anywhere in this tree. The only in-tree evidence is the source comment itself, which is not an artifact I can verify against.",
+ "decided_at": "corpus-v10/harborlight-mobile/src/api/endpoints.ts:39",
+ "searched": [
+  {"looked_in": "corpus-v10 (grep LEGACY_ENDPOINTS, legacySupport, /legacy)", "for": "a caller in the app or a server that implements the route", "found": "only the definition here plus an unrelated legacy hook in pulsegate-api; no importer, no server-side handler"},
+  {"looked_in": "harborlight-mobile/src/api/client.ts:47-57", "for": "whether call() could be made to reach a legacy path", "found": "call() indexes ENDPOINTS only; LEGACY_ENDPOINTS is a separate object it cannot select from"},
+  {"looked_in": "corpus-v10 (whole tree)", "for": "the gateway/route table that would show the endpoint's auth", "found": "nothing - the deciding artifact is outside this tree"}]},
+
+{"id": "J-034", "ruling": "true",
+ "why": "SORT_COLUMNS is a plain object literal, so SORT_COLUMNS[String(sort)] resolves inherited members: ?sort=constructor, ?sort=toString or ?sort=__proto__ return a truthy prototype value, the ?? fallback is skipped, and that non-allowlisted value is handed to listMembers and interpolated with sql.unsafe(orderBy). The allowlist that guards a raw-SQL interpolation point therefore fails to exclude what it was written to exclude, and the route has no query schema to stop the value arriving.",
+ "decided_at": "corpus-v10/pulsegate-api/src/routes/accounts.ts:25",
+ "searched": [
+  {"looked_in": "pulsegate-api/src/db.ts:17-21", "for": "a null-prototype map or an own-property check", "found": "plain object literal; no Object.create(null), no hasOwnProperty guard"},
+  {"looked_in": "pulsegate-api/src/routes/accounts.ts:33-35,114-116", "for": "a query schema on the routes that pass sort through", "found": "neither GET members route declares a query validator, so query.sort is whatever the client sent"},
+  {"looked_in": "pulsegate-api/src/db.ts:73-80", "for": "a guard at the sink", "found": "order by ${sql.unsafe(orderBy)} - the sink trusts the allowlist entirely"}]},
+
+{"id": "J-035", "ruling": "true",
+ "why": "All three writers put note bodies and docket summaries into CSV cells with no formula-prefix neutralisation. csv.QUOTE_ALL quotes the fields, which fixes delimiter breakout but not formula evaluation: a quoted cell whose content starts with =, +, - or @ is still evaluated by Excel and LibreOffice when the file is opened. Note bodies are attacker-controllable text - _validate_body checks only emptiness and length.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/exports.py:31",
+ "searched": [
+  {"looked_in": "quarrystore/quarrystore/exports.py:21-70", "for": "a prefix guard or escaping helper before writerow", "found": "none in any of the three writers; only QUOTE_ALL, which does not stop formula evaluation"},
+  {"looked_in": "quarrystore/quarrystore/repository.py:35-40", "for": "input validation that would exclude a leading =", "found": "_validate_body checks non-empty and <= 20000 chars only"},
+  {"looked_in": "quarrystore/quarrystore/models.py:56-70", "for": "a column constraint or sanitising event on body", "found": "plain Text column; the only listener protects provenance fields"}]},
+
+{"id": "J-036", "ruling": "false",
+ "why": "The authorisation is indeed checked against the passed case rather than the note's own case, but the write it guards can never land. redacted_at is listed in IMMUTABLE_NOTE_FIELDS and the before_update listener raises whenever that attribute has changes with a prior loaded value - which is every redaction of a persisted note. I ran it against SQLAlchemy 2.0.52 with these exact models: redact_note(db, principal, other_case, note) raises ValueError('redacted_at cannot be modified once the note exists') at the flush, and the note is left unredacted. The confused deputy has no effect to deliver.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/models.py:91",
+ "searched": [
+  {"looked_in": "quarrystore/quarrystore/models.py:88-103", "for": "whether the provenance listener covers redacted_at", "found": "IMMUTABLE_NOTE_FIELDS includes redacted_at, and the listener raises on any change with history.deleted - verified empirically, the flush in redact_note always raises"},
+  {"looked_in": "quarrystore/quarrystore/session.py:34-55", "for": "whether a cross-firm note could even be loaded to pass in", "found": "the do_orm_execute scope applies to Session.get too - I confirmed a cross-firm get() returns None while current_firm is set"},
+  {"looked_in": "quarrystore/quarrystore/exports.py:73-88", "for": "another path that changes redaction state and would bypass the listener", "found": "restore_over_redacted uses a Core update (no mapper event), but it is a different function and is scoped to firm_id and category"}]},
+
+{"id": "J-037", "ruling": "true",
+ "why": "PLAN_LIMITS declares seats and apiCallsPerDay per plan, entitlementsFor only echoes them back to the caller, and seatsRemaining has zero call sites (grep: definition only). No write path counts seats - neither POST /members nor the batch import consults the plan - and the only rate limiter is a per-IP request window, not a per-plan daily quota. The declared limits are advisory text.",
+ "decided_at": "corpus-v10/pulsegate-api/src/entitlements.ts:57",
+ "searched": [
+  {"looked_in": "corpus-v10 (grep seatsRemaining / apiCallsPerDay / seat_count)", "for": "any enforcement site", "found": "only the declarations, the entitlements response, and an unused seat_count column"},
+  {"looked_in": "pulsegate-api/src/routes/accounts.ts:37-78", "for": "a seat check before inserting a member", "found": "only domain and owner-role checks; no count against ent.seats"},
+  {"looked_in": "pulsegate-api/src/middleware.ts:15-32", "for": "a per-plan call quota", "found": "a fixed-window per-IP limiter with a constant max, unrelated to the plan"}]},
+
+{"id": "J-038", "ruling": "true",
+ "why": "The debug task prints rotated_password, which is the live vault credential looked up at line 7, with no no_log - while the template task immediately above it does set no_log: true, so the omission is not a project default. tags: [never, troubleshoot] means the task is skipped in a normal run, but that is a run selector, not a control: it is shipped precisely so an operator can run it with --tags troubleshoot, and at that moment the plaintext password lands in the play output and anything capturing it.",
+ "decided_at": "corpus-v10/stanchion-ansible/playbooks/rotate-secrets.yml:22",
+ "searched": [
+  {"looked_in": "stanchion-ansible/playbooks/rotate-secrets.yml:9-18", "for": "a file-level or block-level no_log that would cover the debug task", "found": "no_log is set on the template task only; it does not propagate"},
+  {"looked_in": "stanchion-ansible/playbooks/rotate-secrets.yml:23", "for": "whether the tags make the task unreachable", "found": "tags [never, troubleshoot] - never means opt-in, and troubleshoot is the documented opt-in handle, so the task runs on demand"},
+  {"looked_in": "stanchion-ansible/ansible.cfg:1-9", "for": "a callback that would suppress variable values", "found": "stdout_callback = yaml, which prints var contents verbatim"}]},
+
+{"id": "J-039", "ruling": "true",
+ "why": "The trust policy names Principal AWS '*' - any AWS principal in any account may call sts:AssumeRole - with only sts:ExternalId and aws:SecureTransport as conditions. The external id is a shared secret, not an identity, so anyone who obtains it (partners routinely paste them into tickets and pipelines) assumes the role from an account of their choosing. The role is not toothless: the reports bucket policy grants it GetObject and ListBucket over the whole bucket.",
+ "decided_at": "corpus-v9/pulumi-platform/iam.ts:92",
+ "searched": [
+  {"looked_in": "pulumi-platform/iam.ts:92-111", "for": "an account or ARN restriction alongside the external id", "found": "none - Principal is the literal '*'"},
+  {"looked_in": "pulumi-platform/storage.ts:114-132", "for": "what the role can actually reach", "found": "s3:GetObject and s3:ListBucket on the entire reports bucket, which holds rendered customer reports"},
+  {"looked_in": "pulumi-platform (whole stack)", "for": "a permission boundary or explicit Deny that would contain an assumed session", "found": "none declared"}]},
+
+{"id": "J-040", "ruling": "true",
+ "why": "All four ECS task roles are created with the same trust policy: Principal Service ecs-tasks.amazonaws.com, sts:AssumeRole, and no Condition block at all - no aws:SourceAccount, no aws:SourceArn, which is the condition AWS documents for this exact resource. Nothing else in the stack supplies it: there is no permission boundary, no SCP, and the extra RolePolicy in index.ts only scopes what the role can do, not who may assume it. The impact is confused-deputy hardening rather than a direct path, but the control is simply absent and nothing substitutes for it.",
+ "decided_at": "corpus-v9/pulumi-platform/iam.ts:67",
+ "searched": [
+  {"looked_in": "pulumi-platform/iam.ts:62-88", "for": "a Condition on any of the task-role trust policies", "found": "the assumeRolePolicy is a bare Effect/Principal/Action with no Condition, for every service in SERVICES"},
+  {"looked_in": "pulumi-platform/index.ts:72-84", "for": "a compensating boundary or scoped trust", "found": "a RolePolicy scoping s3:GetObject for the loader - it does not touch the trust relationship"},
+  {"looked_in": "pulumi-platform (grep for permissionsBoundary / Organizations policy)", "for": "an account-level constraint", "found": "nothing"}]},
+
+{"id": "J-041", "ruling": "true",
+ "why": "The reports bucket block sets blockPublicAcls and ignorePublicAcls true but leaves blockPublicPolicy and restrictPublicBuckets false, so the backstop against a public bucket policy is switched off. Nothing else supplies that backstop - there is no account-level PublicAccessBlock or SCP anywhere in the stack - and the risk is not hypothetical here: the very same function attaches a Principal '*' policy to the sibling exports bucket, which is exactly the mistake these two flags exist to contain.",
+ "decided_at": "corpus-v9/pulumi-platform/storage.ts:101",
+ "searched": [
+  {"looked_in": "pulumi-platform/storage.ts:114-132", "for": "an existing public grant on this bucket that would make it live today", "found": "the current policy grants only the partner role - so this is a missing backstop rather than an open bucket right now"},
+  {"looked_in": "pulumi-platform (whole stack)", "for": "an account-level PublicAccessBlock or organisation policy", "found": "none - the bucket-level block is the only one"},
+  {"looked_in": "pulumi-platform/edge.ts:199-256", "for": "whether CloudFront/OAC makes direct S3 access impossible anyway", "found": "OAC governs the distribution's own reads; it does not restrict what a bucket policy may grant"}]},
+
+{"id": "J-042", "ruling": "true",
+ "why": "The staging stack sets publicExports true, and the neighbouring key sets replicateProdExports true. index.ts reads both and passes them into createStorage, where the first disables all four public-access-block flags and attaches an anonymous s3:GetObject policy, and the second accepts replication of production export objects into that same bucket. The prod stack sets both to false, confirming these are live inputs and not inert placeholders.",
+ "decided_at": "corpus-v9/pulumi-platform/Pulumi.staging.yaml:9",
+ "searched": [
+  {"looked_in": "pulumi-platform/index.ts:13-14,45-50", "for": "a guard that ignores publicExports outside a sandbox", "found": "none - the values go straight from stack config into createStorage"},
+  {"looked_in": "pulumi-platform/storage.ts:42-90", "for": "what the two flags actually build", "found": "an inverted public-access block plus two bucket policies: anonymous read, and inbound prod replication"},
+  {"looked_in": "pulumi-platform/Pulumi.prod.yaml:7-8", "for": "whether the same defaults exist in prod", "found": "both false in prod - the exposure is staging-specific and deliberate"}]},
+
+{"id": "J-043", "ruling": "true",
+ "why": "mintServiceToken signs with process.env.SERVICE_TOKEN_KEY ?? 'local-development-key', on a live route (POST /oauth/token wired at index.ts:27, and given its own location in the edge config). Nothing anywhere in the tree sets SERVICE_TOKEN_KEY, and the guard immediately above - refusing a client whose secret is empty - shows the author closing exactly this class of insecure default one line earlier, so the fallback here is unguarded by design. I did find that this API's own bearer path verifies against a remote JWKS, which cannot accept an HS256 token; that breaks the verify half of the feature rather than protecting the key, and the tokens minted with a key published in source are still handed to the billing-sync and usage-rollup clients over the wire.",
+ "decided_at": "corpus-v10/pulsegate-api/src/auth.ts:99",
+ "searched": [
+  {"looked_in": "corpus-v10 (grep SERVICE_TOKEN_KEY)", "for": "a deployment manifest, env file or default that supplies the real key", "found": "the single reference at auth.ts:99 - nothing sets it"},
+  {"looked_in": "pulsegate-api/src/auth.ts:31-47", "for": "the verifier for these tokens", "found": "actorFromBearer verifies against createRemoteJWKSet, which rejects symmetric algorithms - so a forged HS256 token does not authenticate to this API; the consumer that does accept them is outside the tree"},
+  {"looked_in": "pulsegate-api/src/auth.ts:91-97", "for": "a guard that refuses to mint when the key is missing", "found": "the empty-client-secret guard exists, but there is no equivalent check on the signing key"}]},
+
+{"id": "J-044", "ruling": "true",
+ "why": "The incremental predicate is created_at > max(created_at), so any source row sharing the exact maximum timestamp with the previous run is never read again - it falls outside both the old run (not yet inserted) and the next one (not strictly greater). The model declares unique_key, which is precisely what would make a >= comparison safe, and no lookback window or overlap is applied anywhere. The masked customer model repeats the same pattern on updated_at.",
+ "decided_at": "corpus-v9/warehouse-dbt/models/staging/stg_payout_events.sql:26",
+ "searched": [
+  {"looked_in": "warehouse-dbt/models/staging/stg_payout_events.sql:1-7", "for": "a unique_key or merge strategy that would let a >= be used safely", "found": "unique_key is declared, so deduplication is available and the strict comparison is unnecessary"},
+  {"looked_in": "warehouse-dbt/models/marts/customer_pii_masked.sql:33", "for": "whether another model compensates or repeats it", "found": "the same strict > on updated_at - it repeats, nothing compensates"},
+  {"looked_in": "warehouse-dbt/dbt_project.yml and macros/", "for": "a lookback/overlap macro applied to incremental models", "found": "the only staging hooks are enable_row_security and apply_grants"}]},
+
+{"id": "J-045", "ruling": "true",
+ "why": "_verify_producer returns bool(message.get('signature')) and a producer-name check: the signature is tested for presence and never verified against any key - grep finds no hmac, no digest, no secret anywhere in the package. Any message carrying a non-empty signature string and producer 'crawler' is accepted, and consume_batch then builds Document directly, so the forged message also skips the DocumentIn validators and lands in the index with tenant and acl_groups of the sender's choosing.",
+ "decided_at": "corpus-v10/beaconindex/beaconindex/ingest.py:110",
+ "searched": [
+  {"looked_in": "corpus-v10/beaconindex (grep hmac|signature|verify|secret)", "for": "a real verification routine or a key", "found": "only this presence check; no crypto anywhere in the package"},
+  {"looked_in": "beaconindex/beaconindex/ingest.py:113-125", "for": "validation applied to an accepted message", "found": "Document(**message['doc']) - the pydantic model is bypassed on this path"},
+  {"looked_in": "beaconindex/config/beacon.yaml:38-44", "for": "a producer allowlist or queue-level authentication", "found": "only queue name, size cap and public_sources; the queue URL carries no credentials"}]},
+
+{"id": "J-046", "ruling": "false",
+ "why": "createLegacyArchive is never called. Grep across the stack shows it is defined at storage.ts:153 and imported by nobody - index.ts imports createStorage, createRoles, createDataTier, createEdge and createNetwork only. Pulumi materialises resources when the constructor runs during program execution, so no legacy-archive bucket, no disabled access block and no anonymous policy exist in any stack; the function is dead code describing a bucket that is never created.",
+ "decided_at": "corpus-v9/pulumi-platform/storage.ts:153",
+ "searched": [
+  {"looked_in": "pulumi-platform (grep createLegacyArchive)", "for": "any caller anywhere in the program", "found": "only the definition - no import, no invocation"},
+  {"looked_in": "pulumi-platform/index.ts:1-84", "for": "the full set of functions the program executes", "found": "createNetwork, createRoles, createStorage, createEdge, createDataTier and one inline RolePolicy - createLegacyArchive is not among them"},
+  {"looked_in": "pulumi-platform/Pulumi.staging.yaml and Pulumi.prod.yaml", "for": "a config flag that would switch the archive on", "found": "no legacy/archive key in either stack file"}]},
+
+{"id": "J-047", "ruling": "true",
+ "why": "In staging both branches fire, and both construct an aws.s3.BucketPolicy against the same bucket id. S3 keeps exactly one policy per bucket, so the two resources overwrite each other and the effective policy is whichever PutBucketPolicy landed last - a non-deterministic security outcome that also drifts on every refresh. Nothing sequences or merges them: there is no dependsOn, and the two policies have different Pulumi names, so the engine treats them as independent.",
+ "decided_at": "corpus-v9/pulumi-platform/storage.ts:73",
+ "searched": [
+  {"looked_in": "pulumi-platform/storage.ts:51-53 and 73-75", "for": "whether the two policies really target the same bucket", "found": "both pass bucket: exports_.id"},
+  {"looked_in": "pulumi-platform/Pulumi.staging.yaml:9,12", "for": "whether both branches are live in the same stack", "found": "publicExports true and replicateProdExports true - both if-blocks execute"},
+  {"looked_in": "pulumi-platform/storage.ts (whole function)", "for": "a merge helper, dependsOn ordering or a single combined policy document", "found": "none - two independent BucketPolicy resources"}]},
+
+{"id": "J-048", "ruling": "true",
+ "why": "The role starts the app twice by two mechanisms: docker_container with the deliberately loopback-scoped publish 127.0.0.1:{{port}}:8080, and then a systemd unit that is installed and started with EnvironmentFile app.env - whose LISTEN_ADDR is rendered from group_vars/all.yml as 0.0.0.0. The systemd copy therefore contradicts the loopback intent of the container publish, and these hosts have no packet filter: the ufw default-deny lives in roles/bastion, which site.yml applies to the bastion group alone, not to appservers or edge.",
+ "decided_at": "corpus-v10/stanchion-ansible/roles/app/tasks/main.yml:97",
+ "searched": [
+  {"looked_in": "stanchion-ansible/roles/app/templates/app.env.j2:8 and group_vars/all.yml:19", "for": "the address the unit will actually bind", "found": "LISTEN_ADDR={{ app_listen_addr }} with app_listen_addr: 0.0.0.0 for every host"},
+  {"looked_in": "stanchion-ansible/playbooks/site.yml:2-10 and roles/bastion/tasks/main.yml:7-32", "for": "a firewall covering the app fleet", "found": "the ufw tasks run only on hosts: bastion despite the 'every host in the fleet' comment - appservers and edge get no rules"},
+  {"looked_in": "stanchion-ansible/roles/app/tasks/main.yml:49-61", "for": "whether the container publish is the intended exposure", "found": "127.0.0.1:{{ app_listen_port }}:8080 - loopback by design, plus a separate 0.0.0.0:6432 pgbouncer publish"}]},
+
+{"id": "J-049", "ruling": "true",
+ "why": "Same defect as J-035 at write_case_csv specifically: note.body is written into the cell with no leading-metacharacter neutralisation, so a note that starts with = is a live formula in whatever spreadsheet opens the export. QUOTE_ALL does not prevent that - the quotes are consumed by the CSV parser and the cell content still begins with =.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/exports.py:30",
+ "searched": [
+  {"looked_in": "quarrystore/quarrystore/exports.py:26-32", "for": "escaping or a prefix guard before writerow", "found": "csv.writer with QUOTE_ALL only"},
+  {"looked_in": "quarrystore/quarrystore/repository.py:43-64", "for": "input-side rejection of formula-leading bodies", "found": "create_note validates authorisation and body length, not content"},
+  {"looked_in": "quarrystore/quarrystore/policy.py:78-81", "for": "a projection layer that might strip content on the way out", "found": "project() is used by list/summary, not by the CSV writers - the exports read the ORM objects directly"}]},
+
+{"id": "J-050", "ruling": "true",
+ "why": "handlePayoutRelease moves money through ledger.adjustBalance, a bare upsert with no checks at all, while its sibling applyPosting in the same factory enforces the non-zero integer test, the per-entry ceiling and the overdraw refusal inside a transaction. So the payout path can drive a balance arbitrarily negative, and on the schema-less payout.release.v2 type it is not even bounded by the JSON-schema maximum.",
+ "decided_at": "corpus-v10/tallyflow-consumer/src/ledger.js:59",
+ "searched": [
+  {"looked_in": "tallyflow-consumer/src/ledger.js:8-28", "for": "whether the invariants live somewhere the payout path still crosses", "found": "they are inside applyPosting, which payoutRelease never calls"},
+  {"looked_in": "tallyflow-consumer/src/handlers/payoutRelease.js:19-28", "for": "a handler-side solvency or ceiling check", "found": "none - it inserts the payout row and calls adjustBalance"},
+  {"looked_in": "tallyflow-consumer (grep adjustBalance) and config/default.json:32-35", "for": "another caller or a DB-level constraint enforcing maxPostingCents", "found": "one caller only; maxPostingCents is read solely by applyPosting"}]},
+
+{"id": "J-051", "ruling": "true",
+ "why": "QUERY_SCHEMA declares history as an array with maxItems and no items schema, and additionalProperties:false constrains only the top-level object. build_messages then appends {'role': turn['role'], 'content': turn['content']} verbatim, so a caller can insert a turn with role 'system' (or 'tool') after the real system message and dictate the tool loop that follows.",
+ "decided_at": "corpus-v9/atlas-rag/ragsvc/app.py:27",
+ "searched": [
+  {"looked_in": "atlas-rag/ragsvc/prompt.py:29-45", "for": "a role allowlist or coercion when history is folded in", "found": "the role is copied straight from the caller's object"},
+  {"looked_in": "atlas-rag/ragsvc/app.py:140-170", "for": "a second validation pass or sanitisation before answer()", "found": "only validate(body, QUERY_SCHEMA); body.get('history') is passed through"},
+  {"looked_in": "atlas-rag/ragsvc (grep role)", "for": "any other place that filters message roles", "found": "no filtering anywhere"}]},
+
+{"id": "J-052", "ruling": "true",
+ "why": "Nothing in the project applies a retention or expiry rule: grepping for retention/expire/purge/ttl/delete across warehouse-dbt returns no housekeeping at all, there are no snapshots and no post-hooks beyond grants and row security. The nearest thing is dim_customer's where deleted_at is null, but that is deletion propagation on a full-rebuild table, and it does not reach downstream - customer_pii_masked is incremental on updated_at, so a customer removed in the CRM keeps their row (and in the full-refresh branch, their unmasked contact details) indefinitely.",
+ "decided_at": "corpus-v9/warehouse-dbt/models/marts/dim_customer.sql:39",
+ "searched": [
+  {"looked_in": "warehouse-dbt (grep retention|expire|purge|ttl|delete)", "for": "any expiry or housekeeping model, hook or macro", "found": "no hits beyond an unrelated 'drop policy if exists'"},
+  {"looked_in": "warehouse-dbt/models/marts/customer_pii_masked.sql:19-51", "for": "propagation of deletions downstream", "found": "incremental on updated_at, so removed customers are never deleted from the masked table"},
+  {"looked_in": "warehouse-dbt/dbt_project.yml:20-56", "for": "a partition-expiry or lifecycle configuration", "found": "materialisation, schema, grants and hooks only"}]},
+
+{"id": "J-053", "ruling": "true",
+ "why": "The https intent filter declares a scheme and a pathPrefix but no android:host, so on Android the host is unconstrained and any domain serving a /r/ link resolves to this exported activity (and autoVerify cannot verify anything without a host). What it reaches is severe: routeWeb takes the link's own `target` query parameter and loads it in ReportWebViewActivity, which enables JavaScript and exposes SessionStore.bearer() to page script through the Atlas JavascriptInterface.",
+ "decided_at": "corpus-v9/atlas-android/app/src/main/AndroidManifest.xml:47",
+ "searched": [
+  {"looked_in": "atlas-android/app/src/main/AndroidManifest.xml:47-52", "for": "an android:host on the data element", "found": "only android:scheme=https and android:pathPrefix=/r/ - no host, so it matches every domain"},
+  {"looked_in": "atlas-android/.../ui/DeepLinkRouter.kt:56-64", "for": "an origin check compensating for the manifest", "found": "routeWeb trusts the filter ('anything arriving on the https scheme is one of our own report links') and takes the target parameter unchecked"},
+  {"looked_in": "atlas-android/.../ui/ReportWebViewActivity.kt:44-57,94-100", "for": "a URL allowlist or a restricted bridge in the WebView", "found": "no allowlist; javaScriptEnabled with a bridge that returns the session bearer"}]},
+
+{"id": "J-054", "ruling": "true",
+ "why": "Every backing service in the config is plain http - the Qdrant store, the embeddings endpoint and the LLM gateway - and client() constructs QdrantClient with a url and a timeout and nothing else: no api_key, no TLS, no auth of any kind. Anyone with network reach to the store can read or rewrite the whole index, which is where the tenant and acl_groups payloads that back every authorisation decision live.",
+ "decided_at": "corpus-v10/beaconindex/beaconindex/store.py:15",
+ "searched": [
+  {"looked_in": "beaconindex/config/beacon.yaml:3-19", "for": "an https endpoint or a credential field", "found": "http:// for store, embeddings and llm; no credentials anywhere in the file"},
+  {"looked_in": "corpus-v10/beaconindex (grep tls|https|api_key|verify=)", "for": "TLS configuration or a client credential", "found": "no hits at all in the package"},
+  {"looked_in": "corpus-v10 (whole tree)", "for": "a service mesh, sidecar or proxy config that would provide mTLS", "found": "nothing - the only infra in the tree deploys a different application"}]},
+
+{"id": "J-055", "ruling": "true",
+ "why": "The analytics replica is created with publiclyAccessible: true in a subnet group built from the public subnets, and the standalone ingress rule opens tcp/5432 from 0.0.0.0/0 on network.dbSecurityGroup - the same security group that is attached to the primary instance. The primary's own publiclyAccessible: false does not help: the group it shares is what is being opened.",
+ "decided_at": "corpus-v9/pulumi-platform/data.ts:59",
+ "searched": [
+  {"looked_in": "pulumi-platform/network.ts:96-109", "for": "whether the DB security group is otherwise closed", "found": "its inline ingress allows only the app security group, and the comment says 'from nowhere else' - the rule in data.ts contradicts it"},
+  {"looked_in": "pulumi-platform/data.ts:34-50", "for": "whether the shared group also fronts the primary", "found": "yes - the primary uses vpcSecurityGroupIds: [network.dbSecurityGroup.id]"},
+  {"looked_in": "pulumi-platform/data.ts:26-32", "for": "a compensating control", "found": "rds.force_ssl only, which encrypts the connection and does not restrict who may open one"}]},
+
+{"id": "J-056", "ruling": "true",
+ "why": "strip_headers lists x-beacon-principal, x-beacon-tenant and x-beacon-request-id, but principal_from_headers also reads x-beacon-groups, which is not on the list and therefore survives from the client. Those groups are the entire ACL: group_filter builds the Qdrant filter from them and may_read intersects against them, so a caller who adds their own x-beacon-groups header reads every chunk in the tenant regardless of its acl_groups.",
+ "decided_at": "corpus-v10/beaconindex/config/beacon.yaml:24",
+ "searched": [
+  {"looked_in": "beaconindex/beaconindex/acl.py:28-39", "for": "which headers the code actually trusts", "found": "subject, tenant and groups - the first two are stripped and re-stamped, groups is not"},
+  {"looked_in": "corpus-v10/beaconindex (grep groups)", "for": "a second source of the caller's groups (directory lookup, token claim)", "found": "no other derivation - the header is the only source"},
+  {"looked_in": "beaconindex/beaconindex/acl.py:42-59", "for": "a server-side check that would catch a forged group", "found": "group_filter and may_read consume principal.groups directly; nothing validates them"}]},
+
+{"id": "J-057", "ruling": "true",
+ "why": "Only handle_payout consults idempotency.lookup before acting. handle_payout_cancel posts a positive amount to the destination account with no lookup, handle_payout_reissue calls _apply_payout and only then remembers a key it never checked, and handle_refund debits the clearing account with no key at all. Replaying the same cancel message therefore credits an account repeatedly, and there is no reference uniqueness in post_entry or in any constraint in the tree to absorb it.",
+ "decided_at": "corpus-v9/settlement-worker/settlement/handlers.py:91",
+ "searched": [
+  {"looked_in": "settlement-worker/settlement/idempotency.py", "for": "callers of lookup/claim beyond the payout handler", "found": "claim() has no caller at all; lookup is used only in handle_payout"},
+  {"looked_in": "settlement-worker/settlement/ledger.py:54-85", "for": "a reference-uniqueness or dedupe check on the journal write", "found": "none - the insert has no conflict clause and no constraint is declared in the tree"},
+  {"looked_in": "settlement-worker/settlement/consumer.py:87-97", "for": "a consumer-level dedupe by entry id", "found": "process dispatches and acks; there is no seen-set"}]},
+
+{"id": "J-058", "ruling": "true",
+ "why": "request_case_bundle takes a principal and never uses it: no policy.assert_can_read, unlike schedule_export twelve lines above, and no lookup of the case at all. It hands the raw case_id to export_case_bundle, which opens its own Session and writes id, case_id, author_id and the full note bodies to disk. I confirmed the firm-scope listener only applies while current_firm is set on the calling context, and the function's own docstring says the builder runs after the request has returned - so in the intended deployment there is no tenant narrowing either.",
+ "decided_at": "corpus-v10/quarrystore/quarrystore/repository.py:127",
+ "searched": [
+  {"looked_in": "quarrystore/quarrystore/repository.py:116-124", "for": "the pattern the sibling export follows", "found": "schedule_export calls policy.assert_can_read(principal, case) first - request_case_bundle omits it entirely"},
+  {"looked_in": "quarrystore/quarrystore/session.py:34-55", "for": "whether the global firm scope saves it", "found": "the listener narrows only when current_firm is set; I verified an unscoped Session returns rows from every firm"},
+  {"looked_in": "quarrystore/quarrystore/exports.py:51-70", "for": "an authorisation or scoping check inside the builder", "found": "none - it opens Session(bind=engine) and selects by case_id alone"}]},
+
+{"id": "J-059", "ruling": "true",
+ "why": "demo_api_key is a plain class-attribute literal while every other setting in the same dataclass is read through os.getenv, so there is no way to rotate or disable it without shipping code. It is a real credential: _principal_for_key compares the presented bearer against it before any database lookup and returns a Principal, which is enough to reach /v1/query (and therefore the unrestricted http_get tool loop), /v1/documents, /v1/manifest and /v1/keys/rotate.",
+ "decided_at": "corpus-v9/atlas-rag/ragsvc/settings.py:47",
+ "searched": [
+  {"looked_in": "atlas-rag/ragsvc/settings.py:17-49", "for": "an env override or a kill switch for the demo key", "found": "host, port, database_url, model settings and all limits use os.getenv; demo_api_key, demo_tenant and public_collection do not"},
+  {"looked_in": "atlas-rag/ragsvc/app.py:55-78", "for": "an environment gate on the demo principal", "found": "none - the literal comparison happens on every authenticated request, in every environment"},
+  {"looked_in": "atlas-rag/ragsvc/retriever.py:37-42", "for": "a restriction that would make the demo principal harmless", "found": "it narrows retrieval to the public collection, but the same principal still reaches document ingest, manifest load, key rotation and the tool loop"}]},
+
+{"id": "J-060", "ruling": "false",
+ "why": "The template can never arrive. printQuery is declared .strict(), and Hono's query validator hands zod every query parameter present on the request, not just the declared ones - so a request carrying ?template=... fails the schema and @hono/zod-validator returns 400 before the handler body runs. c.req.query('template') is therefore always undefined and new Function only ever compiles DEFAULT_SHEET, a fixed literal. There is no other route, header or body path into that expression.",
+ "decided_at": "corpus-v9/fieldops-api/src/routes/workorders.ts:168",
+ "searched": [
+  {"looked_in": "fieldops-api/src/routes/workorders.ts:164-170", "for": "whether the query schema admits an unknown key", "found": ".strict() on printQuery - an unrecognised key is a validation error, and zValidator answers 400 on failure before invoking the handler"},
+  {"looked_in": "fieldops-api/src (grep template / new Function)", "for": "another way to reach the compiler with attacker text", "found": "only this route; DEFAULT_SHEET is the sole fallback value"},
+  {"looked_in": "fieldops-api/src/index.ts:27-36", "for": "a middleware that might rewrite or strip the query before validation", "found": "requireAuth and the legacy attachments mount only - nothing that would let template bypass the validator"}]}
+]}

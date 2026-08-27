@@ -86,6 +86,21 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The blind judge failed its own control, twice
+
+[bench/judge](judge/) — instrument work, not a round. Four judges, blind to the arm and to a sealed
+key, ruled on sixty findings of which twenty were controls. **All four separated planted from decoy
+at 11–13 of 20**, calling 7 of 10 planted decoys true; forcing the disqualifying search — the
+eleventh round's own lever — changed nothing. A judge that rules `true` on 38–40 of the 40 real
+questions has measured nothing, so **the outside-the-key question is exactly as open as it was.**
+
+Reading the failures produced the second result: in **4 of 4** cases examined the judge named the
+very file the key says disqualifies the finding, and ruled true anyway on a narrower claim the
+exculpation does not touch. **Which exposes that a decoy hit is scored by LOCATION, not by claim** —
+a finding within six lines of a planted decoy counts as one whatever it asserts. The decoy rate,
+the half of the band this project has failed ten times, has a known defect of unmeasured size, and
+until it is measured every decoy figure here should be read as an upper bound.
+
 ## The decoy rate measures a fifth of what one arm reports
 
 [2026-08-27, what the key cannot see](runs/2026-08-27-what-the-key-cannot-see/) — **not a round,
