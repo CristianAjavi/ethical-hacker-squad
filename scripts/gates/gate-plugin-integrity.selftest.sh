@@ -102,6 +102,20 @@ m_tracked_pyc() {
   printf 'x\n' > "$1/skills/mypack/tools/t.pyc"
   git -C "$1" add -A 2>/dev/null
 }
+# agents/ holds a role the manifest never lists: it is in the tree and not in the
+# package, which no other gate can see because they all read the directory.
+m_undeclared_agent() {
+  m_tool_inert "$1"
+  mkdir -p "$1/.claude-plugin" "$1/agents"
+  printf -- '---\nname: ghost\ndescription: A role the manifest does not declare.\n---\n\nrole\n' > "$1/agents/ghost.md"
+  printf '{"name":"p","description":"d","agents":[]}\n' > "$1/.claude-plugin/plugin.json"
+}
+# and the other direction: the manifest promises a role that is not in the tree.
+m_ghost_agent() {
+  m_tool_inert "$1"
+  mkdir -p "$1/.claude-plugin"
+  printf '{"name":"p","description":"d","agents":["./agents/absent.md"]}\n' > "$1/.claude-plugin/plugin.json"
+}
 m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
 m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
 
@@ -194,6 +208,11 @@ run_case tool-uses-re-compile        0 "read and inert"            m_tool_recomp
 # day, which is exactly the weaker thing this file exists to replace.
 run_case pyc-git-ignored            0 "git-ignored"              m_ignored_pyc
 run_case pyc-tracked-still-fails    1 "extension"                m_tracked_pyc
+# A role that exists and is not declared does not ship. Measured on the real
+# repo: nine roles in agents/, eight in the manifest, so every install was
+# missing the local-application specialist with no error anywhere.
+run_case role-not-in-the-manifest    1 "does not declare it"      m_undeclared_agent
+run_case manifest-names-a-ghost      1 "is not there"             m_ghost_agent
 run_case tool-calls-os-system        1 "calls \`system\`"          m_tool_ossystem
 run_case tool-relative-import        1 "stand alone"               m_tool_relative
 run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable

@@ -316,6 +316,34 @@ for sf in "${SKILL_FILES[@]}"; do
 done
 
 # --- 3. internal relative links ---------------------------------------------
+section "the manifest against the directory"
+MA_CORE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/manifest_agents.py"
+if [ ! -f "$MA_CORE" ]; then
+  unmeasurable "I cannot find $MA_CORE"
+else
+  _ma=$(mktemp "${TMPDIR:-/tmp}/ehs-manifest.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$MA_CORE" "$ROOT" > "$_ma" 2>&1 || true
+  # A tree with no manifest and no agents/ is a legitimate shape - most fixtures
+  # are exactly that - so it is a DECLARED skip here rather than a failure to
+  # measure. A manifest that exists and does not parse is a different thing and
+  # still stops the gate.
+  if grep -qE '^ERR\|(no manifest|no agents/)' "$_ma"; then
+    skip "$(sed -n 's/^ERR|//p' "$_ma" | head -1): nothing to compare"
+  elif grep -q '^ERR|' "$_ma"; then
+    unmeasurable "$(sed -n 's/^ERR|//p' "$_ma" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)|\(.*\)/         \1 role(s) declared, \2 present in agents\//p' "$_ma"
+    if grep -qE '^(UNDECLARED|MISSING)\|' "$_ma"; then
+      sed -n 's/^UNDECLARED|\(.*\)/  [FAIL] agents\/\1 exists and the manifest does not declare it: it does not ship/p' "$_ma"
+      sed -n 's/^MISSING|\(.*\)/  [FAIL] the manifest declares agents\/\1 and the file is not there/p' "$_ma"
+      FAILURES=$((FAILURES + 1))
+    else
+      ok "every role in agents/ is declared, and every declared role exists"
+    fi
+  fi
+  rm -f "$_ma"
+fi
+
 section "internal relative links"
 MD_FILES=()
 if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
