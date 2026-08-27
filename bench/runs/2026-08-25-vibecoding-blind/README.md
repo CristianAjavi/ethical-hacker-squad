@@ -17,8 +17,14 @@ bottom rather than buried, because it is the finding.
 The blind was structural: the tree was copied out of the repository into a directory from
 which `bench/ground-truth.json` is not reachable. Every prompt, every report and the
 scorer's own output ship in `runs/` and `score.json`. The artifact directory is named `runs/` and not
-`reports/` because `.gitignore` line 31 ignores any directory called `reports/`, which
-silently kept the evidence for this round out of the commit until it was caught.
+`reports/` because `.gitignore` used to ignore any directory called `reports/` at any depth,
+which silently kept the evidence for this round out of the commit until it was caught.
+
+**That rule is now anchored** — `/reports/` rather than `reports/`, so it ignores the local audit
+output at the repository root and nothing named that anywhere else. The gate caught the symptom
+twice; renaming the directory fixed one round and left the trap set for the next. What was left on
+disk under `reports/` is byte-identical to the six files tracked in `runs/`, verified by hashing
+the parsed JSON of each pair, so nothing here is unpublished evidence.
 
 ## The pass is weak evidence, and that was said first
 
