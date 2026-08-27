@@ -111,3 +111,37 @@ its size. Correcting it would move this project's decoy rate down more than `man
 precisely why the correction does not get made on the strength of a word-overlap heuristic written
 by the party it would favour.
 
+## Second addendum: nine of ten decoy hits read the thing that disqualifies them
+
+The word-overlap proxy above is weak. This one is not, and it needs no judge: the key states, for
+every decoy, the artifact that rules it out, with a path and a line. So ask whether the finding's
+own text — evidence, scope, searched, all of it — **mentions that artifact at all**.
+
+Across the same 98 decoy hits:
+
+| arm | decoy hits | cite the disqualifying **file** | cite the exact **file:line** |
+|---|---|---|---|
+| this project | 66 | **56 (85%)** | 26 (39%) |
+| `mantis` | 32 | **29 (91%)** | 17 (53%) |
+
+**The "walked into the trap blind" reading is false for roughly nine in ten**, in both arms, and it
+is `mantis` that engages the exculpation slightly more often — so this is not a finding that
+flatters the party measuring it.
+
+What it does **not** settle, and the distinction is the whole remaining question:
+
+- **A different claim.** The finder read the exculpation, accepted it, and reported something else
+  the exculpation does not touch — a live credential printed regardless of a `never` tag. The
+  scorer counts a false positive that was never asserted.
+- **A dismissed exculpation.** The finder read it, judged it insufficient, and was wrong. The
+  scorer counts correctly and the finder has a triage defect.
+
+**Citing is not understanding, and this measure cannot tell the two apart.** What it establishes is
+that the population is nearly all one or the other, and almost none of it is the naive case the
+metric was designed around.
+
+So the open question for the decoy metric is now precise rather than vague: *of the 85–91% that
+engage the exculpation, how many assert something it does not cover?* That is the measurement to
+build a control for, and the failed judge above is the evidence that it will not be built by asking
+a model the question directly.
+
