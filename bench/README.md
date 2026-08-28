@@ -2,6 +2,26 @@
 
 Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
 
+## The artifacts here are not the artifact the plugin ships
+
+`bench/runs/*/runs/*.json` and the plugin's `findings.json` are two different shapes with
+overlapping names, and confusing them is easy: this paragraph exists because the author of it
+did, five minutes before writing it, and measured 10,450 shipped findings against the wrong
+required-field list before checking which contract applied.
+
+| | governed by | required fields include | who reads it |
+|---|---|---|---|
+| the plugin's deliverable | [`findings.schema.json`](../skills/ethical-hacker-squad/references/findings.schema.json), enforced by `gate-findings-artifact.sh` over its fixtures | `id`, `procedure`, `confidence`, `traceability`, `triage` | a user of the plugin |
+| a round's scoring input, here | the round's own prompt, quoted in its `prompts/` | `title`, `location`, `severity`, `status`, `triage`, plus whatever that round registered — `cwe`, `searched`, `class` | `score.py` |
+
+The harness shape is **deliberately reduced**. A round asks for the fields its pre-registration
+scores and nothing else, because every extra required field is a demand on both arms and a
+chance to advantage the arm that already writes it. So a bench artifact missing `confidence` is
+not a defect: that field was never asked for.
+
+`gate-findings-artifact.sh` states its scope on every run — *the fixtures under
+`scripts/gates/fixtures/findings`* — and it is right not to reach into this directory.
+
 ## The triage stage, run and unmeasured
 
 [2026-08-24, triage stage](runs/2026-08-24-triage-stage/) — twelve runs, six per arm,
