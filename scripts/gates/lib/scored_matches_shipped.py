@@ -42,13 +42,38 @@ def main(argv=None) -> int:
     if not runs.is_dir():
         print(f"ERR|no bench/runs under {root}")
         return 2
+    exempt_file = runs / "HASHES-EXEMPT.txt"
+    exempt = set()
+    if exempt_file.is_file():
+        for line in exempt_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                exempt.add(line)
     bad = 0
-    n_rounds = n_files = 0
+    n_rounds = n_files = n_exempt = n_exempt_files = 0
     for d in sorted(p for p in runs.iterdir() if p.is_dir()):
         score = d / "SCORE.txt"
         rdir = d / "runs"
-        if not (score.is_file() and rdir.is_dir()):
+        if not rdir.is_dir() or not any(rdir.iterdir()):
             continue
+        shipped = len(list(rdir.iterdir()))
+        if not score.is_file():
+            # A round that ships reports but has no SCORE.txt is not outside the
+            # rule, only outside the check that existed when it ran. Silence here
+            # would read as coverage, so it has to be listed by name to be skipped.
+            if d.name in exempt:
+                n_exempt += 1
+                n_exempt_files += shipped
+                if (d / "REPORTS.sha256").is_file():
+                    print(f"STALE|{d.name}")
+                    bad = 1
+                continue
+            print(f"UNLISTED|{d.name}")
+            bad = 1
+            continue
+        if d.name in exempt:
+            print(f"STALE|{d.name}")
+            bad = 1
         n_rounds += 1
         manifest = d / "REPORTS.sha256"
         if not manifest.is_file():
@@ -75,7 +100,7 @@ def main(argv=None) -> int:
             if got != want:
                 print(f"MISMATCH|{d.name}|{name}")
                 bad = 1
-    print(f"STAT|{n_rounds}|{n_files}")
+    print(f"STAT|{n_rounds}|{n_files}|{n_exempt}|{n_exempt_files}")
     return 1 if bad else 0
 
 

@@ -230,6 +230,32 @@ w=pathlib.Path(os.environ["EHS_WORK"])
 c=w/"scripts/gates/lib/scored_matches_shipped.py"
 c.write_text(c.read_text().replace("MISSING|","SILENCED|"))'
 
+case_run exemption-line-removed 1 "skipping it in silence would read as coverage" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text("".join(l for l in p.read_text().splitlines(True) if l.strip()!="2026-08-22-second-target"))'
+
+case_run exemption-line-removed-checker-blind 0 "" '
+import os,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text("".join(l for l in p.read_text().splitlines(True) if l.strip()!="2026-08-22-second-target"))
+c=w/"scripts/gates/lib/scored_matches_shipped.py"
+c.write_text(c.read_text().replace("UNLISTED|","SILENCED|"))'
+
+case_run exemption-gone-stale 1 "no longer needs to be" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text(p.read_text()+"2026-08-29-baited-claim\n")'
+
+case_run exemption-gone-stale-checker-blind 0 "" '
+import os,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text(p.read_text()+"2026-08-29-baited-claim\n")
+c=w/"scripts/gates/lib/scored_matches_shipped.py"
+c.write_text(c.read_text().replace("STALE|","SILENCED|"))'
+
 case_run key-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").unlink()'

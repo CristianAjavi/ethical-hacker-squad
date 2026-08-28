@@ -455,11 +455,13 @@ if [ -f "$SMS" ]; then
   if grep -q '^ERR|' "$_sms"; then
     gate_warn "$(sed -n 's/^ERR|//p' "$_sms" | head -1)"
   else
-    sed -n 's/^STAT|\(.*\)|\(.*\)/· \1 scored round(s), \2 report(s) hashed/p' "$_sms"
-    if grep -qE '^(MISSING|ABSENT|MISMATCH)\|' "$_sms"; then
+    sed -n 's/^STAT|\(.*\)|\(.*\)|\(.*\)|\(.*\)/· \1 scored round(s), \2 report(s) hashed · \3 round(s), \4 report(s) exempt by name/p' "$_sms"
+    if grep -qE '^(MISSING|ABSENT|MISMATCH|UNLISTED|STALE)\|' "$_sms"; then
       sed -n 's/^MISSING|\(.*\)/FAIL  \1 has a SCORE.txt and no REPORTS.sha256: nobody can check the numbers came from these bytes/p' "$_sms"
       sed -n 's/^ABSENT|\(.*\)|\(.*\)/FAIL  \1: \2 was scored and is not shipped/p' "$_sms"
       sed -n 's/^MISMATCH|\(.*\)|\(.*\)/FAIL  \1: \2 differs from what was scored/p' "$_sms"
+      sed -n 's/^UNLISTED|\(.*\)/FAIL  \1 ships reports with no hashes and is not named in bench\/runs\/HASHES-EXEMPT.txt: skipping it in silence would read as coverage/p' "$_sms"
+      sed -n 's/^STALE|\(.*\)/FAIL  \1 is named exempt in bench\/runs\/HASHES-EXEMPT.txt and no longer needs to be: remove the line/p' "$_sms"
       # This gate exits on `rc`, computed above; incrementing a FAILURES counter
       # that nothing reads would print a FAIL line and still return 0 - a green
       # that means nothing, which is the defect this repository exists to catch.
