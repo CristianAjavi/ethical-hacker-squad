@@ -17,6 +17,11 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Deliberately the gate from this tree, unlike the other batteries. This one
+# copies only the inputs into $work, not the repository, so $work has no
+# scripts/ to run. A case here therefore cannot blind a checker; that is a
+# property of what this harness copies, and it is written down rather than
+# left to be rediscovered.
 GATE="$HERE/gate-triage-stage.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :

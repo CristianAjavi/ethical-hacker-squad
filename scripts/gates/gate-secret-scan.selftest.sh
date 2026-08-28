@@ -8,6 +8,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The gate under test is the copy inside $work, not this tree: gates resolve
+# their lib/*.py from their own BASH_SOURCE, so running the source gate would
+# load the source checkers and no case could blind one to prove which check
+# actually caught the defect.
 GATE="$HERE/gate-secret-scan.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
@@ -24,8 +28,14 @@ case_run() {
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
     printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
   fi
+  # The gate under test is the copy inside $work, so a case can blind a checker and
+  # prove which check caught the defect. The exception is a case that removes the
+  # tree: the gate lives inside it, so there is nothing left to run and the source
+  # gate has to answer instead.
+  local gate="$work/scripts/gates/gate-secret-scan.sh"
+  [ -f "$gate" ] || gate="$GATE"
   local out rc
-  out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  out="$(EHS_REPO_ROOT="$work" bash "$gate" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-38s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
