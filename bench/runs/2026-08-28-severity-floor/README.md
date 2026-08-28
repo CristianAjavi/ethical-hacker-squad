@@ -80,8 +80,20 @@ radius of a line rather than of what it reaches.
 
 The useful part is that **the report already says which case it is in.** A composition finding whose
 `applies_to` names one file has an unestablished reach, and the severity attached to it is
-unreliable by 40%. That does not need a judge, another required field, or a fifth phrasing — it
-needs a check that reads what is already written.
+unreliable by 40%.
+
+**A check built on that was designed and then refused, because measuring it first killed it.** The
+intended flag was a bookkeeping mismatch: a finding whose `evidence` names a file its `applies_to`
+does not. Measured on the same artifacts, the signal runs **backwards** — 14% underrated when the
+mismatch is present against **30%** when the scope is fully recorded. Findings with tidy scope are
+underrated *more*.
+
+So breadth predicts and mismatch does not, and the two are consistent: what matters is how many
+files were actually traced, not whether the bookkeeping about them is complete. That leaves no
+check to build, because a single-file `applies_to` is not a defect — most real findings have one.
+What it leaves is a disclosure a reader can act on: **a finding whose reach was never established
+carries a severity that is 40% unreliable in the dangerous direction**, and this project can say so
+without pretending to have fixed it.
 
 ## What it forces
 
