@@ -1,5 +1,12 @@
 # 2026-08-28 — the floor was refuted, and it exposed something worse than noise
 
+> **Decoy figures on this page are an upper bound.** The thirteenth round measured that a
+> decoy hit was scored by LOCATION rather than by claim: **59% of this project's counted
+> false positives asserted a different CWE from the one the decoy was built to provoke**,
+> against 31% of `mantis`'s. Corpora before 2026-08-29 carry no `baits_cwe`, so their numbers
+> cannot be recomputed and are **not** rewritten from a field invented afterwards. See
+> [`../2026-08-29-baited-claim/`](../2026-08-29-baited-claim/).
+
 **Not supported**, twelfth time. And the registered rule for this outcome fires: **the floor is
 withdrawn, not tuned.**
 

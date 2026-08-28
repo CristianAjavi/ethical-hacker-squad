@@ -1,5 +1,12 @@
 # 2026-08-26 — both products as they ship, and the curve did not move
 
+> **Decoy figures on this page are an upper bound.** The thirteenth round measured that a
+> decoy hit was scored by LOCATION rather than by claim: **59% of this project's counted
+> false positives asserted a different CWE from the one the decoy was built to provoke**,
+> against 31% of `mantis`'s. Corpora before 2026-08-29 carry no `baits_cwe`, so their numbers
+> cannot be recomputed and are **not** rewritten from a field invented afterwards. See
+> [`../2026-08-29-baited-claim/`](../2026-08-29-baited-claim/).
+
 **Not supported.** Tenth round, and the first in which each arm was launched at its own entry
 point with no architectural constraint: this project forming the squad `SKILL.md` §3 prescribes,
 `mantis` fanning out under `mantis-meta-agent`.

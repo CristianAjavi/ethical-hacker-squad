@@ -1,5 +1,12 @@
 # 2026-08-26 — the answer is no, and it is not close
 
+> **Decoy figures on this page are an upper bound.** The thirteenth round measured that a
+> decoy hit was scored by LOCATION rather than by claim: **59% of this project's counted
+> false positives asserted a different CWE from the one the decoy was built to provoke**,
+> against 31% of `mantis`'s. Corpora before 2026-08-29 carry no `baits_cwe`, so their numbers
+> cannot be recomputed and are **not** rewritten from a field invented afterwards. See
+> [`../2026-08-29-baited-claim/`](../2026-08-29-baited-claim/).
+
 **Refuted.** The band required this project's recall to exceed each competitor's by **≥ 15
 points**. `google/mantis` beat it by **8.3 points**, on **this project's own corpus** — cases
 this project wrote, defects it planted, a key it wrote.

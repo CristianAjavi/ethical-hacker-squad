@@ -417,6 +417,19 @@ case "$rc" in
   1) : ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
+# --- a page quoting a decoy figure must say the figure is an upper bound ------
+DCV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/decoy_caveat.py"
+if [ -f "$DCV" ]; then
+  _dcv=$(mktemp "${TMPDIR:-/tmp}/ehs-dcv.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$DCV" "$ROOT" > "$_dcv" 2>&1 || true
+  sed -n 's/^STAT|\(.*\)|\(.*\)/· \1 page(s) quote a decoy figure, \2 carry the caveat/p' "$_dcv"
+  if grep -q '^UNCAVEATED|' "$_dcv"; then
+    sed -n 's/^UNCAVEATED|\(.*\)/FAIL  \1 quotes a decoy figure without saying it is an upper bound/p' "$_dcv"
+    rc=1
+  fi
+  rm -f "$_dcv"
+fi
+
 # --- the reports a round shipped must be the ones it scored -------------------
 SMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scored_matches_shipped.py"
 if [ -f "$SMS" ]; then
