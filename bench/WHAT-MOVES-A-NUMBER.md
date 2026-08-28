@@ -38,6 +38,27 @@ No gate caught this one. It is listed beside the others because the same page ar
 before building kills bad designs — and this is the case where measuring *too early* published a
 wrong number in this project's favour.
 
+## An impression this author stated twice, and the measurement that refused it
+
+Two rounds showed this project's recall swinging where `mantis`'s held — 45–97% against 79–84% in
+the thirteenth, 12.0 points of spread against 3.5 in the tenth — and it was asserted in those pages
+that the squad is *inconsistent* where the competitor is *stable*.
+
+Measured across every round where three runs per arm exist and the matcher resolves (**8 of 11**;
+three older corpora return zero for both arms, so their rows say nothing and are excluded rather
+than averaged in):
+
+| | this project | `mantis` |
+|---|---|---|
+| mean coefficient of variation on recall | **5.4%** | **5.3%** |
+| worst round | 16.6% | 11.1% |
+| rounds where this arm was the more variable | **4 of 8** | 4 of 8 |
+
+**The claim does not survive its own ledger.** The two rounds that suggested it are real, and so are
+the four where this project is the steadier of the two. Neither arm is consistently more variable,
+and an impression formed from the rounds one happens to be looking at is exactly what a ledger of
+thirteen is for.
+
 ## The pattern, stated no more strongly than the rows support
 
 **Asking a reader — human, model, or specialist — to reason more carefully has not moved a target
