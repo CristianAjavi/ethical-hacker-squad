@@ -28,6 +28,16 @@ five moved nothing they were aimed at.
 Three attempts, three designs killed by their own control **before** they shipped. Two of the
 three would have flattered this project had they shipped unmeasured.
 
+## And one row about how a number gets published wrong
+
+| what happened | how it was caught | what it earned |
+|---|---|---|
+| a run was **scored while its agent was still writing** — 68 findings at the copy, 41 when it finished — and the intermediate favoured this project, so the round published +4.4 and "not supported" when the truth was −6.1 and **refuted** | a scheduler notice that the agent was still running, read **after** the page was committed and pushed | [a rule](runs/2026-08-29-baited-claim/): a report may not be scored until its agent has reported completion |
+
+No gate caught this one. It is listed beside the others because the same page argues that measuring
+before building kills bad designs — and this is the case where measuring *too early* published a
+wrong number in this project's favour.
+
 ## The pattern, stated no more strongly than the rows support
 
 **Asking a reader — human, model, or specialist — to reason more carefully has not moved a target

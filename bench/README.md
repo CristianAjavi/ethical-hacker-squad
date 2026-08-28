@@ -86,29 +86,31 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
-## The metric was measuring something else, and correcting it still is not enough
+## The metric was measuring something else, and this project loses on both definitions
 
-[2026-08-29, baited claim](runs/2026-08-29-baited-claim/) — **not supported**, on **both**
-definitions, which is the point.
+[2026-08-29, baited claim](runs/2026-08-29-baited-claim/) — **refuted** on the old metric and on the
+corrected one; `mantis` out-recalls this project in both. Its own recall range across three runs is
+**45 – 97%**, a spread wider than the gap being argued about.
 
-Each decoy declared the CWE it baits; every finding carried one, required of both arms. Result:
-**59% of this project's counted false positives asserted a different CWE from the one the decoy
-was built to provoke**, against 31% of `mantis`'s. For twelve rounds the decoy half counted those
-anyway, and counted them nearly twice as often against this project.
+Each decoy declared the CWE it baits; every finding carried one, required of both arms. **58% of
+this project's counted false positives asserted a different CWE from the one the decoy was built to
+provoke**, against 31% of `mantis`'s. Correcting that removes 43% of this project's decoy hits and
+31% of the competitor's — it helps the party that proposed it, by more — and this project is still
+worse, and now behind on recall too.
 
-Correcting it removes 44% of this project's decoy hits and 31% of the competitor's — it helps the
-party that proposed it, by more — **and this project is still worse: 6.33 against 3.67.** A metric
-change that flatters its author and still fails is the only kind worth adopting on the author's own
-evidence.
+**This page's first version was wrong and said +4.4.** A run was scored while the agent producing it
+was still writing: 68 findings at the copy, 41 when it finished, and the intermediate flattered this
+project. A scheduler notice caught it after the page was committed. The rule earned: **a report may
+not be scored until its agent has reported completion.**
 
-So, as the pre-registration required: every decoy figure in this ledger is an **upper bound**, and
+So, as pre-registered: every decoy figure in this ledger is an **upper bound**, and
 [the ninth round](runs/2026-08-26-scope-field/) — the only one whose decoy half this project won —
-is the first to re-read in that light. Retired corpora have no `baits_cwe` and their numbers are
-**not** rewritten from a field invented afterwards.
+is the first to re-read. Retired corpora have no `baits_cwe` and are **not** rewritten from a field
+invented afterwards.
 
-Two things measured for the first time because the CWE was finally required: **class breadth** — 46
-distinct identifiers per run against 26, at almost the same findings-per-class ratio — and a blind
-`VER-09` stage that **raised** a severity rather than only removing findings.
+Two things measured for the first time: **class breadth** — 46 distinct identifiers per run against
+26, at almost the same findings-per-class ratio — and a blind `VER-09` stage that **raised** a
+severity instead of only removing findings.
 
 ## What moved a number, and what did not
 
