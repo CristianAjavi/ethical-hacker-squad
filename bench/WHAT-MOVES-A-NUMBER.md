@@ -46,6 +46,13 @@ Beside it, in one day, the mutant bank caught three things that looked like meas
 | a mutant flattening a page's headline verdict | left the same word standing in the table below, so the check was right not to fire | the pair: its blinded twin behaved identically |
 | a battery blinding a checker in a throwaway copy | ran the gate from the **source** tree, which loads the source checkers — 14 of 15 batteries | the blinded twins came back red |
 | a blinding that rewrote a finding's message | `findings.append` still ran, so the gate stayed red | the twin failed its own expectation |
+| CI's step that runs all 25 batteries | sat after the gates step with no condition, so a red gate skipped it — **twenty consecutive runs, three days, zero batteries executed** | asking why a red battery had reached nobody |
+
+The last row is the one with reach. The other three hid a single check; that one hid every
+battery in the repository, and it did it while the job was **visibly red** for an unrelated reason —
+the most convincing disguise there is, because a red that is already explained stops being read.
+It is now a check of its own: `battery_step_reachable.py` fails the workflow gate if a battery step
+can be skipped by an earlier failure.
 
 The shape is one shape: **a green that was never at risk.** A mutant that does not mutate, a
 harness that cannot remove the mechanism, and a blinding that hides the words rather than the
