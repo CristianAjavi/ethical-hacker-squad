@@ -28,6 +28,30 @@ five moved nothing they were aimed at.
 Three attempts, three designs killed by their own control **before** they shipped. Two of the
 three would have flattered this project had they shipped unmeasured.
 
+## A battery that could not tell its own mechanism from a coincidence
+
+On 2026-08-28 three checks written that week were given a mutant bank, each defect run twice: once
+with the checker intact, which must fail, and once with the checker **blinded**, which must pass.
+The blinded twins came back red. The cause was in the harness, not the checks:
+`gate-bench-integrity.selftest.sh` copied the repository to a throwaway tree, mutated *the copy*,
+and then ran **the gate from the source tree** — which resolves its `lib/*.py` from its own
+`BASH_SOURCE` and therefore always loaded the source checkers.
+
+So no case in that battery, including the twenty it already had, could distinguish *this check
+caught it* from *some other section of the gate caught it*. Every case was still red for a real
+reason; none of them proved which reason. Fixed by running the copied gate.
+
+Two things this earns:
+
+- **A check proved only in the negative is proved halfway.** Removing the defect and watching the
+  red go away shows the gate reacts to the data. It does not show *which* check reacted. The pair —
+  defect with the mechanism, defect without it — is what separates them, and it needs a harness
+  where the mechanism can actually be removed.
+- **The first mutant written for the new check was hollow, and the bank caught that too.** It
+  flattened a page's headline verdict but left the same word standing in the table below, so the
+  check was right not to fire. A mutant that does not mutate measures nothing, and it reads exactly
+  like a passing case.
+
 ## And one row about how a number gets published wrong
 
 | what happened | how it was caught | what it earned |

@@ -430,6 +430,23 @@ if [ -f "$DCV" ]; then
   rm -f "$_dcv"
 fi
 
+# --- the page must state the verdict its own scorer produced ------------------
+VMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/verdict_matches_score.py"
+if [ -f "$VMS" ]; then
+  _vms=$(mktemp "${TMPDIR:-/tmp}/ehs-vms.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$VMS" "$ROOT" > "$_vms" 2>&1 || true
+  if grep -q '^ERR|' "$_vms"; then
+    gate_warn "$(sed -n 's/^ERR|//p' "$_vms" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)/· \1 round(s) checked: page verdict vs SCORE.txt/p' "$_vms"
+    if grep -q '^DRIFT|' "$_vms"; then
+      sed -n 's/^DRIFT|\(.*\)|\(.*\)/FAIL  \1: SCORE.txt says \2 and the page never says it/p' "$_vms"
+      rc=1
+    fi
+  fi
+  rm -f "$_vms"
+fi
+
 # --- the reports a round shipped must be the ones it scored -------------------
 SMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scored_matches_shipped.py"
 if [ -f "$SMS" ]; then

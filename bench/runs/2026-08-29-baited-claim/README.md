@@ -1,11 +1,15 @@
 # 2026-08-29 — the metric was measuring something else, and correcting it still is not enough
 
-**Not supported**, thirteenth round, on **both** definitions.
+**The band was not met on either definition**, thirteenth round — and the two scorings do
+not fail the same way, so the page names each verdict as [`SCORE.txt`](SCORE.txt) produced
+it rather than collapsing both into one word: **inconclusive** on the old definition, where
+the recall lead itself fell short of the registered 5 points; **not supported** on the new
+one, where recall cleared it and the decoy half failed.
 
 | definition | this project | `mantis` | recall gap | verdict |
 |---|---|---|---|---|
-| **old** — any finding within six lines of a decoy | 89.5% recall, 11.67 decoys | 85.1%, 5.33 | +4.4 | fails **both** halves |
-| **new** — counts only when `cwe` equals the decoy's `baits_cwe` | 86.8%, 6.33 | 80.7%, 3.67 | +6.1 | recall met, decoys fail |
+| **old** — any finding within six lines of a decoy | 89.5% recall, 11.67 decoys | 85.1%, 5.33 | +4.4 | **inconclusive** — under 5 points, decoys worse |
+| **new** — counts only when `cwe` equals the decoy's `baits_cwe` | 86.8%, 6.33 | 80.7%, 3.67 | +6.1 | **not supported** — recall met, decoys fail |
 
 ## This page was published wrong twice before it was right
 
