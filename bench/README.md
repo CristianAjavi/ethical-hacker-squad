@@ -86,6 +86,18 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## What moved a number, and what did not
+
+[WHAT-MOVES-A-NUMBER.md](WHAT-MOVES-A-NUMBER.md) — six interventions that asked someone to reason
+better, and three checks measured before they were built.
+
+**The six moved nothing they were aimed at**, including two the ledger's own findings recommended.
+**The three measurements killed all three designs before they shipped**, and two of them would have
+flattered this project had they shipped unmeasured.
+
+Every row links to the page that measured it, and the aggregate claim is stated no more strongly
+than those rows support.
+
 ## The floor was refuted, and it exposed something worse than noise
 
 [2026-08-28, severity floor](runs/2026-08-28-severity-floor/) — **not supported**, and the
