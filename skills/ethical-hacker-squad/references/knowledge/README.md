@@ -4,7 +4,7 @@ Eight packs, one per role, spread over nineteen files, 4,445 lines in total, 169
 
 ## Loading rules
 
-1. The **leader does not read the packs**. It reads `coverage.md` to decide who to staff, and `traceability.md` and `tooling.md` to integrate results.
+1. The **leader does not read the packs**. It staffs roles from the pack table below, reads `coverage.md` for when a file is finished, and `traceability.md` and `tooling.md` to integrate results.
 2. The **specialist reads its own pack**, and only the sections its inventory justifies. Every pack opens with a selective-loading index for exactly this.
 3. One role, one pack. A specialist that needs another pack's procedure is a sign the leader split the work wrong; report it instead of reading across.
 4. `remediation.md` is the exception: it is shared by two roles, part A for the remediator and part B for the verifier. Each reads its own part.

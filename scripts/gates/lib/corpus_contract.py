@@ -412,12 +412,25 @@ def main() -> int:
         findings.append(f"{TEAM}: `{name}` is a pack file and no role in the roster reads it")
 
     # ---- 7. routing ----------------------------------------------------
-    coverage = read(root, COVERAGE)
+    # This looked only at coverage.md until 2026-08-28, when coverage.md was
+    # measured to hold ZERO routes: the eleven-products round rewrote it into the
+    # COV rules and the routing moved into the packs themselves. The check kept
+    # running against the old address and validated 0 of the 113 routes that
+    # exist - reporting nothing, which reads exactly like reporting no defects.
+    # It now reads every served .md, so a route to a section that was renamed or
+    # deleted is caught wherever the sentence lives.
+    skill_root = root / "skills" / "ethical-hacker-squad"
+    routing_files = sorted(
+        str(f.relative_to(root)) for f in skill_root.rglob("*.md")
+    ) if skill_root.is_dir() else []
     sections: dict[str, set[str]] = {}
-    for name, refs in ROUTE.findall(coverage):
+    routes_seen = 0
+    for rel in routing_files:
+      for name, refs in ROUTE.findall(read(root, rel)):
+        routes_seen += 1
         checks += 1
         if name not in per_file_lines:
-            findings.append(f"{COVERAGE}: routes to `{name}`, which is not a pack file")
+            findings.append(f"{rel}: routes to `{name}`, which is not a pack file")
             continue
         if name not in sections:
             sections[name] = {
@@ -430,10 +443,17 @@ def main() -> int:
         for number in SECTION.findall(refs):
             checks += 1
             if number not in sections[name]:
-                findings.append(f"{COVERAGE}: routes to `{name}` §{number}, which has no such section")
+                findings.append(f"{rel}: routes to `{name}` §{number}, which has no such section")
+    # A routing check with no input is not a routing check that passed.
+    if not routes_seen:
+        findings.append(
+            "no file under skills/ethical-hacker-squad/ routes to a pack section; "
+            "this check measured nothing and must not be read as a pass"
+        )
+        checks += 1
 
     print(f"measured: {total_procs} procedures, {total_lines} lines, {len(on_disk)} files, "
-          f"{checks} checks")
+          f"{checks} checks, {routes_seen} pack-section route(s)")
     if exempt:
         print(f"exempted: {exempt} procedure(s) declare that no external identifier applies")
     if historical[0]:

@@ -53,15 +53,15 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
-Five packs ship as more than one file (`mobile` and `supply-chain` as three). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+Five packs ship as three files each. The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md` / `web-api-logging.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md` / `ai-safety-agent-runtime.md`.
 
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|
-| `WSTG-INFO-*`, `WSTG-CONF-*` | web-api | `web-api-clientside-logic.md` §11, `infra-cloud-cicd-exposure.md` §5 | `WEB-22`, `INF-17` |
+| `WSTG-INFO-*`, `WSTG-CONF-*` | web-api | `web-api-logging.md` §11, `infra-cloud-cicd-exposure.md` §5 | `WEB-22`, `INF-17` |
 | `WSTG-IDNT-*`, `WSTG-ATHN-*`, `WSTG-SESS-*` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
 | `WSTG-ATHZ-*` | web-api | `web-api.md` §2 | `WEB-04`..`WEB-06` |
 | `WSTG-INPV-*` | web-api | `web-api.md` §3, §4, §5 + `web-api-clientside-logic.md` §6 | `WEB-07`..`WEB-14` |
-| `WSTG-ERRH-*` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
+| `WSTG-ERRH-*` | web-api | `web-api-logging.md` §11 | `WEB-22` |
 | `WSTG-CRYP-*` | web-api | `web-api-clientside-logic.md` §9 | `WEB-19` |
 | `WSTG-BUSL-*` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
 | `WSTG-CLNT-*` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
@@ -69,7 +69,7 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `API1:2023`..`API5:2023` | web-api | `web-api.md` §1, §2 | `WEB-01`..`WEB-06` |
 | `API6:2023`, `API4:2023` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
 | `API7:2023` | web-api | `web-api.md` §4 | `WEB-10` |
-| `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | `web-api-clientside-logic.md` §7, §11 / `supply-chain.md` §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
+| `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | `web-api-clientside-logic.md` §7 + `web-api-logging.md` §11 / `supply-chain.md` §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
 | `ASVS 5.0 V1`, `V2`, `V5` | web-api | `web-api.md` §3, §4, §5 | `WEB-07`..`WEB-12` |
 | `ASVS 5.0 V3` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
 | `ASVS 5.0 V4` | web-api | `web-api-clientside-logic.md` §10 | `WEB-20`, `WEB-21` |
@@ -78,7 +78,7 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | `web-api-clientside-logic.md` §9 / `infra-cloud.md` §1 | `WEB-19`, `INF-03` |
 | `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | `infra-cloud.md` §1 + `infra-cloud-cicd-exposure.md` §5 / `privacy-abuse.md` §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
 | `ASVS 5.0 V15` | web-api / remediator / ai-safety | `web-api-clientside-logic.md` §9 / part A / `ai-safety-data-output.md` §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
-| `ASVS 5.0 V16` | web-api / infra-cloud | `web-api-clientside-logic.md` §11 / `infra-cloud.md` §1 | `WEB-22`, `INF-06` |
+| `ASVS 5.0 V16` | web-api / infra-cloud | `web-api-logging.md` §11 / `infra-cloud.md` §1 | `WEB-22`, `INF-06` |
 | `MASVS-STORAGE-*`, `MASVS-CRYPTO-*` | mobile | `mobile.md` §2, §6 + `mobile-runtime-trust.md` §9 | `MOB-03`, `MOB-04`, `MOB-11`, `MOB-12`, `MOB-16` |
 | `MASVS-AUTH-*`, `MASVS-NETWORK-*` | mobile | `mobile.md` §5 + `mobile-runtime-trust.md` §7, §9 | `MOB-09`, `MOB-10`, `MOB-13`, `MOB-16` |
 | `MASVS-PLATFORM-*` | mobile | `mobile.md` §1, §3, §4 + `mobile-runtime-trust.md` §10 + `mobile-ios.md` §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15`, `MOB-17` |
@@ -92,8 +92,8 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `A06:2025` | leader | design review across packs | — |
 | `A07:2025` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
 | `A08:2025` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
-| `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-clientside-logic.md` §11 | `INF-06`, `WEB-22` |
-| `A10:2025` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
+| `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-logging.md` §11 | `INF-06`, `WEB-22` |
+| `A10:2025` | web-api | `web-api-logging.md` §11 | `WEB-22` |
 | `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 + `infra-cloud-cicd-platforms.md` §7 / `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `INF-13`..`INF-16`, `INF-19`..`INF-23`, `SUP-09`..`SUP-12`, `SUP-21`, `SUP-22` |
 | `SLSA Build L1`..`L3`, `Source L1`..`L4` | supply-chain | `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `SUP-09`..`SUP-12`, `SUP-21`..`SUP-23` |
 | `SSDF PO`/`PS`/`PW`/`RV` | supply-chain + remediator | `supply-chain.md` §5..§7 + `supply-chain-secrets-malware.md` §8 + `supply-chain-source-lifecycle.md` §10, §11 / part A | `SUP-13`..`SUP-16`, `SUP-21`..`SUP-25`, `REM-*` |

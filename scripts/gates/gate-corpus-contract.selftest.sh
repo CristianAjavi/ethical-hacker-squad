@@ -156,10 +156,39 @@ import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/team.md"
 p.write_text(p.read_text().replace("`knowledge/mobile-ios.md`","`knowledge/mobile-ios-old.md`",1))'
 
+# Until 2026-08-28 this case mutated coverage.md, which had held the routing table.
+# The eleven-products round rewrote that file and the routes moved into the packs;
+# the case kept mutating a string that no longer existed, so it mutated nothing and
+# had been failing ever since. It now mutates where the routes actually live.
 case_run routing-to-missing-section 1 "no such section" '
 import os,re,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/coverage.md"
-p.write_text(re.sub(r"`mobile\.md` §0-§6","`mobile.md` §0-§66",p.read_text(),count=1))'
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/knowledge/mobile-runtime-trust.md"
+t=p.read_text()
+n=re.sub(r"`mobile\.md` §0-§6","`mobile.md` §0-§66",t,count=1)
+assert n!=t, "the mutation changed nothing"
+p.write_text(n)'
+
+case_run routing-to-missing-section-checker-blind 0 "" '
+import os,re,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"skills/ethical-hacker-squad/references/knowledge/mobile-runtime-trust.md"
+t=p.read_text()
+n=re.sub(r"`mobile\.md` §0-§6","`mobile.md` §0-§66",t,count=1)
+assert n!=t
+p.write_text(n)
+c=w/"scripts/gates/lib/corpus_contract.py"
+# Blind the DETECTION, not its wording: replacing only the message leaves
+# findings.append running and the gate red, which is a hollow blinding.
+c.write_text(c.read_text().replace("if number not in sections[name]:","if False:"))'
+
+# A routing check with no input must not read as a pass.
+case_run every-route-deleted 1 "measured nothing" '
+import os,re,pathlib
+base=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad"
+for f in base.rglob("*.md"):
+    t=f.read_text()
+    n=re.sub(r"(`[a-z0-9-]+\.md`)\s*(?:§\d+(?:-§?\d+)?[,;]?\s*)+",r"\1 ",t)
+    if n!=t: f.write_text(n)'
 
 case_run procedure-loses-a-field 1 "missing mandatory field" '
 import os,pathlib

@@ -28,6 +28,31 @@ five moved nothing they were aimed at.
 Three attempts, three designs killed by their own control **before** they shipped. Two of the
 three would have flattered this project had they shipped unmeasured.
 
+## The check that validated nothing, and the three hollow things beside it
+
+`corpus_contract.py` §7 asks whether a sentence routing a reader to `pack.md §N` names a
+section that exists. It read one file, `coverage.md`. On 2026-08-28 that file was measured to
+hold **zero** routes — the eleven-products round had rewritten it into the COV rules and the
+routing had moved into the packs. So the check validated **0 of the 113 routes in the skill**,
+reported nothing, and its nothing was folded into a count of 1,741 checks. Pointed at every
+served file, it found six dangling routes on its first run: five rows of the traceability matrix
+still sent a reader to `web-api-clientside-logic.md §11` for `WEB-22`, which moved to
+`web-api-logging.md` when the web pack was split into three.
+
+Beside it, in one day, the mutant bank caught three things that looked like measurement:
+
+| what looked measured | what it actually did | how it was caught |
+|---|---|---|
+| a mutant flattening a page's headline verdict | left the same word standing in the table below, so the check was right not to fire | the pair: its blinded twin behaved identically |
+| a battery blinding a checker in a throwaway copy | ran the gate from the **source** tree, which loads the source checkers — 14 of 15 batteries | the blinded twins came back red |
+| a blinding that rewrote a finding's message | `findings.append` still ran, so the gate stayed red | the twin failed its own expectation |
+
+The shape is one shape: **a green that was never at risk.** A mutant that does not mutate, a
+harness that cannot remove the mechanism, and a blinding that hides the words rather than the
+detection all produce the same reassuring output as work that was actually checked. None of the
+three was found by reading the code; each was found by requiring the negative case to exist and
+then watching it misbehave.
+
 ## A battery that could not tell its own mechanism from a coincidence
 
 On 2026-08-28 three checks written that week were given a mutant bank, each defect run twice: once

@@ -38,8 +38,8 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | File | Load it when |
 |---|---|
 | [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
-| [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
-| [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
+| [references/coverage.md](references/coverage.md) | After the inventory. When looking at a file is finished. It does not route; the pack table is below. |
+| [references/knowledge/README.md](references/knowledge/README.md) | Always, to staff roles: its table maps inventory to pack. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
 | [references/triage.md](references/triage.md) | Before any specialist writes a finding. The ten rules that rule a finding out, each answerable, and the invariant that a `confirmed` finding has none of them unanswered. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
@@ -71,7 +71,7 @@ Do not load a pack for a role you did not staff. The corpus is 4,445 lines acros
 
 Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive artifacts without revealing their content. Record **how the code got here** as well as what it is: an agent instruction file, repository-scoped editor or agent configuration, a coding agent among the dependencies. That is a routing signal in `references/coverage.md`, never a verdict — it can be deleted from a tree, and the client's account of its own process is not evidence. Not every project needs every role.
 
-Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read only the matching sections of `references/coverage.md` to decide which packs are worth loading.
+Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read the pack table in `references/knowledge/README.md` to decide which packs are worth loading.
 
 ### 3. Form the adaptive squad
 
