@@ -55,6 +55,34 @@ because it hands the reader a written reason to ignore it. That is a defect of t
 larger than the recall lead this round posted, and no previous round could have seen it because no
 previous corpus carried an honest severity for each planted defect.
 
+## And the mis-rating is predicted by the report's own field
+
+Post-hoc on this round's artifacts, so it is a hypothesis for the next round rather than a result
+of this one — but it is mechanical, not judged, and it is sharp.
+
+Splitting every real defect each arm found by how many files its own `scope.applies_to` names:
+
+| arm | scope names **one** file | scope names **two or more** |
+|---|---|---|
+| this project | 40 findings, **40% underrated** | 44 findings, **7% underrated** |
+| `mantis` | 16 findings, 38% underrated | 55 findings, 33% underrated |
+
+**This project's severity is right when it established reach and wrong when it did not** — a nearly
+six-fold difference. `mantis` shows no such relationship, so its underrating has some other cause,
+and it never falls two steps.
+
+All ten of the `high`-called-`low` findings are `kind: composition`, and in three of the four
+inspected the `applies_to` names a single file. Reading them, the pattern is not that the defect
+was missed: `list() builds a tenant-and-status filter it never executes` describes the mechanism
+correctly and never records that the ignored filter is the **tenant** one. The line was found, the
+description is accurate, and the chain was never followed — so severity was assigned to the blast
+radius of a line rather than of what it reaches.
+
+The useful part is that **the report already says which case it is in.** A composition finding whose
+`applies_to` names one file has an unestablished reach, and the severity attached to it is
+unreliable by 40%. That does not need a judge, another required field, or a fifth phrasing — it
+needs a check that reads what is already written.
+
 ## What it forces
 
 - **The floor is dead** as a scoring rule and as a product idea, on the evidence of the round that
