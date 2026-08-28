@@ -417,5 +417,27 @@ case "$rc" in
   1) : ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
+# --- the reports a round shipped must be the ones it scored -------------------
+SMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scored_matches_shipped.py"
+if [ -f "$SMS" ]; then
+  _sms=$(mktemp "${TMPDIR:-/tmp}/ehs-sms.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$SMS" "$ROOT" > "$_sms" 2>&1 || true
+  if grep -q '^ERR|' "$_sms"; then
+    gate_warn "$(sed -n 's/^ERR|//p' "$_sms" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)|\(.*\)/· \1 scored round(s), \2 report(s) hashed/p' "$_sms"
+    if grep -qE '^(MISSING|ABSENT|MISMATCH)\|' "$_sms"; then
+      sed -n 's/^MISSING|\(.*\)/FAIL  \1 has a SCORE.txt and no REPORTS.sha256: nobody can check the numbers came from these bytes/p' "$_sms"
+      sed -n 's/^ABSENT|\(.*\)|\(.*\)/FAIL  \1: \2 was scored and is not shipped/p' "$_sms"
+      sed -n 's/^MISMATCH|\(.*\)|\(.*\)/FAIL  \1: \2 differs from what was scored/p' "$_sms"
+      # This gate exits on `rc`, computed above; incrementing a FAILURES counter
+      # that nothing reads would print a FAIL line and still return 0 - a green
+      # that means nothing, which is the defect this repository exists to catch.
+      rc=1
+    fi
+  fi
+  rm -f "$_sms"
+fi
+
 gate_verdict "$rc"
 exit "$rc"
