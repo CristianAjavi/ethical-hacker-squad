@@ -1,63 +1,66 @@
-# 2026-08-29 — the metric was measuring something else, and this project loses on both definitions
+# 2026-08-29 — the metric was measuring something else, and correcting it still is not enough
 
-**Refuted**, thirteenth round, on **both** the old metric and the corrected one. `mantis`'s recall
-is higher than this project's in each.
+**Not supported**, thirteenth round, on **both** definitions.
 
 | definition | this project | `mantis` | recall gap | verdict |
 |---|---|---|---|---|
-| **old** — any finding within six lines of a decoy | 78.9% recall, 10.00 decoys | 85.1%, 5.33 | **−6.1** | **refuted** |
-| **new** — counts only when `cwe` equals the decoy's `baits_cwe` | 76.3%, 5.67 | 80.7%, 3.67 | **−4.4** | **refuted** |
+| **old** — any finding within six lines of a decoy | 89.5% recall, 11.67 decoys | 85.1%, 5.33 | +4.4 | fails **both** halves |
+| **new** — counts only when `cwe` equals the decoy's `baits_cwe` | 86.8%, 6.33 | 80.7%, 3.67 | +6.1 | recall met, decoys fail |
 
-This project's recall range is **45 – 97%** across three runs. That spread is larger than the gap
-being argued about, and it is the honest headline of the round: on this corpus the squad is not
-merely behind, it is **inconsistent**.
+## This page was published wrong twice before it was right
 
-## A correction to this page, caught after it was first published
+Both wrong versions came from the same mistake: **scoring a report while the agent producing it was
+still writing.** The file passed through 68 findings, then 41, then 69 — and each intermediate got
+scored and published.
 
-**The first version of this page reported +4.4 and "not supported".** It was wrong. `ours-3` was
-copied out of the run directory and scored **while the agent that produced it was still writing**:
-the file had 68 findings at the moment of the copy and 41 when the agent finished. The intermediate
-state was better for this project, so the published numbers flattered it.
-
-What caught it was not a gate: it was a scheduler notice saying that agent was still running, read
-after the page had already been committed and pushed. The check that should have existed did not.
-
-So the rule this earns, and it costs nothing to keep: **a report may not be scored until the agent
-that produces it has reported completion.** The correct numbers are above, the wrong ones are named
-here rather than quietly replaced, and the verdict moved against this project in both definitions.
-
-## The defect the round was built to measure is real, and it is asymmetric
-
-`off-claim` — a finding sitting beside a planted decoy while asserting a different CWE:
-
-| arm | decoy-adjacent findings | **off-claim** | share |
+| version | what was scored | published | actual |
 |---|---|---|---|
-| this project | 13.33 / run | **7.67** | **58%** |
+| first | `ours-3` at 68 findings — later found to be **contaminated with lane files from an unrelated earlier run** that the agent itself quarantined on timestamps | +4.4, not supported | close to correct by accident |
+| second | `ours-3` at 41 findings, 3 of 6 components, still mid-write | **−6.1, refuted** | wrong |
+| third *(this one)* | `ours-3` final, 69 findings, agent reported complete | +4.4, not supported | correct |
+
+The second version is the worse failure: it was issued **as a correction**, with a rule attached
+saying *a report may not be scored until its agent has reported completion* — and it was itself
+scored before that agent reported. Writing the rule and breaking it in the same commit is the part
+worth keeping on the page.
+
+What finally satisfied the rule was the agent's own completion notice, which also disclosed the
+contamination: its first merge had silently absorbed another run's lanes and produced a
+plausible six-component report. Had that shipped, it would have carried an Airflow lane that never
+ran — the exact failure `references/team.md` records, arriving from a direction nobody had guarded.
+
+## The run that makes the round scoreable is itself partial
+
+`ours-3` declares two gaps in its own provenance: the **Airflow lane was never staffed**, and the
+**blind `VER-09` pass never ran**. It audited 5 of 6 components with no adversarial stage.
+
+Dropping it leaves two runs, and the scorer answers **UNMEASURABLE — only 2 valid runs**. So this
+round is scoreable *only* by including a partial run, and every number above carries that: this
+project's recall is measured with one arm short of a component, and its decoy count with one run
+that never faced its own critic.
+
+## The defect the round was built to measure is real, and asymmetric
+
+`off-claim` — a finding beside a planted decoy asserting a different CWE:
+
+| arm | decoy-adjacent | **off-claim** | share |
+|---|---|---|---|
+| this project | 15.33 / run | **9.00** | **59%** |
 | `mantis` | 5.33 / run | 1.67 | 31% |
 
 **Nearly six in ten of this project's counted false positives were never the false positive the
-corpus author planted.** For twelve rounds the decoy half counted them anyway, nearly twice as often
-against this project as against the competitor.
+corpus author planted**, and for twelve rounds the decoy half counted them anyway — nearly twice as
+often against this project as against the competitor.
 
-Correcting it removes 43% of this project's decoy hits and 31% of `mantis`'s — it helps the party
-that proposed it, by more, which is why it was
-[pre-registered before the corpus existed](PREREGISTRATION.md) and scored both ways. **And on the
-corrected metric this project is still worse, and now also behind on recall.**
-
-Recall moves between the two scorings (78.9% → 76.3%) because a finding can sit within six lines of
-both a planted defect and a decoy, so removing off-claim entries removes a few real detections too.
-That is a property of line-proximity matching, not of the CWE rule, and it is reported rather than
-netted out.
+Correcting it removes 46% of this project's decoy hits and 31% of `mantis`'s. It helps the party
+that proposed it, by more, which is why it was [pre-registered](PREREGISTRATION.md) and scored both
+ways. **On the corrected metric this project is still worse: 6.33 against 3.67.**
 
 ## What this forces, as registered
 
-The pre-registration named this outcome: *if the off-claim bucket is large, the decoy half has been
-measuring something other than what it claimed for twelve rounds, and every published decoy rate
-needs restating.*
-
 - **Every decoy figure in this ledger is an upper bound**, and the pages that quote one say so.
-- **The restatement is scoped and not performed.** Retired corpora carry no `baits_cwe`; rewriting a
-  closed round from a field invented afterwards is the move these pages refuse.
+- **The restatement is scoped and not performed**: retired corpora carry no `baits_cwe`, and
+  rewriting a closed round from a field invented afterwards is the move these pages refuse.
 - **The ninth round is the one to re-read first** — the only round whose decoy half this project won,
   measured with the same defective rule.
 
@@ -68,16 +71,14 @@ that one now carries a caveat about the metric that produced it.
 
 ## What also came out of it
 
-**Class breadth, measured for the first time**, because no round before required the identifier:
-this project names **46 distinct CWEs per run across 64 findings**, `mantis` 26 across 42 — almost
-the same findings-per-class ratio, so coverage rather than finer labelling. It is the one dimension
-where this project is clearly ahead on this corpus, and it is not part of the band.
+**Class breadth, measured for the first time** because no round before required the identifier:
+this project names **46 distinct CWEs per run**, `mantis` 26, at almost the same findings-per-class
+ratio. Coverage rather than finer labelling, and not part of the band.
 
 **The blind stage moved a severity upward.** In `ours-2`, `VER-09` took 83 assertions as
-location-only, killed two with named lines, lowered two findings to informational — and **raised**
-one from low to medium after establishing pre-authentication reachability. A blind critic that only
-removes is a filter; one that corrects in both directions is a reviewer. One run, not claimed as
-more, and directly relevant to [the twelfth round's finding](../2026-08-28-severity-floor/) that
-this project puts ten high-severity defects in the bucket a reader skips.
+location-only, killed two, lowered two — and **raised** one from low to medium on pre-authentication
+reachability. Directly relevant to [the twelfth round's finding](../2026-08-28-severity-floor/) that
+this project puts high-severity defects in the bucket a reader skips. One run, not claimed as more —
+and notably the run where the stage ran at all, since `ours-3` had no budget left for it.
 
 This corpus is retired.

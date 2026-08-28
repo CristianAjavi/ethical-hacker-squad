@@ -32,7 +32,7 @@ three would have flattered this project had they shipped unmeasured.
 
 | what happened | how it was caught | what it earned |
 |---|---|---|
-| a run was **scored while its agent was still writing** — 68 findings at the copy, 41 when it finished — and the intermediate favoured this project, so the round published +4.4 and "not supported" when the truth was −6.1 and **refuted** | a scheduler notice that the agent was still running, read **after** the page was committed and pushed | [a rule](runs/2026-08-29-baited-claim/): a report may not be scored until its agent has reported completion |
+| a run was **scored three times while its agent was still writing** — the file passed through 68 findings, then 41, then 69, and two intermediates were published as verdicts | the agent's own completion notice, which also disclosed that the 68-finding state was contaminated with an unrelated run's lane files | [a rule](runs/2026-08-29-baited-claim/): a report may not be scored until its agent has reported completion — **written and broken in the same commit**, since the correction that carried it was itself scored early |
 
 No gate caught this one. It is listed beside the others because the same page argues that measuring
 before building kills bad designs — and this is the case where measuring *too early* published a
