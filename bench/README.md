@@ -86,6 +86,27 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## The floor was refuted, and it exposed something worse than noise
+
+[2026-08-28, severity floor](runs/2026-08-28-severity-floor/) — **not supported**, and the
+registered rule fired: **the floor is withdrawn, not tuned.**
+
+Dropping `low` cut this project's decoys from 6.00 to 3.33 and `mantis`'s from 3.67 to **0.33** —
+the ratio went from 1.6× to **10×** — while costing **7.2 points of recall**. The pre-registration
+said a recall fall over 3 points means `low` was carrying real defects and the floor is withdrawn
+rather than re-thresholded. The tenth and eleventh rounds' post-hoc observation **did not
+replicate**, which is what a corpus-specific artefact does.
+
+The secondary is why the round matters more than its verdict. Of the nine planted defects this
+project labelled `low`, **five are `high`** by the key's own honest severity. Matching every real
+defect against `true_severity`: this project agrees 64% of the time against `mantis`'s 59% — and
+still puts **ten high-severity defects in the bucket a reader skips**, where `mantis` puts
+**zero**. Its errors are one step, `high`→`medium`; ours are two.
+
+**An auditor that finds an authorization bypass and calls it low is worse than one that misses it**,
+because it hands the reader a written reason to ignore it. No previous round could see this: no
+previous corpus carried an honest severity per planted defect.
+
 ## The blind judge failed its own control, twice
 
 [bench/judge](judge/) — instrument work, not a round. Four judges, blind to the arm and to a sealed
