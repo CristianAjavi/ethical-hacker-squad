@@ -130,6 +130,7 @@ BOOTSTRAP_NOTES=""
 # ---------------------------------------------------------------------------
 AOUT="$TMPD/actionlint.txt"
 if ensure_actionlint; then
+  ensure_shellcheck || true
   if ! command -v shellcheck >/dev/null 2>&1; then
     gate_warn "shellcheck is NOT installed: actionlint will NOT analyse the contents of the \`run:\` blocks. The rest is measured, but this is NOT a complete pass."
     escalate 2

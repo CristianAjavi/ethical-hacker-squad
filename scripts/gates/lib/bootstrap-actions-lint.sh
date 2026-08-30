@@ -17,6 +17,7 @@
 
 ZIZMOR_VERSION="${ZIZMOR_VERSION:-1.29.0}"
 ACTIONLINT_VERSION="${ACTIONLINT_VERSION:-1.7.12}"
+SHELLCHECK_VERSION="${SHELLCHECK_VERSION:-0.10.0}"
 # Per-user cache, created 0700. It used to default to $TMPDIR/ehs-gate-tools,
 # which on a shared runner is a directory any local principal can write - and a
 # blinded audit of this repository showed the consequence: a planted binary in
@@ -34,8 +35,16 @@ _ACTIONLINT_SHA_1_7_12_darwin_amd64="5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d
 _ACTIONLINT_SHA_1_7_12_linux_amd64="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
 _ACTIONLINT_SHA_1_7_12_linux_arm64="325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
 
+# SHA-256 of the official shellcheck v0.10.0 tarballs
+# (source: koalaman/shellcheck GitHub release assets).
+_SHELLCHECK_SHA_0_10_0_darwin_aarch64="bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
+_SHELLCHECK_SHA_0_10_0_darwin_x86_64="ef27684f23279d112d8ad84e0823642e43f838993bbb8c0963db9b58a90464c2"
+_SHELLCHECK_SHA_0_10_0_linux_x86_64="6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
+_SHELLCHECK_SHA_0_10_0_linux_aarch64="324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22af665ed1a09bb"
+
 ZIZMOR_BIN=""
 ACTIONLINT_BIN=""
+SHELLCHECK_BIN=""
 BOOTSTRAP_NOTES=""
 
 _boot_note() { BOOTSTRAP_NOTES="${BOOTSTRAP_NOTES}${1}"$'\n'; }
@@ -212,3 +221,106 @@ ensure_actionlint() {
   _boot_note "actionlint: installed $ACTIONLINT_VERSION via $how, SHA-256 verified ($want)"
   return 0
 }
+
+# ---------------------------------------------------------------------------
+_shellcheck_platform() {
+  local os arch
+  case "$(uname -s)" in
+    Linux)  os="linux" ;;
+    Darwin) os="darwin" ;;
+    *)      printf ''; return 1 ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="x86_64" ;;
+    arm64|aarch64) arch="aarch64" ;;
+    *)             printf ''; return 1 ;;
+  esac
+  printf '%s.%s\n' "$os" "$arch"
+}
+
+ensure_shellcheck() {
+  if [ -n "${SHELLCHECK_BIN_OVERRIDE:-}" ] && [ -x "$SHELLCHECK_BIN_OVERRIDE" ]; then
+    SHELLCHECK_BIN="$SHELLCHECK_BIN_OVERRIDE"
+    _boot_note "shellcheck: using the binary pointed to by SHELLCHECK_BIN_OVERRIDE ($SHELLCHECK_BIN)"
+    export PATH="$(dirname "$SHELLCHECK_BIN"):$PATH"
+    return 0
+  fi
+
+  local dir="$GATE_TOOLS_DIR/shellcheck-$SHELLCHECK_VERSION"
+  if [ -x "$dir/shellcheck" ]; then
+    if _stamp_ok "$dir" "$dir/shellcheck"; then
+      SHELLCHECK_BIN="$dir/shellcheck"
+      _boot_note "shellcheck: reusing the cache at $dir (stamp verified)"
+      export PATH="$dir:$PATH"
+      return 0
+    fi
+    _boot_note "shellcheck: the cache at $dir does not match its install stamp; ignoring it and reinstalling"
+  fi
+
+  if command -v shellcheck >/dev/null 2>&1; then
+    local have
+    have="$(shellcheck --version 2>/dev/null | grep version: | awk '{print $2}')"
+    if [ "$have" = "$SHELLCHECK_VERSION" ]; then
+      SHELLCHECK_BIN="$(command -v shellcheck)"
+      _boot_note "shellcheck: found in PATH at the pinned version ($have)"
+      return 0
+    fi
+    _boot_note "shellcheck: there is a shellcheck $have in PATH but the pinned version is $SHELLCHECK_VERSION; downloading the pinned one"
+  fi
+
+  local plat
+  plat="$(_shellcheck_platform)" || { _boot_note "shellcheck: unsupported platform ($(uname -s)/$(uname -m))"; return 2; }
+
+  local asset="shellcheck-v${SHELLCHECK_VERSION}.${plat}.tar.xz"
+  local url="https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${asset}"
+  local varname="_SHELLCHECK_SHA_${SHELLCHECK_VERSION//./_}_${plat//./_}"
+  local want="${!varname:-}"
+  if [ -z "$want" ]; then
+    _boot_note "shellcheck: I have no pinned SHA-256 for $asset; I refuse to install an unverified binary"
+    return 2
+  fi
+
+  mkdir -p "$dir" || { _boot_note "shellcheck: I could not create $dir"; return 2; }
+  local tarball="$dir/$asset" how=""
+
+  if [ ! -f "$tarball" ] && command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1 || [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+      if gh release download "v${SHELLCHECK_VERSION}" --repo koalaman/shellcheck \
+           --pattern "$asset" --dir "$dir" --clobber >/dev/null 2>&1; then
+        how="gh release download"
+      fi
+    fi
+  fi
+  if [ ! -f "$tarball" ] && command -v curl >/dev/null 2>&1; then
+    if curl -fsSL --retry 3 -o "$tarball" "$url" >/dev/null 2>&1; then
+      how="curl"
+    fi
+  fi
+  if [ ! -f "$tarball" ]; then
+    _boot_note "shellcheck: NOT downloadable - neither gh (authenticated) nor curl could fetch $asset"
+    return 2
+  fi
+
+  local got
+  got="$(_sha256_of "$tarball")"
+  if [ -z "$got" ]; then
+    _boot_note "shellcheck: there is no sha256sum or shasum to verify the tarball; I do not install what I cannot verify"
+    return 2
+  fi
+  if [ "$got" != "$want" ]; then
+    _boot_note "shellcheck: SHA-256 does NOT match for $asset (expected $want, got $got); aborting"
+    return 2
+  fi
+
+  if ! tar -xf "$tarball" -C "$dir" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" >/dev/null 2>&1; then
+    _boot_note "shellcheck: I could not extract the binary from $asset"
+    return 2
+  fi
+  chmod +x "$dir/shellcheck" 2>/dev/null || true
+  SHELLCHECK_BIN="$dir/shellcheck"
+  _stamp_write "$dir" "$dir/shellcheck"
+  export PATH="$dir:$PATH"
+  _boot_note "shellcheck: installed $SHELLCHECK_VERSION via $how, SHA-256 verified ($want)"
+  return 0
+}
+
