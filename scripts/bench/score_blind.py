@@ -14,6 +14,20 @@ THE RULE, VERBATIM FROM THE PRE-REGISTRATION
     counts: not a finding of the right class in the wrong file, not a general
     remark about the file.
 
+WHERE A REPORT IS ALLOWED TO COME FROM
+    Every round on 2026-08-25 and 26 was scored from files the ORCHESTRATOR typed
+    by hand out of what each agent returned. Nothing mechanical connected the
+    text an arm produced to the text that got scored, and the risk stopped being
+    theoretical when a sub-agent whose parent had died routed its slice to the
+    orchestrator instead: a fragment that was never a run's answer arrived
+    looking exactly like one.
+
+    So a report must now carry a `provenance` block that the ARM itself wrote,
+    naming what produced it. A file without one is not scored. This does not
+    make transcription impossible - it makes it something a person has to
+    deliberately fake rather than something that happens by being tired, and a
+    round whose numbers cannot be traced to an arm is a round nobody can check.
+
 WHY THE DECOY COUNT IS NOT OPTIONAL
     A run that reports everything scores perfect recall and is worthless. The
     decoy rate is printed beside recall in the same call, and this script has no
@@ -70,6 +84,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--reports", type=Path, required=True, help="directory of run-*.findings.json")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--allow-untraced", action="store_true",
+                    help="score reports with no provenance block. Every round before "
+                         "2026-08-26 was transcribed by hand and needs this; a new round "
+                         "that needs it is a round whose artefacts were retyped.")
     ap.add_argument("--min-valid-runs", type=int, default=DEFAULT_MIN_VALID_RUNS,
                     help="the floor this ROUND pre-registered, not a number chosen here")
     args = ap.parse_args(argv)
@@ -95,7 +113,19 @@ def main(argv=None) -> int:
     runs = []
     for path in files:
         try:
-            report = json.loads(path.read_text(encoding="utf-8"))
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            # Two accepted shapes: a bare array (legacy, pre-provenance) or an
+            # object carrying the findings and the block the arm wrote.
+            if isinstance(raw, dict):
+                report = raw.get("findings")
+                prov = raw.get("provenance")
+            else:
+                report, prov = raw, None
+            if prov is None and not args.allow_untraced:
+                runs.append({"run": path.stem.replace(".findings", ""), "valid": False,
+                             "why": "no provenance block: this file cannot be traced to an "
+                                    "arm, and --allow-untraced was not given"})
+                continue
         except ValueError as exc:
             runs.append({"run": path.stem.replace(".findings", ""), "valid": False, "why": f"did not parse: {exc}"})
             continue
@@ -116,6 +146,7 @@ def main(argv=None) -> int:
     valid = [r for r in runs if r["valid"]]
     report = {
         "case": CASE,
+        "untraced_accepted": bool(args.allow_untraced),
         "planted": len(planted), "decoys": len(decoys),
         "hiding_class": sorted(p["id"] for p in hiding),
         "runs": runs,

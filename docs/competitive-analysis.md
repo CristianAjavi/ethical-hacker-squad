@@ -608,8 +608,11 @@ remediation — it does not lead on real code, and the rounds say so in their ow
 ### What did not enter this document
 
 Recall on `intake-portal` came out 0.83 for this corpus against 0.48 and 0.20, and the
-enumeration step took class-level detection from 1 of 4 runs to 4 of 4. **Neither number is
-claimed anywhere.** The first is a comparison on a case this project planted; the second was
+enumeration step appeared to take class-level detection from 1 of 4 runs to 4 of 4. **Neither
+number is claimed anywhere** — and the second one was checked on 2026-08-26 and did not
+survive: under a stricter reading of what counts as a finding of the class it is 3 of 4, and
+on Django, the same variant detects the class in 1 of 4. The number moved because an
+unregistered metric has no fixed definition, which is the whole reason it was never claimed. The first is a comparison on a case this project planted; the second was
 never pre-registered and reading it after the fact is the fitting these pages refuse. They are
 on their own round pages with those sentences attached.
 

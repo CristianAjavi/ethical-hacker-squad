@@ -1,5 +1,13 @@
 # 2026-08-25 — a published advisory, on code nobody here wrote
 
+
+> **Scoring note, added 2026-08-26.** The reports in this directory were transcribed by the
+> orchestrator from what each arm returned, not written by the arms themselves, so they carry
+> no provenance block. `scripts/bench/score_blind.py` now refuses to score an untraced report
+> by default; reproducing this round's numbers needs `--allow-untraced`. That flag is not a
+> convenience — it is the record that these particular artefacts passed through a person's
+> hands, and the reason it exists is on the scorer's own page.
+
 **The prediction is refuted.** `WEB-28`, the `CWE-117` procedure this project added the same
 day, did not survive contact with a 569-file repository. Nobody found the defect — not this
 corpus, not either competitor.

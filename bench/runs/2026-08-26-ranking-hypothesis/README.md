@@ -1,5 +1,13 @@
 # 2026-08-26 — is it ranking? Django, `CVE-2025-48432`
 
+
+> **Scoring note, added 2026-08-26.** The reports in this directory were transcribed by the
+> orchestrator from what each arm returned, not written by the arms themselves, so they carry
+> no provenance block. `scripts/bench/score_blind.py` now refuses to score an untraced report
+> by default; reproducing this round's numbers needs `--allow-untraced`. That flag is not a
+> convenience — it is the record that these particular artefacts passed through a person's
+> hands, and the reason it exists is on the scorer's own page.
+
 **Refuted. 1 of 4, against a band of 2 of 4.** And the same round produced the first
 recovery of a keyed defect on external code this project has measured — both of those are
 true and the first one is the result.
