@@ -86,6 +86,20 @@ list *before* running found that the query shipped that morning did not list the
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
 
+## Clone siblings per security finding — a number nobody had published
+
+[2026-08-26, clone siblings](runs/2026-08-26-clone-siblings/) — **median 1, mean 1, max 1**
+across 37 findings in two repositories. Not one sits in a function with an
+identical-up-to-renaming sibling, while **12.6%** of `pyload`'s functions and **18.2%** of
+Django's do. The control matters more than the result: a detector that matched nothing would
+also report 1, and this one matches at the rate those codebases make plausible.
+
+It is the **human-authored baseline** the amplification story would have to be measured
+against, and it is deliberately narrower than the claim it touches: neither repository is
+generator-authored, the method sees type-1 and type-2 clones only, and 31 distinct functions
+is a small sample that is not a random one. The method was fixed before any number was
+computed.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
