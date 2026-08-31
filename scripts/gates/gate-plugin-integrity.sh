@@ -90,7 +90,29 @@ set -uo pipefail
 #   branch, 64 KiB for a human one. This cap stays as the outer bound.
 MAX_SKILL_MD_BYTES="${EHS_MAX_SKILL_MD_BYTES:-12288}"
 MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
-MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-655360}"
+# RE-BASELINED 2026-08-26, 640 KiB -> 704 KiB, by Cristian's explicit decision.
+#
+#   WHAT PUSHED IT: two deterministic tools, 17,401 B together. Without them the
+#   served tree is 653,784 B - 1,576 B under the old cap - so this is a change
+#   made because this session's own additions broke the limit, which is exactly
+#   the move that needs its reasoning on the record.
+#
+#   THE REASONING, AND ITS WEAKNESS: this byte cap was a proxy for "we ship only
+#   inert text". That proxy is no longer the only defence - the inertness check
+#   above now READS every shipped .py and requires stdlib-only imports from a
+#   named list, no subprocess, no socket, no network module, no write mode, no
+#   eval/exec/compile/__import__, with `python3` absent giving 2 rather than a
+#   pass. A direct check beat a proxy, so the proxy was loosened.
+#
+#   It is still a loosened threshold. What keeps it honest is gate-tree-delta.sh,
+#   which caps how much any SINGLE change may add - 16 KiB on a bot branch, 64
+#   KiB on a human one - so this outer bound cannot be walked upward one commit
+#   at a time without somebody noticing.
+#
+#   WHAT WAS WEIGHED AND REJECTED: shipping the tools while cutting 17 KiB of
+#   knowledge packs. That trades measured detection for a byte count and would
+#   have meant choosing which defect classes stop being covered.
+MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-720896}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an
@@ -106,6 +128,26 @@ ALLOWED_FM_KEYS="name description license metadata"
 # and it is not a free pass: every shipped .json must PARSE, checked below, so
 # the extension cannot be used to smuggle bytes that only look like text.
 ALLOWED_EXTENSIONS="md json"
+
+# `py` was added 2026-08-26, and ONLY under a `tools/` directory. It is a real
+# change in what this plugin IS: until now a user installed documentation and
+# agent definitions, and now they install code an agent will run on their
+# machine. The reason is measured - six blinded auditors called the defective
+# log line the safe one, and a deterministic check finds it every time where
+# judgement did not - but the reason does not make the code inert.
+#
+# So the extension is not a free pass either. Every shipped .py is parsed below
+# and must be provably incapable of reaching off the machine or changing it:
+# stdlib-only imports from a named list, no subprocess, no socket, no network
+# module, no write mode, no eval/exec/compile/__import__. A tool that needs any
+# of those does not ship - it stays in the bench and the pack cites its output.
+TOOL_EXTENSIONS="py"
+TOOL_DIR_SEGMENT="/tools/"
+
+# Modules a shipped tool may import. Deliberately short, and deliberately all
+# inert: they read, parse and print. Adding one is a decision about what a user
+# installs, not a convenience.
+TOOL_ALLOWED_IMPORTS="__future__ argparse ast json pathlib re sys typing dataclasses collections itertools"
 
 FAILURES=0
 N_CHECKED=0
@@ -274,6 +316,34 @@ for sf in "${SKILL_FILES[@]}"; do
 done
 
 # --- 3. internal relative links ---------------------------------------------
+section "the manifest against the directory"
+MA_CORE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/manifest_agents.py"
+if [ ! -f "$MA_CORE" ]; then
+  unmeasurable "I cannot find $MA_CORE"
+else
+  _ma=$(mktemp "${TMPDIR:-/tmp}/ehs-manifest.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$MA_CORE" "$ROOT" > "$_ma" 2>&1 || true
+  # A tree with no manifest and no agents/ is a legitimate shape - most fixtures
+  # are exactly that - so it is a DECLARED skip here rather than a failure to
+  # measure. A manifest that exists and does not parse is a different thing and
+  # still stops the gate.
+  if grep -qE '^ERR\|(no manifest|no agents/)' "$_ma"; then
+    skip "$(sed -n 's/^ERR|//p' "$_ma" | head -1): nothing to compare"
+  elif grep -q '^ERR|' "$_ma"; then
+    unmeasurable "$(sed -n 's/^ERR|//p' "$_ma" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)|\(.*\)/         \1 role(s) declared, \2 present in agents\//p' "$_ma"
+    if grep -qE '^(UNDECLARED|MISSING)\|' "$_ma"; then
+      sed -n 's/^UNDECLARED|\(.*\)/  [FAIL] agents\/\1 exists and the manifest does not declare it: it does not ship/p' "$_ma"
+      sed -n 's/^MISSING|\(.*\)/  [FAIL] the manifest declares agents\/\1 and the file is not there/p' "$_ma"
+      FAILURES=$((FAILURES + 1))
+    else
+      ok "every role in agents/ is declared, and every declared role exists"
+    fi
+  fi
+  rm -f "$_ma"
+fi
+
 section "internal relative links"
 MD_FILES=()
 if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
@@ -282,6 +352,29 @@ if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/nu
 else
   while IFS= read -r _f; do MD_FILES+=("$_f"); done < <(find "$ROOT" -type f -name '*.md' -not -path '*/.git/*' | sort)
   skip "not a git repo: using find instead of 'git ls-files' (may include unversioned .md)"
+fi
+
+# Gate fixtures are deliberately malformed inputs, not content: a fixture whose
+# whole purpose is to carry a broken link would otherwise make this section red
+# forever, and the cheap way out would be to delete the fixture - losing the
+# only proof that the other gate fails when it must. The exclusion is counted
+# and printed, because an unstated limit reads like coverage.
+FIXTURE_MD=0
+_KEPT=()
+for _f in "${MD_FILES[@]}"; do
+  case "$_f" in
+    */scripts/gates/fixtures/*) FIXTURE_MD=$((FIXTURE_MD + 1)) ;;
+    *) _KEPT+=("$_f") ;;
+  esac
+done
+# bash 3.2 (the macOS default) treats an empty array as UNSET under `set -u`, so
+# a bare "${_KEPT[@]}" aborts the gate the moment every .md is a fixture. This
+# crashed on the very first fixture that exercised it, an hour after the
+# exclusion shipped, and the repository itself could never have shown it: it has
+# 171 links and would never hit the empty case.
+if ((${#_KEPT[@]} > 0)); then MD_FILES=("${_KEPT[@]}"); else MD_FILES=(); fi
+if ((FIXTURE_MD > 0)); then
+  info "$FIXTURE_MD .md file(s) under scripts/gates/fixtures/ excluded: they are gate inputs, some malformed on purpose"
 fi
 
 if ((${#MD_FILES[@]} == 0)); then
@@ -359,12 +452,32 @@ if ((${#SERVED_ABSENT[@]} > 0)); then
   info "roots absent from this tree (nothing to scan): ${SERVED_ABSENT[*]}"
 fi
 
+# What ships is what git tracks. A .pyc left behind by importing a shipped tool
+# is on disk and is never distributed, and failing the gate for it measures the
+# maintainer's laptop rather than the plugin. Ignored paths are dropped - and
+# ONLY ignored paths, so an untracked file that git WOULD ship still fails.
+ignored_by_git() {
+  git -C "$ROOT" check-ignore -q "$1" 2>/dev/null
+}
+
 TREE_FILES=()
 TREE_LINKS=()
+n_ignored=0
 for d in "${SERVED_PRESENT[@]}"; do
-  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_FILES+=("$_f"); done < <(find "$ROOT/$d" -type f | sort)
-  while IFS= read -r _f; do [[ -n "$_f" ]] && TREE_LINKS+=("$_f"); done < <(find "$ROOT/$d" -type l | sort)
+  while IFS= read -r _f; do
+    [[ -n "$_f" ]] || continue
+    if ignored_by_git "$_f"; then n_ignored=$((n_ignored + 1)); continue; fi
+    TREE_FILES+=("$_f")
+  done < <(find "$ROOT/$d" -type f | sort)
+  while IFS= read -r _f; do
+    [[ -n "$_f" ]] || continue
+    ignored_by_git "$_f" && continue
+    TREE_LINKS+=("$_f")
+  done < <(find "$ROOT/$d" -type l | sort)
 done
+if ((n_ignored > 0)); then
+  info "$n_ignored path(s) under the served roots are git-ignored and were not counted: they do not ship"
+fi
 
 if ((${#TREE_LINKS[@]} > 0)); then
   fail "${#TREE_LINKS[@]} symlink(s) in the served tree (they may point outside the distributed tree)"
@@ -375,6 +488,7 @@ fi
 
 bad_ext=""
 exec_bits=""
+shipped_tools=""
 for f in "${TREE_FILES[@]}"; do
   rel="${f#"$ROOT"/}"
   # The extension is taken from the NAME, not from the path: `${f##*.}` over the
@@ -382,16 +496,102 @@ for f in "${TREE_FILES[@]}"; do
   # and some parent directory does.
   base="${f##*/}"
   if [[ "$base" == *.* ]]; then ext="${base##*.}"; else ext=""; fi
+  permitted=0
   case " $ALLOWED_EXTENSIONS " in
-    *" $ext "*) ;;
-    *) bad_ext+="$rel " ;;
+    *" $ext "*) permitted=1 ;;
   esac
+  # A tool extension is permitted only INSIDE a tools/ directory. The same file
+  # one level up is not a tool, it is executable code loose in the served tree.
+  if [[ "$permitted" -eq 0 ]]; then
+    case " $TOOL_EXTENSIONS " in
+      *" $ext "*)
+        case "/$rel" in
+          *"$TOOL_DIR_SEGMENT"*) permitted=1; shipped_tools+="$f " ;;
+        esac
+        ;;
+    esac
+  fi
+  [[ "$permitted" -eq 0 ]] && bad_ext+="$rel "
   [[ -x "$f" ]] && exec_bits+="$rel "
 done
 if [[ -n "$bad_ext" ]]; then
   fail "file(s) with a non-permitted extension in the served tree (permitted: $ALLOWED_EXTENSIONS): $bad_ext"
 else
   ok "every file in the served tree carries a permitted extension ($ALLOWED_EXTENSIONS)"
+fi
+
+# ---------------------------------------------------------------------------
+# SHIPPED TOOLS. Permitting an extension is not the same as permitting what the
+# file does, and the second is the part that matters to whoever installs this.
+# Each shipped tool is parsed and must be provably inert: it reads, it parses,
+# it prints. If python3 is absent the answer is 2, not a pass - an unread file
+# is not a safe one.
+# ---------------------------------------------------------------------------
+if [[ -n "$shipped_tools" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    unmeasurable "python3 is absent: the shipped tool(s) were NOT read, so nothing here says they are inert"
+  else
+    tool_report="$(TOOL_ALLOWED_IMPORTS="$TOOL_ALLOWED_IMPORTS" python3 - $shipped_tools <<'TOOLCHECK'
+import ast, os, sys
+
+allowed = set(os.environ["TOOL_ALLOWED_IMPORTS"].split())
+# Split by HOW the call is written, because the name alone is ambiguous.
+# `re.compile` builds a regex and is inert; the builtin `compile` builds a code
+# object and is not. The first version of this gate banned both by attribute
+# name and refused a shipped tool for using `re.compile` seven times - a real
+# false positive, found the day the second tool shipped.
+BANNED_BARE = {"eval", "exec", "compile", "__import__"}      # only as a bare name
+BANNED_ANY  = {"system", "popen", "write_text", "write_bytes", "spawn", "fork"}
+problems = []
+
+for path in sys.argv[1:]:
+    try:
+        tree = ast.parse(open(path, encoding="utf-8", errors="strict").read())
+    except (SyntaxError, ValueError, UnicodeDecodeError) as e:
+        problems.append(f"{path}: does not parse as Python ({e.__class__.__name__})")
+        continue
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                top = a.name.split(".")[0]
+                if top not in allowed:
+                    problems.append(f"{path}:{node.lineno}: imports `{a.name}`, which is not on the shipped-tool list")
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".")[0]
+            if node.level:
+                problems.append(f"{path}:{node.lineno}: relative import - a shipped tool must stand alone")
+            elif top not in allowed:
+                problems.append(f"{path}:{node.lineno}: imports from `{node.module}`, which is not on the shipped-tool list")
+        elif isinstance(node, ast.Call):
+            f = node.func
+            bare = getattr(f, "id", None)
+            attr = getattr(f, "attr", None)
+            name = bare or attr or ""
+            if (bare in BANNED_BARE) or (name in BANNED_ANY):
+                problems.append(f"{path}:{node.lineno}: calls `{name}`")
+            # open(..., "w"/"a"/"x") - reading is fine, changing the machine is not
+            if name == "open":
+                mode = None
+                if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+                    mode = node.args[1].value
+                for kw in node.keywords:
+                    if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                        mode = kw.value.value
+                if isinstance(mode, str) and any(c in mode for c in "wax+"):
+                    problems.append(f"{path}:{node.lineno}: opens a file for writing (mode {mode!r})")
+
+print("\n".join(problems))
+TOOLCHECK
+)"
+    if [[ -n "$tool_report" ]]; then
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && fail "shipped tool is not inert - $line"
+      done <<< "$tool_report"
+    else
+      n_tools="$(printf '%s\n' $shipped_tools | grep -c . || true)"
+      ok "$n_tools shipped tool(s) read and inert: stdlib-only from the named list, no subprocess, no network, no write, no eval"
+    fi
+  fi
 fi
 
 # Every shipped .json must parse. An extension allowlist that never opens the

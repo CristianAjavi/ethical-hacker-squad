@@ -7,6 +7,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The gate under test is the copy inside $work, not this tree: gates resolve
+# their lib/*.py from their own BASH_SOURCE, so running the source gate would
+# load the source checkers and no case could blind one to prove which check
+# actually caught the defect.
 GATE="$HERE/gate-findings-artifact.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
@@ -26,7 +30,7 @@ case_run() {
     printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
   fi
   local out rc
-  out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  out="$(EHS_REPO_ROOT="$work" bash "$work/scripts/gates/gate-findings-artifact.sh" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-38s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
@@ -64,6 +68,14 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings.schema.json"
 d=json.loads(p.read_text())
 d["properties"]["findings"]["items"]["properties"]["cvss_vector"]={"type":"string"}
 p.write_text(json.dumps(d,indent=2))'
+
+# The lane field exists because a lead twice wrote findings for a specialist that
+# never returned. Undocumenting it must go red, or the row in findings-artifact.md
+# is a line nobody could break on purpose.
+case_run lanes-field-undocumented 1 "engagement.lanes" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'/findings-artifact.md"
+p.write_text(p.read_text().replace("`engagement.lanes`","`engagement_lanes_typo`"))'
 
 case_run field-documented-at-the-wrong-level 1 "does not explain it at that level" '
 import os,pathlib

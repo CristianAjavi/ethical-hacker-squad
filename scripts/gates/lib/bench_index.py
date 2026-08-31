@@ -61,6 +61,15 @@ def main(argv):
             name = m.group(1)
             if name in runs:
                 referenced.add(name)
+            elif (root / "bench" / "runs" / name).is_file():
+                # A link to a FILE under runs/ is legitimate and is not a run:
+                # a correction that spans several rounds has nowhere else to
+                # live. An earlier version reported it BROKEN because the regex
+                # cannot tell a directory from a filename, which would have
+                # pushed the author to move a true correction out of the reader's
+                # path to get a green - the exact trade this gate exists to
+                # refuse. It still fails for a name that resolves to nothing.
+                pass
             else:
                 print("BROKEN|%s -> runs/%s" % (doc.relative_to(root), name))
 

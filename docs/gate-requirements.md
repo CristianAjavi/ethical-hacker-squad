@@ -26,6 +26,8 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
+| bench evidence reachable | running | `gate-bench-evidence.sh` + self-test (8 cases) |
+| reference reachable from a role | running | `gate-reference-reachable.sh` + self-test (9 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
@@ -235,6 +237,58 @@ and when a `runs/` link in those points at a directory that is not there.
 
 **A run citing another run is not an index.** Runs pointing at each other is a graph with
 no entrance.
+
+### bench evidence reachable
+
+A run page that cites evidence git will never publish is citing nothing. `gate-bench-evidence.sh`
+fails when any file under `bench/runs/` is ignored by `.gitignore`, naming each one.
+
+It exists because the instrument round wrote its reports to `reports/` — a directory ignored
+since long before as local audit output. `git add` said nothing, the commit said "3 files
+changed", and the page said "all eight reports ship". The evidence was on a laptop. **Nothing
+failed, which was the problem**, and an earlier round had already hit the same trap and left
+the lesson as a sentence of prose rather than a check.
+
+### shipped tools
+
+Three now ship and each is read by the inertness check above before it is allowed out:
+`log_escaper.py` (does an escaper reach the log sink), `path_coverage.py` (do the guards cover
+the routes), `default_resolver.py` (what does the permission become when the caller omits the
+argument). Each has a battery under `scripts/bench/*.selftest.sh` and each battery carries a
+mutant of its own subject, because a battery that passes with and without the mechanism is
+hollow.
+
+All three exist for the same measured reason: across six rounds, prose procedure moved this
+corpus along the precision/recall curve and never off it, while a deterministic join moved a
+number every time it was tried.
+
+### reference reachable from a role
+
+A reference no role can reach is a rule that does not exist. `gate-reference-reachable.sh`
+walks the citation graph from the agent files through `references/`, transitively, and fails
+naming any file nothing points at.
+
+It exists because that failure happened **four times in one day**: the battery-discovery rule
+lived inside a CI step and could not be run locally; a `.gitignore` trap was written up as
+prose on a run page and repeated a day later; `VER-09`, the stage that refutes your own
+findings, lived in `SKILL.md` — which no role cites — and fired **zero times across four
+blinded runs**, losing the round it would otherwise have won on precision; and the artifact
+contract requiring a triage answer per finding was bypassed by the measurement harness. Each
+was written correctly and lived where the thing that executes never looks.
+
+On its first run it found two more: **`references/findings.schema.json` — the artifact contract
+itself — was cited by no agent**, and neither was the pack index. Both are now wired.
+
+Its battery covers the ways a file hides: never cited, cited only by another orphan, reachable
+only through a three-deep chain that must be walked rather than grepped, and a `.json` contract
+rather than a `.md`. Absent directories and an empty reference tree are `2`, never a silent
+green.
+
+Its battery builds real git repositories rather than asserting against a hand-written list,
+because what is under test is how git resolves ignores: a failing stub under `fixtures/` must
+neither fail the run nor pad the count, a file ignored by pattern is caught as well as one
+ignored by directory, an ignored file outside `bench/runs/` is out of scope, and being outside
+a work tree is `2` rather than a silent green.
 
 **What it deliberately does not decide** is which *kind* each run is — measurement,
 pre-registration, retraction, patch bench. That taxonomy is what the project chooses to

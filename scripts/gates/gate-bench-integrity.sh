@@ -417,5 +417,59 @@ case "$rc" in
   1) : ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
+# --- a page quoting a decoy figure must say the figure is an upper bound ------
+DCV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/decoy_caveat.py"
+if [ -f "$DCV" ]; then
+  _dcv=$(mktemp "${TMPDIR:-/tmp}/ehs-dcv.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$DCV" "$ROOT" > "$_dcv" 2>&1 || true
+  sed -n 's/^STAT|\(.*\)|\(.*\)/· \1 page(s) quote a decoy figure, \2 carry the caveat/p' "$_dcv"
+  if grep -q '^UNCAVEATED|' "$_dcv"; then
+    sed -n 's/^UNCAVEATED|\(.*\)/FAIL  \1 quotes a decoy figure without saying it is an upper bound/p' "$_dcv"
+    rc=1
+  fi
+  rm -f "$_dcv"
+fi
+
+# --- the page must state the verdict its own scorer produced ------------------
+VMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/verdict_matches_score.py"
+if [ -f "$VMS" ]; then
+  _vms=$(mktemp "${TMPDIR:-/tmp}/ehs-vms.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$VMS" "$ROOT" > "$_vms" 2>&1 || true
+  if grep -q '^ERR|' "$_vms"; then
+    gate_warn "$(sed -n 's/^ERR|//p' "$_vms" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)/· \1 round(s) checked: page verdict vs SCORE.txt/p' "$_vms"
+    if grep -q '^DRIFT|' "$_vms"; then
+      sed -n 's/^DRIFT|\(.*\)|\(.*\)/FAIL  \1: SCORE.txt says \2 and the page never says it/p' "$_vms"
+      rc=1
+    fi
+  fi
+  rm -f "$_vms"
+fi
+
+# --- the reports a round shipped must be the ones it scored -------------------
+SMS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scored_matches_shipped.py"
+if [ -f "$SMS" ]; then
+  _sms=$(mktemp "${TMPDIR:-/tmp}/ehs-sms.XXXXXX")
+  PYTHONSAFEPATH=1 python3 "$SMS" "$ROOT" > "$_sms" 2>&1 || true
+  if grep -q '^ERR|' "$_sms"; then
+    gate_warn "$(sed -n 's/^ERR|//p' "$_sms" | head -1)"
+  else
+    sed -n 's/^STAT|\(.*\)|\(.*\)|\(.*\)|\(.*\)/· \1 scored round(s), \2 report(s) hashed · \3 round(s), \4 report(s) exempt by name/p' "$_sms"
+    if grep -qE '^(MISSING|ABSENT|MISMATCH|UNLISTED|STALE)\|' "$_sms"; then
+      sed -n 's/^MISSING|\(.*\)/FAIL  \1 has a SCORE.txt and no REPORTS.sha256: nobody can check the numbers came from these bytes/p' "$_sms"
+      sed -n 's/^ABSENT|\(.*\)|\(.*\)/FAIL  \1: \2 was scored and is not shipped/p' "$_sms"
+      sed -n 's/^MISMATCH|\(.*\)|\(.*\)/FAIL  \1: \2 differs from what was scored/p' "$_sms"
+      sed -n 's/^UNLISTED|\(.*\)/FAIL  \1 ships reports with no hashes and is not named in bench\/runs\/HASHES-EXEMPT.txt: skipping it in silence would read as coverage/p' "$_sms"
+      sed -n 's/^STALE|\(.*\)/FAIL  \1 is named exempt in bench\/runs\/HASHES-EXEMPT.txt and no longer needs to be: remove the line/p' "$_sms"
+      # This gate exits on `rc`, computed above; incrementing a FAILURES counter
+      # that nothing reads would print a FAIL line and still return 0 - a green
+      # that means nothing, which is the defect this repository exists to catch.
+      rc=1
+    fi
+  fi
+  rm -f "$_sms"
+fi
+
 gate_verdict "$rc"
 exit "$rc"

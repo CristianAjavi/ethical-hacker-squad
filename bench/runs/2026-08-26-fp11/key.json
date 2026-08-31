@@ -1,0 +1,872 @@
+{
+  "planted": [
+    {
+      "id": "W-01",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/application_controller.rb",
+      "symbol": "ApplicationController#admin_area?",
+      "line": 29,
+      "cwe": "CWE-862",
+      "class": "Missing Authorization",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "requires_files": [
+        "ledger-api/app/controllers/application_controller.rb",
+        "ledger-api/config/routes.rb",
+        "ledger-api/app/controllers/api/v1/admin/adjustments_controller.rb"
+      ],
+      "note": "require_admin is conditional on the request path starting with /api/v1/admin. routes.rb:30 maps the same controller action onto POST /api/v1/invoices/:invoice_id/adjust, which never matches the prefix, so any authenticated partner can post a manual ledger correction against any invoice."
+    },
+    {
+      "id": "W-02",
+      "case": "ledger-api",
+      "path": "ledger-api/app/services/ledger_posting.rb",
+      "symbol": "LedgerPosting#credit!",
+      "line": 32,
+      "cwe": "CWE-841",
+      "class": "Improper Enforcement of Behavioral Workflow",
+      "kind": "composition",
+      "mechanism": "second writer bypasses the invariant",
+      "requires_files": [
+        "ledger-api/app/services/ledger_posting.rb",
+        "ledger-api/app/models/invoice.rb"
+      ],
+      "note": "Invoice guards the amount with a before_save callback (invoice.rb:39 assert_ledger_balanced) and with numericality validation. update_columns writes the row directly, skipping both, so credit! can drive amount_cents below the sum of the posted entries or negative. void! on the same class uses update! and is checked; only this writer is not."
+    },
+    {
+      "id": "W-03",
+      "case": "ledger-api",
+      "path": "ledger-api/app/jobs/bulk_import_job.rb",
+      "symbol": "BulkImportJob#build_row",
+      "line": 31,
+      "cwe": "CWE-639",
+      "class": "Authorization Bypass Through User-Controlled Key",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skips the validator",
+      "requires_files": [
+        "ledger-api/app/jobs/bulk_import_job.rb",
+        "ledger-api/app/models/invoice.rb",
+        "ledger-api/app/controllers/api/v1/invoices_controller.rb"
+      ],
+      "note": "insert_all (line 19) runs no validations and no callbacks, and org_id is taken from the uploaded CSV column when present. The HTTP path gets its tenant from scoped_invoices plus issuer_belongs_to_org (invoice.rb:31); the import path has neither, so a partner's file can write invoices into any organisation."
+    },
+    {
+      "id": "W-04",
+      "case": "ledger-api",
+      "path": "ledger-api/config/initializers/rack_attack.rb",
+      "symbol": "Rack::Attack throttle set",
+      "line": 17,
+      "cwe": "CWE-307",
+      "class": "Improper Restriction of Excessive Authentication Attempts",
+      "kind": "composition",
+      "mechanism": "rate limit scoped past the credential endpoint",
+      "requires_files": [
+        "ledger-api/config/initializers/rack_attack.rb",
+        "ledger-api/config/routes.rb",
+        "ledger-api/app/controllers/api/v1/tokens_controller.rb"
+      ],
+      "note": "The three throttles cover /api/v1/invoices, /api/v1/exports and /api/v1/admin. The client-credentials exchange lives at /api/v1/tokens and /api/v1/tokens/refresh (routes.rb:5-7) and skips authenticate_partner! (tokens_controller.rb:4), so it matches no throttle and client secret guessing is unlimited."
+    },
+    {
+      "id": "W-05",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/api/v1/invoices_controller.rb",
+      "symbol": "InvoicesController#update",
+      "line": 34,
+      "cwe": "CWE-639",
+      "class": "Insecure Direct Object Reference",
+      "kind": "composition",
+      "mechanism": "create-checked but not update-checked",
+      "requires_files": [
+        "ledger-api/app/controllers/api/v1/invoices_controller.rb",
+        "ledger-api/app/controllers/application_controller.rb"
+      ],
+      "note": "index, show, create and void all resolve through scoped_invoices, defined at application_controller.rb:46 as Invoice.where(org_id: current_user.org_id). update alone calls Invoice.find, so any partner can rewrite the reference, memo, amount and currency of another organisation's invoice."
+    },
+    {
+      "id": "W-06",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/api/v1/exports_controller.rb",
+      "symbol": "ExportsController#create",
+      "line": 19,
+      "cwe": "CWE-89",
+      "class": "SQL Injection",
+      "kind": "single-file",
+      "mechanism": "sanitised at the wrong layer",
+      "requires_files": [
+        "ledger-api/app/controllers/api/v1/exports_controller.rb"
+      ],
+      "note": "The same action strips the caller-supplied download name down to word characters for Content-Disposition (safe_filename, line 48) but interpolates params[:sort] into Arel.sql for the ORDER BY. The direction is allowlisted on line 15; the column is not."
+    },
+    {
+      "id": "W-07",
+      "case": "edge-console",
+      "path": "edge-console/src/hooks.server.ts",
+      "symbol": "PROTECTED_PREFIXES / needsSession",
+      "line": 6,
+      "cwe": "CWE-306",
+      "class": "Missing Authentication for Critical Function",
+      "kind": "composition",
+      "mechanism": "middleware scope missing siblings",
+      "requires_files": [
+        "edge-console/src/hooks.server.ts",
+        "edge-console/src/routes/api/internal/webhooks/+server.ts"
+      ],
+      "note": "The handle hook demands a session only for /admin and /api/reports. The sibling route /api/internal/webhooks is not covered and does no authentication of its own: it rewrites a tenant's plan, seat count and suspended flag straight from the posted JSON, and clears the report cache."
+    },
+    {
+      "id": "W-08",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/api/reports/[id]/+server.ts",
+      "symbol": "GET",
+      "line": 22,
+      "cwe": "CWE-524",
+      "class": "Use of Cache Containing Sensitive Information",
+      "kind": "composition",
+      "mechanism": "cache keyed on less than authorization needs",
+      "requires_files": [
+        "edge-console/src/routes/api/reports/[id]/+server.ts",
+        "edge-console/src/lib/server/cache.ts"
+      ],
+      "note": "Rows are read through the tenant-pinned handle, but the result is memoised under reportKey(slug, range) (cache.ts:20-22), which carries no tenant dimension. params.id is a shared template slug, so the first tenant to request a slug populates the entry and every other tenant is served those rows for the next hour."
+    },
+    {
+      "id": "W-09",
+      "case": "edge-console",
+      "path": "edge-console/src/hooks.server.ts",
+      "symbol": "handle",
+      "line": 16,
+      "cwe": "CWE-290",
+      "class": "Authentication Bypass by Spoofing",
+      "kind": "composition",
+      "mechanism": "permission derived from a header the proxy does not strip",
+      "requires_files": [
+        "edge-console/src/hooks.server.ts",
+        "edge-console/src/lib/server/auth.ts",
+        "edge-console/src/routes/admin/+layout.server.ts"
+      ],
+      "note": "event.request.headers is handed to resolveSession, which sets isPlatformAdmin when x-console-role equals platform-admin (auth.ts:14 and 49). The header is documented as being stamped by the edge proxy, but nothing in the tree strips it from client traffic, so any signed-in user can promote themselves to the flag the admin layout checks."
+    },
+    {
+      "id": "W-10",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/admin/tenants/[tid=tenantid]/+page.server.ts",
+      "symbol": "actions",
+      "line": 22,
+      "cwe": "CWE-862",
+      "class": "Missing Authorization",
+      "kind": "composition",
+      "mechanism": "ACL at one layer while another is directly reachable",
+      "requires_files": [
+        "edge-console/src/routes/admin/+layout.server.ts",
+        "edge-console/src/routes/admin/tenants/[tid=tenantid]/+page.server.ts",
+        "edge-console/src/hooks.server.ts"
+      ],
+      "note": "The only platform-admin check is the layout load (admin/+layout.server.ts:13). SvelteKit runs a form action before any load function, so a POST to ?/updatePlan or ?/suspend executes the write for any authenticated non-admin; the 403 is only raised afterwards while re-rendering the page. The hooks layer requires a session for /admin but never a role."
+    },
+    {
+      "id": "W-11",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/admin/tenants/[tid=tenantid]/+page.server.ts",
+      "symbol": "load",
+      "line": 9,
+      "cwe": "CWE-1188",
+      "class": "Insecure Default Initialization of Resource",
+      "kind": "composition",
+      "mechanism": "feature flag / env selector",
+      "requires_files": [
+        "edge-console/src/routes/admin/tenants/[tid=tenantid]/+page.server.ts",
+        "edge-console/src/lib/server/db.ts"
+      ],
+      "note": "The page uses getDb() rather than getTenantDb(). When CONSOLE_DIRECT_DB is 'on' (db.ts:26) that returns a fresh DATABASE_ADMIN_URL connection with no app.tenant_id pinned, so the row level security policies the rest of the console relies on no longer constrain either the read on line 11 or the writes in the actions."
+    },
+    {
+      "id": "W-12",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/api/reports/+server.ts",
+      "symbol": "digest",
+      "line": 52,
+      "cwe": "CWE-79",
+      "class": "Cross-site Scripting",
+      "kind": "single-file",
+      "mechanism": "sanitised at the wrong layer",
+      "requires_files": [
+        "edge-console/src/routes/api/reports/+server.ts"
+      ],
+      "note": "row.title and row.owner are passed through escapeHtml on line 51; row.notes is interpolated raw into the same list item. The fragment is returned with content-type text/html for ?format=html and is documented as being piped into the mail template."
+    },
+    {
+      "id": "W-13",
+      "case": "fleet-relay",
+      "path": "fleet-relay/router.go",
+      "symbol": "NewRouter",
+      "line": 43,
+      "cwe": "CWE-306",
+      "class": "Missing Authentication for Critical Function",
+      "kind": "composition",
+      "mechanism": "middleware scope missing siblings",
+      "requires_files": [
+        "fleet-relay/router.go",
+        "fleet-relay/handlers/firmware.go",
+        "fleet-relay/middleware/auth.go"
+      ],
+      "note": "The /v1 group is wrapped in RequireFleetToken (line 30), but the firmware group is hung off the bare engine two lines later, so both DownloadFirmware and UploadFirmware take no credential. UploadFirmware writes an arbitrary body into the channel directory the gateways pull and flash."
+    },
+    {
+      "id": "W-14",
+      "case": "fleet-relay",
+      "path": "fleet-relay/store/devices.go",
+      "symbol": "Store.RoleForToken",
+      "line": 59,
+      "cwe": "CWE-1188",
+      "class": "Insecure Default Initialization of Resource",
+      "kind": "composition",
+      "mechanism": "a default lookup decides the permission",
+      "requires_files": [
+        "fleet-relay/store/devices.go",
+        "fleet-relay/middleware/auth.go",
+        "fleet-relay/handlers/commands.go"
+      ],
+      "note": "A token digest with no row in token_roles returns Principal{Role: \"operator\"} and a nil error. middleware/auth.go rejects only an empty role (line 42), so any bearer string authenticates as an operator with an empty tenant and reaches the device and command endpoints."
+    },
+    {
+      "id": "W-15",
+      "case": "fleet-relay",
+      "path": "fleet-relay/handlers/commands.go",
+      "symbol": "Deps.RetryFailed",
+      "line": 95,
+      "cwe": "CWE-863",
+      "class": "Incorrect Authorization",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skips the validator",
+      "requires_files": [
+        "fleet-relay/handlers/commands.go",
+        "fleet-relay/store/devices.go",
+        "fleet-relay/router.go"
+      ],
+      "note": "EnqueueCommand gates on allowedCommands (line 38) and on the fleet-admin requirement for collect-logs (line 44). RetryFailed re-dispatches stored rows through Store.EnqueueRaw (store/devices.go:196), which applies neither, and the route is open to any authenticated role, so an operator can re-issue an admin's collect-logs command."
+    },
+    {
+      "id": "W-16",
+      "case": "fleet-relay",
+      "path": "fleet-relay/middleware/auth.go",
+      "symbol": "skipsAuth",
+      "line": 21,
+      "cwe": "CWE-863",
+      "class": "Incorrect Authorization",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "requires_files": [
+        "fleet-relay/middleware/auth.go",
+        "fleet-relay/router.go",
+        "fleet-relay/handlers/devices.go"
+      ],
+      "note": "The predicate is a substring test, so every path containing \"/health\" skips the token lookup. router.go:35 mounts POST /v1/devices/:id/health-report, and that handler both writes the heartbeat and moves the device onto a caller-named firmware channel (handlers/devices.go:115-119)."
+    },
+    {
+      "id": "W-17",
+      "case": "fleet-relay",
+      "path": "fleet-relay/config/config.go",
+      "symbol": "Config.Load",
+      "line": 30,
+      "cwe": "CWE-295",
+      "class": "Improper Certificate Validation",
+      "kind": "composition",
+      "mechanism": "feature flag / env selector",
+      "requires_files": [
+        "fleet-relay/config/config.go",
+        "fleet-relay/main.go"
+      ],
+      "note": "FLEET_ENV defaults to \"staging\" (line 22), so any deployment that forgets the variable resolves AllowInsecureTLS to true, which main.go:37 feeds straight into the callback client's tls.Config as InsecureSkipVerify."
+    },
+    {
+      "id": "W-18",
+      "case": "fleet-relay",
+      "path": "fleet-relay/handlers/commands.go",
+      "symbol": "Deps.EnqueueCommand",
+      "line": 51,
+      "cwe": "CWE-639",
+      "class": "Authorization Bypass Through User-Controlled Key",
+      "kind": "composition",
+      "mechanism": "an idempotency key lets a second actor replay",
+      "requires_files": [
+        "fleet-relay/handlers/commands.go",
+        "fleet-relay/store/devices.go"
+      ],
+      "note": "The memo table is keyed on the raw Idempotency-Key header with no tenant or principal component (store/devices.go:237-250). A second caller presenting a key someone else used is handed the first caller's cached response body, which carries the target device serial and the dispatch token."
+    },
+    {
+      "id": "W-19",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/AttachmentResource.java",
+      "symbol": "AttachmentResource",
+      "line": 33,
+      "cwe": "CWE-862",
+      "class": "Missing Authorization",
+      "kind": "composition",
+      "mechanism": "ACL at one layer while another is directly reachable",
+      "requires_files": [
+        "grant-policy/service/src/main/java/com/northwind/grants/Authorized.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/AuthzFilter.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/GrantResource.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/AttachmentResource.java"
+      ],
+      "note": "AuthzFilter is a @NameBinding provider bound to @Authorized. GrantResource carries the annotation (GrantResource.java:28); this class does not, so /api/attachments never reaches the policy sidecar and the award letters and due diligence packs are served to anyone who can reach the service."
+    },
+    {
+      "id": "W-20",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/AuthzFilter.java",
+      "symbol": "AuthzFilter.PUBLIC_PREFIXES",
+      "line": 29,
+      "cwe": "CWE-863",
+      "class": "Incorrect Authorization",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "requires_files": [
+        "grant-policy/service/src/main/java/com/northwind/grants/AuthzFilter.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/GrantResource.java"
+      ],
+      "note": "The exemption is a startsWith over \"/api/grants/public\" (applied on line 46). GrantResource mounts the publication queue at /api/grants/publications (line 79), which matches that prefix, so approved plus embargoed grants with their internal notes are returned without a decision. The genuinely public register is the separate /api/grants/public/register."
+    },
+    {
+      "id": "W-21",
+      "case": "grant-policy",
+      "path": "grant-policy/policy/authz.rego",
+      "symbol": "entitlements",
+      "line": 11,
+      "cwe": "CWE-1188",
+      "class": "Insecure Default Initialization of Resource",
+      "kind": "composition",
+      "mechanism": "a default lookup decides the permission",
+      "requires_files": [
+        "grant-policy/policy/authz.rego",
+        "grant-policy/policy/roles.json",
+        "grant-policy/service/src/main/java/com/northwind/grants/OpaClient.java"
+      ],
+      "note": "object.get falls back to data.roles.baseline for any department not in the map, and baseline grants read, write, approve and export (roles.json:5) - strictly more than any named department. OpaClient copies the dept claim through verbatim (OpaClient.java:82), so an absent, misspelt or attacker-influenced dept is the most privileged value in the system."
+    },
+    {
+      "id": "W-22",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/GrantEventConsumer.java",
+      "symbol": "onGrantEvent",
+      "line": 43,
+      "cwe": "CWE-20",
+      "class": "Improper Input Validation",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the consumed message",
+      "requires_files": [
+        "grant-policy/service/src/main/java/com/northwind/grants/GrantResource.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/GrantEventConsumer.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/GrantRepository.java"
+      ],
+      "note": "The REST path constrains the same record with @Valid: reference and title length, amount between 0 and 5,000,000 and a status matching the enum pattern (GrantResource.java:36-41). The topic consumer applies amount, dept and status to the identical columns with only a null check on reference, so a message can set status APPROVED, an arbitrary amount, or a dept value that then drives the Rego entitlement lookup."
+    },
+    {
+      "id": "W-23",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/AuthzFilter.java",
+      "symbol": "AuthzFilter.filter",
+      "line": 57,
+      "cwe": "CWE-636",
+      "class": "Not Failing Securely",
+      "kind": "composition",
+      "mechanism": "feature flag / env selector",
+      "requires_files": [
+        "grant-policy/service/src/main/java/com/northwind/grants/AuthzFilter.java",
+        "grant-policy/service/src/main/java/com/northwind/grants/OpaClient.java",
+        "grant-policy/service/src/main/resources/application.properties"
+      ],
+      "note": "The @ConfigProperty defaults to deny, but application.properties:15 sets grants.authz.on-error=permit, and Decision.onError returns allow for that mode (OpaClient.java:47-52). Any exception on the decision call - including the timeout, which is 400 ms - permits the request, and the config comment says the sidecar restarts on every bundle publish."
+    },
+    {
+      "id": "W-24",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/AttachmentResource.java",
+      "symbol": "ingestManifest",
+      "line": 66,
+      "cwe": "CWE-611",
+      "class": "XML External Entity Reference",
+      "kind": "single-file",
+      "mechanism": "unsafe XML parser configuration",
+      "requires_files": [
+        "grant-policy/service/src/main/java/com/northwind/grants/AttachmentResource.java"
+      ],
+      "note": "The factory sets namespace awareness, comment stripping and coalescing but never disallow-doctype-decl or the external-general-entities / external-parameter-entities features, and then parses the request body directly on line 71."
+    },
+    {
+      "id": "W-25",
+      "case": "session-broker",
+      "path": "session-broker/main.ts",
+      "symbol": "buildApp",
+      "line": 50,
+      "cwe": "CWE-306",
+      "class": "Missing Authentication for Critical Function",
+      "kind": "composition",
+      "mechanism": "middleware scope missing siblings",
+      "requires_files": [
+        "session-broker/main.ts",
+        "session-broker/middleware/require_session.ts",
+        "session-broker/routes/admin.ts"
+      ],
+      "note": "profileRouter gets requireSession attached on line 46; adminRouter is mounted on line 50 with nothing. Session listing for an arbitrary org (which returns userId, orgId, roles and scopes for every live session), single-session revocation and org-wide sign-out are therefore unauthenticated."
+    },
+    {
+      "id": "W-26",
+      "case": "session-broker",
+      "path": "session-broker/session/store.ts",
+      "symbol": "profileKey",
+      "line": 130,
+      "cwe": "CWE-524",
+      "class": "Use of Cache Containing Sensitive Information",
+      "kind": "composition",
+      "mechanism": "cache keyed on less than authorization needs",
+      "requires_files": [
+        "session-broker/session/store.ts",
+        "session-broker/routes/profile.ts"
+      ],
+      "note": "routes/profile.ts computes the redacted or unredacted body with viewFor and then caches it under a key that names only the target user (profile.ts:56 and 70). A self-view or a support view - email, phone, MFA enrolment and remaining recovery codes - is served verbatim to whoever asks next for fifteen minutes, and the PATCH handler writes the same unscoped key on line 100."
+    },
+    {
+      "id": "W-27",
+      "case": "session-broker",
+      "path": "session-broker/routes/auth.ts",
+      "symbol": "POST /auth/login (remember branch)",
+      "line": 35,
+      "cwe": "CWE-1004",
+      "class": "Sensitive Cookie Without HttpOnly Flag",
+      "kind": "composition",
+      "mechanism": "second writer bypasses the invariant",
+      "requires_files": [
+        "session-broker/routes/auth.ts",
+        "session-broker/session/cookie.ts"
+      ],
+      "note": "setSessionCookie is the single place that knows the cookie's shape and sets httpOnly, secure and sameSite (cookie.ts:62-75). The remember-me branch writes the same cookie name directly with only path, domain and maxAge, so the thirty-day cookie is readable from script, sent over plain HTTP and attached to cross-site navigations."
+    },
+    {
+      "id": "W-28",
+      "case": "session-broker",
+      "path": "session-broker/middleware/require_session.ts",
+      "symbol": "requireSession",
+      "line": 21,
+      "cwe": "CWE-347",
+      "class": "Improper Verification of Cryptographic Signature",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skips the validator",
+      "requires_files": [
+        "session-broker/middleware/require_session.ts",
+        "session-broker/session/cookie.ts",
+        "session-broker/session/store.ts"
+      ],
+      "note": "When the HMAC check returns null the middleware falls back to decodeLegacy (cookie.ts:53-56), which splits the cookie on '|' and returns the second field with no verification at all. Any cookie of the form 'x|<session id>' therefore authenticates as that session."
+    },
+    {
+      "id": "W-29",
+      "case": "session-broker",
+      "path": "session-broker/session/store.ts",
+      "symbol": "newSessionId",
+      "line": 59,
+      "cwe": "CWE-338",
+      "class": "Use of Cryptographically Weak PRNG",
+      "kind": "single-file",
+      "mechanism": "predictable token from a non-CSPRNG",
+      "requires_files": [
+        "session-broker/session/store.ts"
+      ],
+      "note": "Session ids are 32 hex digits drawn one nibble at a time from Math.random, not crypto.getRandomValues, in a file that uses crypto.subtle elsewhere."
+    },
+    {
+      "id": "W-30",
+      "case": "session-broker",
+      "path": "session-broker/routes/auth.ts",
+      "symbol": "GET /auth/continue",
+      "line": 61,
+      "cwe": "CWE-601",
+      "class": "Open Redirect",
+      "kind": "single-file",
+      "mechanism": "unvalidated redirect target",
+      "requires_files": [
+        "session-broker/routes/auth.ts"
+      ],
+      "note": "The next query parameter is handed to ctx.response.redirect with no same-origin, relative-path or allowlist check, on a route reached immediately after the identity provider bounces the browser back."
+    },
+    {
+      "id": "W-31",
+      "case": "parcel-track",
+      "path": "parcel-track/src/auth.rs",
+      "symbol": "is_open_endpoint",
+      "line": 24,
+      "cwe": "CWE-862",
+      "class": "Missing Authorization",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "requires_files": [
+        "parcel-track/src/auth.rs",
+        "parcel-track/src/main.rs",
+        "parcel-track/src/handlers/shipments.rs"
+      ],
+      "note": "The guard exempts every path ending in /status. main.rs:29 registers GET /api/v1/shipments/{id}/status inside the guarded scope, and its handler calls get_shipment_any_account (shipments.rs:135), returning recipient name, address, phone and scan history for any shipment id with no api key and no account check."
+    },
+    {
+      "id": "W-32",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/webhooks.rs",
+      "symbol": "update_subscription",
+      "line": 56,
+      "cwe": "CWE-639",
+      "class": "Insecure Direct Object Reference",
+      "kind": "composition",
+      "mechanism": "create-checked but not update-checked",
+      "requires_files": [
+        "parcel-track/src/handlers/webhooks.rs",
+        "parcel-track/src/store.rs"
+      ],
+      "note": "create_subscription refuses an account mismatch on line 26. The PUT performs no ownership check, and Store::update_subscription (store.rs:158-172) filters on id alone, so any authenticated account can repoint another account's webhook at a URL it controls and receive their scan events."
+    },
+    {
+      "id": "W-33",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/imports.rs",
+      "symbol": "bulk_import",
+      "line": 58,
+      "cwe": "CWE-918",
+      "class": "Server-Side Request Forgery",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skips the validator",
+      "requires_files": [
+        "parcel-track/src/handlers/imports.rs",
+        "parcel-track/src/handlers/shipments.rs",
+        "parcel-track/src/store.rs"
+      ],
+      "note": "The single-shipment path calls validate_callback_url (shipments.rs:34-60), which requires https and rejects loopback, private and .internal/.cluster.local targets. The bulk path copies row.callback_url straight into NewShipment (line 52) and inserts the whole batch without it, so a manifest can register callbacks pointing inside the delivery VPC."
+    },
+    {
+      "id": "W-34",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/labels.rs",
+      "symbol": "download",
+      "line": 39,
+      "cwe": "CWE-22",
+      "class": "Path Traversal",
+      "kind": "single-file",
+      "mechanism": "sanitised at the wrong layer",
+      "requires_files": [
+        "parcel-track/src/handlers/labels.rs"
+      ],
+      "note": "download_name squeezes the reference to word characters for the Content-Disposition header on line 45, but label_root.join uses the raw {label_ref:.*} tail, which matches slashes and dot segments. The ownership check above is on the shipment id, not on the path that is read."
+    },
+    {
+      "id": "W-35",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/imports.rs",
+      "symbol": "stage_attachment",
+      "line": 75,
+      "cwe": "CWE-22",
+      "class": "Path Traversal / Arbitrary File Write",
+      "kind": "single-file",
+      "mechanism": "an absolute path component replaces the base",
+      "requires_files": [
+        "parcel-track/src/handlers/imports.rs"
+      ],
+      "note": "Rust's Path::join discards the base when the argument is absolute, so an attachment_name of \"/etc/cron.d/parcel\" writes outside import_root entirely; create_dir_all on line 78 creates the parent first. Relative dot segments traverse as well."
+    },
+    {
+      "id": "W-36",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/webhooks.rs",
+      "symbol": "carrier_callback",
+      "line": 92,
+      "cwe": "CWE-208",
+      "class": "Observable Timing Discrepancy",
+      "kind": "single-file",
+      "mechanism": "non-constant-time secret comparison",
+      "requires_files": [
+        "parcel-track/src/handlers/webhooks.rs"
+      ],
+      "note": "The computed HMAC is hex encoded and compared to the header with !=, which short-circuits on the first differing byte, instead of Mac::verify_slice. This is the only authentication on the callback route, which sits outside the AuthGuard scope."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "X-01",
+      "case": "ledger-api",
+      "path": "ledger-api/config/initializers/rack_attack.rb",
+      "symbol": "safelist(\"loopback in test\")",
+      "line": 13,
+      "looks_like": "an IP safelist that lets any caller from 127.0.0.1 or ::1 skip every throttle and blocklist",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "ledger-api/config/initializers/rack_attack.rb:14 - the block body is `Rails.env.test? && LOOPBACK.include?(req.ip)`, so it evaluates false in every environment except the test suite."
+    },
+    {
+      "id": "X-02",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/api/v1/invoices_controller.rb",
+      "symbol": "InvoicesController#invoice_params",
+      "line": 53,
+      "looks_like": "strong parameters permit :posted_at, letting a partner backdate a ledger posting through create or update",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "ledger-api/app/models/invoice.rb:28 - the before_validation callback stamp_posted_at unconditionally overwrites posted_at on every save, so the permitted attribute never survives."
+    },
+    {
+      "id": "X-03",
+      "case": "ledger-api",
+      "path": "ledger-api/app/services/ledger_posting.rb",
+      "symbol": "LedgerPosting::SANDBOX_API_KEY",
+      "line": 9,
+      "looks_like": "a hardcoded acquirer API key committed to source",
+      "shape": "public-sample",
+      "ruled_out_by": "ledger-api/app/services/ledger_posting.rb:50 - the constant is selected only when the base URL is still SANDBOX_BASE_URL (sandbox.acquirer.test); any other base makes ENV.fetch(\"ACQUIRER_API_KEY\") mandatory and raises if it is absent."
+    },
+    {
+      "id": "X-04",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/api/v1/exports_controller.rb",
+      "symbol": "ExportsController#stream",
+      "line": 29,
+      "looks_like": "path traversal - params[:path] is joined onto EXPORT_ROOT and sent with send_file",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "ledger-api/config/routes.rb:18 - the route declares constraints: { path: /[a-z0-9_\\-]+/ }, and Rails anchors segment constraints, so the action is never dispatched for a value containing a dot, a slash or a percent escape."
+    },
+    {
+      "id": "X-05",
+      "case": "ledger-api",
+      "path": "ledger-api/app/controllers/api/v1/exports_controller.rb",
+      "symbol": "ExportsController#create",
+      "line": 20,
+      "looks_like": "a raw query parameter handed to .limit on a relation",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "ledger-api/app/controllers/application_controller.rb:41 - coerce_pagination is a before_action on every controller and rewrites params[:limit] to `.to_i.clamp(1, 500)`, so an Integer arrives here."
+    },
+    {
+      "id": "X-06",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/admin/tenants/[tid=tenantid]/+page.server.ts",
+      "symbol": "load",
+      "line": 11,
+      "looks_like": "SQL injection - params.tid is template-interpolated into sql.unsafe(...)",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "edge-console/src/params/tenantid.ts:5 - the route segment is [tid=tenantid] and the matcher only admits /^[0-9]{1,12}$/, so anything else 404s at the router before load runs."
+    },
+    {
+      "id": "X-07",
+      "case": "edge-console",
+      "path": "edge-console/src/hooks.server.ts",
+      "symbol": "handle (CORS block)",
+      "line": 31,
+      "looks_like": "access-control-allow-origin: * set from the global handle hook",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "edge-console/src/hooks.server.ts:30 - the enclosing condition requires the pathname to be exactly /api/public/status and the method to be GET; allow-methods is GET only and no allow-credentials header is ever set."
+    },
+    {
+      "id": "X-08",
+      "case": "edge-console",
+      "path": "edge-console/src/lib/server/auth.ts",
+      "symbol": "decodeClaims",
+      "line": 32,
+      "looks_like": "JWT claims decoded and trusted without verifying the signature",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "edge-console/src/hooks.server.ts:15 - the only caller of resolveSession is guarded by `if (token && verifyJwt(token))`, and verifyJwt (auth.ts:16-28) recomputes the HMAC over the same string with timingSafeEqual."
+    },
+    {
+      "id": "X-09",
+      "case": "edge-console",
+      "path": "edge-console/src/lib/server/db.ts",
+      "symbol": "legacyRawQuery",
+      "line": 33,
+      "looks_like": "an exported helper that runs a caller-supplied SQL string through pool.unsafe",
+      "shape": "dead-path",
+      "ruled_out_by": "no import of legacyRawQuery exists anywhere under edge-console/. The four modules that import from $lib/server/db (admin/tenants/[tid=tenantid]/+page.server.ts:3, api/internal/webhooks/+server.ts:3, api/reports/+server.ts:3, api/reports/[id]/+server.ts:3) import only getDb or getTenantDb."
+    },
+    {
+      "id": "X-10",
+      "case": "edge-console",
+      "path": "edge-console/src/routes/api/reports/+server.ts",
+      "symbol": "SAMPLE_REPORTS",
+      "line": 16,
+      "looks_like": "customer records including email addresses embedded in source and returned from an API endpoint",
+      "shape": "public-sample",
+      "ruled_out_by": "edge-console/src/routes/api/reports/+server.ts:16-31 - a frozen two-row literal on the reserved example.com domain, unreachable from any query, returned only for ?preview=1 as trial-workspace filler; the tenant path on line 66 reads the real rows separately."
+    },
+    {
+      "id": "X-11",
+      "case": "fleet-relay",
+      "path": "fleet-relay/handlers/firmware.go",
+      "symbol": "Deps.DownloadFirmware",
+      "line": 16,
+      "looks_like": "path traversal - the :channel and :file route params are joined onto FirmwareRoot and served",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "fleet-relay/router.go:15 installs middleware.CanonicalPath as a global engine middleware; it is defined at fleet-relay/middleware/auth.go:55-63 and aborts with 400 any request whose URL.Path or RawPath contains \"..\", before routing."
+    },
+    {
+      "id": "X-12",
+      "case": "fleet-relay",
+      "path": "fleet-relay/store/devices.go",
+      "symbol": "Store.GetDevice",
+      "line": 80,
+      "looks_like": "SQL injection - the device id is pasted into the statement text with fmt.Sprintf while the tenant is bound",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "fleet-relay/handlers/devices.go:77-83 - the sole caller parses c.Param(\"id\") with uuid.Parse, returns 400 on failure and passes id.String(), so only a canonical UUID reaches the format string."
+    },
+    {
+      "id": "X-13",
+      "case": "fleet-relay",
+      "path": "fleet-relay/router.go",
+      "symbol": "cors.Config{AllowAllOrigins: true}",
+      "line": 22,
+      "looks_like": "a wildcard CORS policy on the fleet API",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "fleet-relay/router.go:20 and 22-27 - the middleware is attached to the /v1/public group only, which holds a single aggregate-counter GET; AllowMethods is [\"GET\"] and AllowCredentials is false. The authenticated /v1 group created on line 30 never receives it."
+    },
+    {
+      "id": "X-14",
+      "case": "fleet-relay",
+      "path": "fleet-relay/handlers/firmware.go",
+      "symbol": "Deps.UploadFirmware",
+      "line": 45,
+      "looks_like": "firmware images created world-writable with mode 0666",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "fleet-relay/main.go:22 - syscall.Umask(0o027) runs before the server is built, so the effective creation mode is 0640 and group-read is exactly what the provisioning rsync job needs."
+    },
+    {
+      "id": "X-15",
+      "case": "grant-policy",
+      "path": "grant-policy/policy/authz.rego",
+      "symbol": "allow (auditor rule)",
+      "line": 21,
+      "looks_like": "anyone holding the auditor role is allowed, on any action and any resource",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "grant-policy/policy/authz.rego:22-23 - the same rule body also requires input.action == \"read\" and startswith(input.resource.path, \"/api/grants/audit/\"); all three expressions must hold for the rule to fire."
+    },
+    {
+      "id": "X-16",
+      "case": "grant-policy",
+      "path": "grant-policy/policy/authz.rego",
+      "symbol": "allow (debug rule)",
+      "line": 35,
+      "looks_like": "an unconditional bypass - allow if the caller sets debug_bypass",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "grant-policy/service/src/main/java/com/northwind/grants/OpaClient.java:79-93 - inputFor assembles the decision document key by key (user, resource, action) from the SecurityIdentity and the UriInfo; no request field is copied through, so debug_bypass can never be present. The sidecar itself is loopback-only per application.properties:8."
+    },
+    {
+      "id": "X-17",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/OpaClient.java",
+      "symbol": "OpaClient.QUICKSTART_TOKEN",
+      "line": 28,
+      "looks_like": "a hardcoded bearer token for the policy decision API",
+      "shape": "public-sample",
+      "ruled_out_by": "grant-policy/service/src/main/java/com/northwind/grants/OpaClient.java:64-67 - the header is attached only when the configured OPA host is 127.0.0.1 or localhost; the value is the one published in the OPA quick start guide and the sidecar honours it on the loopback listener only."
+    },
+    {
+      "id": "X-18",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/GrantRepository.java",
+      "symbol": "GrantRepository.findByStatus",
+      "line": 36,
+      "looks_like": "JPQL injection - status is concatenated into the query text inside single quotes",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "grant-policy/service/src/main/java/com/northwind/grants/GrantResource.java:46 - the only call site passes GrantRepository.GrantStatus.valueOf(status).name(), so the argument is an enum constant name; anything else throws IllegalArgumentException before the repository is reached."
+    },
+    {
+      "id": "X-19",
+      "case": "grant-policy",
+      "path": "grant-policy/service/src/main/java/com/northwind/grants/GrantRepository.java",
+      "symbol": "GrantRepository.unsafeNativeSearch",
+      "line": 99,
+      "looks_like": "a native query assembled by string concatenation around a free-text term",
+      "shape": "dead-path",
+      "ruled_out_by": "no call site exists anywhere under grant-policy/. GrantResource uses findByStatus, create, update, approve and publications; GrantEventConsumer uses applyEvent; AttachmentResource injects the repository but calls nothing on it."
+    },
+    {
+      "id": "X-20",
+      "case": "session-broker",
+      "path": "session-broker/middleware/require_session.ts",
+      "symbol": "hasScope",
+      "line": 53,
+      "looks_like": "a '*' wildcard scope that satisfies every scope check in the service",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "session-broker/session/store.ts:44-49 and 69 - mintSession is the only writer of Session.scopes and derives them exclusively from SCOPES_BY_ROLE, whose four entries list concrete scopes and never '*'."
+    },
+    {
+      "id": "X-21",
+      "case": "session-broker",
+      "path": "session-broker/routes/auth.ts",
+      "symbol": "POST /auth/reset",
+      "line": 74,
+      "looks_like": "host header poisoning - the password reset link is built from the request's own Host header",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "session-broker/main.ts:19-27 - a middleware registered before every router rejects with 421 any request whose Host is not in config.allowedHosts, so only a published hostname can reach this handler."
+    },
+    {
+      "id": "X-22",
+      "case": "session-broker",
+      "path": "session-broker/routes/profile.ts",
+      "symbol": "viewFor",
+      "line": 35,
+      "looks_like": "holding the support role is enough to read anyone's email, phone and MFA state",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "session-broker/routes/profile.ts:35-37 - the same conjunction also requires session.activeTicketId !== null and session.orgId === record.orgId, so it covers an open ticket inside the reader's own organisation only."
+    },
+    {
+      "id": "X-23",
+      "case": "session-broker",
+      "path": "session-broker/routes/admin.ts",
+      "symbol": "legacyFlushAll",
+      "line": 33,
+      "looks_like": "an admin handler that flushes the entire session namespace",
+      "shape": "dead-path",
+      "ruled_out_by": "session-broker/routes/admin.ts:12, 21 and 26 - the router registers only /sessions, /sessions/:id and /orgs/:orgId/logout-everyone. legacyFlushAll is never passed to adminRouter, is not exported, and has no other reference in the tree."
+    },
+    {
+      "id": "X-24",
+      "case": "parcel-track",
+      "path": "parcel-track/src/store.rs",
+      "symbol": "Store::list_shipments",
+      "line": 122,
+      "looks_like": "an ORDER BY clause built by string interpolation from a caller-supplied sort key",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "parcel-track/src/handlers/shipments.rs:64-72 - sort_column maps the query string through an exhaustive match that returns one of four &'static str literals, and the store parameter is typed &'static str so no borrowed request data can reach it."
+    },
+    {
+      "id": "X-25",
+      "case": "parcel-track",
+      "path": "parcel-track/src/store.rs",
+      "symbol": "Store::get_shipment",
+      "line": 93,
+      "looks_like": "SQL injection - the shipment id is formatted into the statement while the account is bound",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "parcel-track/src/handlers/shipments.rs:96 and parcel-track/src/handlers/labels.rs:26 - both call sites extract it as web::Path<Uuid> / web::Path<(Uuid, String)>, so actix has already parsed a canonical UUID and rejected anything else with 400 before the format! runs."
+    },
+    {
+      "id": "X-26",
+      "case": "parcel-track",
+      "path": "parcel-track/src/config.rs",
+      "symbol": "SANDBOX_CARRIER_KEY",
+      "line": 9,
+      "looks_like": "a hardcoded carrier API key in the config module",
+      "shape": "public-sample",
+      "ruled_out_by": "parcel-track/src/config.rs:26-31 - the constant is chosen only when CARRIER_BASE is still the documented sandbox host; any other base makes env::var(\"CARRIER_KEY\") mandatory and panics at start-up if it is missing."
+    },
+    {
+      "id": "X-27",
+      "case": "parcel-track",
+      "path": "parcel-track/src/handlers/shipments.rs",
+      "symbol": "debug_dump",
+      "line": 143,
+      "looks_like": "an unauthenticated endpoint that dumps a thousand shipments across every account",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "parcel-track/src/handlers/shipments.rs:141 and parcel-track/src/main.rs:46 - both the handler and the .service() registration sit behind #[cfg(debug_assertions)], so neither exists in a release build."
+    },
+    {
+      "id": "X-28",
+      "case": "parcel-track",
+      "path": "parcel-track/src/store.rs",
+      "symbol": "Store::exec_raw",
+      "line": 209,
+      "looks_like": "a public helper that executes an arbitrary SQL string",
+      "shape": "dead-path",
+      "ruled_out_by": "no call site exists anywhere under parcel-track/. The handlers use insert_shipment, insert_shipments_bulk, get_shipment, get_shipment_any_account, list_shipments, dump_all, create_subscription, update_subscription, callback_secret and apply_scans only."
+    }
+  ]
+}

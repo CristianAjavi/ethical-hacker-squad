@@ -1,5 +1,12 @@
 # 2026-08-25 — a blinded audit of the vibecoding case
 
+> **Decoy figures on this page are an upper bound.** The thirteenth round measured that a
+> decoy hit was scored by LOCATION rather than by claim: **59% of this project's counted
+> false positives asserted a different CWE from the one the decoy was built to provoke**,
+> against 31% of `mantis`'s. Corpora before 2026-08-29 carry no `baits_cwe`, so their numbers
+> cannot be recomputed and are **not** rewritten from a field invented afterwards. See
+> [`../2026-08-29-baited-claim/`](../2026-08-29-baited-claim/).
+
 Six blinded runs against
 [the criteria committed before the first one](PREREGISTRATION.md). The prediction held.
 **The most useful thing in this round is the defect nobody found**, and it is at the
@@ -17,8 +24,14 @@ bottom rather than buried, because it is the finding.
 The blind was structural: the tree was copied out of the repository into a directory from
 which `bench/ground-truth.json` is not reachable. Every prompt, every report and the
 scorer's own output ship in `runs/` and `score.json`. The artifact directory is named `runs/` and not
-`reports/` because `.gitignore` line 31 ignores any directory called `reports/`, which
-silently kept the evidence for this round out of the commit until it was caught.
+`reports/` because `.gitignore` used to ignore any directory called `reports/` at any depth,
+which silently kept the evidence for this round out of the commit until it was caught.
+
+**That rule is now anchored** — `/reports/` rather than `reports/`, so it ignores the local audit
+output at the repository root and nothing named that anywhere else. The gate caught the symptom
+twice; renaming the directory fixed one round and left the trap set for the next. What was left on
+disk under `reports/` is byte-identical to the six files tracked in `runs/`, verified by hashing
+the parsed JSON of each pair, so nothing here is unpublished evidence.
 
 ## The pass is weak evidence, and that was said first
 

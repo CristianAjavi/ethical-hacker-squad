@@ -1,0 +1,534 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v3",
+    "arm": "mantis",
+    "run": 4,
+    "stages_run": [
+      "meta-agent(orchestrate)",
+      "architecture(KB)",
+      "threat-model",
+      "plan",
+      "researcher",
+      "dedupe",
+      "review",
+      "critic",
+      "reproduce",
+      "calibrate",
+      "report"
+    ],
+    "stages_skipped": [
+      "history: target is a plain directory with no VCS (.git absent) \u2014 no history to mine",
+      "structural-index: optional AST index; 52 files, exhaustive read used instead \u2014 grep/read fallback, index not needed",
+      "summarize: optional token-reduction pre-pass; corpus small enough to read in full, skipped to avoid writing mantis-summary.md into the read-only target",
+      "chain: no multi-step super-finding constructed this pass (findings stand alone); constituent findings reported individually per mantis chain policy",
+      "patch: target is read-only per instructions \u2014 no fixes applied; recommendations given instead",
+      "reflect: no per-subagent transcript logs exposed by this harness (ran inline, not via sub-agents)"
+    ],
+    "notes": "Ran inline (sequential fallback) per instruction; harness concurrency cap = the documented condition for sequential execution. MODE-OFF (no --sync): single static snapshot, all verdicts permitted. Offline runtimes available: node20, ruby2.6, jdk17, python3.12; unavailable: mvn/docker/helm/kubectl (Java/K8s findings confirmed statically or with standalone harnesses).",
+    "ruled_out": [
+      {
+        "assertion": "GraphQL eventBuckets/searchReports windowDays & limit are SQL-injectable",
+        "location": "pulsedeck-graphql/src/resolvers/reports.js:11",
+        "killed_by": "windowDays and limit are GraphQL Int! \u2014 coerced to JS numbers and non-integers rejected before the resolver; interpolating a validated number cannot inject. Only args.term (String!) is injectable (reported separately)."
+      },
+      {
+        "assertion": "requireAllowedOrigin + cors({origin:true}) is a CORS reflection bypass",
+        "location": "pulsedeck-graphql/src/server.js:39",
+        "killed_by": "requireAllowedOrigin (server.js:30-35) rejects any Origin not in the allowlist BEFORE the cors middleware runs, so origin:true only ever reflects an already-allowlisted origin; requireSession still gates on a principal."
+      },
+      {
+        "assertion": "Sinatra flash banner renders attacker HTML via <%== notice %>",
+        "location": "hearth-sinatra/views/layout.erb:21",
+        "killed_by": "take_notice maps the session key through the frozen App::NOTICES table (app.rb:25-48); only constant, developer-authored copy is ever emitted \u2014 no request data reaches the raw-output sink."
+      },
+      {
+        "assertion": "hearth recent_notes LIMIT/OFFSET interpolation is SQL-injectable",
+        "location": "hearth-sinatra/lib/db.rb:36",
+        "killed_by": "The route coerces both to integers before the call: Integer(params.fetch('per')) raises on non-ints and limit is clamped 0<limit<=100; page uses .to_i and max(\u2026,1). Only true integers reach the interpolation."
+      },
+      {
+        "assertion": "orderbook findByStatus interpolates status into SQL \u2192 injection",
+        "location": "orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java:65",
+        "killed_by": "status is bound as an OrderStatus enum by Spring (@RequestParam OrderStatus); an invalid value yields HTTP 400, so status.name() can only ever be one of the fixed enum constant names \u2014 not attacker text."
+      },
+      {
+        "assertion": "ledger NetworkPolicy allows two peers (namespace OR pod), widening ingress",
+        "location": "ledger-k8s/templates/networkpolicy.yaml:16",
+        "killed_by": "namespaceSelector and podSelector sit in the SAME from[] list entry, which is an AND: only gateway pods inside the platform namespace match. The template does what its comment claims."
+      },
+      {
+        "assertion": "ledger break-glass pod spec ships hostPID/hostNetwork/privileged into the cluster",
+        "location": "ledger-k8s/templates/_helpers.tpl:22",
+        "killed_by": "ledger.breakGlassPodSpec is a define that is never referenced by any template in the chart (grep: no matching include), so it renders nothing. Dead fragment kept for a runbook diff."
+      },
+      {
+        "assertion": "Checked-in ledger Secret leaks real credentials",
+        "location": "ledger-k8s/templates/secret.yaml:16",
+        "killed_by": "The base64 values decode to the literal strings 'placeholder-replaced-by-vault-injector' and 'not-a-real-token-see-vault-path'; the real values are injected by the Vault agent at admission (annotations, :12-13)."
+      },
+      {
+        "assertion": "tabsnap popup showPreview injects HTML via clip fields",
+        "location": "tabsnap-extension/popup.js:21",
+        "killed_by": "title and url are passed through escapeHtml before templating (popup.js:24); img src is the data: URL produced by chrome.tabs.captureVisibleTab, not attacker-authored. (The real extension risk is the onMessageExternal\u2192content.js innerHTML path, reported separately.)"
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Hardcoded Sinatra session secret enables session forgery",
+      "location": {
+        "path": "hearth-sinatra/app.rb",
+        "symbol": "session_secret",
+        "line": 17
+      },
+      "class": "Hardcoded credential / auth bypass (CWE-798/CWE-287)",
+      "severity": "high",
+      "evidence": "set :session_secret, 'hearth-notes-session-secret-v2' is a literal in the repo (app.rb:17). Rack signs the session cookie with this value.",
+      "impact": "Anyone who reads the source forges a valid session cookie with session[:uid] set to any user id (including an admin), bypassing login and the /admin gate entirely.",
+      "recommendation": "Load the session secret from an environment variable/secret store with a high-entropy value; rotate the leaked one."
+    },
+    {
+      "title": "SQL injection in note search (term interpolated into SQLite query)",
+      "location": {
+        "path": "hearth-sinatra/lib/db.rb",
+        "symbol": "search",
+        "line": 45
+      },
+      "class": "SQL injection (CWE-89)",
+      "severity": "high",
+      "evidence": "DB.search builds `... (title LIKE '%#{term}%' OR body LIKE '%#{term}%')` with term = params[:q] (app.rb:116). The owner_id is also interpolated (:44) but is a trusted DB value; term is fully attacker-controlled. Repro r7_sqli.py shows the payload %' UNION SELECT id,password_digest,email FROM users -- closes the LIKE and unions the users table.",
+      "impact": "Any authenticated user dumps arbitrary tables including bcrypt password digests and other users' notes via UNION-based injection.",
+      "recommendation": "Use bound parameters for the term: `WHERE owner_id=? AND (title LIKE ? OR body LIKE ?)` with '%'+term+'%' passed as a parameter."
+    },
+    {
+      "title": "Privileged pod mounts the host Docker socket (container escape)",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "spec.containers[0].securityContext",
+        "line": 46
+      },
+      "class": "Excessive privilege / container escape (CWE-250/CWE-1021)",
+      "severity": "high",
+      "evidence": "The container runs securityContext.privileged: true (deployment.yaml:46) and, when reconciler.mountDockerSocket (default true, values.yaml:48) is set, hostPath-mounts /var/run/docker.sock (deployment.yaml:88-91).",
+      "impact": "Anyone who can run code in the pod (e.g. via the RCE/SSTI elsewhere, or a supply-chain compromise) uses the docker socket to start a privileged container on the node and take over the host and, from there, the cluster.",
+      "recommendation": "Remove privileged:true and the docker.sock mount; if filesystem snapshots are required, use a dedicated, isolated job with least privilege rather than the app pod."
+    },
+    {
+      "title": "Path traversal in Lambda attachment staging (MIME filename used as path)",
+      "location": {
+        "path": "mailroom-lambda/src/common/storage.py",
+        "symbol": "stage_attachment",
+        "line": 39
+      },
+      "class": "Path traversal (CWE-22)",
+      "severity": "high",
+      "evidence": "stage_attachment joins the untrusted MIME part filename onto TMP_ROOT with os.path.join and writes it (storage.py:38-42); inbound._store_parts feeds part.get_filename() straight in (inbound.py:42-46). Repro r2_path_traversal.py used the real function: filename '../../escaped.txt' wrote OUTSIDE TMP_ROOT, and '/absolute/owned.txt' resolves to an absolute path (os.path.join discards the base on a leading slash).",
+      "impact": "A crafted inbound email writes attacker-controlled bytes to arbitrary writable paths in the function sandbox (e.g. overwriting /tmp tooling the scanner/thumbnailer later executes), enabling tampering and potential code execution.",
+      "recommendation": "Sanitize the filename to its basename and reject '..'/absolute paths: target = os.path.join(TMP_ROOT, os.path.basename(filename)) plus a realpath-prefix check."
+    },
+    {
+      "title": "Unauthenticated SSTI \u2192 RCE in render Lambda via inlineTemplate",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/render.py",
+        "symbol": "_render_inline",
+        "line": 42
+      },
+      "class": "Server-Side Template Injection (CWE-1336/CWE-94)",
+      "severity": "high",
+      "evidence": "handler() (render.py:70-71) passes the caller-supplied payload['inlineTemplate'] straight into _render_inline, which does jinja2.Template(source).render(**ctx) with no sandbox and no autoescape. The function sits behind a Lambda Function URL declared AuthType: NONE (template.yaml:108). Repro r3_ssti.py ran the real _render_inline with payload {{ self.__init__.__globals__.__builtins__.__import__('os').popen('id').read() }} and it executed `id`, returning uid=501(...).",
+      "impact": "Any internet host executes arbitrary Python in the render function's role (which can read the whole mail bucket). Full unauthenticated RCE.",
+      "recommendation": "Delete the inline-template path or compile untrusted templates in a sandboxed environment (jinja2.sandbox.ImmutableSandboxedEnvironment) with autoescape; never expose it on an unauthenticated Function URL."
+    },
+    {
+      "title": "Unauthenticated arbitrary S3 object read in render Lambda via messageKey",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/render.py",
+        "symbol": "handler",
+        "line": 63
+      },
+      "class": "Broken access control / IDOR (CWE-639/CWE-284)",
+      "severity": "high",
+      "evidence": "handler() reads storage.get_object(payload['messageKey']) (render.py:59,63) with no ownership or prefix check and returns the bytes inside the rendered HTML. The Function URL is AuthType: NONE (template.yaml:108) and the function holds S3ReadPolicy over the entire MailStore bucket (template.yaml:105-106).",
+      "impact": "Any internet caller reads any stored message/attachment in the mail bucket by naming its key \u2014 a full breach of stored mail confidentiality with no credentials.",
+      "recommendation": "Require authentication on the Function URL (AuthType: AWS_IAM or an auth check), and constrain messageKey to keys the caller owns (validate prefix / look up ownership)."
+    },
+    {
+      "title": "Hardcoded webhook signing secret in the SAM template",
+      "location": {
+        "path": "mailroom-lambda/template.yaml",
+        "symbol": "MAILROOM_SIGNING_SECRET",
+        "line": 29
+      },
+      "class": "Hardcoded credential (CWE-798)",
+      "severity": "high",
+      "evidence": "The delivery-webhook HMAC secret is a literal environment value (template.yaml:29) committed to the repo.",
+      "impact": "Anyone with repo/template access forges valid X-Mailroom-Signature headers for delivery callbacks; the shared secret cannot be rotated without a code change.",
+      "recommendation": "Move the secret to Secrets Manager / SSM SecureString referenced by the template; rotate the exposed value."
+    },
+    {
+      "title": "Cross-tenant order overwrite via XML import (update keyed on id only)",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java",
+        "symbol": "update",
+        "line": 79
+      },
+      "class": "Missing object-level authorization (CWE-639/CWE-284)",
+      "severity": "high",
+      "evidence": "XmlImportService sets order.setId(Long.parseLong(text(element,'id'))) from the attacker's feed (XmlImportService.java:63) then calls orders.update(order); OrderRepository.update's WHERE clause is `WHERE id = ?` with no org_id (OrderRepository.java:79,87). The importer never checks the row belongs to the caller's org.",
+      "impact": "An importing tenant overwrites any other tenant's order (status, total, shipping address, internal note) by putting the victim's id in the feed.",
+      "recommendation": "Scope the update to the caller org (UPDATE ... WHERE id=? AND org_id=?), or verify ownership before writing; never trust a client-supplied primary key."
+    },
+    {
+      "title": "XXE in the order XML import (external entity expansion enabled)",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/service/XmlImportService.java",
+        "symbol": "importFeed",
+        "line": 43
+      },
+      "class": "XML External Entity (CWE-611)",
+      "severity": "high",
+      "evidence": "DocumentBuilderFactory is built with setExpandEntityReferences(true) and no FEATURE_SECURE_PROCESSING, no disallow-doctype-decl, and external-general-entities left on (XmlImportService.java:38-46). Repro XxeRepro.java replicates the exact factory config and a DOCTYPE with <!ENTITY xxe SYSTEM 'file://.../secret_canary.txt'>; the canary file contents were parsed into customerRef and would be persisted and returned by GET /api/orders/{id}.",
+      "impact": "An importing tenant reads arbitrary local files (secrets, /etc/passwd) and can reach internal URLs (SSRF) via the parser, exfiltrated through the stored order fields.",
+      "recommendation": "Set factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true) (or disable external-general/parameter-entities and set XMLConstants.FEATURE_SECURE_PROCESSING). Do not enable entity expansion."
+    },
+    {
+      "title": "Cross-tenant order read: GET /api/orders/{id} omits the org predicate",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/web/OrderController.java",
+        "symbol": "get",
+        "line": 56
+      },
+      "class": "Missing object-level authorization / IDOR (CWE-639)",
+      "severity": "high",
+      "evidence": "get() calls orders.findById(id) (OrderController.java:56-61 \u2192 OrderRepository.findById, :44 `WHERE id = ?`), with no CallerContext and no org scoping, while every sibling (update/note) uses findByIdAndOrgId. Order ids are sequential longs.",
+      "impact": "Any authenticated tenant reads any other tenant's order \u2014 customer refs, money amounts, shipping addresses, internal notes \u2014 by iterating ids.",
+      "recommendation": "Resolve CallerContext and use findByIdAndOrgId(id, caller.orgId()) as the other handlers do; return 404 on mismatch."
+    },
+    {
+      "title": "Hardcoded production database password in application.yml",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "spring.datasource.password",
+        "line": 9
+      },
+      "class": "Hardcoded credential (CWE-798)",
+      "severity": "high",
+      "evidence": "The prod datasource password 0rd3rb00k-app-2024 is committed in application.yml:9.",
+      "impact": "Anyone with source access authenticates to the production Postgres database directly.",
+      "recommendation": "Externalize via env var / secret manager (${DB_PASSWORD}); rotate the exposed credential."
+    },
+    {
+      "title": "Unauthenticated H2 console enabled with web-allow-others",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "spring.h2.console",
+        "line": 26
+      },
+      "class": "Security misconfiguration (CWE-16/CWE-284)",
+      "severity": "high",
+      "evidence": "application.yml enables the H2 console globally with settings.web-allow-others: true (:21-26), and SecurityConfig permits it for everyone: requestMatchers(toH2Console()).permitAll() (SecurityConfig.java:70). The console lets a caller supply an arbitrary JDBC URL.",
+      "impact": "An unauthenticated remote attacker reaches /h2-console and can connect to arbitrary JDBC targets / the in-memory DB, a well-known path to data access and RCE.",
+      "recommendation": "Disable the H2 console in production (h2.console.enabled: false) and never permitAll() it; remove web-allow-others."
+    },
+    {
+      "title": "JWT signature-verification bypass via decode() fallback in attachPrincipal",
+      "location": {
+        "path": "pulsedeck-graphql/src/auth/token.js",
+        "symbol": "identify",
+        "line": 30
+      },
+      "class": "Broken authentication (CWE-287/CWE-347)",
+      "severity": "high",
+      "evidence": "attachPrincipal (server.js:50-57) calls verify(); on ANY exception it falls back to identify(raw), which is jwt.decode() \u2014 no signature, no expiry check (token.js:30-33). Repro r6_jwt.js against the real token.js: verify() rejects a garbage-signed token, but identify() returns {id:'attacker',org:'999',role:'admin'}. requireSession only checks that req.principal is truthy, so the forged principal is accepted and every resolver trusts ctx.user.org/role.",
+      "impact": "Any unauthenticated attacker forges a token for any org and role, defeating the entire tenancy and role model of the API.",
+      "recommendation": "Remove the identify() fallback. On verify failure return 401; handle background token rollover with a real refresh flow, never by accepting an unverified token."
+    },
+    {
+      "title": "SQL injection in GraphQL searchReports (term interpolated)",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/reports.js",
+        "symbol": "searchReports",
+        "line": 38
+      },
+      "class": "SQL injection (CWE-89)",
+      "severity": "high",
+      "evidence": "searchReports interpolates args.term directly into `title ILIKE '%${args.term}%' OR description ILIKE '%${args.term}%'` (reports.js:38) while org_id is correctly bound as $1. term is a GraphQL String! and fully attacker-controlled. The sibling queries (users.js, exportReport, saveReport) use $-parameters, confirming the pattern break.",
+      "impact": "Any authenticated caller runs UNION-based injection to read cross-tenant data including users.reset_token and email.",
+      "recommendation": "Bind the term as a parameter ($2) and pass '%'+term+'%'; never string-concatenate request values into SQL."
+    },
+    {
+      "title": "Password-reset tokens exposed to every org member via orgMembers",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/users.js",
+        "symbol": "orgMembers",
+        "line": 32
+      },
+      "class": "Sensitive data exposure (CWE-200/CWE-522)",
+      "severity": "high",
+      "evidence": "The GraphQL User type exposes resetToken (schema.graphql:14); toUser maps row.reset_token onto it (users.js:11-21) and orgMembers selects MEMBER_COLUMNS including reset_token for every user in the org (users.js:5-7,32-38). Any member can query { orgMembers { email resetToken } }.",
+      "impact": "Any authenticated org member reads every colleague's outstanding password-reset token and takes over their account.",
+      "recommendation": "Remove resetToken from the GraphQL schema and from MEMBER_COLUMNS; reset tokens must never leave the server."
+    },
+    {
+      "title": "Extension is world-connectable: any web page can exfiltrate screenshots and inject HTML",
+      "location": {
+        "path": "tabsnap-extension/background.js",
+        "symbol": "onMessageExternal",
+        "line": 54
+      },
+      "class": "Broken authentication / universal XSS (CWE-1021/CWE-79)",
+      "severity": "high",
+      "evidence": "manifest.json sets externally_connectable.matches to ['*://*/*'] (manifest.json:24-26); onMessageExternal routes into the same handle() as the trusted popup (background.js:54-57) with no sender/origin check. Via handle(): 'capture' returns the active tab's url/title + full screenshot to the caller (background.js:22-25), and 'annotate' forwards an attacker-supplied note to content.js, which assigns it to node.innerHTML with NO escaping (content.js:45) \u2014 the popup's markdownLite escaping is bypassed on the external path.",
+      "impact": "Any website the victim visits silently screenshots and reads the URL/title of the victim's active tab, and injects arbitrary HTML/script into whatever page is currently focused (cross-origin).",
+      "recommendation": "Restrict externally_connectable.matches to the workspace origin(s); verify sender.origin/id in onMessageExternal; and treat note as text (textContent), not innerHTML."
+    },
+    {
+      "title": "nameOverride desynchronizes NetworkPolicy/Service selectors from the pods (fails open)",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "spec.selector.matchLabels",
+        "line": 16
+      },
+      "class": "Security misconfiguration (CWE-16)",
+      "severity": "medium",
+      "evidence": "Deployment hardcodes app.kubernetes.io/name: ledger in its selector and pod labels (deployment.yaml:6,16-18,22-23), while Service and NetworkPolicy select via include 'ledger.selectorLabels' \u2192 include 'ledger.name' which honors .Values.nameOverride (_helpers.tpl:4-15, networkpolicy.yaml:9,20-22). If nameOverride is set, the NetworkPolicy podSelector no longer matches the pods.",
+      "impact": "With a nameOverride, the NetworkPolicy selects zero pods, silently removing all ingress restrictions (and the Service stops routing) \u2014 a fail-open on the network control.",
+      "recommendation": "Derive the Deployment selector/labels from the same helper the other templates use so all three stay in sync."
+    },
+    {
+      "title": "Hardcoded operator password in the ledger Deployment",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "LEDGER_ADMIN_PASSWORD",
+        "line": 65
+      },
+      "class": "Hardcoded credential (CWE-798)",
+      "severity": "medium",
+      "evidence": "LEDGER_ADMIN_PASSWORD is a literal env value 'r3conc1le-op-2024!' rendered into every pod (deployment.yaml:64-65), visible to anyone who can read the manifest or `kubectl describe pod`.",
+      "impact": "The built-in operator account the reconciler signs in with is compromised for anyone with manifest/pod read access.",
+      "recommendation": "Source it from the (already-present) Vault-injected secret or a secretKeyRef; rotate it."
+    },
+    {
+      "title": "Upstream TLS verification disabled to the clearing house",
+      "location": {
+        "path": "ledger-k8s/values.yaml",
+        "symbol": "upstream.insecureSkipTLSVerify",
+        "line": 35
+      },
+      "class": "Improper certificate validation (CWE-295)",
+      "severity": "medium",
+      "evidence": "upstream.insecureSkipTLSVerify: true is wired into LEDGER_UPSTREAM_INSECURE (deployment.yaml:53-54), disabling cert validation on the hop to clearing.partner.example.",
+      "impact": "An in-path attacker on that hop can MITM the clearing-house channel (financial messages), reading and tampering with settlement traffic.",
+      "recommendation": "Ship the partner CA into the trust store and verify the chain; never skip verification for a financial upstream."
+    },
+    {
+      "title": "Unsigned delivery callbacks are accepted as valid",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/webhook.py",
+        "symbol": "verify_signature",
+        "line": 48
+      },
+      "class": "Improper authentication / signature bypass (CWE-347/CWE-287)",
+      "severity": "medium",
+      "evidence": "verify_signature returns True when no X-Mailroom-Signature header is present (webhook.py:44-49). Repro r1_webhook_unsigned.py against the real module: with the correct secret set, verify_signature({}, body, secret) returns True (an unsigned callback is accepted), while a wrong signature is correctly rejected.",
+      "impact": "Any internet caller to the API Gateway route forges delivery-state records for arbitrary message ids without knowing the secret, corrupting delivery state.",
+      "recommendation": "Fail closed when the signature header is absent; require and verify the HMAC on every callback."
+    },
+    {
+      "title": "Org-wide S3 bucket policy grants read to every account in the organization",
+      "location": {
+        "path": "mailroom-lambda/template.yaml",
+        "symbol": "MailStorePolicy",
+        "line": 63
+      },
+      "class": "Overly permissive resource policy (CWE-732)",
+      "severity": "medium",
+      "evidence": "MailStorePolicy allows Principal '*' s3:GetObject/ListBucket on the mail bucket, conditioned only on aws:PrincipalOrgID (template.yaml:54-72).",
+      "impact": "Every principal in the entire AWS Organization \u2014 not just the archival crawler \u2014 can read all stored mail, a much wider blast radius than intended.",
+      "recommendation": "Scope the principal to the specific crawler role ARN(s); do not grant to the whole org with Principal '*'."
+    },
+    {
+      "title": "Over-broad IAM on the inbound function (s3:* + secretsmanager:* on *)",
+      "location": {
+        "path": "mailroom-lambda/template.yaml",
+        "symbol": "InboundFunction.Policies",
+        "line": 89
+      },
+      "class": "Excessive privilege (CWE-250/CWE-732)",
+      "severity": "medium",
+      "evidence": "InboundFunction is granted Action s3:* and secretsmanager:* on Resource '*' (template.yaml:86-91).",
+      "impact": "A compromise of the inbound handler (it does SSRF fetches and has an eval path) yields read/write/delete over every bucket and read of every secret in the account.",
+      "recommendation": "Scope to the specific bucket ARN and the specific secret ARNs with least-privilege actions (GetObject/PutObject; GetSecretValue)."
+    },
+    {
+      "title": "JWT roles claim is never mapped to authorities; hasRole gates are not backed by the token",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java",
+        "symbol": "resolve",
+        "line": 93
+      },
+      "class": "Broken access control (CWE-285/CWE-863)",
+      "severity": "medium",
+      "evidence": "The bearer token is parsed by a HandlerMethodArgumentResolver (SecurityConfig.java:77-94, 115-131), not by a Spring Security filter, so claims.get('roles') never becomes a GrantedAuthority. Yet authorization is declared with .hasRole('OPS') on /export and /import (:71-72). The role check and the token are decoupled.",
+      "impact": "The declared OPS-only protection on export/import is not enforced by anything the token carries; depending on how the chain authenticates, role enforcement is either absent or incoherent. Marked medium pending dynamic confirmation of the running auth chain (could not run Spring offline).",
+      "recommendation": "Authenticate the JWT in a security filter (e.g. a OncePerRequestFilter / JwtAuthenticationConverter) that maps the roles claim to authorities, so hasRole() reflects the token."
+    },
+    {
+      "title": "Actuator fully exposed (exposure include '*')",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "management.endpoints.web.exposure",
+        "line": 39
+      },
+      "class": "Security misconfiguration / info exposure (CWE-16/CWE-200)",
+      "severity": "medium",
+      "evidence": "management.endpoints.web.exposure.include is '*' (application.yml:35-39). Only /actuator/health and /info are permitAll; the rest sit behind anyRequest().authenticated(), but env/mappings/etc. are exposed if any authenticated caller (or the ambiguous auth chain) reaches them.",
+      "impact": "Sensitive environment, bean, and mapping details are reachable, aiding further attack; /actuator/env can leak configuration.",
+      "recommendation": "Expose only health and info in production (include: health,info); never '*'."
+    },
+    {
+      "title": "Database TLS certificate validation disabled (rejectUnauthorized:false)",
+      "location": {
+        "path": "pulsedeck-graphql/src/db.js",
+        "symbol": "pool",
+        "line": 16
+      },
+      "class": "Improper certificate validation (CWE-295)",
+      "severity": "medium",
+      "evidence": "The pg Pool sets ssl.rejectUnauthorized:false (db.js:16), accepting any certificate on the DB connection.",
+      "impact": "An in-path attacker between the API and Postgres can MITM the connection and read/modify all query traffic (users, tokens, tenant data).",
+      "recommendation": "Pin the provider's internal CA (ssl.ca) and keep rejectUnauthorized:true."
+    },
+    {
+      "title": "deactivateUser has no role check (any member can deactivate any user in their org)",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/users.js",
+        "symbol": "deactivateUser",
+        "line": 54
+      },
+      "class": "Missing function-level authorization (CWE-862)",
+      "severity": "medium",
+      "evidence": "The mutation updates users SET active=false scoped to ctx.user.org but with no role check (users.js:52-60); the comment concedes the 'owner-only' restriction lives only in the console UI.",
+      "impact": "Any authenticated org member (including a VIEWER) deactivates arbitrary colleagues, a denial-of-service against other users' access.",
+      "recommendation": "Enforce the owner/admin role server-side before deactivating."
+    },
+    {
+      "title": "Command injection in dead legacy_import (tar via string interpolation)",
+      "location": {
+        "path": "hearth-sinatra/lib/attachments.rb",
+        "symbol": "legacy_import",
+        "line": 29
+      },
+      "class": "OS command injection (CWE-78)",
+      "severity": "low",
+      "evidence": "legacy_import runs system(\"tar xf #{archive_path} -C #{dest}\") (attachments.rb:29) with archive_path interpolated into a shell command. No route calls it.",
+      "impact": "If reintroduced, a crafted archive path yields shell command execution. Not reachable today.",
+      "recommendation": "Use the array form of system (no shell) and validate the path; or remove the dead importer."
+    },
+    {
+      "title": "Stored HTML/JS in notes (markdown renders raw HTML)",
+      "location": {
+        "path": "hearth-sinatra/lib/markdown.rb",
+        "symbol": "renderer",
+        "line": 20
+      },
+      "class": "Cross-site scripting (CWE-79)",
+      "severity": "low",
+      "evidence": "Markdown is rendered with filter_html:false and escape_html:false (markdown.rb:18-24) and emitted via <%== body_html %> (views/note.erb:6), so a note body containing <script> is served verbatim. Notes are scoped to their owner (DB.note filters by owner_id), so there is no cross-user delivery path today.",
+      "impact": "Self-stored XSS: a user can inject script into their own note view. Limited blast radius (own data), but risky if a note is ever shared or rendered in an admin context.",
+      "recommendation": "Enable escape_html/filter_html in Redcarpet or sanitize the rendered HTML (e.g. an allowlist sanitizer) before output."
+    },
+    {
+      "title": "ServiceAccount token automounted by default",
+      "location": {
+        "path": "ledger-k8s/templates/rbac.yaml",
+        "symbol": "automountServiceAccountToken",
+        "line": 10
+      },
+      "class": "Excessive privilege (CWE-250)",
+      "severity": "low",
+      "evidence": "The ServiceAccount sets automountServiceAccountToken: true (rbac.yaml:10). The Deployment opts out per-pod (:31), but any other pod using this SA (or a forgotten opt-out) gets the API token, and the SA's Role can get/watch the db secret.",
+      "impact": "A token mounted into an unexpected pod grants get/watch on the ledger-db secret and configmaps.",
+      "recommendation": "Default the SA to automountServiceAccountToken:false and opt in only where a token is actually required."
+    },
+    {
+      "title": "Debug/pprof port mounted and published on the Service",
+      "location": {
+        "path": "ledger-k8s/values.yaml",
+        "symbol": "debug.pprofEnabled",
+        "line": 41
+      },
+      "class": "Information exposure (CWE-489/CWE-215)",
+      "severity": "low",
+      "evidence": "debug.pprofEnabled defaults true (values.yaml:41); it wires LEDGER_PPROF on and publishes the debug port on the Service (service.yaml:16-20, deployment.yaml:41-42,55-56). /debug/pprof and expvar stay mounted.",
+      "impact": "In-cluster callers reach profiling/expvar endpoints, leaking memory/runtime internals and enabling resource-exhaustion probes.",
+      "recommendation": "Disable pprof by default; if needed, bind it to localhost only and never expose it on a Service."
+    },
+    {
+      "title": "SSRF via SNS-supplied attachment URL",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/inbound.py",
+        "symbol": "_fetch_remote_attachment",
+        "line": 29
+      },
+      "class": "Server-side request forgery (CWE-918)",
+      "severity": "low",
+      "evidence": "inbound.handler fetches note['attachmentUrls'][*]['url'] with requests (inbound.py:26-34,59-61). If an attacker can influence the SNS notification (or SES-published pointer), the function makes a GET to an arbitrary URL from inside the VPC.",
+      "impact": "Attacker-influenced URLs let the function reach internal endpoints / cloud metadata, subject to the trust of the SNS source.",
+      "recommendation": "Validate the URL host against an allowlist of expected SES/attachment domains before fetching."
+    },
+    {
+      "title": "eval() on queue payload in dead replay path",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/inbound.py",
+        "symbol": "_reprocess_v1",
+        "line": 77
+      },
+      "class": "Code injection (CWE-95)",
+      "severity": "low",
+      "evidence": "_reprocess_v1 does note = eval(queue_body) on a string described as coming from an old queue (inbound.py:76-77). No current caller invokes it.",
+      "impact": "If the replay tool is ever pointed at this, an attacker who controls the queue body achieves RCE. Latent/unreachable today.",
+      "recommendation": "Replace eval with ast.literal_eval or json.loads; remove the dead path."
+    },
+    {
+      "title": "Unsigned/unverified JWT parser present (parseUnverifiedLegacy)",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java",
+        "symbol": "parseUnverifiedLegacy",
+        "line": 105
+      },
+      "class": "Broken authentication primitive (CWE-347)",
+      "severity": "low",
+      "evidence": "parseUnverifiedLegacy uses Jwts.parser().build().parseUnsecuredClaims(...) to read claims with no signature check (SecurityConfig.java:104-113). It is @Deprecated and not called by any current code path.",
+      "impact": "A latent auth-bypass primitive: any future caller wiring this in would trust attacker-authored claims. Not reachable today.",
+      "recommendation": "Delete the method so it cannot be reintroduced."
+    },
+    {
+      "title": "Dead SQL-injectable helper legacyRollupByTenant",
+      "location": {
+        "path": "pulsedeck-graphql/src/db.js",
+        "symbol": "legacyRollupByTenant",
+        "line": 48
+      },
+      "class": "SQL injection (CWE-89)",
+      "severity": "low",
+      "evidence": "legacyRollupByTenant interpolates tenantName straight into the SQL string (db.js:48-55). Exported but not called anywhere in the repo.",
+      "impact": "Intrinsic injection sink; would be exploitable if any resolver starts calling it. Not reachable today.",
+      "recommendation": "Remove it or convert to a parameterized query before any use."
+    },
+    {
+      "title": "Extension over-permissions: unused debugger permission and wildcard web_accessible_resources",
+      "location": {
+        "path": "tabsnap-extension/manifest.json",
+        "symbol": "permissions",
+        "line": 19
+      },
+      "class": "Excessive privilege (CWE-250)",
+      "severity": "low",
+      "evidence": "manifest requests the powerful 'debugger' permission (manifest.json:19) which no code uses, and declares web_accessible_resources resources:['*'] for matches:['<all_urls>'] (manifest.json:34-38), exposing every packaged resource to any page.",
+      "impact": "Enlarges the extension's attack surface and enables fingerprinting of installed resources; the debugger permission would be a severe escalation if the worker were compromised.",
+      "recommendation": "Drop the debugger permission; narrow web_accessible_resources to the specific files and origins that need them."
+    }
+  ]
+}

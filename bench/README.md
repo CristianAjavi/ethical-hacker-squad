@@ -2,6 +2,26 @@
 
 Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
 
+## The artifacts here are not the artifact the plugin ships
+
+`bench/runs/*/runs/*.json` and the plugin's `findings.json` are two different shapes with
+overlapping names, and confusing them is easy: this paragraph exists because the author of it
+did, five minutes before writing it, and measured 10,450 shipped findings against the wrong
+required-field list before checking which contract applied.
+
+| | governed by | required fields include | who reads it |
+|---|---|---|---|
+| the plugin's deliverable | [`findings.schema.json`](../skills/ethical-hacker-squad/references/findings.schema.json), enforced by `gate-findings-artifact.sh` over its fixtures | `id`, `procedure`, `confidence`, `traceability`, `triage` | a user of the plugin |
+| a round's scoring input, here | the round's own prompt, quoted in its `prompts/` | `title`, `location`, `severity`, `status`, `triage`, plus whatever that round registered — `cwe`, `searched`, `class` | `score.py` |
+
+The harness shape is **deliberately reduced**. A round asks for the fields its pre-registration
+scores and nothing else, because every extra required field is a demand on both arms and a
+chance to advantage the arm that already writes it. So a bench artifact missing `confidence` is
+not a defect: that field was never asked for.
+
+`gate-findings-artifact.sh` states its scope on every run — *the fixtures under
+`scripts/gates/fixtures/findings`* — and it is right not to reach into this directory.
+
 ## The triage stage, run and unmeasured
 
 [2026-08-24, triage stage](runs/2026-08-24-triage-stage/) — twelve runs, six per arm,
@@ -85,6 +105,307 @@ as nothing. And the precondition on its own page paid for the round twice over: 
 list *before* running found that the query shipped that morning did not list the defect at
 all, because Django dispatches its log level at runtime. `0 of 4` would have been recorded as
 a fact about ranking when it was a fact about the query.
+
+## The metric was measuring something else, and correcting it still is not enough
+
+[2026-08-29, baited claim](runs/2026-08-29-baited-claim/) — **not supported** on both the old
+metric and the corrected one.
+
+Each decoy declared the CWE it baits; every finding carried one, required of both arms. **59% of
+this project's counted false positives asserted a different CWE from the one the decoy was built to
+provoke**, against 31% of `mantis`'s. Correcting that removes 46% of this project's decoy hits and
+31% of the competitor's — it helps the party that proposed it, by more — **and this project is still
+worse, 6.33 against 3.67.**
+
+**That page was published wrong twice first**, both times by scoring a report while its agent was
+still writing: the file passed through 68 findings, then 41, then 69. The second wrong version was
+issued *as a correction*, carrying the rule *a report may not be scored until its agent has reported
+completion* — and was itself scored before that agent reported. The rule and its breach shipped in
+one commit.
+
+The round is also scoreable **only by including a partial run**: `ours-3` never staffed its Airflow
+lane and never ran its blind stage, and dropping it leaves the scorer answering *unmeasurable, only
+2 valid runs*.
+
+So, as pre-registered: every decoy figure here is an **upper bound**, and
+[the ninth round](runs/2026-08-26-scope-field/) — the only one whose decoy half this project won —
+is the first to re-read. Retired corpora have no `baits_cwe` and are **not** rewritten from a field
+invented afterwards.
+
+Two things measured for the first time: **class breadth**, 46 distinct identifiers per run against
+26 at almost the same findings-per-class ratio; and a blind `VER-09` stage that **raised** a
+severity instead of only removing findings.
+
+## What moved a number, and what did not
+
+[WHAT-MOVES-A-NUMBER.md](WHAT-MOVES-A-NUMBER.md) — six interventions that asked someone to reason
+better, and three checks measured before they were built.
+
+**The six moved nothing they were aimed at**, including two the ledger's own findings recommended.
+**The three measurements killed all three designs before they shipped**, and two of them would have
+flattered this project had they shipped unmeasured.
+
+Every row links to the page that measured it, and the aggregate claim is stated no more strongly
+than those rows support.
+
+## The floor was refuted, and it exposed something worse than noise
+
+[2026-08-28, severity floor](runs/2026-08-28-severity-floor/) — **not supported**, and the
+registered rule fired: **the floor is withdrawn, not tuned.**
+
+Dropping `low` cut this project's decoys from 6.00 to 3.33 and `mantis`'s from 3.67 to **0.33** —
+the ratio went from 1.6× to **10×** — while costing **7.2 points of recall**. The pre-registration
+said a recall fall over 3 points means `low` was carrying real defects and the floor is withdrawn
+rather than re-thresholded. The tenth and eleventh rounds' post-hoc observation **did not
+replicate**, which is what a corpus-specific artefact does.
+
+The secondary is why the round matters more than its verdict. Of the nine planted defects this
+project labelled `low`, **five are `high`** by the key's own honest severity. Matching every real
+defect against `true_severity`: this project agrees 64% of the time against `mantis`'s 59% — and
+still puts **ten high-severity defects in the bucket a reader skips**, where `mantis` puts
+**zero**. Its errors are one step, `high`→`medium`; ours are two.
+
+**An auditor that finds an authorization bypass and calls it low is worse than one that misses it**,
+because it hands the reader a written reason to ignore it. No previous round could see this: no
+previous corpus carried an honest severity per planted defect.
+
+## The blind judge failed its own control, twice
+
+[bench/judge](judge/) — instrument work, not a round. Four judges, blind to the arm and to a sealed
+key, ruled on sixty findings of which twenty were controls. **All four separated planted from decoy
+at 11–13 of 20**, calling 7 of 10 planted decoys true; forcing the disqualifying search — the
+eleventh round's own lever — changed nothing. A judge that rules `true` on 38–40 of the 40 real
+questions has measured nothing, so **the outside-the-key question is exactly as open as it was.**
+
+Reading the failures produced the second result: in **4 of 4** cases examined the judge named the
+very file the key says disqualifies the finding, and ruled true anyway on a narrower claim the
+exculpation does not touch. **Which exposes that a decoy hit is scored by LOCATION, not by claim** —
+a finding within six lines of a planted decoy counts as one whatever it asserts. The decoy rate,
+the half of the band this project has failed ten times, has a known defect of unmeasured size, and
+until it is measured every decoy figure here should be read as an upper bound.
+
+## The decoy rate measures a fifth of what one arm reports
+
+[2026-08-27, what the key cannot see](runs/2026-08-27-what-the-key-cannot-see/) — **not a round,
+not pre-registered**, computed from the twelve reports already published. It changes how every band
+verdict here should be read.
+
+Classifying every finding of both arms: they land on **nearly the same planted defects** (27.7
+against 26.3 in the eleventh round), and this project reports **three times as many findings the
+key says nothing about** — 51.0 against 16.3, then 30.3 against 9.0. That gap is larger than the
+recall gap and the decoy gap combined, and the bench cannot say whether any of it is worth having.
+
+The band's decoy half counts only findings that hit a **planted** decoy: 10.0 of 68.0 findings.
+**The measure sees about one finding in eight.** So it is not a precision measure — it measures how
+often an arm walks into a trap the corpus author set.
+
+No verdict is revised: each was measured as registered, and rewriting them on an unregistered
+analysis is the move these pages refuse. What changes is what they mean. And "outside the key" is
+**not** "false" — these are plausible services, real unplanted defects certainly exist in them, and
+nothing here decides which way those 51 findings fall.
+
+## The aim worked, and the excess moved somewhere nobody was aiming
+
+[2026-08-27, negative search](runs/2026-08-27-negative-search/) — **not supported**, and the first
+round in which a **registered prediction was met.** Recall ahead 7.9; decoys 8.33 against 7.67,
+failing by **0.66 per run**, the narrowest margin recorded.
+
+The three decoy shapes named in the pre-registration — `constrained-elsewhere`,
+`unreachable-earlier-layer`, `coerced-upstream` — carry a combined excess of **exactly zero**,
+down from +2.00, +1.67 and +1.33. And the total excess is +0.66, carried by **`dead-path`, which
+nobody aimed at.**
+
+That makes two rounds where the aim worked locally and the total did not follow: the ninth
+targeted `narrowed-sibling` and its gains came from unaimed shapes; this one hit three targets and
+the excess reappeared in a fourth. **The false positives are not a property of a shape that can be
+fixed shape by shape.** Both rounds only caught it because they named their target in advance.
+
+The required `searched` field was used as an action rather than a sentence in both arms — three
+distinct places per finding, 45% of entries recording a negative result — so the failure mode that
+killed `narrowed_by` did not repeat.
+
+## Both products as they ship, and the curve did not move
+
+[2026-08-26, as designed](runs/2026-08-26-as-designed/) — **not supported.** The first round to
+launch each arm at its own entry point with no architectural constraint. Recall condition **met**
+by the widest stable margin yet — **+9.3 points**, ahead at every window — and the decoy condition
+failed by the largest: **10.00 against 3.67**.
+
+The registered secondary is the reason it was worth running. **Findings scale with how much of the
+squad formed; recall does not** — 137/85/53 findings for 7/3/1 own contexts is monotone, 88.9%/61.1%/66.7%
+recall is not, and only the fully-formed squad stands out on one run. Meanwhile **`mantis`'s numbers
+barely move with its own fan-out** (zero sub-agents: 63.9%; six: 58.3%), which measures what the
+[inline correction](runs/CORRECTION-inline-constraint.md) could only fear: for that arm the
+constraint cost close to nothing.
+
+What the squad buys is **volume** — 91.7 findings per run against 44.7, at 1.8× the wall time and
+2.7× the decoys. Movement along the curve this ledger has documented since round three, not off it.
+
+A first attempt is published as spoiled: eight arms in parallel, each fanning out six to thirteen
+ways against a cap of twenty, so neither product could run as designed. The cause was the harness
+author's design and it is written on the page.
+
+## The precision half, met at last, and the recall half lost in the same breath
+
+[2026-08-26, scope field](runs/2026-08-26-scope-field/) — **inconclusive.** For the first time in
+nine rounds the decoy condition is met — **7.50 against 10.75** — and the recall condition fails:
+**80.9% against 80.3%**, a quarter of a defect.
+
+The registered prediction is still not met. The excess on the target shape collapsed from +1.50
+to +0.25, but **this project moved 1.75 → 1.50 while `mantis` moved 0.25 → 1.25**: most of the
+collapse is the competitor getting worse, not this project getting better.
+
+And the whole −3.25 comes from **two shapes the field was not written for**, `constrained-elsewhere`
+and `dead-path`. So a required field still beats a rule, and **aiming either at a specific shape
+still fails.**
+
+## The diagnosis reproduced and the remedy failed
+
+[2026-08-26, FP-11](runs/2026-08-26-fp11/) — **not supported**, eighth round. **74.3% recall
+against 65.3%** — the widest lead yet, +9.0 — and **5.50 decoys against 4.25**.
+
+The registered secondary is the result. On a corpus whose decoy shapes are evenly spread,
+**the entire excess is one shape**: `narrowed-sibling`, 1.75 against 0.25, +1.50 of a +1.25
+total. Every other shape is level or better for this project.
+
+So the seventh round's diagnosis — which rested on n=2 and said so — **reproduced**. And
+`FP-11`, the rule written for it, cited in the file every role reads, given an eval case and a
+sealed key row, **did not move the number**. A rule the executor reads is still a rule the
+executor can read and not apply, and that is now measured five ways in one day.
+
+## The tools did not carry the round
+
+[2026-08-26, four tools](runs/2026-08-26-four-tools/) — **not supported**, seventh round, same
+failing half: **78.3% recall against 72.4%** (+5.9) and **3.00 decoys against 2.00**.
+
+The registered secondary answered the opposite of what was expected. This project leads on the
+mechanisms its tools address (+8.3) **and on the 29 defects no tool addresses (+5.2)**. And
+`from_tool`, required on every finding this round, counts **8 of 189** findings as coming from a
+tool: `path_coverage.py` and `writer_parity.py` contributed **zero**.
+
+That reverses what this repository was saying earlier the same day. The tools were fitted to the
+corpus they were built against, and on six stacks they had never seen, two of four were silent.
+**Overfitting, invisible until a corpus was commissioned that they could not dominate.**
+
+## The join moves composition detection by a third of what was asked
+
+[2026-08-26, join effect](runs/2026-08-26-join-effect/) — **not supported.** With
+`path_coverage.py` wired in, composition recall goes **62.5% → 65.6%**: +3.1 points against a
+band of 8, or 0.75 defects out of 24. Single-file recall unchanged, decoys +0.50 and inside
+tolerance, so the registered failure mode — recall bought with noise — did not happen. A
+within-arm measurement; it says nothing about any competitor.
+
+A real run found a defect no fixture had: on a tree of six independent services the join puts
+every route in one namespace and emits **32 false UNGUARDED**. The run isolated the true
+`DEAD GUARD` only by re-running the tool per directory. The tool was not changed mid-arm, the
+fix is filed, and this corpus is retired for the question, so whether the fix would have
+carried it to the band cannot be answered here.
+
+## A blind spot that belongs to the field
+
+[2026-08-27, composition](runs/2026-08-27-composition/) — **refuted** (73.6% against 72.9%),
+and that is the least interesting thing on the page.
+
+On a corpus built so that most defects require reading two or three files together, both arms
+find **essentially every single-file defect and lose four in ten composition defects**:
+
+| arm | composition | single-file |
+|---|---|---|
+| this project | 62.5% | 93.8% |
+| `mantis` | 60.4% | **100.0%** |
+
+A forty-point collapse in the same place, for two products with entirely different
+architectures. The three defects **neither** arm found in any run are three out of three
+composition. The discrimination check was registered *before* the runs this time, and passed:
+reach 83.3% and 88.9%, both under the 90% line the previous round failed after the fact.
+
+## The control works; the band is refuted anyway
+
+[2026-08-27, artifact contract](runs/2026-08-27-artifact-contract/) — the shipped contract
+requiring an answered `FP-nn` rule per finding was **cited by no agent** until this round. With
+it required, the decoy rate fell **9.50 → 6.00**, below `mantis`'s 7.75, at a recall cost of 2.4
+points — the registered prediction, confirmed on both halves.
+
+**The band is refuted anyway**: `mantis` 95.5% against 93.9% at the reported window. But the
+sign of that gap **flips across windows** (+0.8, +0.8, −1.5, +1.5), so the arms are
+indistinguishable on recall at this sample size; the decoy advantage is stable at every window.
+
+The contract was exercised rather than filled in: **0% `NOT_APPLICABLE`**, 10 distinct rules per
+run, assertions killed up from ~18 to **27.8**.
+
+Four rounds: behind on recall → ahead on recall and worse on noise → level on recall and better
+on noise. **Level is not best.**
+
+## The refutation stage ran, and it changed nothing
+
+[2026-08-26, refutation stage](runs/2026-08-26-refutation-stage/) — **not supported**, same
+conjunction, same failing half. **96.3% recall against `mantis`'s 84.6%** on six stacks these
+procedures had never seen, and **9.50 decoys per run against 3.75**.
+
+`VER-09` was wired to the roles' entry point and it *ran* — 15 to 21 assertions killed per run,
+each naming a line, where the field was empty four times of four before. The decoy rate moved
+from 9.75 to **9.50**. Of the ~9.5 decoys reported per run, only 1 to 3 had ever entered that
+list: the stage argues competently against things that were not the problem.
+
+A tempting explanation — that `mantis` computes reachability and this project does not — was
+**checked and discarded**: this project's reports mention dead code and absent callers 44 times
+against 48, and constraints defined elsewhere 158 times against 84. What differs is a threshold,
+not a capability: **1.2 planted defects missed per run against 5.2**, at 78% precision against
+88%.
+
+## The rules work, and they bought recall with noise
+
+[2026-08-26, coverage rules](runs/2026-08-26-coverage-rules/) — **not supported.** With
+`COV-01..03` this project reports **97.8% recall against `mantis`'s 91.9%** on a six-service
+corpus written by an author blinded to its procedures — and **9.75 decoys per run against
+5.25**. The band was a conjunction: recall ahead *and* decoys no worse. The first held, the
+second failed.
+
+The registered mechanism test **passed**: 2.98 findings per multi-defect file against 2.50, and
+2+ findings in 10 of 10 files against 8.8. The fix does what it was built to do, and it cost
+precisely what `coverage.md` says in its own text not to spend. **A sentence is not a control.**
+
+## The answer is no, and it is not close
+
+[2026-08-26, eleven products](runs/2026-08-26-eleven-products/) — **`google/mantis` 88.0% recall,
+this project 79.6%**, over 54 planted defects across eleven vibecoded products. Three of its four runs beat every run of this project's. **Refuted**: the band required leading by 15 points; it is behind by 8.3.
+
+The loss is on this project's *own* corpus — its cases, its planted defects, its key — which is
+why it is strong evidence where a win would have been weak. The one column it leads is false
+positives: 0.25 decoys per run against 1.00, and that does not rescue the primary.
+
+Four earlier rounds ran `mantis` through `mantis-advise`, the one skill of nineteen its own
+description excludes for a sweep, and published the 0.20 recall that produced. Its entry point
+is `mantis-meta-agent`. [The correction](runs/2026-08-26-eleven-products/CORRECTION.md) records
+how that happened.
+
+## The round that could not answer its own question
+
+[2026-08-26, instrument hypothesis](runs/2026-08-26-instrument-hypothesis/) — **arm A 4 of 4,
+arm B 4 of 4.** The band required arm B at ≥ 3 *and arm A at ≤ 1*, so this is the target
+failing to discriminate, not a result about the hypothesis. Both arms found `CVE-2024-27097` in
+every run.
+
+The reason was written down before the arms started: the defect sits in an authentication
+route, which is where auditors gravitate, where `pyload`'s sat in the RPC layer. The
+pre-registration called the target *"if anything, easier for the arm without the instrument"* —
+and it was. **The fifth lever is neither supported nor refuted**, CKAN is retired for it, and
+the next round needs a target whose defect sits away from the surfaces an auditor already
+looks at.
+
+## A check that does not look at the idiom
+
+[2026-08-26, log escaper](runs/2026-08-26-log-escaper/) — the answer to issue #53. Six auditors
+called the deferred `%s` line the example of doing it right; this check flags it, because it
+asks whether an escaper sits between the value and the sink rather than how the string was
+built. **It finds all four keyed defects** — `P-52`, `pyload`'s `add_package`, Django's
+`log_response`, and CKAN's `CVE-2024-27097`, which it missed at first and which exposed a
+false negative in the check itself.
+
+And the number that says what it is not: **92% of `pyload`'s logging calls, 84% of Django's
+and 71% of CKAN's come back uncleared.** It is a conservative filter, not a detector: it cannot see
+through a function parameter, so anything arriving from outside is flagged by construction.
+Its one promise is that within this class it does not miss.
 
 ## Reproduction
 

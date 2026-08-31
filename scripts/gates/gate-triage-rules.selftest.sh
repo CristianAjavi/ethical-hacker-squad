@@ -7,6 +7,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The gate under test is the copy inside $work, not this tree: gates resolve
+# their lib/*.py from their own BASH_SOURCE, so running the source gate would
+# load the source checkers and no case could blind one to prove which check
+# actually caught the defect.
 GATE="$HERE/gate-triage-rules.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
@@ -26,7 +30,7 @@ case_run() {
     printf 'HARNESS  %-34s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
   fi
   local out rc
-  out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  out="$(EHS_REPO_ROOT="$work" bash "$work/scripts/gates/gate-triage-rules.sh" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-34s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else

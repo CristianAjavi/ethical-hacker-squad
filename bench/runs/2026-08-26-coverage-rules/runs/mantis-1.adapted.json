@@ -1,0 +1,622 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v2",
+    "arm": "mantis",
+    "run": 1,
+    "stages_run": [
+      "mantis-meta-agent",
+      "mantis-structural-index",
+      "mantis-summarize",
+      "mantis-architecture",
+      "mantis-threat-model",
+      "mantis-plan",
+      "mantis-researcher",
+      "mantis-dedupe",
+      "mantis-review",
+      "mantis-critic",
+      "mantis-chain",
+      "mantis-calibrate",
+      "mantis-reflect",
+      "mantis-report",
+      "mantis-archive"
+    ],
+    "stages_skipped": [
+      "mantis-history: target has no VCS (git rev-parse fails, no .git/.hg/.repo), so vcs_type=none and there is no history to mine; historical_learnings.jsonl not produced.",
+      "mantis-reproduce: no sandbox, no network and no installed toolchain offline (no Go, no npm install, no AWS/Terraform credentials, no LLM gateway), so no PoC could be executed; all findings were confirmed statically by reading the sink and its ingress path instead.",
+      "mantis-patch: the operator forbade any modification under TARGET (read-only audit), so no fix was applied or re-attacked; remediations are given per finding instead.",
+      "mantis-summarize (in-tree write): summaries were mirrored to workspace/summaries/ instead of writing mantis-summary.md into the read-only target, following the PINNED-mode rule that the target is never written to.",
+      "snapshot pinning / --sync: run in MODE-OFF (no --sync), so no active_snapshot was written and findings carry no discovery_commit, per the 3-state rule."
+    ],
+    "files_with_multiple_findings": {
+      "deskagent/agent/tools.py": 4,
+      "platform-infra/.github/workflows/deploy.yml": 4,
+      "orderdesk/package.json": 3,
+      "pulse-api/app/settings.py": 3,
+      "edgeproxy/fetch.go": 2,
+      "orderdesk/config/default.json": 2,
+      "orderdesk/routes/orders.js": 2,
+      "packmate/packmate/fetch.py": 2,
+      "platform-infra/terraform/iam.tf": 2,
+      "platform-infra/terraform/rds.tf": 2,
+      "pulse-api/app/main.py": 2,
+      "pulse-api/app/routes_invoices.py": 2
+    }
+  },
+  "findings": [
+    {
+      "title": "Session JWTs are decoded without verifying the signature",
+      "location": {
+        "path": "pulse-api/app/auth.py",
+        "symbol": "decode_token",
+        "line": 51
+      },
+      "class": "Broken authentication",
+      "severity": "high",
+      "evidence": "decode_token() calls jwt.decode(token, options={\"verify_signature\": False}) and returns the claims. current_user() (auth.py:65) then trusts claims[\"sub\"], claims[\"org\"] and claims[\"role\"] verbatim, and require_admin() (auth.py:83) grants admin purely on that role string. The docstring justifies it with \"Requests reach us through the edge gateway, which already checked the signature\", but nothing in this service verifies that a request actually came from that gateway.",
+      "impact": "Any unauthenticated caller who can reach the API forges a token with an arbitrary sub/org/role and becomes any user in any tenant, including role=\"owner\". That unlocks every /api/invoices route for other orgs and the whole /api/admin surface (which contains the command-injection sink below). This is the root of the corpus's worst exploit chain.",
+      "recommendation": "Verify the signature: jwt.decode(token, settings.secret_key, algorithms=[\"HS256\"]) with require=[\"exp\",\"sub\"], and let PyJWT enforce exp/nbf rather than the hand-rolled check. If the gateway really is the only ingress, still verify here and additionally authenticate the gateway (mTLS or a signed hop header).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Invoice detail endpoint returns any invoice regardless of tenant",
+      "location": {
+        "path": "pulse-api/app/routes_invoices.py",
+        "symbol": "get_invoice",
+        "line": 80
+      },
+      "class": "Broken object-level authorization",
+      "severity": "high",
+      "evidence": "GET /api/invoices/{invoice_id} runs `SELECT id, org_id, number, total_cents, currency, status, note, issued_at FROM invoices WHERE id = :id` with no org predicate, then unconditionally returns the row plus its invoice_lines. The org_id column is selected but never compared to user.org_id. The sibling delete_invoice() at line 132 does scope its statement with `AND org_id = :org_id`, so the omission is local to this handler rather than a service-wide convention.",
+      "impact": "Any authenticated tenant enumerates invoice ids and reads every other customer's invoice header, note and line items \u2014 full cross-tenant billing-data disclosure.",
+      "recommendation": "Add `AND org_id = :org_id` to both statements (or fetch and compare org_id before returning) and return 404 on mismatch so ids are not oracles.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SQL injection in the invoice search endpoint via q and sort",
+      "location": {
+        "path": "pulse-api/app/routes_invoices.py",
+        "symbol": "search_invoices",
+        "line": 51
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "evidence": "The statement is assembled with f-strings: `WHERE org_id = {int(user.org_id)} AND number ILIKE '%{q}%' ORDER BY {sort} {direction}`. Only `direction` is validated (against SORT_DIRECTIONS); `q` is a raw query-string value spliced inside a quoted literal and `sort` is spliced into the ORDER BY position. text(sql) is then executed with no bound parameters at all.",
+      "impact": "A tenant closes the literal with a quote and appends arbitrary SQL (`?q=%25' UNION SELECT ...--`), reading any table the app role can see \u2014 other orgs' invoices, the users table with password hashes and salts. The ORDER BY slot additionally allows subselect-based blind extraction.",
+      "recommendation": "Bind q as a parameter (`number ILIKE :pattern` with pattern = f\"%{q}%\") and map `sort` through an allowlist dict the same way db.ROLLUP_COLUMNS already does for the rollup route.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Command injection in the ledger export admin endpoint",
+      "location": {
+        "path": "pulse-api/app/routes_admin.py",
+        "symbol": "export_ledger",
+        "line": 57
+      },
+      "class": "OS command injection",
+      "severity": "high",
+      "evidence": "The `period` path segment is interpolated into a shell string \u2014 `f\"/opt/pulse/bin/ledger-export --period {period} --out {out_path} && gzip -f {out_path}\"` \u2014 and executed with subprocess.run(cmd, shell=True). Nothing validates the promised YYYY-MM shape. proc.stdout is also returned to the caller, giving direct output for the injected command.",
+      "impact": "POST /api/admin/exports/2024-01;id returns the output of the injected command; a full reverse shell as the pulse user follows. Nominally admin-gated, but require_admin() trusts an unverified JWT claim (auth.py:51), so the gate is forgeable by anyone on the network.",
+      "recommendation": "Drop the shell: subprocess.run([\"/opt/pulse/bin/ledger-export\",\"--period\",period,\"--out\",out_path], shell=False) and gzip in Python. Validate period against ^\\d{4}-\\d{2}$ first, and stop echoing stdout to the caller.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Hardcoded HS256 signing key for session tokens",
+      "location": {
+        "path": "pulse-api/app/settings.py",
+        "symbol": "Settings.secret_key",
+        "line": 52
+      },
+      "class": "Hardcoded credential",
+      "severity": "high",
+      "evidence": "secret_key defaults to the literal \"pulse-hs256-2f8ab91c4d7e0356\" with no environment override \u2014 every other tunable in this file goes through _env(), this one does not. issue_token() (auth.py:41) signs with it.",
+      "impact": "The signing key ships in the source tree and in every image built from it, so anyone with repository or image read access mints valid admin tokens for any tenant. Rotating it also requires a code change and a coordinated redeploy of the worker that shares it.",
+      "recommendation": "Read it from the environment/secret store with no default (fail to boot if unset), rotate the leaked value, and invalidate outstanding tokens.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Outbound TLS certificate verification disabled for the ledger service",
+      "location": {
+        "path": "pulse-api/app/settings.py",
+        "symbol": "Settings.verify_ssl",
+        "line": 63
+      },
+      "class": "Improper certificate validation",
+      "severity": "medium",
+      "evidence": "verify_ssl defaults to False and is passed straight into requests.post(..., verify=settings.verify_ssl) at routes_admin.py:93 when syncing an org to https://ledger.internal.pulsebilling.io. The comment attributes it to a CI handshake failure against a private CA.",
+      "impact": "Any party able to intercept or spoof the internal ledger hostname reads and rewrites sync payloads and harvests whatever the ledger returns; requests also silently disables hostname checking, so a self-signed certificate is accepted.",
+      "recommendation": "Point requests at the internal CA bundle (verify=\"/etc/ssl/certs/internal-ca.pem\" or REQUESTS_CA_BUNDLE) and default verify_ssl to True.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Debug mode defaults to on and returns tracebacks to clients",
+      "location": {
+        "path": "pulse-api/app/settings.py",
+        "symbol": "Settings.debug",
+        "line": 68
+      },
+      "class": "Information disclosure",
+      "severity": "medium",
+      "evidence": "settings.debug defaults to True with no environment override while settings.environment defaults to \"production\". The global exception handler at main.py:100-102 then adds `detail` and a full `traceback.format_exc()` to the 500 body, and main.py:21 sets the root log level to DEBUG.",
+      "impact": "Any error-triggering request returns file paths, source lines, framework versions and often the offending SQL or connection string, handing an attacker a map of the application; DEBUG logging additionally widens what lands in the log sink.",
+      "recommendation": "Default debug to False, drive it from PULSE_ENV, and never include exception text or tracebacks in a response body.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Login attempts are logged with the submitted email and raw User-Agent",
+      "location": {
+        "path": "pulse-api/app/main.py",
+        "symbol": "login",
+        "line": 73
+      },
+      "class": "Log injection / sensitive data in logs",
+      "severity": "low",
+      "evidence": "`log.info(f\"login attempt email={body.email} ip={client_ip} ua={ua}\")` interpolates two attacker-controlled strings into a single-line log record. The User-Agent header is unfiltered, so CR/LF or fake `INFO ...` prefixes forge additional log lines.",
+      "impact": "An attacker forges log entries to hide a credential-stuffing run or to poison downstream log parsing/SIEM rules; every attempted address (including typo'd passwords-in-username cases and non-customer addresses) is retained in plaintext logs.",
+      "recommendation": "Use structured logging with fields (log.info(\"login attempt\", extra={...})), strip control characters from header values, and hash or omit the email.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Login throttle keys on the proxy address and lives in per-worker memory",
+      "location": {
+        "path": "pulse-api/app/main.py",
+        "symbol": "_throttle_login",
+        "line": 52
+      },
+      "class": "Ineffective rate limiting",
+      "severity": "low",
+      "evidence": "_login_attempts is a module-level dict keyed by request.client.host, and the container runs `uvicorn --workers 4` (Dockerfile:23), so the counter is per-process: the effective ceiling is 4x the intended 5/minute and resets on any restart. Behind the edge gateway that fronts this service, request.client.host is the gateway's address, so every user shares one bucket.",
+      "impact": "Either brute-force protection is 4x weaker than intended and trivially reset, or \u2014 behind the gateway \u2014 the sixth login of the minute locks out all legitimate users at once. The dict is also never evicted, so it grows one entry per distinct source address.",
+      "recommendation": "Move the counter to the shared Redis/Postgres tier, key it on the forwarded client address only when the peer is a trusted proxy, and key attempts on the account as well as the source.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SSRF: upstream allowlist is a substring match on the whole URL",
+      "location": {
+        "path": "edgeproxy/fetch.go",
+        "symbol": "fetchRemote",
+        "line": 64
+      },
+      "class": "SSRF",
+      "severity": "high",
+      "evidence": "fetchRemote gates on `strings.Contains(target, \"assets.example.net\")` (and two sibling Contains calls) against the raw URL string rather than the parsed host. `https://attacker.tld/?x=assets.example.net`, `https://assets.example.net.attacker.tld/`, and `http://169.254.169.254/latest/meta-data/#assets.example.net` all satisfy it. The scheme is never constrained either, and upstreamClient follows redirects by default, so an allowlisted host can 302 the proxy anywhere. It is reachable unauthenticated through /thumb?url=... (handlers.go:42).",
+      "impact": "An internet client turns the proxy into a request forwarder inside the pod's network: cloud instance metadata (IMDS credentials), unauthenticated internal admin panels, and the proxy's own 127.0.0.1:6060 pprof endpoint. Response bytes come back through the image pipeline, and a non-image response is still readable through the error channel and timing.",
+      "recommendation": "Parse with url.Parse, require scheme https, compare u.Hostname() for exact equality against knownOrigins, re-check on every redirect via CheckRedirect, and block link-local/loopback/RFC1918 destinations after DNS resolution.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Upstream HTTP client disables TLS certificate verification",
+      "location": {
+        "path": "edgeproxy/fetch.go",
+        "symbol": "upstreamClient",
+        "line": 33
+      },
+      "class": "Improper certificate validation",
+      "severity": "medium",
+      "evidence": "upstreamClient is built with `TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}`. MinVersion gives the appearance of hardening while InsecureSkipVerify: true disables both chain and hostname validation for every fetch, including the alias path the storefront uses.",
+      "impact": "Anyone positioned between the proxy and the origin fleet (or able to answer the DNS name) serves arbitrary bytes that the proxy decodes and caches as trusted asset content \u2014 content injection into the storefront, plus disclosure of anything the proxy sends upstream.",
+      "recommendation": "Remove InsecureSkipVerify and add the internal CA to the image's trust store (or set RootCAs to a bundle loaded from the platform secret store).",
+      "status": "confirmed"
+    },
+    {
+      "title": "pprof debug listener binds every interface when debug_listen is unset",
+      "location": {
+        "path": "edgeproxy/main.go",
+        "symbol": "debugServer",
+        "line": 82
+      },
+      "class": "Insecure default / exposed debug interface",
+      "severity": "medium",
+      "evidence": "debugServer registers pprof.Index/pprof.Profile with no authentication and returns &http.Server{Addr: cfg.DebugListen}. loadConfig (main.go:34-47) validates only CacheDir; if debug_listen is missing, empty or mistyped in config.yaml, Addr is \"\" and Go's ListenAndServe falls back to \":http\" \u2014 port 80 on all interfaces \u2014 while the code comment still asserts \"nothing outside the pod can reach them\".",
+      "impact": "A one-key config slip publishes heap and goroutine dumps to the internet. /debug/pprof/heap leaks in-memory secrets such as the EDGEPROXY_ADMIN_TOKEN and upstream URLs, and /debug/pprof/profile is a cheap CPU-exhaustion lever.",
+      "recommendation": "Fail closed: require a non-empty DebugListen in loadConfig, assert it parses to a loopback host, or skip starting the debug server entirely unless an explicit opt-in flag is set.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Cache staging file is created at a predictable path in the shared temp directory",
+      "location": {
+        "path": "edgeproxy/cache.go",
+        "symbol": "writeStaged",
+        "line": 33
+      },
+      "class": "Insecure temporary file",
+      "severity": "low",
+      "evidence": "stagePath() returns os.TempDir()/edgeproxy-stage-<sha1 of caller-influenced key>.part and writeStaged opens it with os.O_WRONLY|os.O_CREATE|os.O_TRUNC and mode 0644 \u2014 no O_EXCL, no per-run directory. The key is derived from request parameters, so an attacker who can reach /thumb can compute the path. Note that no caller currently invokes writeStaged/promote (the handler only calls lookup/sweep), so today this is latent rather than live.",
+      "impact": "On a host where the temp directory is shared, a local user pre-creates the path as a symlink and has the proxy truncate and overwrite an arbitrary file the process can write; the 0644 mode also exposes cached object bytes to every local account.",
+      "recommendation": "Use os.MkdirTemp once at startup for a private staging directory, create files with os.CreateTemp (O_EXCL) and mode 0600.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SQL injection in the shipments listing route",
+      "location": {
+        "path": "orderdesk/routes/orders.js",
+        "symbol": "GET /:id/shipments",
+        "line": 77
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "evidence": "The query is string-concatenated: `\"... WHERE order_id = '\" + req.params.id + \"' \" + (carrier ? \"AND carrier = '\" + carrier + \"' \" : '')` and passed to query(sql) with no parameter array \u2014 so mysql2's execute() gets no placeholders at all. Both the path segment and the ?carrier= value are attacker-controlled. Every other statement in this file uses ? placeholders, so the gap is specific to this handler.",
+      "impact": "Any signed-in merchant user extracts arbitrary rows via UNION (orders and shipments of other merchants, the users table with password_hash and salt) and can chain stacked statements where the driver permits them.",
+      "recommendation": "Parameterise: `WHERE order_id = ?` plus an optional `AND carrier = ?`, passing the values in the params array.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Order detail endpoint is not scoped to the signed-in merchant",
+      "location": {
+        "path": "orderdesk/routes/orders.js",
+        "symbol": "GET /:id",
+        "line": 55
+      },
+      "class": "Broken object-level authorization",
+      "severity": "high",
+      "evidence": "`queryOne('SELECT * FROM orders WHERE id = ?', [req.params.id])` with no merchant_id predicate, followed by an unconditional render of the order and its lines. requireSession (line 17) only proves that *some* user is signed in. The cancel handler 30 lines below does filter on `id = ? AND merchant_id = ?`, confirming the intended invariant.",
+      "impact": "Any merchant account walks the id space and reads every other merchant's orders \u2014 customer names, notes, SKUs, totals \u2014 through the server-rendered detail page.",
+      "recommendation": "Add `AND merchant_id = ?` with req.session.merchantId and return the same 404 page on mismatch.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Stored XSS: the shopper's checkout note is rendered unescaped",
+      "location": {
+        "path": "orderdesk/lib/render.js",
+        "symbol": "renderOrder",
+        "line": 61
+      },
+      "class": "Cross-site scripting",
+      "severity": "high",
+      "evidence": "Every other interpolation in this template goes through escapeHtml(), but the note block is `<div class=\"note\">${order.customer_note || ''}</div>` \u2014 raw. The comment states the value is free text the shopper types at checkout and that packers \"need to see it exactly as written\". The result is sent with res.type('html') from routes/orders.js:63.",
+      "impact": "A shopper stores `<script>` in a checkout note and executes script in the session of every warehouse/console user who opens that order. Because the session cookie is configured with httpOnly:false, the payload can read document.cookie directly and hand over the operator session.",
+      "recommendation": "Escape the note like every other field and, if line breaks must survive, escape first and then convert \\n to <br>. Add a CSP as a second layer.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Session cookie is not HttpOnly and not Secure",
+      "location": {
+        "path": "orderdesk/config/default.json",
+        "symbol": "session.cookie",
+        "line": 15
+      },
+      "class": "Insecure cookie configuration",
+      "severity": "medium",
+      "evidence": "The session block sets `\"httpOnly\": false` and `\"secure\": false` for a 24h `odsid` cookie, and server.js:41 passes that object straight into express-session. sameSite is only \"lax\".",
+      "impact": "httpOnly:false lets any XSS (see render.js:61 above) read the session id from JavaScript; secure:false lets the cookie ride a plaintext HTTP request, so a network attacker who can force one insecure request to the host captures a live session.",
+      "recommendation": "Set httpOnly and secure to true (and sameSite \"strict\" for a back-office console); terminate TLS in front and set `app.set('trust proxy', 1)` as it already does.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Session signing secret is committed in the config file",
+      "location": {
+        "path": "orderdesk/config/default.json",
+        "symbol": "session.secret",
+        "line": 9
+      },
+      "class": "Hardcoded credential",
+      "severity": "high",
+      "evidence": "`\"secret\": \"orderdesk-session-4b1f9c02ae77\"` is the literal express-session signing key, read by server.js:38 with no environment override (unlike the MySQL password, which db.js:17 correctly takes from process.env.MYSQL_PASSWORD).",
+      "impact": "Anyone with repository access forges a signed odsid cookie for any userId/merchantId and takes over any merchant account without credentials.",
+      "recommendation": "Load the secret from the environment (config's custom-environment-variables.json), fail to boot when unset, rotate the committed value, and support a key array for rolling rotation.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Production start script disables Node TLS certificate validation globally",
+      "location": {
+        "path": "orderdesk/package.json",
+        "symbol": "scripts.start",
+        "line": 11
+      },
+      "class": "Improper certificate validation",
+      "severity": "high",
+      "evidence": "`\"start\": \"NODE_TLS_REJECT_UNAUTHORIZED=0 node server.js\"` \u2014 this is the documented production entrypoint, and the variable disables certificate verification process-wide for every TLS client in the process (node-fetch calls, the MySQL driver's TLS, any outbound webhook), not just one hostname.",
+      "impact": "Every outbound connection this service makes is silently accepted from any peer presenting any certificate, so a MITM on any of them intercepts payment-provider traffic, database credentials in transit and API tokens. Node prints a warning and continues.",
+      "recommendation": "Remove the variable from the script and install the internal CA into the trust store (NODE_EXTRA_CA_CERTS) if a private CA is the underlying reason.",
+      "status": "confirmed"
+    },
+    {
+      "title": "postinstall hook pipes a remote script into a shell",
+      "location": {
+        "path": "orderdesk/package.json",
+        "symbol": "scripts.postinstall",
+        "line": 16
+      },
+      "class": "Supply-chain / remote code execution",
+      "severity": "medium",
+      "evidence": "`\"postinstall\": \"curl -fsSL https://tooling.orderdesk.internal/hooks/bootstrap.sh | sh\"` runs on every npm install \u2014 developer laptops, CI runners and any image build \u2014 with no pinned version, no checksum and no signature check.",
+      "impact": "Whoever controls that host (or can spoof/hijack the internal name, which is easy given TLS verification is disabled elsewhere in this same service) executes arbitrary code as the installing user on every build machine, including the CI runner that holds the AWS deployer role.",
+      "recommendation": "Vendor the bootstrap step into the repository or fetch a version-pinned artifact and verify its sha256 before executing, as ci.yml already does for tflint.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Runtime dependency pinned to a wildcard version",
+      "location": {
+        "path": "orderdesk/package.json",
+        "symbol": "dependencies.node-fetch",
+        "line": 25
+      },
+      "class": "Unpinned dependency",
+      "severity": "medium",
+      "evidence": "`\"node-fetch\": \"*\"` accepts any published version, including major releases and any future compromised publish; every other dependency here uses a caret range. There is no lockfile in the tree to constrain the resolution.",
+      "impact": "An install performed at any time can silently pull a different major version (breaking behaviour) or a malicious release, executing attacker code in the service and in CI.",
+      "recommendation": "Pin to a caret range on a reviewed major, commit package-lock.json, and enable `npm ci` in CI.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Zip Slip: zip members are written without checking they stay inside the destination",
+      "location": {
+        "path": "packmate/packmate/extract.py",
+        "symbol": "extract_zip",
+        "line": 41
+      },
+      "class": "Path traversal",
+      "severity": "high",
+      "evidence": "extract_zip does `target = dest / info.filename` then `target.parent.mkdir(parents=True)` and writes, with no containment check at all \u2014 the only filter is _interesting(), which drops .DS_Store/__MACOSX/Thumbs.db. A member named `../../../../home/user/.ssh/authorized_keys` escapes dest, and an absolute name like `/etc/cron.d/x` makes `dest / \"/etc/cron.d/x\"` resolve to the absolute path. The tar path is guarded by _safe_tar_members() (line 57) and even has a regression test, so the zip branch is the unprotected half of a pair.",
+      "impact": "`packmate install evil.zip` writes arbitrary files anywhere the invoking user can write \u2014 SSH authorized_keys, shell rc files, cron entries \u2014 which is code execution as that user.",
+      "recommendation": "Apply the same containment check the tar path uses: resolve (dest / name) and require dest to be a parent, rejecting the archive otherwise; or extract into a scratch dir and copy only verified relative paths.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Bundle manifest is parsed with the unsafe YAML loader",
+      "location": {
+        "path": "packmate/packmate/manifest.py",
+        "symbol": "load_manifest",
+        "line": 49
+      },
+      "class": "Unsafe deserialization",
+      "severity": "high",
+      "evidence": "`data = yaml.load(fh, Loader=yaml.Loader)` on packmate.yaml, which comes out of the untrusted archive just unpacked by extract() (cli.py:42-43). yaml.Loader resolves arbitrary Python tags such as `!!python/object/apply:os.system`, so parsing alone is enough to execute. The docstring justifies it with metadata tuples/datetimes; load_lockfile() 20 lines below correctly uses yaml.safe_load for the same kind of file.",
+      "impact": "Installing any bundle executes attacker code as the invoking user before a single validation check runs \u2014 the most direct RCE in this component.",
+      "recommendation": "Use yaml.safe_load. If timestamps and tuples are genuinely needed, subclass SafeLoader and register only those constructors.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Install destination is built from the untrusted manifest name/version and then rmtree'd",
+      "location": {
+        "path": "packmate/packmate/cli.py",
+        "symbol": "cmd_install",
+        "line": 51
+      },
+      "class": "Path traversal / arbitrary deletion",
+      "severity": "high",
+      "evidence": "`target = dest / manifest.slug` where slug is f\"{name}-{version}\" straight from the bundle's own packmate.yaml (manifest.py:33), with no character validation. Lines 52-54 then run `if target.exists(): shutil.rmtree(target)` followed by shutil.move(workdir, target). A manifest with name \"../../../../home/user/.ssh\" and version \"\" (or any traversal segment) redirects both operations outside ~/.packmate/bundles.",
+      "impact": "A malicious bundle deletes an arbitrary directory tree the user can write (recursively, no confirmation) and then plants its own contents at that path \u2014 destructive and a code-execution primitive when aimed at a directory that is later executed or sourced.",
+      "recommendation": "Validate slug against ^[A-Za-z0-9._-]+$, reject path separators and '..', then assert the resolved target is inside the resolved dest before touching the filesystem.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Downloaded bundles are accepted with no integrity check by default",
+      "location": {
+        "path": "packmate/packmate/fetch.py",
+        "symbol": "download",
+        "line": 61
+      },
+      "class": "Missing integrity verification",
+      "severity": "medium",
+      "evidence": "The digest is only compared when a value was supplied: `if expected_sha256 and got != expected_sha256.lower()`. cmd_pull passes `expected_sha256=args.sha256 or \"\"` and --sha256 defaults to \"\" (cli.py:66, 104), so the default `packmate pull <name> <version>` path computes a digest, logs 12 characters of it, and returns the file unverified. The lockfile that exists for exactly this purpose is never consulted here.",
+      "impact": "A compromised or impersonated registry, or anyone who can tamper with the response, serves a substituted bundle that the user then installs \u2014 which, given the two RCE paths above, is full code execution.",
+      "recommendation": "Resolve the expected digest from packmate.lock.yaml and make verification mandatory: refuse to return a file when no expected digest is known unless an explicit --insecure flag is passed.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The https-only check is bypassed by a redirect",
+      "location": {
+        "path": "packmate/packmate/fetch.py",
+        "symbol": "download",
+        "line": 41
+      },
+      "class": "SSRF / protocol downgrade",
+      "severity": "medium",
+      "evidence": "_check_url() validates the scheme of the URL that was passed in, but line 52 then calls urlopen(req), and urllib's default HTTPRedirectHandler transparently follows redirects to http:// (and to any host) without re-running the check. The docstring claims file://, ftp:// and plain http:// \"are all refused here before urlopen sees them\", which holds only for the first hop.",
+      "impact": "A registry (or anyone who can answer for it) 302s the client to plaintext http:// or to an internal address, downgrading the transport or turning the CLI into an SSRF probe; combined with the missing digest check above, the redirected body is installed as-is.",
+      "recommendation": "Install a custom HTTPRedirectHandler that re-applies _check_url to every Location, or use a client that exposes per-hop control (requests with allow_redirects=False and an explicit loop).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Postgres instance is publicly reachable from the whole internet",
+      "location": {
+        "path": "platform-infra/terraform/rds.tf",
+        "symbol": "aws_security_group.db",
+        "line": 20
+      },
+      "class": "Network exposure",
+      "severity": "high",
+      "evidence": "The db security group allows ingress on TCP 5432 from cidr_blocks [\"0.0.0.0/0\"], and aws_db_instance.main sets `publicly_accessible = true` (line 49) while sitting in a subnet group built from the private subnets. The comment attributes it to analysts connecting with psql while a VPN peering request is queued. Both conditions together are what makes it internet-reachable.",
+      "impact": "The production billing database answers connections from anywhere: credential stuffing and brute force against the master user, exploitation of any Postgres CVE, and \u2014 with the master password committed in the same file \u2014 immediate authenticated access to all customer data.",
+      "recommendation": "Restrict ingress to the app security group (and a bastion/VPN CIDR), set publicly_accessible = false, and give the analytics team a read-replica endpoint reachable only over the VPN.",
+      "status": "confirmed"
+    },
+    {
+      "title": "RDS master password is hardcoded while a sensitive variable for it sits unused",
+      "location": {
+        "path": "platform-infra/terraform/rds.tf",
+        "symbol": "aws_db_instance.main.password",
+        "line": 45
+      },
+      "class": "Hardcoded credential",
+      "severity": "high",
+      "evidence": "`password = \"Pg-orderdesk-2024-rotate-me\"`. variables.tf:39 declares var.db_master_password as sensitive with a 24-character minimum and a comment stating there is deliberately no default so plan fails loudly \u2014 but no resource references it, and the deploy workflow still exports TF_VAR_db_master_password from a secret. The literal is also weak and self-describing.",
+      "impact": "The production database password is in version control and in the Terraform state file, and the internet-facing security group above means it is directly usable. Every fork, clone and CI artifact of this repository carries it.",
+      "recommendation": "Replace the literal with var.db_master_password (or manage_master_user_password = true with Secrets Manager), rotate the credential, and scrub it from state and history.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Artifacts bucket is world-readable with public access block fully disabled",
+      "location": {
+        "path": "platform-infra/terraform/s3.tf",
+        "symbol": "aws_s3_bucket_public_access_block.artifacts",
+        "line": 13
+      },
+      "class": "Public cloud storage",
+      "severity": "high",
+      "evidence": "All four public access block settings are false (lines 13-16) and aws_s3_bucket_acl.artifacts sets `acl = \"public-read\"` (line 34) with an explicit depends_on that guarantees the block is torn down first. The comment says the signed-URL work never landed. The sibling logs bucket has all four set to true, so this is a deliberate divergence, not an oversight of the module.",
+      "impact": "Every object under the build-artifacts bucket \u2014 application bundles, and anything else the pipeline drops there \u2014 is anonymously downloadable, and the disabled policy block means a later bucket policy can be made public too. Build artifacts routinely embed configuration and credentials.",
+      "recommendation": "Set all four block settings to true, drop the public-read ACL, and serve the CDN through an origin access identity or presigned URLs.",
+      "status": "confirmed"
+    },
+    {
+      "title": "CI deployer role is granted Action \"*\" on Resource \"*\"",
+      "location": {
+        "path": "platform-infra/terraform/iam.tf",
+        "symbol": "aws_iam_role_policy.deployer_admin",
+        "line": 74
+      },
+      "class": "Excessive privilege",
+      "severity": "high",
+      "evidence": "The inline policy is `{Sid: \"DeployAnything\", Effect: \"Allow\", Action: \"*\", Resource: \"*\"}` \u2014 account administrator. The comment concedes it exists because deploys occasionally touch \"a stray resource nobody scoped yet\". The task role right next to it is scoped tightly to one bucket with a VPC-endpoint condition, so the contrast is stark.",
+      "impact": "Anything that can assume this role owns the AWS account: create IAM users, read every bucket and secret, delete infrastructure. Given the pull_request_target trigger below, that includes an unprivileged outside contributor.",
+      "recommendation": "Replace with least-privilege statements for the services deploys actually touch (ecs, ecr, s3 on named buckets, ssm on a path prefix), add a permissions boundary, and require the production environment's approval gate.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Deploy workflow runs fork pull-request code with secrets and the AWS role",
+      "location": {
+        "path": "platform-infra/.github/workflows/deploy.yml",
+        "symbol": "on.pull_request_target",
+        "line": 6
+      },
+      "class": "CI/CD pwn request",
+      "severity": "high",
+      "evidence": "The workflow triggers on `pull_request_target` (types opened/synchronize/labeled) \u2014 which runs in the context of the base repository with full access to secrets \u2014 and the plan job then checks out `ref: ${{ github.event.pull_request.head.sha }}`, i.e. the proposed, attacker-authored code. That job configures AWS credentials from secrets.DEPLOYER_ROLE_ARN and runs `terraform init`/`terraform plan` over the checked-out terraform/ directory. The apply job is guarded by `if: github.ref == 'refs/heads/main' && github.event_name == 'push'`; the plan job has no such guard.",
+      "impact": "Any GitHub user opens a pull request containing a terraform external data source, provisioner, or a malicious module/provider and gets arbitrary code execution on the runner while it holds the Action:*/Resource:* deployer role, plus a write-all GITHUB_TOKEN and every repository secret. This is full AWS account and repository compromise by an anonymous outsider.",
+      "recommendation": "Use `pull_request` for anything that checks out PR code, and never combine pull_request_target with a checkout of head.sha. If a privileged step is genuinely needed, split it into a separate workflow_run job that consumes only artifacts and never executes PR code.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Deploy workflow grants the GITHUB_TOKEN write-all",
+      "location": {
+        "path": "platform-infra/.github/workflows/deploy.yml",
+        "symbol": "permissions",
+        "line": 9
+      },
+      "class": "Excessive CI privilege",
+      "severity": "medium",
+      "evidence": "`permissions: write-all` at the workflow level grants every scope \u2014 contents, packages, actions, id-token, deployments \u2014 to every job. ci.yml in the same directory correctly declares `permissions: contents: read`, so the tight default is understood here.",
+      "impact": "Any code execution inside these jobs (see the pull_request_target finding above) can push commits, publish packages, alter workflow runs and mint OIDC tokens, converting a runner compromise into persistent repository control.",
+      "recommendation": "Declare the minimum per job: `contents: read` plus `id-token: write` only on the jobs that assume the AWS role.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Deploy workflow pins actions to mutable refs including @master",
+      "location": {
+        "path": "platform-infra/.github/workflows/deploy.yml",
+        "symbol": "hashicorp/setup-terraform@master",
+        "line": 31
+      },
+      "class": "Unpinned CI dependency",
+      "severity": "medium",
+      "evidence": "setup-terraform is referenced as `@master`, a branch that moves; checkout, configure-aws-credentials and upload-artifact are referenced by the mutable `@v4` tag (lines 25, 36, 53, 66, 69). ci.yml in the same repository pins actions/checkout and setup-terraform to full commit SHAs with a version comment, and even pins the actionlint container by digest \u2014 so the secure pattern is established and simply not applied here.",
+      "impact": "A compromised or retagged upstream action executes in the job that holds the AWS admin role and the write-all token, with no change to this repository.",
+      "recommendation": "Pin every `uses:` to a full commit SHA with a trailing version comment, and let Dependabot bump them.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Terraform plan file containing the database password is uploaded as an artifact",
+      "location": {
+        "path": "platform-infra/.github/workflows/deploy.yml",
+        "symbol": "Upload plan",
+        "line": 52
+      },
+      "class": "Secret exposure",
+      "severity": "medium",
+      "evidence": "The plan step runs with `TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}` and writes `-out=tfplan`; the next step uploads terraform/tfplan with actions/upload-artifact for 5 days. Terraform plan files store variable values in cleartext regardless of the `sensitive` marking (sensitive only redacts console output), so the secret is inside the uploaded blob.",
+      "impact": "Anyone with read access to the repository \u2014 which on a pull_request_target run includes the workflow triggered by an outside contributor \u2014 downloads the artifact and extracts the RDS master password, which is directly usable given the internet-facing database security group.",
+      "recommendation": "Do not upload raw plan files. Publish `terraform show -json` output with secrets stripped, or keep the plan on the runner and gate apply through the environment approval instead.",
+      "status": "confirmed"
+    },
+    {
+      "title": "GitHub OIDC trust policy omits the audience condition and wildcards the subject",
+      "location": {
+        "path": "platform-infra/terraform/iam.tf",
+        "symbol": "aws_iam_policy_document.deployer_assume",
+        "line": 55
+      },
+      "class": "Weak federation trust policy",
+      "severity": "medium",
+      "evidence": "The only condition on sts:AssumeRoleWithWebIdentity is `StringLike token.actions.githubusercontent.com:sub = [\"repo:example-net/orderdesk:*\"]`. There is no `token.actions.githubusercontent.com:aud = sts.amazonaws.com` condition, and the `*` subject accepts every ref, tag, pull-request and environment context of the repository rather than only the deploy branch/environment.",
+      "impact": "The missing audience check removes the guard that stops a token minted for a different audience from being replayed, and the wildcard subject means any workflow context in the repository \u2014 including the fork-triggered plan job above \u2014 can assume the account-admin role. Neither is defence in depth here: they are the only conditions on an Action:* role.",
+      "recommendation": "Add the aud StringEquals condition and narrow sub to the exact contexts that deploy, e.g. repo:example-net/orderdesk:ref:refs/heads/main and repo:example-net/orderdesk:environment:production.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The model can execute arbitrary shell commands through the run_command tool",
+      "location": {
+        "path": "deskagent/agent/tools.py",
+        "symbol": "run_command",
+        "line": 68
+      },
+      "class": "OS command injection / excessive agent capability",
+      "severity": "high",
+      "evidence": "run_command passes the model-supplied string straight to subprocess.run(command, shell=True) with no allowlist, no argument parsing and no sandbox; the tool is advertised to the model as \"Run a read-only diagnostic shell command\" (TOOL_SCHEMAS:113) but nothing enforces read-only. dispatch() (line 145) invokes it purely on the name in the model's tool_use block, and planner.run_turn executes every tool call for up to 8 steps with no human approval and no per-tool gate.",
+      "impact": "Whatever steers the model steers the support box: full command execution as the service account, exfiltration of the DESKAGENT_GATEWAY_KEY and DESKAGENT_SERVICE_TOKEN from the environment, and lateral movement with whatever kubectl credentials the box holds. The only barrier is the model's own compliance, and the prompt-injection path below removes it.",
+      "recommendation": "Delete the general shell tool. Expose specific diagnostics as separate tools with fixed argv arrays and validated parameters (shell=False), run them under a restricted user in a container, and require confirmation for anything outside that set.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The read_file tool reads any path on the host",
+      "location": {
+        "path": "deskagent/agent/tools.py",
+        "symbol": "read_file",
+        "line": 56
+      },
+      "class": "Path traversal / arbitrary file read",
+      "severity": "high",
+      "evidence": "`target = Path(path).expanduser()` with the only check being is_file(); the docstring says \"the path is taken as given\" because runbooks live in several places. There is no root directory, no containment check and no extension filter, and the result is returned to the caller in the transcript.",
+      "impact": "A single tool call returns /etc/passwd, ~/.ssh/id_rsa, ~/.aws/credentials, .env files or the deskagent config with its token variable names \u2014 and the content then also enters the model context, defeating the system prompt's instruction never to repeat credentials.",
+      "recommendation": "Confine reads to an explicit allowlist of document roots: resolve the path and require it to be inside one of them, refuse symlinks that escape, and deny known-sensitive filenames.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Untrusted ticket text is concatenated into the system prompt",
+      "location": {
+        "path": "deskagent/agent/planner.py",
+        "symbol": "gather_context",
+        "line": 75
+      },
+      "class": "Indirect prompt injection",
+      "severity": "high",
+      "evidence": "gather_context() searches the ticket index with the user's question and formats each hit as `- ticket {id} ({status}): {body}` under the heading \"Operator notes from related tickets:\", then run_turn passes that string to build_system_prompt(extra_context) (planner.py:87), which appends it to the SYSTEM prompt. prompts.py's docstring for gather_context states this is \"where the model looks for background it should treat as settled\". Ticket bodies are written by whoever files a support ticket. The same channel is reachable through http_get and read_file output, which come back as tool_result content.",
+      "impact": "An attacker files a ticket whose body contains instructions, then asks a question that retrieves it; the injected text arrives in the highest-trust slot of the prompt and can direct the agent to call run_command or read_file and to exfiltrate the result. This turns finding 35/36 from an insider risk into a remote, unauthenticated-content attack chain.",
+      "recommendation": "Never place retrieved content in the system prompt. Pass it as a user/tool message inside explicit delimiters, label it untrusted, strip control sequences, and gate every tool call on a policy check that the retrieved text cannot influence.",
+      "status": "confirmed"
+    },
+    {
+      "title": "http_get validates the first hop only and then follows redirects",
+      "location": {
+        "path": "deskagent/agent/tools.py",
+        "symbol": "http_get",
+        "line": 45
+      },
+      "class": "SSRF",
+      "severity": "medium",
+      "evidence": "The exact-hostname allowlist check on lines 38-42 is sound for the URL as given, but urlopen() then follows redirects with urllib's default handler and neither the scheme nor the host is re-checked on subsequent hops. The comment claims a lookalike domain \"cannot slip through\", which is true only of hop one.",
+      "impact": "A redirect from any allowlisted documentation host \u2014 or a compromised page on one \u2014 pulls internal-only URLs including cloud instance metadata, and the body is returned to the model and the caller. The fetched content is also the prompt-injection carrier described above.",
+      "recommendation": "Follow redirects manually and re-apply the scheme/host check on every hop, or set an opener with redirects disabled and resolve them explicitly; also block private and link-local address ranges post-DNS.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Tool arguments from the model are splatted into the handler without schema validation",
+      "location": {
+        "path": "deskagent/agent/tools.py",
+        "symbol": "dispatch",
+        "line": 150
+      },
+      "class": "Missing input validation",
+      "severity": "low",
+      "evidence": "`return fn(**arguments)` expands whatever dict the model produced in call[\"input\"] (planner.py:105) into Python keyword arguments. TOOL_SCHEMAS is sent to the gateway but never enforced locally: unexpected keys raise TypeError (caught by the broad handler at planner.py:111 and fed back as text), and declared-but-optional parameters such as run_command's timeout or search_tickets' limit can be set to any value the model emits.",
+      "impact": "A malformed or adversarially steered tool call sets an unbounded timeout on a shell command or otherwise reaches parameters the tool author did not intend to expose; error text from the TypeError also leaks internal function signatures back into the transcript.",
+      "recommendation": "Validate `arguments` against the tool's input_schema (jsonschema) before dispatch, drop unknown keys, and clamp numeric parameters to server-side bounds.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Session ids are accepted from the request body with no binding to the caller",
+      "location": {
+        "path": "deskagent/agent/server.py",
+        "symbol": "chat",
+        "line": 60
+      },
+      "class": "Broken object-level authorization",
+      "severity": "low",
+      "evidence": "`session_id = body.get(\"session_id\") or store.new_session()` \u2014 any caller presenting the single shared service token can name any session id, and the store loads and appends to that conversation (server.py:68, 84). The DELETE route is the same. memory.py validates only the uuid4 *shape*; there is no owner field on the stored document and no per-end-user identity anywhere in the service, even though the callers are a helpdesk UI and a Slack relay that front many different people.",
+      "impact": "One end user's conversation history \u2014 which may contain ticket content, hostnames and tool output \u2014 can be read by another through whichever relay holds the shared token, and a session can be poisoned with attacker-authored turns that later steer the model. Exploitation requires learning a uuid4, so this is a weak but real authorization gap rather than a trivially enumerable one.",
+      "recommendation": "Bind each session to an end-user identity supplied by the relay (or issue a per-session capability token) and check it on load/save/delete.",
+      "status": "confirmed"
+    }
+  ]
+}

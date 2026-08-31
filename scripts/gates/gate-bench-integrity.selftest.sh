@@ -5,7 +5,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-GATE="$HERE/gate-bench-integrity.sh"
+# The gate under test is the one inside the throwaway copy, not this tree: the
+# gate resolves its lib/*.py from its own BASH_SOURCE, so running the source
+# gate would load the source checkers and no case could ever blind one.
+GATE_REL="scripts/gates/gate-bench-integrity.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
 else SRC="$(cd "$HERE/../.." && pwd)"; fi
@@ -22,7 +25,7 @@ case_run() {
     printf 'HARNESS  %-36s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
   fi
   local out rc
-  out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  out="$(EHS_REPO_ROOT="$work" bash "$work/$GATE_REL" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
@@ -173,6 +176,85 @@ d=json.loads(p.read_text())
 for x in d["patches"]:
     x["expected"]="verified"
 p.write_text(json.dumps(d,indent=2))'
+
+# --- the three checks added on 2026-08-28, each with its blinding twin --------
+# A case that goes red proves nothing on its own: the red could come from any of
+# the gate's other sections. Each defect below is therefore run twice - once with
+# the checker intact (must be red) and once with the checker blinded (must be
+# green). If the blinded twin is also red, the checker was not what caught it.
+
+case_run verdict-flattened 1 "SCORE.txt says INCONCLUSIVE" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-29-baited-claim/README.md"
+t=p.read_text()
+t=re.sub(r"\*\*The band was not met on either definition\*\*.*?the decoy half failed\.\n",
+         "**Not supported**, thirteenth round, on **both** definitions.\n",t,count=1,flags=re.S)
+t=t.replace("| **inconclusive** — under 5 points, decoys worse |","| fails **both** halves |",1)
+p.write_text(t)'
+
+case_run verdict-flattened-checker-blind 0 "" '
+import os,pathlib,re
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/2026-08-29-baited-claim/README.md"; t=p.read_text()
+t=re.sub(r"\*\*The band was not met on either definition\*\*.*?the decoy half failed\.\n",
+         "**Not supported**, thirteenth round, on **both** definitions.\n",t,count=1,flags=re.S)
+t=t.replace("| **inconclusive** — under 5 points, decoys worse |","| fails **both** halves |",1)
+p.write_text(t)
+c=w/"scripts/gates/lib/verdict_matches_score.py"
+c.write_text(c.read_text().replace(
+    "VERDICT = re.compile(r\"VERDICT:\\s*([A-Z][A-Z ]+?)(?:\\s*[—\\-(]|$)\", re.M)",
+    "VERDICT = re.compile(r\"^(?!x)x\")"))'
+
+case_run caveat-stripped 1 "without saying it is an upper bound" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-26-coverage-rules/README.md"
+t=p.read_text()
+p.write_text(re.sub(r"> \*\*Decoy figures on this page are an upper bound\.\*\*.*?\n\n","",t,count=1,flags=re.S))'
+
+case_run caveat-stripped-checker-blind 0 "" '
+import os,pathlib,re
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/2026-08-26-coverage-rules/README.md"; t=p.read_text()
+p.write_text(re.sub(r"> \*\*Decoy figures on this page are an upper bound\.\*\*.*?\n\n","",t,count=1,flags=re.S))
+c=w/"scripts/gates/lib/decoy_caveat.py"
+c.write_text(c.read_text().replace("UNCAVEATED|","SILENCED|"))'
+
+case_run shipped-hashes-deleted 1 "nobody can check the numbers came from these bytes" '
+import os,pathlib
+(pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-29-baited-claim/REPORTS.sha256").unlink()'
+
+case_run shipped-hashes-deleted-checker-blind 0 "" '
+import os,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+(w/"bench/runs/2026-08-29-baited-claim/REPORTS.sha256").unlink()
+c=w/"scripts/gates/lib/scored_matches_shipped.py"
+c.write_text(c.read_text().replace("MISSING|","SILENCED|"))'
+
+case_run exemption-line-removed 1 "skipping it in silence would read as coverage" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text("".join(l for l in p.read_text().splitlines(True) if l.strip()!="2026-08-22-second-target"))'
+
+case_run exemption-line-removed-checker-blind 0 "" '
+import os,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text("".join(l for l in p.read_text().splitlines(True) if l.strip()!="2026-08-22-second-target"))
+c=w/"scripts/gates/lib/scored_matches_shipped.py"
+c.write_text(c.read_text().replace("UNLISTED|","SILENCED|"))'
+
+case_run exemption-gone-stale 1 "no longer needs to be" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text(p.read_text()+"2026-08-29-baited-claim\n")'
+
+case_run exemption-gone-stale-checker-blind 0 "" '
+import os,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"bench/runs/HASHES-EXEMPT.txt"
+p.write_text(p.read_text()+"2026-08-29-baited-claim\n")
+c=w/"scripts/gates/lib/scored_matches_shipped.py"
+c.write_text(c.read_text().replace("STALE|","SILENCED|"))'
 
 case_run key-gone 2 "" '
 import os,pathlib

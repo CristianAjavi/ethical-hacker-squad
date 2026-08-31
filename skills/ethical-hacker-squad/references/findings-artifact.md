@@ -11,6 +11,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | The shape: fields, types, what is required | [`findings.schema.json`](findings.schema.json) |
 | The words: `status`, `severity`, `confidence`, `verification` | [`vocabulary.md`](vocabulary.md) — the schema deliberately does **not** repeat them |
 | The triage answers and what they mean | [`triage.md`](triage.md) |
+| `engagement.lanes` — which specialists reported, and which lanes were not run | [`findings.schema.json`](findings.schema.json), and the section below |
 | Redaction placeholders and what may not travel | [`report.md`](report.md) |
 
 `gate-findings-artifact.sh` validates the artifact against all four, and the same command validates a real deliverable: `scripts/gates/gate-findings-artifact.sh --deliverable path/to/findings.json`.
@@ -52,6 +53,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
 | `findings[].traceability` | The standard identifiers, verbatim. |
 | `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
+| `findings[].scope` | Where the construct actually applies: `applies_to` as `path:line` for every place it takes effect, `established_by` naming how that list was arrived at, and `narrowed_by` when a condition narrows it. A wildcard header set in one handler applies to one response — write the one. **It is a required field because the rule that asked the same question did not change what got reported**: `FP-11` was added, cited, evalled and sealed, and the shape it targets stayed at 1.75 false positives per run against a competitor's 0.25. A field is answered; a rule is read. |
 | `findings[].limits` | What this finding does not establish. |
 | `ruled_out` | **Top-level, once per artifact** — a sibling of `findings` and `engagement`, not a field inside a finding. What was tested and did not appear, with the bound of how far the test reached. |
 
@@ -72,3 +74,17 @@ These are not shape checks. They are the reasons the file is worth having:
 ## What it does not do
 
 It does not make a wrong finding right, and it does not judge severity — a well-formed file can carry a confident mistake. What it removes is the class of defect where the prose says one thing and the structure says another, and it gives a scorer something to count.
+
+## `engagement.lanes`
+
+One entry per specialist the lead staffed: `role`, `scope`, `returned`, and `redone_by_lead` where
+the lead took the scope back after a specialist did not return.
+
+**A lane with `returned: false` and `redone_by_lead: false` may contribute no findings.** Declaring
+the gap is the required outcome — a partial audit that names what is missing is worth more than a
+complete-looking one that invented part of itself.
+
+It is a field rather than advice because the failure it covers was measured twice in two blinded
+rounds, both times by a lead whose sub-agent stalled and who then wrote fragments for it as though
+it had reported. `references/team.md` carries the account.
+

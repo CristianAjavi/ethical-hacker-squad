@@ -1,0 +1,82 @@
+{
+  "provenance": {
+    "corpus": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-instrument/corpus-A",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/round-instrument/target",
+    "arm": "A",
+    "run": 1,
+    "steps_taken": [
+      "Read the assigned agent file corpus-A/agents/ehs-web-api.md and followed its First actions in order",
+      "Unaided pass FIRST: read target with own judgement before opening the pack - identified target as CKAN 2.9.10 (Flask/Pylons data portal), read ckan/views/{api,user,resource,admin,group}.py, ckan/lib/{helpers,uploader,munge,mailer,authenticator,api_token,base}.py, ckan/model/user.py, ckan/authz.py, ckan/logic/{__init__,schema,validators}.py, ckan/views/__init__.py, ckan/lib/search/query.py, ckanext/datastore/* and ckanext/{resourceproxy,webpageview,imageview,videoview,audioview,textview}",
+      "Enumeration before pack (First action 0): produced machine inventories - 214 logging call sites (185 non-literal), route/handler boundary map, SQL-construction sites in datastore postgres backend; ran the pack's exact AST log-sink query -> 168 non-test sites",
+      "Opened knowledge pack web-api.md (SS0-SS5, WEB-01..WEB-12, WEB-24, WEB-25), web-api-clientside-logic.md (SS6-SS10) and web-api-logging.md (SS11, WEB-22, WEB-28); read triage.md (FP-01..FP-10) before writing findings",
+      "Verified markdown_extract HTML-stripping bypass empirically in an isolated venv with the pinned markdown==3.4.1 (matches requirements.txt): crafted inputs survive RE_MD_HTML_TAGS.sub with live event-handler markup, returned as literal()/Markup",
+      "Traced controls that rule findings out: ignore_not_sysadmin on user schema (mass-assignment ruled out), url_is_local on came_from redirects (open-redirect ruled out), datastore_search_sql allowlist + single-statement + read-only role + pg_ block (SQLi ruled out), html.escape on JSONP callback (reflected XSS ruled out)",
+      "Wrote report JSON to reports/A-1.json"
+    ]
+  },
+  "findings": [
+    {
+      "title": "Stored XSS: markdown_extract() strips HTML with an incomplete regex and returns the result as trusted markup (WEB-13)",
+      "location": {"path": "ckan/lib/helpers.py", "symbol": "markdown_extract", "line": 1437},
+      "class": "stored-xss",
+      "severity": "high",
+      "evidence": "markdown_extract() computes `plain = RE_MD_HTML_TAGS.sub('', markdown(text))` (line 1437) where RE_MD_HTML_TAGS = re.compile('<[^><]*>') (line 2323), then returns `literal(plain)` (lines 1439/1441). `literal` is a markupsafe.Markup subclass, so Jinja2 does NOT auto-escape it; templates render it raw (e.g. ckan/templates/snippets/package_item.html:19/55 `{{ notes }}`, group/organization item snippets, package/read_base.html). `markdown` is the markdown library (import at line 20; pinned markdown==3.4.1 in requirements.txt). markdown passes BLOCK-LEVEL raw HTML through unescaped; the regex `<[^><]*>` cannot match a tag that itself contains a '<'. I verified with markdown==3.4.1 locally: input `<div onmouseover=\"alert(1)\" title=\"<\">` -> markdown -> regex-strip yields the literal, unterminated `<div onmouseover=\"alert(1)\" title=\"` (a live event-handler element), and `<iframe srcdoc=\"&lt;script&gt;alert(1)&lt;/script&gt;\" title=\"<\">` survives with its srcdoc intact. The source values are user-authored free text: package.notes and group/organization.description, stored without HTML sanitisation on input. Note the asymmetry: the FULL-page renderer render_markdown() (line 2367) DOES pass through bleach_clean, but the listing/snippet path via markdown_extract only uses this regex. Triage: FP-02 DOES_NOT_HOLD (value is attacker-authored content); FP-01 DOES_NOT_HOLD (no compensating sanitiser on this path - bleach is only on the sibling render_markdown path); FP-10 NOT_APPLICABLE (no CSP shipped).",
+      "impact": "A user who can create/edit a dataset (package.notes) or a group/organization description can store markup that executes JavaScript in the browser of any other user who views the dataset search results, group pages, organization pages or dashboard snippets - stored cross-site scripting on the portal origin. Enables session/cookie theft (the auth cookie is not HttpOnly-guaranteed and admin actions have no CSRF token), account takeover and admin compromise if a sysadmin views the listing.",
+      "recommendation": "Do not treat the regex-stripped output as trusted markup. Route markdown_extract through the same allowlist sanitiser as render_markdown (bleach_clean with MARKDOWN_TAGS/MARKDOWN_ATTRIBUTES) after conversion, or extract plain text by parsing rather than a `<[^><]*>` regex, and return an escaped string rather than literal()/Markup. Add a regression test asserting that a `<div onmouseover=...>`/`<iframe srcdoc=...>` payload comes back inert."
+    },
+    {
+      "title": "Uploaded resource files are served inline with an attacker-influenced Content-Type and no Content-Disposition / X-Content-Type-Options (WEB-12 / CWE-79)",
+      "location": {"path": "ckan/views/resource.py", "symbol": "download", "line": 177},
+      "class": "stored-xss-file-serving",
+      "severity": "medium",
+      "evidence": "resource.download() serves an uploaded file with `resp = flask.send_file(filepath)` (line 177) and then `resp.headers[u'Content-Type'] = rsc[u'mimetype']` (line 179). flask.send_file in Flask 1.1.1 (pinned) does not set `Content-Disposition: attachment` by default, so the file renders inline. The resource mimetype is user-controllable: the resource schema exposes `'mimetype': [ignore_missing, unicode_safe]` (ckan/logic/schema.py default_resource_schema), and when absent ResourceUpload guesses it from the filename extension (ckan/lib/uploader.py ResourceUpload.__init__, mimetypes.guess_type). Unlike the image Upload class, ResourceUpload performs NO content-type verification (Upload.verify_type exists at uploader.py:202 but ResourceUpload has no equivalent). No X-Content-Type-Options: nosniff, Content-Disposition or CSP header is set anywhere in the codebase (grep found only the datastore dump Content-disposition). So an uploaded x.html resource is served as text/html inline from the CKAN origin. Triage: FP-05 partially applies (serving uploaded files is intended) but the missing inline/nosniff hardening turns it into script execution on-origin.",
+      "impact": "An authenticated user able to add a resource file to a dataset can upload an HTML/SVG file (or set mimetype to text/html) that executes JavaScript on the CKAN origin when another user opens the resource download link - stored XSS, leading to cookie/session theft and privilege escalation.",
+      "recommendation": "Serve uploaded resource files with `Content-Disposition: attachment`, add `X-Content-Type-Options: nosniff`, and restrict/override the response Content-Type to a safe non-renderable type (e.g. application/octet-stream) for user uploads, or serve uploads from a separate sandbox domain. Do not reflect the user-stored mimetype for rendering."
+    },
+    {
+      "title": "Unauthenticated log injection via the password-reset 'user' field (WEB-28 / CWE-117)",
+      "location": {"path": "ckan/views/user.py", "symbol": "RequestResetView.post", "line": 616},
+      "class": "log-injection",
+      "severity": "medium",
+      "evidence": "RequestResetView.post reads `id = request.form.get(u'user')` and, after only an empty-check, logs `log.info(u'Password reset requested for user \"{}\"'.format(id))` (line 616) and later `log.info(u'User requested reset link for unknown user: {}'.format(id))` (line 650). The value is not neutralised for CR/LF. The route (/user/reset) is reachable WITHOUT authentication: user blueprint before_request (ckan/views/user.py:75) whitelists the request_reset endpoint, and its auth function returns success unconditionally (ckan/logic/auth/get.py request_reset). CKAN's standard logging is line-oriented text, so `user=bob\\r\\n2026-08-25 INFO login succeeded for admin` forges a second log record. Ran the pack's own AST enumeration query first (168 non-test log sites); these two are among the sites interpolating an unauthenticated request value with .format() (repr-based `%r` sites such as authenticator.py are comparatively safe because repr escapes newlines). Triage: FP-02 DOES_NOT_HOLD (fully attacker-controlled, unauthenticated); FP-03 - line-oriented sink, forges records; drops to informational only if a downstream JSON serializer is proven (none shipped).",
+      "impact": "An unauthenticated attacker can forge or corrupt log records, defeating incident reconstruction and, where logs are rendered in a line-based viewer/aggregator, potentially inject content into that viewer. CWE-117 is measured as the class model-generated code resolves worst.",
+      "recommendation": "Strip or escape CR/LF (and other control characters) from request-derived values before logging, or emit structured/JSON logs whose consumer parses that format. Apply repo-wide to logging of request-controlled values (see also views/api.py:281/305, views/__init__.py, search error logging)."
+    },
+    {
+      "title": "Raw API key / bearer token written to the log in cleartext (WEB-22 / CWE-532)",
+      "location": {"path": "ckan/views/__init__.py", "symbol": "_get_user_for_apikey", "line": 277},
+      "class": "sensitive-data-in-logs",
+      "severity": "medium",
+      "evidence": "_get_user_for_apikey() logs the raw credential: `log.debug(u'Received API Key: %s' % apikey)` (line 277). `apikey` is taken directly from the request (X-CKAN-API-Key header, then Authorization header/environ, lines 261-276) and may be a legacy API key or a JWT api-token; it is then used to look up the user (`filter_by(apikey=apikey)`) or passed to api_token.get_user_from_token. The full secret is written to the application log with no redaction. Triage: FP-04 - fires only at DEBUG level, but debug is a supported/commonly-enabled setting and the exposure is a live authentication credential.",
+      "impact": "Anyone with read access to the logs (operators, log-aggregation systems, backups) obtains valid API keys / bearer tokens and can impersonate the corresponding users. Cleartext credential storage in logs (CWE-532).",
+      "recommendation": "Never log the credential. Remove the value or log only a non-reversible fingerprint (e.g. a truncated hash) and only when strictly needed for debugging."
+    },
+    {
+      "title": "Session and auth cookies are not marked Secure by default (WEB-02)",
+      "location": {"path": "ckan/lib/repoze_plugins/auth_tkt.py", "symbol": "make_plugin", "line": 97},
+      "class": "cookie-hardening",
+      "severity": "low",
+      "evidence": "The auth_tkt cookie defaults to `secure = _bool(config.get(u'who.secure', False))` (line 97) and SameSite defaults to 'lax' (line 99). The Beaker session cookie template (ckan/config/deployment.ini_tmpl) sets no `beaker.session.secure`, so it too defaults to non-Secure. Neither the shipped deployment template nor who.ini enables who.secure. HttpOnly does default to True (line 95) and SameSite=Lax is a reasonable default. Triage: FP-04 - this is a config default; production docs (doc/maintaining/configuration.rst who.secure) describe enabling it, but the shipped default is insecure.",
+      "impact": "On a mixed or misconfigured HTTP/HTTPS deployment the auth and session cookies can be transmitted over cleartext HTTP, exposing them to network interception (CWE-614/CWE-1004).",
+      "recommendation": "Default who.secure and beaker.session.secure to True (or derive from ckan.site_url scheme), and document that they must be enabled behind TLS."
+    },
+    {
+      "title": "No CSRF protection on state-changing endpoints; csrf_input() is a no-op (WEB-15)",
+      "location": {"path": "ckan/lib/helpers.py", "symbol": "csrf_input", "line": 3031},
+      "class": "csrf",
+      "severity": "low",
+      "evidence": "The framework ships no anti-CSRF token: the `csrf_input()` template helper returns an empty string (line 3031) and there is no CSRF middleware anywhere (grep for csrf/xsrf found only this stub). State-changing operations (user edit/delete, dataset/resource create/update/delete, admin config, trash purge, org membership) are POST forms authorised solely by the ambient auth_tkt/session cookie. The only mitigation is the auth_tkt cookie's default SameSite=Lax (auth_tkt.py:99), which blocks cross-site POST but is operator-overridable to 'none'. Triage: FP-09/FP-10 - SameSite=Lax provides real but configuration-dependent protection, so this is defence-in-depth rather than fully open; recorded as low.",
+      "impact": "If SameSite is weakened (who.samesite=none) or a browser/path does not honour it, an attacker page can drive authenticated state-changing requests (CSRF, CWE-352), including admin actions that themselves have no second factor.",
+      "recommendation": "Introduce per-session CSRF tokens on all unsafe methods (as later CKAN releases do) and make csrf_input() emit a real token; do not rely on SameSite alone."
+    },
+    {
+      "title": "Password-reset key compared with a non-constant-time equality (WEB-03)",
+      "location": {"path": "ckan/lib/mailer.py", "symbol": "verify_reset_link", "line": 219},
+      "class": "timing-comparison",
+      "severity": "low",
+      "evidence": "verify_reset_link() ends with `return key.strip() == user.reset_key` (line 219) - a plain, short-circuiting string comparison rather than a constant-time compare (hmac.compare_digest). The reset key is 16 bytes from os.urandom rendered as hex (mailer.make_key, line 210-211), i.e. 128 bits from a CSPRNG, single-use (regenerated after reset). Triage: the strong CSPRNG token makes a remote timing attack impractical, so this is hardening, not exploitable in practice.",
+      "impact": "Theoretical timing side-channel on reset-token verification; not practically exploitable given the 128-bit CSPRNG token, but a latent weakness if token entropy is ever reduced.",
+      "recommendation": "Compare the reset key with hmac.compare_digest / a constant-time equality for defence in depth."
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over nineteen files, 4,450 lines in total, 169 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over nineteen files, 4,445 lines in total, 169 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
-1. The **leader does not read the packs**. It reads `coverage.md` to decide who to staff, and `traceability.md` and `tooling.md` to integrate results.
+1. The **leader does not read the packs**. It staffs roles from the pack table below, reads `coverage.md` for when a file is finished, and `traceability.md` and `tooling.md` to integrate results.
 2. The **specialist reads its own pack**, and only the sections its inventory justifies. Every pack opens with a selective-loading index for exactly this.
 3. One role, one pack. A specialist that needs another pack's procedure is a sign the leader split the work wrong; report it instead of reading across.
 4. `remediation.md` is the exception: it is shared by two roles, part A for the remediator and part B for the verifier. Each reads its own part.
@@ -16,7 +16,7 @@ Eight packs, one per role, spread over nineteen files, 4,450 lines in total, 169
 |---|---|---|---|---|
 | `web-api.md` | `ehs-web-api` | ~358 | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
 | `web-api-clientside-logic.md` | `ehs-web-api` | ~306 | `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`..`WEB-27` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, and any control whose presence is being read as proof that it works |
-| `web-api-logging.md` | `ehs-web-api` | ~120 | `WEB-22`, `WEB-28` | Exception handlers, a logger, stack traces returned to a client, a log viewer, a log aggregator |
+| `web-api-logging.md` | `ehs-web-api` | ~115 | `WEB-22`, `WEB-28` | Exception handlers, a logger, stack traces returned to a client, a log viewer, a log aggregator |
 | `mobile.md` | `ehs-mobile` | ~313 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
 | `mobile-runtime-trust.md` | `ehs-mobile` | ~119 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |

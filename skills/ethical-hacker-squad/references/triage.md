@@ -15,6 +15,20 @@ Each rule asks whether an **exculpating condition** holds. Four answers, and onl
 | `UNKNOWN` | You could not establish it | The finding **cannot** be reported as `confirmed`; `probable` is its ceiling |
 | `NOT_APPLICABLE` | The rule does not apply to this class of finding | Nothing |
 
+`FP-11` was added on 2026-08-26 from a measured failure, and its provenance belongs beside it.
+Across four runs of a seven-round comparison, exactly **two decoys were reported by this corpus
+and ruled out by the competitor**, and both were the same shape: an
+`Access-Control-Allow-Origin: *` set only on `/healthz`, and an auditor role whose scope is
+joined to the caller's org three files away. The gap between the two products on false
+positives that round was **one decoy per run** — this one.
+
+Rules `FP-01` and `FP-02` do not ask it. The first is about a control in another layer, the
+second about where a value came from. Neither asks whether the wide-looking construct **applies
+to less than it looks like it applies to**.
+
+Whether adding it closes that gap is **unmeasured**: the corpus it was derived from is retired,
+and validating a rule on the cases that produced it is the fitting these pages refuse.
+
 Three invariants, and they are the point of the file:
 
 1. **A finding reported as `confirmed` has every invoked rule answered, none of them `HOLDS`, and none of them `UNKNOWN`.** An unanswered rule is not a silent `DOES_NOT_HOLD` — this is the same doctrine as the gates' exit code `2`: could-not-measure is never a pass.
@@ -38,6 +52,7 @@ Answers travel with the finding, in the `triage` block of the return format in `
 | `FP-08` | **The control lives outside the repository and the evidence arrived.** An organization ruleset, a provider console setting, a support subscription, a landing-zone policy. | The exported artifact, the ticket or the written statement. **Without it the answer is `UNKNOWN`, never `HOLDS`** — "the platform takes care of it" is the most common way a real finding disappears. |
 | `FP-09` | **The construct is not what it looks like.** A Terraform module rather than a root, a Rails partial, legitimate Unicode in Arabic or Hebrew text, an emoji modifier. | The reading that makes it benign, in a sentence a reviewer can check in one step. |
 | `FP-10` | **It is real but bounded to `informational`.** A client-side check whose server-side equivalent exists, a missing attestation where provenance is already stored and verified, a defence in depth that is absent but not load-bearing. | Why the impact does not reach the user: this rule downgrades severity, it does not delete the finding, and the finding is still written down. |
+| `FP-11` | **The scope is narrower than the construct suggests.** A wildcard header set only on one route, a role whose queries are joined to the caller's tenant, a permissive default overridden by a condition in the same block. The construct is as wide as it reads; **what it applies to is not.** | The narrowing condition, named with its file and line, and the argument that no reachable path skips it. Not the same as `FP-01`: this is not another layer compensating, it is the same construct applying to less than it appears to. |
 <!-- /triage:rules -->
 
 ## What this does not do

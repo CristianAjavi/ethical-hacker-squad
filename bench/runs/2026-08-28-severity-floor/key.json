@@ -1,0 +1,996 @@
+{
+  "planted": [
+    {
+      "id": "AA-01",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/routes.swift",
+      "symbol": "routes(_:) / internalRoutes",
+      "line": 45,
+      "cwe": "CWE-306",
+      "class": "Missing authentication for critical function",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "domain": "web-api",
+      "true_severity": "high",
+      "requires_files": [
+        "permit-portal-api/Sources/App/routes.swift",
+        "permit-portal-api/Sources/App/Controllers/AdminController.swift"
+      ],
+      "note": "Every other collection is registered on the group carrying BearerAuthMiddleware (lines 35-41). AdminController is mounted on a bare app.grouped(\"internal\") with no middleware, and its handlers never touch req.auth. POST /internal/permits/{id}/approve, GET /internal/permits/export?tenant=..., POST /internal/attachments/import and GET /internal/sessions/active are all reachable with no credential. Neither file is wrong alone: the controller looks like any other RouteCollection, the mount looks like a second group."
+    },
+    {
+      "id": "AA-02",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/routes.swift",
+      "symbol": "app.post(\"auth\", \"token\")",
+      "line": 22,
+      "cwe": "CWE-307",
+      "class": "Improper restriction of excessive authentication attempts",
+      "kind": "composition",
+      "mechanism": "rate limit scoped past the credential endpoint",
+      "domain": "web-api",
+      "true_severity": "medium",
+      "requires_files": [
+        "permit-portal-api/Sources/App/routes.swift",
+        "permit-portal-api/Sources/App/Middleware/RateLimitMiddleware.swift"
+      ],
+      "note": "RateLimitMiddleware is attached only to the /api/v1 group (line 37). The credential exchange sits at the root, so password guessing against StaffDirectory.verify is unmetered. The middleware itself is correct and its comment says static assets and the health probe stay unmetered - it does not say the token endpoint does."
+    },
+    {
+      "id": "AA-03",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/PermitController.swift",
+      "symbol": "PermitController.list cacheKey",
+      "line": 44,
+      "cwe": "CWE-524",
+      "class": "Cache containing sensitive information keyed below the authorization boundary",
+      "kind": "composition",
+      "mechanism": "cache keyed on less than authorization needs",
+      "domain": "web-api",
+      "true_severity": "high",
+      "requires_files": [
+        "permit-portal-api/Sources/App/Controllers/PermitController.swift",
+        "permit-portal-api/Sources/App/Services/ResponseCache.swift"
+      ],
+      "note": "The SQL below filters on user.tenantID, but the cache key is status/page/perPage only and ResponseCache.shared is a single process-wide actor. The first council to request ?status=draft&page=1 populates the entry; every other tenant asking the same question gets those rows back for 45 seconds. Neither file is wrong on its own."
+    },
+    {
+      "id": "AA-04",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Models/Permit.swift",
+      "symbol": "Permit.asDTO",
+      "line": 63,
+      "cwe": "CWE-200",
+      "class": "Exposure of internal information to an authorized actor",
+      "kind": "single-file",
+      "mechanism": "sanitised at the wrong layer",
+      "domain": "web-api",
+      "true_severity": "low",
+      "requires_files": [
+        "permit-portal-api/Sources/App/Models/Permit.swift",
+        "permit-portal-api/Sources/App/Controllers/PermitController.swift"
+      ],
+      "note": "listProjection blanks internalReviewNotes and reviewerEmail; asDTO does not. GET /api/v1/permits/{id} (detail), create and update all return asDTO, so caseworker commentary and the assigned reviewer's address reach every authenticated user of the tenant, including applicants. Same-tenant only, no cross-boundary impact - honestly low."
+    },
+    {
+      "id": "AA-05",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/AttachmentController.swift",
+      "symbol": "AttachmentController.replaceContent",
+      "line": 108,
+      "cwe": "CWE-639",
+      "class": "Authorization bypass through user-controlled key on the update path",
+      "kind": "composition",
+      "mechanism": "create-checked-but-not-update",
+      "domain": "web-api",
+      "true_severity": "high",
+      "requires_files": [
+        "permit-portal-api/Sources/App/Controllers/AttachmentController.swift",
+        "permit-portal-api/Sources/App/Controllers/PermitController.swift"
+      ],
+      "note": "Creation goes through PermitController.attach, which loads the parent permit filtered on user.tenantID before writing. metadata, download and remove all re-derive the permit and compare tenantID. replaceContent only calls req.auth.require and load(req) - it re-validates content type and size, which is what makes the missing tenant comparison easy to read past. PUT /api/v1/attachments/{uuid}/content overwrites any council's document."
+    },
+    {
+      "id": "AA-06",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/configure.swift",
+      "symbol": "configure(_:) corsOrigin",
+      "line": 46,
+      "cwe": "CWE-942",
+      "class": "Permissive cross-origin policy with credentials",
+      "kind": "single-file",
+      "mechanism": "feature-flag or env selector",
+      "domain": "web-api",
+      "true_severity": "medium",
+      "requires_files": [
+        "permit-portal-api/Sources/App/configure.swift"
+      ],
+      "note": "PORTAL_ENV defaults to \"staging\", and only the literal \"production\" selects the pinned origin list. Nothing else in the tree sets PORTAL_ENV, so a deployment that forgets it serves allowedOrigin .all with allowCredentials true, letting any origin read authenticated responses."
+    },
+    {
+      "id": "AA-07",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/AdminController.swift",
+      "symbol": "AdminController.importAttachments",
+      "line": 89,
+      "cwe": "CWE-434",
+      "class": "Unrestricted upload/registration of file with dangerous type",
+      "kind": "composition",
+      "mechanism": "second writer bypassing an invariant",
+      "domain": "web-api",
+      "true_severity": "medium",
+      "requires_files": [
+        "permit-portal-api/Sources/App/Controllers/AdminController.swift",
+        "permit-portal-api/Sources/App/Controllers/PermitController.swift"
+      ],
+      "note": "PermitController.allowedUploadTypes is the invariant on what an Attachment row may claim, enforced in attach and re-enforced in replaceContent. importAttachments writes permitID, contentType and storageKey straight from the request body, so a row can name text/html and point storageKey at bytes uploaded through the legitimate path."
+    },
+    {
+      "id": "AA-08",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/AttachmentController.swift",
+      "symbol": "AttachmentController.download",
+      "line": 100,
+      "cwe": "CWE-693",
+      "class": "Protection mechanism failure - stored content type served inline without nosniff",
+      "kind": "single-file",
+      "mechanism": "sanitised at the wrong layer",
+      "domain": "web-api",
+      "true_severity": "low",
+      "requires_files": [
+        "permit-portal-api/Sources/App/Controllers/AttachmentController.swift"
+      ],
+      "note": "The stored contentType is echoed as the response type with Content-Disposition inline and no X-Content-Type-Options. On its own this sits behind a real control - the upload allowlist is pdf/png/jpeg/csv - so the honest rating is low; it only becomes serious once AA-07 lets a row claim another type."
+    },
+    {
+      "id": "AA-09",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/jobs/ledger-db.nomad.hcl",
+      "symbol": "group \"postgres\" network / port \"pg\"",
+      "line": 21,
+      "cwe": "CWE-668",
+      "class": "Exposure of resource to wrong sphere - service mesh authorization bypassed",
+      "kind": "composition",
+      "mechanism": "ACL at one layer while another is directly reachable",
+      "domain": "infra",
+      "true_severity": "high",
+      "requires_files": [
+        "edge-fleet-nomad/jobs/ledger-db.nomad.hcl",
+        "edge-fleet-nomad/consul/intentions.hcl"
+      ],
+      "note": "intentions.hcl denies everything except ledger-writer and reconcile-worker, with a trailing wildcard deny. That only governs traffic arriving through a Connect sidecar. This group runs network mode host with a static host port and the task sets network_mode host, so Postgres listens on the node's own interface and any workload on any node dials 5432 without touching the mesh."
+    },
+    {
+      "id": "AA-10",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/scripts/render-secrets.sh",
+      "symbol": "FLEET_ENV guard around VAULT_SKIP_VERIFY",
+      "line": 19,
+      "cwe": "CWE-295",
+      "class": "Improper certificate validation",
+      "kind": "composition",
+      "mechanism": "feature-flag or env selector",
+      "domain": "infra",
+      "true_severity": "high",
+      "requires_files": [
+        "edge-fleet-nomad/scripts/render-secrets.sh",
+        "edge-fleet-nomad/scripts/bootstrap-node.sh"
+      ],
+      "note": "The script compares against \"prod\" and sources /etc/fleet/env first. bootstrap-node.sh writes that file with FLEET_ENV=production (its own default). The strings never match, so VAULT_SKIP_VERIFY=true is exported on every node including the live fleet, and the AppRole login plus the returned Vault and Nomad tokens travel over an unverified TLS session."
+    },
+    {
+      "id": "AA-11",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/scripts/bootstrap-node.sh",
+      "symbol": "z-node-local.hcl drop-in",
+      "line": 35,
+      "cwe": "CWE-250",
+      "class": "Execution with unnecessary privileges",
+      "kind": "composition",
+      "mechanism": "second writer bypassing an invariant",
+      "domain": "infra",
+      "true_severity": "medium",
+      "requires_files": [
+        "edge-fleet-nomad/scripts/bootstrap-node.sh",
+        "edge-fleet-nomad/config/nomad-client.hcl"
+      ],
+      "note": "nomad-client.hcl is the reviewed baseline: allow_privileged false, volumes disabled, a narrow allow_caps list. The bootstrap installs that file and then writes a second config that sorts after it, re-enabling privileged containers and arbitrary host volume mounts for every job on the node. Reading either file alone gives the opposite answer."
+    },
+    {
+      "id": "AA-12",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/scripts/render-secrets.sh",
+      "symbol": "JOB_ROLES lookup default",
+      "line": 31,
+      "cwe": "CWE-269",
+      "class": "Improper privilege management via permissive default",
+      "kind": "composition",
+      "mechanism": "default or lookup deciding a permission",
+      "domain": "infra",
+      "true_severity": "high",
+      "requires_files": [
+        "edge-fleet-nomad/scripts/render-secrets.sh",
+        "edge-fleet-nomad/jobs/ledger-db.nomad.hcl",
+        "edge-fleet-nomad/jobs/telemetry-agent.nomad.hcl"
+      ],
+      "note": "The map names three jobs. ledger-db is in the tree and is not one of them, so `render-secrets.sh ledger-db` falls back to the fleet-admin AppRole and the pipeline logs in with the widest role in the cluster to deploy the database. Any job added later gets the same treatment; the map looks complete until you list jobs/."
+    },
+    {
+      "id": "AA-13",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/config/gateway-routes.yaml",
+      "symbol": "middlewares.fleet-auth.forwardAuth.authResponseHeaders",
+      "line": 44,
+      "cwe": "CWE-290",
+      "class": "Authentication bypass by spoofing an identity header",
+      "kind": "composition",
+      "mechanism": "permission from a header the proxy does not strip",
+      "domain": "infra",
+      "true_severity": "high",
+      "requires_files": [
+        "edge-fleet-nomad/config/gateway-routes.yaml",
+        "edge-fleet-nomad/jobs/edge-gateway.nomad.hcl"
+      ],
+      "note": "forwardAuth copies X-Fleet-Role/Tenant/Subject from the auth service's response onto the upstream request, but Traefik does not remove an inbound header of the same name when the auth response omits it. There is no customRequestHeaders stanza clearing them. The edge-gateway job terminates TLS for the internet on :443, so an external caller supplies X-Fleet-Role: admin and the upstream believes the proxy asserted it."
+    },
+    {
+      "id": "AA-14",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/config/vector.toml",
+      "symbol": "transforms.redact",
+      "line": 26,
+      "cwe": "CWE-532",
+      "class": "Insertion of sensitive information into log storage",
+      "kind": "composition",
+      "mechanism": "sanitised at the wrong layer",
+      "domain": "infra",
+      "true_severity": "low",
+      "requires_files": [
+        "edge-fleet-nomad/config/vector.toml",
+        "edge-fleet-nomad/jobs/edge-gateway.nomad.hcl"
+      ],
+      "note": "The redaction covers authorization and set-cookie. The gateway job sets accesslog headers defaultmode=drop but explicitly keeps X-Fleet-Tenant and X-Fleet-Subject, which the redaction never touches, so tenant and subject identifiers land in the shared fleet-platform-logs bucket alongside the full request line. Narrow impact - internal identifiers to an internal audience - so low."
+    },
+    {
+      "id": "AA-15",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/flows/reconcile.py",
+      "symbol": "reconcile_statements fallback to post_batch_copy",
+      "line": 78,
+      "cwe": "CWE-639",
+      "class": "Authorization bypass on the fallback write path",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skipping the validator",
+      "domain": "worker",
+      "true_severity": "high",
+      "requires_files": [
+        "ledger-reconcile-flows/flows/reconcile.py",
+        "ledger-reconcile-flows/tasks/postings.py"
+      ],
+      "note": "The happy path posts `accepted` (validated, tenant forced to the run's tenant) and post_batch refuses an unbalanced batch. The except arm posts `rows` - the raw file lines - through post_batch_copy, which takes str(row.get(\"tenant_id\") or tenant_id) for the COPY. A partner only has to make the first insert fail (an unbalanced batch does it) to reach a writer that lets the file choose which council's ledger it lands in."
+    },
+    {
+      "id": "AA-16",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/flows/ingest.py",
+      "symbol": "drain_settlement_notices tenant resolution",
+      "line": 84,
+      "cwe": "CWE-639",
+      "class": "Authorization decided by the message body",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the consumed message",
+      "domain": "worker",
+      "true_severity": "high",
+      "requires_files": [
+        "ledger-reconcile-flows/flows/ingest.py",
+        "ledger-reconcile-flows/prefect.yaml"
+      ],
+      "note": "prefect.yaml pins the webhook body with a jsonschema (required keys, uuid tenant_id, additionalProperties false) but the template stores `body | tojson` wholesale and the schema governs the envelope, not the nested payload object the consumer reads. The flow prefers payload[\"tenant_id\"] over the column the webhook recorded, so a notice can name any council and post into its ledger."
+    },
+    {
+      "id": "AA-17",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/flows/reconcile.py",
+      "symbol": "apply_adjustments",
+      "line": 26,
+      "cwe": "CWE-841",
+      "class": "Improper enforcement of a behavioural invariant",
+      "kind": "composition",
+      "mechanism": "second writer bypassing an invariant",
+      "domain": "worker",
+      "true_severity": "medium",
+      "requires_files": [
+        "ledger-reconcile-flows/flows/reconcile.py",
+        "ledger-reconcile-flows/tasks/postings.py"
+      ],
+      "note": "postings.py states the ledger invariant and _assert_balanced enforces it for every batch. apply_adjustments opens its own connection and inserts one row per adjustment straight from document[\"adjustments\"], with no balance check and no validate_row, so a partner statement can mint unpaired value and unvalidated amounts."
+    },
+    {
+      "id": "AA-18",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/flows/ingest.py",
+      "symbol": "record_event ON CONFLICT",
+      "line": 34,
+      "cwe": "CWE-837",
+      "class": "Improper enforcement of a single unique action",
+      "kind": "composition",
+      "mechanism": "idempotency key lets a second actor replay",
+      "domain": "worker",
+      "true_severity": "medium",
+      "requires_files": [
+        "ledger-reconcile-flows/flows/ingest.py",
+        "ledger-reconcile-flows/tasks/postings.py"
+      ],
+      "note": "ingest_events has idempotency_key as its sole primary key (SCHEMA_SQL in postings.py), and the insert conflicts on that column alone rather than on (source, tenant_id, idempotency_key). Any partner that guesses or observes another partner's key can pre-claim it, and the real notice is silently dropped; the same key replayed from a different source is also collapsed."
+    },
+    {
+      "id": "AA-19",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/flows/reconcile.py",
+      "symbol": "create_markdown_artifact quarantine table",
+      "line": 97,
+      "cwe": "CWE-532",
+      "class": "Sensitive data written to a channel the redaction does not cover",
+      "kind": "composition",
+      "mechanism": "sanitised at the wrong layer",
+      "domain": "worker",
+      "true_severity": "low",
+      "requires_files": [
+        "ledger-reconcile-flows/flows/reconcile.py",
+        "ledger-reconcile-flows/blocks/settings.py"
+      ],
+      "note": "install_log_redaction attaches AccountRedactingFilter to the prefect.flow_runs and prefect.task_runs loggers, so logger.info(...) is scrubbed. The artifact is written through prefect.artifacts, not through logging, so raw account numbers from the quarantined rows are published to every workspace viewer. Narrow audience, no cross-boundary access - low."
+    },
+    {
+      "id": "AA-20",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/tasks/validators.py",
+      "symbol": "validate_row lenient branch",
+      "line": 37,
+      "cwe": "CWE-20",
+      "class": "Improper input validation disabled by default",
+      "kind": "composition",
+      "mechanism": "feature-flag or env selector",
+      "domain": "worker",
+      "true_severity": "medium",
+      "requires_files": [
+        "ledger-reconcile-flows/tasks/validators.py",
+        "ledger-reconcile-flows/blocks/settings.py",
+        "ledger-reconcile-flows/prefect.yaml"
+      ],
+      "note": "strict_validation is LEDGER_STRICT == \"1\", default \"0\". prefect.yaml sets LEDGER_STRICT only on reconcile-staging; reconcile-nightly and drain-settlement-notices, both on the production pool, do not. In production every row therefore takes the early return: no reference, currency, account or amount check, and nothing is ever quarantined. The test suite sets the variable itself, so the suite passes on the path production never takes."
+    },
+    {
+      "id": "AA-21",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/tasks/sftp_fetch.py",
+      "symbol": "fetch_all",
+      "line": 76,
+      "cwe": "CWE-770",
+      "class": "Allocation of resources without limits",
+      "kind": "single-file",
+      "mechanism": "retry/fallback/bulk path skipping the validator",
+      "domain": "worker",
+      "true_severity": "low",
+      "requires_files": [
+        "ledger-reconcile-flows/tasks/sftp_fetch.py",
+        "ledger-reconcile-flows/blocks/settings.py"
+      ],
+      "note": "fetch_one stats the remote file and refuses anything over settings.max_file_bytes. fetch_all - the one the flow actually calls - loops getfo into memory with no stat and no cap, holding every statement of the run at once. Authenticated partner, availability only, no data exposure: low."
+    },
+    {
+      "id": "AA-22",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/windows.js",
+      "symbol": "createReportWindow webPreferences",
+      "line": 61,
+      "cwe": "CWE-829",
+      "class": "Remote content loaded into a Node-integrated renderer",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "domain": "client",
+      "true_severity": "high",
+      "requires_files": [
+        "sitewatch-desktop/src/main/windows.js",
+        "sitewatch-desktop/src/main/index.js"
+      ],
+      "note": "The shell window is correctly locked down and its will-navigate handler refuses any non-portal origin. index.js then installs setWindowOpenHandler that routes exactly those refused destinations into createReportWindow, which loads the URL with nodeIntegration true, contextIsolation false and no sandbox. The origin check on one path and the escape hatch on the other are in different files."
+    },
+    {
+      "id": "AA-23",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/ipc.js",
+      "symbol": "ipcMain.handle('files:read')",
+      "line": 63,
+      "cwe": "CWE-862",
+      "class": "Missing authorization on IPC channels",
+      "kind": "composition",
+      "mechanism": "middleware scope missing siblings",
+      "domain": "client",
+      "true_severity": "high",
+      "requires_files": [
+        "sitewatch-desktop/src/main/ipc.js",
+        "sitewatch-desktop/src/preload/bridge.js",
+        "sitewatch-desktop/src/main/windows.js"
+      ],
+      "note": "handleGuarded wraps six channels with assertTrustedSender. files:read, files:reveal and plugins:refresh are registered with bare ipcMain.handle and take an unconstrained path. The preload restricts them with safeTilePath, so reading bridge.js alone the surface looks narrow; any renderer that can reach ipcRenderer directly - which the report window from AA-22 can - reads arbitrary files and opens arbitrary paths."
+    },
+    {
+      "id": "AA-24",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/windows.js",
+      "symbol": "createMainWindow webSecurity",
+      "line": 27,
+      "cwe": "CWE-346",
+      "class": "Origin validation disabled by a runtime flag",
+      "kind": "composition",
+      "mechanism": "feature-flag or env selector",
+      "domain": "client",
+      "true_severity": "medium",
+      "requires_files": [
+        "sitewatch-desktop/src/main/windows.js",
+        "sitewatch-desktop/src/main/config.js"
+      ],
+      "note": "isDevMode() is true for SITEWATCH_DEV=1, for an unpackaged build, and for the presence of a dev.flag file in userData. userData is writable by anything running as the officer, so dropping an empty file there disables webSecurity in the shipped, packaged, signed build - permanently and with no UI trace."
+    },
+    {
+      "id": "AA-25",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/index.js",
+      "symbol": "installPermissionPolicy callback",
+      "line": 21,
+      "cwe": "CWE-1188",
+      "class": "Insecure default in a permission decision",
+      "kind": "composition",
+      "mechanism": "default or lookup deciding a permission",
+      "domain": "client",
+      "true_severity": "medium",
+      "requires_files": [
+        "sitewatch-desktop/src/main/index.js",
+        "sitewatch-desktop/src/main/config.js"
+      ],
+      "note": "WEB_PERMISSIONS lists five permissions and reads like the complete policy. The handler falls back to true for anything absent, so media, geolocation, midi, display-capture and idle-detection are granted without a prompt to any frame the origin check lets through - which includes file:// content and, once AA-22 fires, remote report pages."
+    },
+    {
+      "id": "AA-26",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/updater.js",
+      "symbol": "refreshPlugin",
+      "line": 62,
+      "cwe": "CWE-494",
+      "class": "Download of code without integrity check",
+      "kind": "single-file",
+      "mechanism": "create-checked-but-not-update",
+      "domain": "client",
+      "true_severity": "high",
+      "requires_files": [
+        "sitewatch-desktop/src/main/updater.js",
+        "sitewatch-desktop/src/main/config.js"
+      ],
+      "note": "installPlugin compares sha256(bundle) against entry.sha256 before writing. refreshPlugin fetches entry.updateUrl - a field the feed controls and which nothing else in the tree constrains - and writes it to the same plugin path with no checksum comparison at all. Every already-installed plugin is updated through this path from the renderer's Update button."
+    },
+    {
+      "id": "AA-27",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/renderer/app.js",
+      "symbol": "cacheKey",
+      "line": 31,
+      "cwe": "CWE-524",
+      "class": "Client cache keyed below the identity boundary",
+      "kind": "composition",
+      "mechanism": "cache keyed on less than authorization needs",
+      "domain": "client",
+      "true_severity": "low",
+      "requires_files": [
+        "sitewatch-desktop/src/renderer/app.js",
+        "sitewatch-desktop/src/main/ipc.js"
+      ],
+      "note": "session:switch clears the cookie jar in the main process, which is the real session boundary. The renderer's localStorage cache is keyed on report id only and survives the switch, so on a shared field workstation the next officer reads the previous officer's report titles and notes for up to thirty minutes. Local, same-device, short-lived: low."
+    },
+    {
+      "id": "AA-28",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/cmd/catalogd/main.go",
+      "symbol": "grpc.NewServer options",
+      "line": 52,
+      "cwe": "CWE-306",
+      "class": "Missing authentication on the streaming surface",
+      "kind": "composition",
+      "mechanism": "middleware scope missing siblings",
+      "domain": "data",
+      "true_severity": "high",
+      "requires_files": [
+        "catalog-grpc-store/cmd/catalogd/main.go",
+        "catalog-grpc-store/internal/server/interceptor.go",
+        "catalog-grpc-store/internal/server/server.go"
+      ],
+      "note": "Only a UnaryInterceptor is registered; there is no StreamInterceptor. ExportItems is the one server-streaming RPC, and it does `caller, _ := CallerFrom(ctx)` and then falls back to the x-catalog-tenant metadata value when the caller is empty - which it always is. An unauthenticated client streams any tenant's whole catalogue."
+    },
+    {
+      "id": "AA-29",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/server/interceptor.go",
+      "symbol": "AuthInterceptor.resolve role override",
+      "line": 67,
+      "cwe": "CWE-290",
+      "class": "Privilege escalation via a client-supplied role header",
+      "kind": "composition",
+      "mechanism": "permission from a header the proxy does not strip",
+      "domain": "data",
+      "true_severity": "high",
+      "requires_files": [
+        "catalog-grpc-store/internal/server/interceptor.go",
+        "catalog-grpc-store/internal/gateway/http.go"
+      ],
+      "note": "The session lookup is sound, then the role is overwritten from x-catalog-role metadata. The JSON gateway forwards every inbound header matching the x-catalog- prefix, and its stripped set covers only x-catalog-tenant and x-catalog-subject. A viewer sends X-Catalog-Role: admin to the public gateway and passes RequireRole in CreateItem, UpdateItem and DeleteItem, including the admins-only publish check."
+    },
+    {
+      "id": "AA-30",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/server/server.go",
+      "symbol": "Service.GetItem cache hit",
+      "line": 52,
+      "cwe": "CWE-524",
+      "class": "Cache lookup ahead of the tenant-scoped read",
+      "kind": "composition",
+      "mechanism": "cache keyed on less than authorization needs",
+      "domain": "data",
+      "true_severity": "medium",
+      "requires_files": [
+        "catalog-grpc-store/internal/server/server.go",
+        "catalog-grpc-store/internal/store/cache.go"
+      ],
+      "note": "The store read is correctly `GetItem(ctx, caller.TenantID, id)`, but the cache is consulted first and ItemCache is keyed on the item id alone with no tenant component. Once any tenant warms an id, any other tenant that knows the uuid reads the row for ninety seconds. Needs a known item uuid, so medium rather than high."
+    },
+    {
+      "id": "AA-31",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/store/search.go",
+      "symbol": "ExportQuery",
+      "line": 111,
+      "cwe": "CWE-89",
+      "class": "SQL injection on the bulk path",
+      "kind": "composition",
+      "mechanism": "retry/fallback/bulk path skipping the validator",
+      "domain": "data",
+      "true_severity": "high",
+      "requires_files": [
+        "catalog-grpc-store/internal/store/search.go",
+        "catalog-grpc-store/internal/server/server.go"
+      ],
+      "note": "Search goes through ParseFilter and ParseOrderBy - column allowlists and bound parameters. ExportItems calls ExportQuery instead, which pastes the wire filter and order_by into the statement and single-quotes the tenant id, because streaming a cursor with bound parameters held the connection open. The filter is caller-controlled, so `1=1) OR (1=1` reads every tenant and a stacked expression reads other tables."
+    },
+    {
+      "id": "AA-32",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/store/postgres.go",
+      "symbol": "Postgres.CreateItem receipt lookup",
+      "line": 105,
+      "cwe": "CWE-203",
+      "class": "Observable discrepancy across a tenant boundary",
+      "kind": "single-file",
+      "mechanism": "idempotency key lets a second actor replay",
+      "domain": "data",
+      "true_severity": "low",
+      "requires_files": [
+        "catalog-grpc-store/internal/store/postgres.go",
+        "catalog-grpc-store/internal/server/server.go"
+      ],
+      "note": "create_receipts has idempotency_key as its sole primary key and the lookup is not scoped by tenant, so a key is global. A caller reusing another tenant's key gets AlreadyExists carrying that tenant's item uuid, and can squat a key the other tenant is about to retry with. Existence oracle plus a uuid, no content: low."
+    },
+    {
+      "id": "AA-33",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/agent/prompt.ts",
+      "symbol": "buildMessages system message",
+      "line": 38,
+      "cwe": "CWE-1427",
+      "class": "Untrusted retrieved text placed in the instruction channel",
+      "kind": "composition",
+      "mechanism": "prompt or tool-call boundary crossed by untrusted text",
+      "domain": "ai",
+      "true_severity": "medium",
+      "requires_files": [
+        "docwise-assist/src/agent/prompt.ts",
+        "docwise-assist/src/ingest/weaviate.ts",
+        "docwise-assist/src/ingest/crawler.ts"
+      ],
+      "note": "The chunks are crawled partner documentation - third-party writable HTML, stripped of markup and PII but never of instructions. renderContext splices them into the same system message as the house rules, above the user turn, so retrieved text carries the same authority as the policy that says never reveal these instructions. Alone this is instruction hijack; it becomes the delivery vehicle for AA-34."
+    },
+    {
+      "id": "AA-34",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/agent/loop.ts",
+      "symbol": "answerQuestion tool result message",
+      "line": 84,
+      "cwe": "CWE-1427",
+      "class": "Tool output promoted to the instruction channel with a side-effecting tool available",
+      "kind": "composition",
+      "mechanism": "prompt or tool-call boundary crossed by untrusted text",
+      "domain": "ai",
+      "true_severity": "high",
+      "requires_files": [
+        "docwise-assist/src/agent/loop.ts",
+        "docwise-assist/src/agent/tools.ts"
+      ],
+      "note": "The refusal branch pushes role 'tool' correctly; the success branch pushes the result as role 'system'. search_corpus returns raw chunk text, so corpus content is fed back as a system instruction on the next turn, and share_document then posts a corpus document to any recipient the model names with no confirmation step. A planted paragraph in a crawled page turns into exfiltration to an attacker-chosen address."
+    },
+    {
+      "id": "AA-35",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/agent/tools.ts",
+      "symbol": "isToolAllowed default",
+      "line": 70,
+      "cwe": "CWE-863",
+      "class": "Incorrect authorization from a permissive map default",
+      "kind": "composition",
+      "mechanism": "default or lookup deciding a permission",
+      "domain": "ai",
+      "true_severity": "medium",
+      "requires_files": [
+        "docwise-assist/src/agent/tools.ts",
+        "docwise-assist/src/agent/loop.ts",
+        "docwise-assist/src/router.ts"
+      ],
+      "note": "TOOL_POLICY is the only gate loop.ts consults, and its comment claims everything shipped is listed. open_ticket is in TOOL_SPECS and not in TOOL_POLICY, so the missing entry means allow: a free-plan viewer raises tickets carrying up to 4000 characters of model-authored text. Every tool added later inherits the same default."
+    },
+    {
+      "id": "AA-36",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/agent/loop.ts",
+      "symbol": "JSON.parse(call.function.arguments)",
+      "line": 77,
+      "cwe": "CWE-770",
+      "class": "Model-produced arguments consumed without the schema applied to the request",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the consumed message",
+      "domain": "ai",
+      "true_severity": "low",
+      "requires_files": [
+        "docwise-assist/src/agent/loop.ts",
+        "docwise-assist/src/router.ts",
+        "docwise-assist/src/agent/tools.ts"
+      ],
+      "note": "askInput and searchInput cap topK at 20 with zod. The tool-call arguments are JSON.parsed and handed to runTool untouched, and search_corpus does Number(args.topK ?? 6) straight into the Weaviate limit. A topK of 100000 is honoured. Authenticated, availability and cost only, so low."
+    },
+    {
+      "id": "AA-37",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/router.ts",
+      "symbol": "authRouter.exchangeKey",
+      "line": 23,
+      "cwe": "CWE-307",
+      "class": "Improper restriction of excessive authentication attempts",
+      "kind": "composition",
+      "mechanism": "rate limit scoped past the credential endpoint",
+      "domain": "ai",
+      "true_severity": "medium",
+      "requires_files": [
+        "docwise-assist/src/router.ts",
+        "docwise-assist/src/server.ts"
+      ],
+      "note": "meteredProcedure carries the only rate limit and is built on authedProcedure, so the bucket is keyed on a workspace that only exists after authentication. exchangeKey is a publicProcedure, which means the one endpoint that turns a guess into a session is the one endpoint that cannot be metered by that design."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "BB-01",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Middleware/RateLimitMiddleware.swift",
+      "symbol": "RateLimitMiddleware.identity",
+      "line": 38,
+      "looks_like": "Rate-limit bucket keyed on a truncated token, so two callers could share a bucket or an attacker could pick a colliding prefix",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "permit-portal-api/Sources/App/Middleware/BearerAuthMiddleware.swift:19-21 - TokenIssuer.issue builds the token from 32 random bytes base64url encoded, so a 16-character prefix still carries 96 bits and cannot be steered or collided with."
+    },
+    {
+      "id": "BB-02",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/jobs/edge-gateway.nomad.hcl",
+      "symbol": "task \"traefik\" template perms",
+      "line": 69,
+      "looks_like": "TLS material rendered to a world-readable 0644 file",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "edge-fleet-nomad/jobs/edge-gateway.nomad.hcl:65-67 - the template lands in secrets/, which Nomad mounts as a per-task private tmpfs, and the group declares a single task, so no other process shares the mount."
+    },
+    {
+      "id": "BB-03",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/config/vector.toml",
+      "symbol": "sinks.internal_metrics.address",
+      "line": 57,
+      "looks_like": "Prometheus exporter bound to 0.0.0.0, exposing agent metrics to the whole network",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "edge-fleet-nomad/jobs/telemetry-agent.nomad.hcl:6-13 - the group runs bridge networking and declares port \"metrics\" with only a `to` mapping and no static host port, so 9598 exists inside the allocation's namespace and is reachable through the Connect sidecar."
+    },
+    {
+      "id": "BB-04",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/index.js",
+      "symbol": "onHeadersReceived",
+      "line": 24,
+      "looks_like": "Response header policy that sets X-Frame-Options and never sets a Content-Security-Policy",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "sitewatch-desktop/src/renderer/index.html:5-8 - the renderer document carries a strict CSP meta (default-src 'self', object-src 'none', base-uri 'none') that governs the window this handler serves."
+    },
+    {
+      "id": "BB-05",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/ingest/weaviate.ts",
+      "symbol": "searchChunks return mapping",
+      "line": 73,
+      "looks_like": "Retrieval returns raw document text to the caller with no PII scrubbing anywhere on the read path",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "docwise-assist/src/ingest/crawler.ts:64 - chunkText(...).map(redactChunk) runs before indexChunks, so emails, IBANs, NI numbers and phone numbers are already replaced in everything the store holds."
+    },
+    {
+      "id": "BB-06",
+      "case": "docwise-assist",
+      "path": "docwise-assist/src/router.ts",
+      "symbol": "corpusRouter.crawl input",
+      "line": 63,
+      "looks_like": "Admin endpoint accepting an arbitrary URL and fetching it server-side - server-side request forgery",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "docwise-assist/src/ingest/crawler.ts:43-46 - crawlSource rejects anything that is not https and whose hostname is not in ALLOWED_HOSTS, before any request is issued, and maxRedirections is capped at 2."
+    },
+    {
+      "id": "BB-07",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/gateway/http.go",
+      "symbol": "forwardedPrefixes",
+      "line": 23,
+      "looks_like": "The gateway blindly forwards the caller's Authorization header to a backend",
+      "shape": "constrained-elsewhere",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "catalog-grpc-store/cmd/catalogd/main.go:77 - the gateway dials CATALOG_GRPC_TARGET, defaulting to 127.0.0.1:8443, over TLS; the bearer is meant to reach the interceptor, which is the component that validates it."
+    },
+    {
+      "id": "BB-08",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/PermitController.swift",
+      "symbol": "PermitController.list ORDER BY",
+      "line": 64,
+      "looks_like": "A query-string value interpolated into an ORDER BY with \\(raw:), which bypasses SQLKit's binding",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "permit-portal-api/Sources/App/Models/Permit.swift:87-91 - PermitSort is a closed String enum, and line 57 of PermitController rejects the request unless PermitSort(rawValue:) succeeds, so the interpolated value is one of three literals."
+    },
+    {
+      "id": "BB-09",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/tasks/postings.py",
+      "symbol": "post_batch executemany",
+      "line": 59,
+      "looks_like": "A multi-line SQL string assembled around partner-supplied values",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "same-line",
+      "ruled_out_by": "ledger-reconcile-flows/tasks/postings.py:63-79 - every value is a %s placeholder bound by psycopg through the parameter sequence; nothing from the row reaches the statement text."
+    },
+    {
+      "id": "BB-10",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/renderer/app.js",
+      "symbol": "showReport",
+      "line": 71,
+      "looks_like": "innerHTML assigned from report data - cross-site scripting in the renderer",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/renderer/app.js:8-23 - renderNotes runs escapeHtml over the whole string first and only then applies its three fixed markdown substitutions, so no attacker-controlled angle bracket survives."
+    },
+    {
+      "id": "BB-11",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/store/search.go",
+      "symbol": "ParseFilter fragment assembly",
+      "line": 60,
+      "looks_like": "fmt.Sprintf building a WHERE fragment from parsed wire input",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "catalog-grpc-store/internal/store/search.go:31 and 54-57 - the column comes out of the filterableColumns map, the operator out of a fixed alternation in clauseRe, and the literal becomes a $n placeholder appended to Args."
+    },
+    {
+      "id": "BB-12",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/store/postgres.go",
+      "symbol": "Postgres.Search query assembly",
+      "line": 201,
+      "looks_like": "ORDER BY and LIMIT concatenated into the statement instead of bound",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "catalog-grpc-store/internal/server/server.go:172-186 - the only caller clamps pageSize to maxPageSize, derives offset from offsetFromToken (digits only, capped) and passes orderBy through store.ParseOrderBy, which maps it onto the sortableColumns allowlist."
+    },
+    {
+      "id": "BB-13",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/server/server.go",
+      "symbol": "Service.Search filter handling",
+      "line": 180,
+      "looks_like": "The wire filter string handed straight to the store layer",
+      "shape": "coerced-upstream",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "catalog-grpc-store/internal/store/search.go:39-73 - ParseFilter re-derives the whole fragment from an allowlist and bound parameters and returns an error for anything it cannot match, so the caller's string never reaches SQL."
+    },
+    {
+      "id": "BB-14",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/configure.swift",
+      "symbol": "configure(_:) dbTLS",
+      "line": 18,
+      "looks_like": "Postgres connection with TLS explicitly disabled",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "permit-portal-api/Sources/App/configure.swift:16-21 - the branch only fires when DB_HOST is 127.0.0.1 or localhost; every other host takes the else arm and requires TLS."
+    },
+    {
+      "id": "BB-15",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Middleware/BearerAuthMiddleware.swift",
+      "symbol": "StaffDirectory.verify",
+      "line": 84,
+      "looks_like": "A legacy-hash branch that could let a non-bcrypt row authenticate",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-line",
+      "ruled_out_by": "permit-portal-api/Sources/App/Middleware/BearerAuthMiddleware.swift:84-85 - the guard returns nil for any hash without the $2 prefix and the next line still runs Bcrypt.verify; there is no fallback comparison."
+    },
+    {
+      "id": "BB-16",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/AdminController.swift",
+      "symbol": "AdminController.exportAll cell",
+      "line": 56,
+      "looks_like": "User-controlled strings written into a CSV a spreadsheet will open - formula injection",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "permit-portal-api/Sources/App/Controllers/AdminController.swift:57-61 - a leading =, +, -, @, tab or CR gets an apostrophe prefix before the quote doubling, which is the standard neutralisation."
+    },
+    {
+      "id": "BB-17",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/tasks/sftp_fetch.py",
+      "symbol": "_connect key handling",
+      "line": 24,
+      "looks_like": "The partner private key written to a file under /tmp",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "ledger-reconcile-flows/tasks/sftp_fetch.py:24-38 - mkstemp creates the file 0600 owned by the worker, chmod re-asserts it, and the finally block unlinks it as soon as the handshake returns."
+    },
+    {
+      "id": "BB-18",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/windows.js",
+      "symbol": "will-navigate handler",
+      "line": 40,
+      "looks_like": "shell.openExternal called with a URL the page chose - arbitrary protocol handler launch",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/main/windows.js:39-41 - the call sits behind /^https?:\\/\\//i, so file:, smb:, ms-msdt: and the rest never reach the OS handler."
+    },
+    {
+      "id": "BB-19",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/preload/bridge.js",
+      "symbol": "plan.readTile",
+      "line": 41,
+      "looks_like": "The preload exposing a file read to the renderer",
+      "shape": "narrowed-sibling",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/preload/bridge.js:11-17 - safeTilePath requires the tiles/ prefix and rejects any path containing .., so what this bridge itself can ask for stays inside the plan cache."
+    },
+    {
+      "id": "BB-20",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/config.js",
+      "symbol": "PLUGIN_FEED_KEY",
+      "line": 17,
+      "looks_like": "A PEM key block hardcoded in application source",
+      "shape": "public-sample",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/main/config.js:15-19 and 55-68 - it is an Ed25519 PUBLIC key, used only as the second argument to crypto.verify; pinning it in the build is the point of the design."
+    },
+    {
+      "id": "BB-21",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/tests/test_validators.py",
+      "symbol": "GOOD fixture",
+      "line": 13,
+      "looks_like": "A real account number and tenant identifier committed to the repository",
+      "shape": "public-sample",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "ledger-reconcile-flows/tests/test_validators.py:11-22 - the values exist to exercise the regex bands in validate_row and are paired with a repeating-digit tenant uuid; they address no live ledger."
+    },
+    {
+      "id": "BB-22",
+      "case": "ledger-reconcile-flows",
+      "path": "ledger-reconcile-flows/prefect.yaml",
+      "symbol": "reconcile-staging parameters",
+      "line": 48,
+      "looks_like": "A tenant identifier and database credentials pinned in the deployment manifest",
+      "shape": "public-sample",
+      "exculpation_distance": "same-line",
+      "ruled_out_by": "ledger-reconcile-flows/prefect.yaml:48-53 - the tenant is a zero-padded staging placeholder and every credential is a {{ prefect.blocks.secret.* }} reference resolved at run time, not a literal."
+    },
+    {
+      "id": "BB-23",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/cmd/catalogd/main.go",
+      "symbol": "store.Open DSN default",
+      "line": 34,
+      "looks_like": "A database connection string embedded in the binary",
+      "shape": "public-sample",
+      "exculpation_distance": "same-line",
+      "ruled_out_by": "catalog-grpc-store/cmd/catalogd/main.go:23-28 and 34 - env() returns CATALOG_DSN whenever it is set; the literal is a passwordless loopback placeholder for a local run."
+    },
+    {
+      "id": "BB-24",
+      "case": "catalog-grpc-store",
+      "path": "catalog-grpc-store/internal/store/search.go",
+      "symbol": "ParseOrderBy",
+      "line": 82,
+      "looks_like": "fields[0] indexed without checking that Fields returned anything - a panic reachable from the wire",
+      "shape": "unreachable-earlier-layer",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "catalog-grpc-store/internal/store/search.go:77-79 - the function returns the default ordering for an empty string before Fields is called, so by line 82 the slice has at least one element."
+    },
+    {
+      "id": "BB-25",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/ipc.js",
+      "symbol": "readReportCache",
+      "line": 30,
+      "looks_like": "A filesystem path built by interpolating an identifier that arrived over IPC",
+      "shape": "unreachable-earlier-layer",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/main/ipc.js:36-41 - the only caller is the reports:cached handler, which throws unless the id matches /^[0-9a-f-]{36}$/i before readReportCache is entered."
+    },
+    {
+      "id": "BB-26",
+      "case": "sitewatch-desktop",
+      "path": "sitewatch-desktop/src/main/updater.js",
+      "symbol": "fetchFeed",
+      "line": 23,
+      "looks_like": "JSON parsed straight out of a network response",
+      "shape": "unreachable-earlier-layer",
+      "exculpation_distance": "same-file",
+      "ruled_out_by": "sitewatch-desktop/src/main/updater.js:19-21 - verifyManifest runs over the raw body against the pinned feed key and throws before the parse, so only a signed document is ever deserialised."
+    },
+    {
+      "id": "BB-27",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/PermitController.swift",
+      "symbol": "PermitController.attach body decode",
+      "line": 143,
+      "looks_like": "An arbitrary-sized Data payload decoded into memory before any size check",
+      "shape": "unreachable-earlier-layer",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "permit-portal-api/Sources/App/configure.swift:8 - app.routes.defaultMaxBodySize is 12mb, so Vapor refuses the request before the handler is entered; the 8MB check on line 147 is the business rule on top of it."
+    },
+    {
+      "id": "BB-28",
+      "case": "permit-portal-api",
+      "path": "permit-portal-api/Sources/App/Controllers/AttachmentController.swift",
+      "symbol": "BlobStore.putRestored",
+      "line": 44,
+      "looks_like": "A write helper that joins a caller-supplied key onto the blob root with no shape check - path traversal",
+      "shape": "dead-path",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "No call site anywhere in the tree: grep for putRestored across permit-portal-api returns only this definition. Every live write goes through BlobStore.put, which calls resolve()."
+    },
+    {
+      "id": "BB-29",
+      "case": "edge-fleet-nomad",
+      "path": "edge-fleet-nomad/policies/deploy-operator.policy.hcl",
+      "symbol": "namespace \"sandbox\"",
+      "line": 15,
+      "looks_like": "The CI token granted alloc-node-exec, which is host-level command execution on a client node",
+      "shape": "dead-path",
+      "exculpation_distance": "other-file",
+      "ruled_out_by": "No job in the tree declares namespace \"sandbox\" - edge-gateway, ledger-db and telemetry-agent are all namespace \"platform\", where this policy grants read only. The capability has nothing to act on."
+    }
+  ]
+}

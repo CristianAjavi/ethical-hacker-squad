@@ -1,0 +1,573 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v3",
+    "arm": "mantis",
+    "run": 1,
+    "stages_run": [
+      "mantis-meta-agent (supervisor, MODE-OFF: no --sync, so no snapshot pinned and no active_snapshot written)",
+      "mantis-summarize (adapted: summaries mirrored to workspace/kb/SUMMARIES.md instead of mantis-summary.md in each target directory, because the target is read-only)",
+      "mantis-architecture (workspace/kb/SUMMARIES.md)",
+      "mantis-threat-model (workspace/kb/THREAT_MODEL.md)",
+      "mantis-plan (workspace/plan.json, 10 tasks over 6 boundaries)",
+      "mantis-researcher (32 hotspots into workspace/findings/)",
+      "mantis-dedupe (no index-duplicate groups: 32 distinct signatures across 6 independent targets)",
+      "mantis-review (negative filter applied; 18 candidate assertions killed - see ruled_out)",
+      "mantis-critic (production viability; 4 findings downgraded to CONDITIONAL_VIABLE, 6 unreachable legacy sinks marked NON_VIABLE)",
+      "mantis-calibrate (mantis_risk_score 1-10 per finding)",
+      "mantis-reproduce (PARTIAL, offline): dynamically reproduced 2 findings against the real target code with boto3 stubbed - _render_inline SSTI executed os.popen (RCE confirmed) and verify_signature accepted an unsigned callback; the other 30 findings remain statically_confirmed for lack of an installable runtime.",
+      "mantis-report (this document + workspace/report/review_packet-latest.md)",
+      "mantis-reflect (explicit empty transcript list: harness exposes no per-subagent transcript.jsonl; missing-transcript insight recorded per stage)"
+    ],
+    "stages_skipped": [
+      "mantis-history: target has no VCS metadata (`git rev-parse` fails, no .git/.hg/.repo), so there is no history to mine; workspace/historical_learnings.jsonl left absent and downstream stages ran without historical enrichment.",
+      "mantis-structural-index: optional and HINT-only by its own SKILL.md; 58 files across 6 languages with no prebuilt SCIP/Kythe index and no compiler/ctags available offline, so it degrades to the grep fallback that was used directly.",
+      "mantis-reproduce: ran only partially - jinja2 3.1.6 was present so the mailroom SSTI and the unsigned-webhook bypass were reproduced against the actual target code (boto3 stubbed, target unmodified); the remaining targets have no installable offline runtime (no node_modules, no boto3, no Maven build, no kube-apiserver, no Chrome), so those 30 findings stay statically_confirmed rather than dynamically reproduced.",
+      "mantis-chain: run but produced no super-finding worth reporting - the six targets share no data plane, so cross-target chains would be speculative; the strongest intra-target chains (pulsedeck unsigned-token -> SQLi -> reset_token; mailroom unauth Function URL -> SSTI -> s3:* role) are already carried in the impact text of their constituent findings.",
+      "mantis-patch: deliberately not run - the caller declared the target read-only, so no fix was generated or applied and no *.bak-<uuid> file was created. Consequently no patch_status/reattack_status is set and no VERIFIED_SECURE verdict is claimed anywhere.",
+      "mantis-advise / mantis-pipeline-adapter: not pipeline stages (guidance documents for building a custom harness)."
+    ],
+    "ruled_out": [
+      {
+        "assertion": "SQL injection via string interpolation in legacyRollupByTenant(tenantName)",
+        "location": "pulsedeck-graphql/src/db.js:52",
+        "killed_by": "mantis-critic reachability sweep (plan task T10): grep over the whole snapshot finds the symbol only at its definition and in module.exports - no call site exists, so no attacker-controlled value reaches it. NON_VIABLE, recorded as a hardening note."
+      },
+      {
+        "assertion": "eval() on queue content gives code execution in the inbound handler",
+        "location": "mailroom-lambda/src/handlers/inbound.py:77",
+        "killed_by": "_reprocess_v1 has no caller in the snapshot and is not a Lambda handler in template.yaml (handlers are handlers.inbound.handler, handlers.render.handler, handlers.webhook.handler). NON_VIABLE."
+      },
+      {
+        "assertion": "Command injection through system(\"tar xf #{archive_path}\")",
+        "location": "hearth-sinatra/lib/attachments.rb:29",
+        "killed_by": "Attachments.legacy_import is never called by app.rb or any other file; no route reaches it. NON_VIABLE."
+      },
+      {
+        "assertion": "Unverified JWT parsing allows forged CallerContext",
+        "location": "orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java:105",
+        "killed_by": "parseUnverifiedLegacy is package-private, @Deprecated, and has no caller; the argument resolver at line 128 calls resolve(), which does verifyWith(key). NON_VIABLE."
+      },
+      {
+        "assertion": "Clips are exfiltrated over cleartext HTTP to an arbitrary host",
+        "location": "tabsnap-extension/lib/sync.js:47",
+        "killed_by": "legacyPush has no caller and is not exported to any message command; pushClip is the only sender and uses the fixed https SYNC_ENDPOINTS table. NON_VIABLE."
+      },
+      {
+        "assertion": "Chart ships a hostPID/hostNetwork/privileged pod with the host root mounted",
+        "location": "ledger-k8s/templates/_helpers.tpl:22",
+        "killed_by": "ledger.breakGlassPodSpec is defined but never `include`d by deployment.yaml, rbac.yaml, service.yaml, ingress.yaml, networkpolicy.yaml or secret.yaml, so helm never renders it. NON_VIABLE (the two live escape paths are reported separately)."
+      },
+      {
+        "assertion": "SQL injection through windowDays/limit interpolated into bucketSql",
+        "location": "pulsedeck-graphql/src/resolvers/reports.js:17",
+        "killed_by": "Both are declared Int! in schema.graphql:44, so graphql-js coerces and rejects non-integers before the resolver runs, and Math.min then bounds them. Only digits and a leading minus can reach the string - no quote or statement terminator. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "SQL injection through the LIMIT/OFFSET splice in DB.recent_notes",
+        "location": "hearth-sinatra/lib/db.rb:36",
+        "killed_by": "app.rb:106-109 converts page with .to_i and per with Integer(), which raises on anything non-numeric, then clamps limit to 1..100. Both values are Ruby Integers by the time they are interpolated. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "SQL injection through the status splice in OrderRepository.findByStatus",
+        "location": "orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java:65",
+        "killed_by": "The parameter is typed OrderStatus; Spring's converter rejects any value outside the enum with a 400 before the controller body runs, and .name() can only return one of the seven declared constants. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "SQL injection through the LIMIT splice in OrderRepository.findRecent",
+        "location": "orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java:72",
+        "killed_by": "limit is a Java int (bound by Spring, Math.min(limit,200) at the /recent call site and the configured max-rows at /export); string concatenation of a primitive int cannot carry SQL syntax. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "CORS reflects any Origin with credentials (origin: true, credentials: true)",
+        "location": "pulsedeck-graphql/src/server.js:39",
+        "killed_by": "requireAllowedOrigin is mounted ahead of cors(corsOptions) on the same /graphql chain (server.js:80-83) and returns 403 for any Origin outside config.cors.allowedOrigins, including the preflight, so the reflecting middleware only ever echoes an allowlisted value. FALSE_POSITIVE as written."
+      },
+      {
+        "assertion": "Real credentials committed in the Helm Secret template",
+        "location": "ledger-k8s/templates/secret.yaml:16",
+        "killed_by": "Both values base64-decode to literal placeholders ('placeholder-replaced-by-vault-injector', 'not-a-real-token-see-vault-path') and the object carries vault.hashicorp.com/agent-inject annotations. FALSE_POSITIVE - unlike deployment.yaml:65, which is a real secret and IS reported."
+      },
+      {
+        "assertion": "NetworkPolicy admits any pod in any namespace because namespaceSelector and podSelector are separate peers",
+        "location": "ledger-k8s/templates/networkpolicy.yaml:16",
+        "killed_by": "The two selectors are keys of a single list element (one leading '-' at line 17), which Kubernetes evaluates as AND, so only gateway pods inside the platform namespace match. The comment's claim checks out against the YAML. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "The debug/pprof port is exposed to the cluster through the Service",
+        "location": "ledger-k8s/templates/service.yaml:18",
+        "killed_by": "The NetworkPolicy is Ingress-typed and admits only TCP {{ .Values.service.port }} (8080) from the gateway peer, so 6060 is not reachable from any other pod; the Ingress also routes only to 8080. Downgraded to a hardening note, not reported."
+      },
+      {
+        "assertion": "S3 bucket policy with Principal '*' makes the mail store world-readable",
+        "location": "mailroom-lambda/template.yaml:63",
+        "killed_by": "The statement carries Condition StringEquals aws:PrincipalOrgID = OrgId, and the bucket also has all four PublicAccessBlock flags true. This is the documented org-scoped read pattern. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "A live analytics API key is committed in config/default.json",
+        "location": "pulsedeck-graphql/config/default.json:20",
+        "killed_by": "publishableKey only names the workspace shard; authenticity comes from the HMAC in analytics.js:17, whose key is read from ANALYTICS_SECRET and which throws when that variable is unset. No secret material is present. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "innerHTML sink in the popup preview allows injected markup",
+        "location": "tabsnap-extension/popup.js:21",
+        "killed_by": "clip.title and clip.url both pass through escapeHtml, and clip.dataUrl is produced locally by chrome.tabs.captureVisibleTab rather than by the page. The exploitable innerHTML sink is content.js:45, which IS reported. FALSE_POSITIVE."
+      },
+      {
+        "assertion": "CSRF is disabled on a state-changing API",
+        "location": "orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java:65",
+        "killed_by": "SessionCreationPolicy.STATELESS plus a bearer-only credential means there is no ambient cookie for a forged cross-site request to ride, and the CORS registration restricts browser callers to two named origins. Accepted as written; the H2 console's own session is a separate issue reported on its own."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Expired or forged bearer tokens are accepted because verify() falls back to an unsigned decode",
+      "location": {
+        "path": "pulsedeck-graphql/src/server.js",
+        "symbol": "attachPrincipal",
+        "line": 56
+      },
+      "class": "authentication bypass",
+      "severity": "high",
+      "evidence": "attachPrincipal() calls verify(); on ANY exception it falls back to identify(), which is jwt.decode() - no signature check, no exp check. A token whose signature is wrong (or absent, alg=none style) throws in verify() and is then happily decoded, so req.principal is populated from attacker-authored claims. requireSession() only tests that req.principal is truthy, and every resolver derives its tenant from ctx.user.org and its identity from ctx.user.id.  Related locations: pulsedeck-graphql/src/auth/token.js:30.",
+      "impact": "Full pre-authentication takeover of any account in any organisation: craft {sub, org, role} and read/write that tenant's reports, members and reset tokens.",
+      "recommendation": "Delete identify() from the request path. On a verify() failure return 401 and let the console refresh its token; if a grace window is genuinely required, verify the signature and ignore only the exp claim (jwt.verify with ignoreExpiration) rather than skipping verification entirely.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SQL injection in searchReports: the free-text term is interpolated into an ILIKE predicate",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/reports.js",
+        "symbol": "searchReports",
+        "line": 38
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "evidence": "searchReports builds its statement with `title ILIKE '%${args.term}%' OR description ILIKE '%${args.term}%'` while passing only ctx.user.org as a bind parameter. args.term is a GraphQL String! - any byte sequence, quotes included - so the predicate, the org_id filter and the statement itself can be rewritten.",
+      "impact": "Read any row in the database across every tenant (UNION SELECT against users exposes email and reset_token); postgres allows stacked reads through the same channel.",
+      "recommendation": "Bind the term: `... ILIKE '%' || $2 || '%'` with [org, term]. The trigram index is still used with a bind parameter.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Password reset tokens are selected and exposed through the GraphQL User type",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/users.js",
+        "symbol": "MEMBER_COLUMNS",
+        "line": 6
+      },
+      "class": "sensitive data exposure",
+      "severity": "high",
+      "evidence": "MEMBER_COLUMNS includes reset_token, toUser() maps it to resetToken, and schema.graphql declares `resetToken: String` on User. orgMembers returns every user in the caller's organisation, so a plain member can read the outstanding reset token of an owner.  Related locations: pulsedeck-graphql/src/resolvers/users.js:19, pulsedeck-graphql/src/schema.graphql:14.",
+      "impact": "Horizontal and vertical privilege escalation: a VIEWER reads an owner's reset token and completes the reset flow to take over that account.",
+      "recommendation": "Drop reset_token from MEMBER_COLUMNS and remove resetToken from the User type; render the 'reset pending' pill from a boolean (reset_token IS NOT NULL).",
+      "status": "confirmed"
+    },
+    {
+      "title": "JWT signing key falls back to a hardcoded literal when JWT_SECRET is unset",
+      "location": {
+        "path": "pulsedeck-graphql/src/auth/token.js",
+        "symbol": "SECRET",
+        "line": 8
+      },
+      "class": "hardcoded credential",
+      "severity": "medium",
+      "evidence": "SECRET = process.env.JWT_SECRET || 'pulsedeck-local-signing-key'. The fallback is silent: a deploy that loses the variable keeps minting and accepting tokens under a key that is published in the repository.",
+      "impact": "Anyone with the source can mint valid tokens for any sub/org/role whenever the environment variable is missing.",
+      "recommendation": "Throw at module load when JWT_SECRET is unset, the way analytics.js already does for ANALYTICS_SECRET.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Database TLS certificate verification disabled (rejectUnauthorized: false)",
+      "location": {
+        "path": "pulsedeck-graphql/src/db.js",
+        "symbol": "pool",
+        "line": 16
+      },
+      "class": "TLS verification disabled",
+      "severity": "medium",
+      "evidence": "The pg Pool is created with ssl: { rejectUnauthorized: false }, so the client encrypts but never checks who it is talking to.",
+      "impact": "An attacker positioned on the path to pulsedeck-primary.internal can terminate the session, read every query and every row, and rewrite results.",
+      "recommendation": "Ship the provider CA into the image and set ssl: { ca, rejectUnauthorized: true }.",
+      "status": "confirmed"
+    },
+    {
+      "title": "deactivateUser has no server-side role check",
+      "location": {
+        "path": "pulsedeck-graphql/src/resolvers/users.js",
+        "symbol": "deactivateUser",
+        "line": 54
+      },
+      "class": "missing authorization",
+      "severity": "medium",
+      "evidence": "The mutation's only guard is the org_id in the WHERE clause; the comment states the control is rendered only for owners, which is a client-side condition. ctx.user.role is never consulted here (nor anywhere else in the resolvers).",
+      "impact": "Any authenticated member - including a VIEWER - can deactivate every other account in the organisation, owners included; denial of service and a step towards sole control of the tenant.",
+      "recommendation": "Gate the mutation on ctx.user.role and refuse self-deactivation of the last owner.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Server-side template injection: inlineTemplate from an unauthenticated Function URL is compiled as a Jinja2 template",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/render.py",
+        "symbol": "_render_inline",
+        "line": 42
+      },
+      "class": "server-side template injection",
+      "severity": "high",
+      "evidence": "handler() takes payload['inlineTemplate'] straight from the request body and passes it to _render_inline, which does Template(source).render(**ctx). The function sits behind a Lambda Function URL with AuthType: NONE, so no credential is needed; the CORS block restricts browsers only, not curl. Jinja2 sandboxing is not used, so the classic {{ ''.__class__.__mro__[1].__subclasses__() }} chain to os.popen is available.  Related locations: mailroom-lambda/src/handlers/render.py:71, mailroom-lambda/template.yaml:108.",
+      "impact": "Remote code execution inside the render function: read the execution role's credentials from the environment and pivot to whatever that role can reach.",
+      "recommendation": "Delete the inline path, or render untrusted sources in a jinja2.sandbox.SandboxedEnvironment behind authentication and a per-workspace authorization check.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Unauthenticated arbitrary object read from the mail store via messageKey",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/render.py",
+        "symbol": "handler",
+        "line": 63
+      },
+      "class": "IDOR",
+      "severity": "high",
+      "evidence": "handler() passes payload['messageKey'] unchanged to storage.get_object(), which calls s3.get_object(Bucket=MAIL_BUCKET, Key=key). There is no prefix constraint, no ownership check and no authentication on the Function URL. The decoded object is returned to the caller inside the rendered HTML through ctx['body'].  Related locations: mailroom-lambda/src/common/storage.py:26.",
+      "impact": "Any internet caller who can guess or enumerate a key reads any tenant's raw RFC822 mail, attachments and delivery callbacks out of the bucket.",
+      "recommendation": "Authenticate the Function URL (AWS_IAM or a verified session), resolve messageKey through a per-caller lookup table, and constrain the key to the caller's own prefix.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Delivery webhook accepts unsigned callbacks",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/webhook.py",
+        "symbol": "verify_signature",
+        "line": 49
+      },
+      "class": "signature verification bypass",
+      "severity": "high",
+      "evidence": "verify_signature() returns True when the X-Mailroom-Signature header is absent, logging 'callback arrived unsigned, accepting'. Every branch that actually checks the HMAC is only reached when the attacker chooses to send a header.",
+      "impact": "Anyone on the internet can post arbitrary delivery state for any messageId and write attacker-chosen JSON objects into the mail store under callbacks/, corrupting the delivery ledger.",
+      "recommendation": "Return False when the header is missing. Gate any sandbox leniency on config.STAGE != 'prod'.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Production HMAC signing secret is hardcoded in the SAM template",
+      "location": {
+        "path": "mailroom-lambda/template.yaml",
+        "symbol": "MAILROOM_SIGNING_SECRET",
+        "line": 29
+      },
+      "class": "hardcoded secret",
+      "severity": "medium",
+      "evidence": "MAILROOM_SIGNING_SECRET: mrs_7d41c0a9e2b84f60a1c35de8f9b21047 is set literally in Globals.Function.Environment.Variables, so it is in the repository, in the rendered CloudFormation template, in the change set, and in the console for anyone with lambda:GetFunctionConfiguration.",
+      "impact": "An attacker who reads the repository or the stack can forge correctly signed carrier callbacks; a quarterly manual rotation does not undo the exposure.",
+      "recommendation": "Move it to Secrets Manager / SSM SecureString, reference it with a dynamic reference, and rotate the leaked value now.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Path traversal when staging attachments: the MIME filename is joined onto the scratch root",
+      "location": {
+        "path": "mailroom-lambda/src/common/storage.py",
+        "symbol": "stage_attachment",
+        "line": 39
+      },
+      "class": "path traversal",
+      "severity": "medium",
+      "evidence": "stage_attachment() does os.path.join(config.TMP_ROOT, filename) with filename taken verbatim from part.get_filename() (or from pointer['name'] in the SNS notification) and then os.makedirs(os.path.dirname(target)) before writing. '../' segments escape /tmp/mailroom, and an absolute filename makes os.path.join discard TMP_ROOT entirely.  Related locations: mailroom-lambda/src/handlers/inbound.py:46.",
+      "impact": "A crafted message writes files anywhere the function can write (all of /tmp, which is shared across warm invocations), letting an attacker plant or overwrite files the virus scanner and thumbnailer subsequently read; clear_scratch() only unlinks below TMP_ROOT, so the planted files persist.",
+      "recommendation": "Use os.path.basename(filename), reject the result if it is empty or starts with a dot, and verify os.path.realpath(target).startswith(realpath(TMP_ROOT)).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Inbound function granted s3:* and secretsmanager:* on Resource '*'",
+      "location": {
+        "path": "mailroom-lambda/template.yaml",
+        "symbol": "InboundFunction.Policies",
+        "line": 89
+      },
+      "class": "over-privileged IAM",
+      "severity": "medium",
+      "evidence": "InboundFunction's inline policy allows every S3 and every Secrets Manager action on every resource in the account, while the sibling functions correctly use the scoped S3ReadPolicy / S3WritePolicy helpers.",
+      "impact": "Any code-execution or injection foothold in the inbound handler becomes account-wide: read every bucket and every secret, and delete the mail store.",
+      "recommendation": "Replace with S3ReadPolicy/S3WritePolicy on MailStore plus an explicit secretsmanager:GetSecretValue on the specific secret ARN.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Attachment fetch follows an unvalidated URL from the notification (SSRF)",
+      "location": {
+        "path": "mailroom-lambda/src/handlers/inbound.py",
+        "symbol": "_fetch_remote_attachment",
+        "line": 29
+      },
+      "class": "SSRF",
+      "severity": "low",
+      "evidence": "_fetch_remote_attachment() issues SESSION.get(url) on pointer['url'] taken from the SNS message body, with no scheme or host allowlist and with requests' default redirect following.  Related locations: mailroom-lambda/src/handlers/inbound.py:60.",
+      "impact": "Anyone able to publish to the inbound topic makes the function fetch internal endpoints and store the response; the topic has no explicit topic policy in this template, so its exposure is whatever the account default leaves.",
+      "recommendation": "Allowlist the SES-signed hostnames, force https, disable redirects, and attach an explicit SNS topic policy naming the SES principal.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Session cookie signing secret is a literal in app.rb",
+      "location": {
+        "path": "hearth-sinatra/app.rb",
+        "symbol": "session_secret",
+        "line": 17
+      },
+      "class": "hardcoded secret",
+      "severity": "high",
+      "evidence": "set :session_secret, 'hearth-notes-session-secret-v2'. Rack::Session::Cookie signs the session with that value, and the session's only content that matters is :uid.",
+      "impact": "Anyone with the source forges a cookie for any uid - including an admin - and walks straight past require_login! and the /admin/* role gate. No password, no login request.",
+      "recommendation": "Read the secret from ENV.fetch('SESSION_SECRET') and refuse to boot without it; rotate the published value, which invalidates existing sessions.",
+      "status": "confirmed"
+    },
+    {
+      "title": "SQL injection in DB.search: the query term and owner_id are interpolated",
+      "location": {
+        "path": "hearth-sinatra/lib/db.rb",
+        "symbol": "DB.search",
+        "line": 45
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "evidence": "DB.search builds `WHERE owner_id = #{owner_id} AND (title LIKE '%#{term}%' OR body LIKE '%#{term}%')` with no bind parameters at all. term is params[:q] from GET /notes/search.  Related locations: hearth-sinatra/app.rb:116.",
+      "impact": "Any logged-in user reads every other user's notes and the users table (email, role, password_digest) by closing the quote and rewriting the predicate; SQLite also exposes sqlite_master through the same channel.",
+      "recommendation": "Use placeholders: `WHERE owner_id = ? AND (title LIKE ? OR body LIKE ?)` with ['%'+term+'%'] built outside the SQL string.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Arbitrary file read through /download: the name parameter is joined onto the uploads root",
+      "location": {
+        "path": "hearth-sinatra/app.rb",
+        "symbol": "get '/download'",
+        "line": 152
+      },
+      "class": "path traversal",
+      "severity": "high",
+      "evidence": "GET /download does send_file File.join(Attachments::ROOT, params[:name]) after only checking that the name is non-empty. File.join does not normalise, and send_file resolves the traversal.",
+      "impact": "Any logged-in user reads any file the Ruby process can read - the SQLite database with every user's password_digest, /etc/passwd, the app source. Even without traversal the route is not owner-scoped, so one user downloads another's attachments by digest.",
+      "recommendation": "Look the attachment up in the database by id scoped to current_user, serve the stored path, and assert File.realpath(target).start_with?(File.realpath(ROOT + '/' + current_user['id'].to_s)).",
+      "status": "confirmed"
+    },
+    {
+      "title": "Open redirect on the login form's next parameter",
+      "location": {
+        "path": "hearth-sinatra/app.rb",
+        "symbol": "post '/login'",
+        "line": 96
+      },
+      "class": "open redirect",
+      "severity": "medium",
+      "evidence": "POST /login redirects to params[:next] verbatim whenever it is non-empty. The value survives from GET /login through a hidden field and is never checked for scheme or host, so '//evil.example/login' or 'https://evil.example' are accepted.  Related locations: hearth-sinatra/app.rb:82.",
+      "impact": "A credible phishing chain: the victim authenticates on the real host and is bounced to an attacker clone; also a convenient laundering hop for token-bearing referrers.",
+      "recommendation": "Accept only a path: reject unless destination.start_with?('/') && !destination.start_with?('//').",
+      "status": "confirmed"
+    },
+    {
+      "title": "Markdown renderer emits raw HTML from note bodies (filter_html: false, escape_html: false)",
+      "location": {
+        "path": "hearth-sinatra/lib/markdown.rb",
+        "symbol": "Markdown.renderer",
+        "line": 19
+      },
+      "class": "stored XSS",
+      "severity": "medium",
+      "evidence": "Hearth::Markdown builds Redcarpet::Render::HTML with both HTML filters off, and views/note.erb prints the result with <%== body_html %>, bypassing the app-wide escape_html setting. Nothing sanitises the output afterwards.  Related locations: hearth-sinatra/views/note.erb:6.",
+      "impact": "Stored XSS in the note reader. Rendering is currently owner-scoped, so the immediate blast radius is the author's own session (a payload arriving by import or by a future share/admin-preview feature becomes cross-user); an executing payload runs same-origin and can drive /notes and /download on the victim's behalf.",
+      "recommendation": "Keep filter_html: true / escape_html: true, or post-process with a sanitiser allowlisting the kbd/sup/table tags the comment cares about.",
+      "status": "confirmed"
+    },
+    {
+      "title": "H2 console enabled in the prod profile and explicitly permitAll in the security chain",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "spring.h2.console.enabled",
+        "line": 23
+      },
+      "class": "exposed admin console",
+      "severity": "high",
+      "evidence": "application.yml enables spring.h2.console with web-allow-others: true in the unprofiled document, which applies to the active prod profile; SecurityConfig then adds .requestMatchers(toH2Console()).permitAll() and relaxes frame options to sameOrigin. h2 is a runtime dependency of the production artifact.  Related locations: orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java:70.",
+      "impact": "An unauthenticated caller who reaches the service opens /h2-console and supplies any JDBC URL, which on H2 is a well-known path to arbitrary file write and code execution on the pod, as well as direct access to the in-memory or configured datasource.",
+      "recommendation": "Move the h2.console block under the `local` profile document and drop the toH2Console() permitAll rule; keep h2 in test scope.",
+      "status": "confirmed"
+    },
+    {
+      "title": "XML import overwrites arbitrary orders: the feed supplies the row id and update() has no org predicate",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/service/XmlImportService.java",
+        "symbol": "importFeed/update",
+        "line": 63
+      },
+      "class": "broken tenant isolation",
+      "severity": "high",
+      "evidence": "importFeed() sets order.setId(Long.parseLong(text(element,'id'))) from the feed and calls orders.update(order); update() issues `UPDATE orders SET ... WHERE id = ?` with no org_id in the WHERE clause. The orgId set on the object is never written and never checked.  Related locations: orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java:76.",
+      "impact": "An OPS user of one tenant rewrites customer_ref, status, total_cents, currency, shipping_address and internal_note of any order belonging to any other tenant - a direct financial-integrity break, not just a disclosure.",
+      "recommendation": "Add `AND org_id = ?` to the UPDATE and pass order.getOrgId(); treat a zero-row update as a rejected feed line.",
+      "status": "confirmed"
+    },
+    {
+      "title": "XXE in the order feed importer: entity expansion enabled, no secure processing",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/service/XmlImportService.java",
+        "symbol": "importFeed",
+        "line": 38
+      },
+      "class": "XXE",
+      "severity": "high",
+      "evidence": "importFeed() builds a DocumentBuilderFactory with setNamespaceAware(true) and setExpandEntityReferences(true) and never sets FEATURE_SECURE_PROCESSING, disallow-doctype-decl, external-general-entities or external-parameter-entities, nor an EntityResolver. The XML comes straight off the request body of POST /api/orders/import.  Related locations: orderbook-spring/src/main/java/io/orderbook/service/XmlImportService.java:46, orderbook-spring/src/main/java/io/orderbook/web/OrderController.java:109.",
+      "impact": "Read local files (application.yml with the datasource password, the container's service-account token) and reach internal HTTP endpoints from inside the service; billion-laughs denial of service through the same entry.",
+      "recommendation": "factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true) and disallow-doctype-decl=true; if entity tables are genuinely needed, pre-resolve them with a fixed EntityResolver instead of enabling expansion.",
+      "status": "confirmed"
+    },
+    {
+      "title": "GET /api/orders/{id} is not scoped to the caller's organisation",
+      "location": {
+        "path": "orderbook-spring/src/main/java/io/orderbook/web/OrderController.java",
+        "symbol": "OrderController.get",
+        "line": 57
+      },
+      "class": "IDOR",
+      "severity": "high",
+      "evidence": "Every other handler resolves through findByIdAndOrgId(id, caller.orgId()); get() calls orders.findById(id), which has no org predicate, and does not even take a CallerContext parameter.  Related locations: orderbook-spring/src/main/java/io/orderbook/repo/OrderRepository.java:44.",
+      "impact": "Any authenticated caller enumerates ids and reads every order in the ledger across all tenants, including shipping_address and internal_note.",
+      "recommendation": "Take CallerContext and call findByIdAndOrgId; delete the unscoped findById or make it private to a service that always supplies the org.",
+      "status": "confirmed"
+    },
+    {
+      "title": "All actuator endpoints exposed to any authenticated caller",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "management.endpoints",
+        "line": 39
+      },
+      "class": "sensitive data exposure",
+      "severity": "medium",
+      "evidence": "management.endpoints.web.exposure.include is \"*\" and the security chain ends in .anyRequest().authenticated(), so /actuator/env, /actuator/configprops, /actuator/heapdump and /actuator/threaddump need nothing beyond a valid tenant token - there is no role requirement on the actuator base path.  Related locations: orderbook-spring/src/main/java/io/orderbook/web/SecurityConfig.java:73.",
+      "impact": "Any tenant user retrieves the datasource password and the JWT configuration from /actuator/env, or pulls a heap dump containing the HMAC key material and other tenants' order data.",
+      "recommendation": "Expose only health and info, or bind actuator to a separate management port and require hasRole('OPS') on it.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Production datasource password committed in application.yml",
+      "location": {
+        "path": "orderbook-spring/src/main/resources/application.yml",
+        "symbol": "spring.datasource.password",
+        "line": 9
+      },
+      "class": "hardcoded credential",
+      "severity": "medium",
+      "evidence": "spring.datasource.password: 0rd3rb00k-app-2024 sits in the prod document of the packaged configuration, alongside the real host orderbook-db.internal.",
+      "impact": "Everyone with repository or jar access holds the application's database credential; combined with the actuator or XXE finding it is also retrievable at runtime.",
+      "recommendation": "Use ${DB_PASSWORD} bound to a secret at deploy time and rotate the committed value.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The node's docker socket is mounted into the pod by default",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "docker-socket volume",
+        "line": 89
+      },
+      "class": "container escape",
+      "severity": "high",
+      "evidence": "values.yaml ships reconciler.mountDockerSocket: true, and deployment.yaml turns that into a hostPath volume for /var/run/docker.sock mounted into the ledger container.  Related locations: ledger-k8s/values.yaml:48.",
+      "impact": "Write access to the docker socket is root on the node without any exploit: start a container with the host filesystem mounted, read every other pod's secrets, and schedule workloads on the node.",
+      "recommendation": "Default it to false and give the reconciler a scoped snapshot API instead of the daemon socket; if it must stay, isolate it in its own CronJob pod with its own service account and a PSA-restricted namespace boundary.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The ledger container runs privileged",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "containers[0].securityContext",
+        "line": 46
+      },
+      "class": "container escape",
+      "severity": "high",
+      "evidence": "templates/deployment.yaml sets securityContext.privileged: true on the main container (and readOnlyRootFilesystem: false), unconditionally - it is not behind a value, so every install of the chart gets it.",
+      "impact": "A privileged container is a node: all capabilities, device access and the ability to escape into the host namespaces. Any RCE in the ledger service becomes cluster compromise, and the pod also holds the ledger DB password.",
+      "recommendation": "Drop privileged; if the snapshotter truly needs SYS_ADMIN, move it to a separate, gated Job with only that capability and runAsNonRoot elsewhere.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Operator account password hardcoded in the deployment's environment",
+      "location": {
+        "path": "ledger-k8s/templates/deployment.yaml",
+        "symbol": "LEDGER_ADMIN_PASSWORD",
+        "line": 65
+      },
+      "class": "hardcoded credential",
+      "severity": "high",
+      "evidence": "LEDGER_ADMIN_PASSWORD is set to the literal r3conc1le-op-2024! in the pod template, while the neighbouring LEDGER_DB_PASSWORD correctly uses secretKeyRef.",
+      "impact": "The break-glass operator credential is in the chart, in the rendered manifest, in `kubectl get deploy -o yaml` and in every namespace-scoped reader's view; it signs in before the IdP is consulted, so it is a standing bypass of the platform's authentication.",
+      "recommendation": "Move it into the ledger-db secret (or its own) and reference it with secretKeyRef; rotate the published value.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Upstream TLS verification disabled for the clearing-house connection",
+      "location": {
+        "path": "ledger-k8s/values.yaml",
+        "symbol": "upstream.insecureSkipTLSVerify",
+        "line": 35
+      },
+      "class": "TLS verification disabled",
+      "severity": "medium",
+      "evidence": "values.yaml sets upstream.insecureSkipTLSVerify: true, which the deployment passes to the app as LEDGER_UPSTREAM_INSECURE.  Related locations: ledger-k8s/templates/deployment.yaml:54.",
+      "impact": "Settlement traffic to clearing.partner.example can be intercepted and rewritten by anyone able to answer for that name on the egress path; there is no egress NetworkPolicy to narrow who that can be.",
+      "recommendation": "Mount the partner CA from a ConfigMap and set the flag false; the chart already has a pattern for mounting material.",
+      "status": "confirmed"
+    },
+    {
+      "title": "externally_connectable matches every site, exposing the whole command dispatcher to any web page",
+      "location": {
+        "path": "tabsnap-extension/manifest.json",
+        "symbol": "externally_connectable",
+        "line": 25
+      },
+      "class": "unrestricted extension messaging",
+      "severity": "high",
+      "evidence": "manifest.json declares externally_connectable.matches ['*://*/*'], and background.js routes onMessageExternal into the same handle() used by the trusted popup, with no sender.origin/sender.url check on either listener. capture, push and annotate are therefore callable by any page the user visits.  Related locations: tabsnap-extension/background.js:54.",
+      "impact": "A visited page drives the extension: annotate injects markup into the DOM of whatever tab is active, push writes attacker-authored clips into the victim's workspace using the stored bearer token, and capture returns the active tab's title, URL and (whenever activeTab is live for that tab) a PNG of what the user is looking at.",
+      "recommendation": "Narrow matches to the workspace origins (https://*.tabsnap.example/*), and in onMessageExternal verify sender.origin against that list before dispatching; keep the privileged commands on the internal onMessage path only.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Content script writes the note into innerHTML, and the sanitiser lives only in the popup",
+      "location": {
+        "path": "tabsnap-extension/content.js",
+        "symbol": "renderNote",
+        "line": 45
+      },
+      "class": "DOM XSS",
+      "severity": "high",
+      "evidence": "content.js renderNote() does node.innerHTML = `<strong>Note</strong><div class=\"tabsnap-note-body\">${note}</div>`. The comment assumes the popup already ran markdownLite(), but the background dispatcher forwards message.note verbatim, and that dispatcher is reachable from every website through onMessageExternal.  Related locations: tabsnap-extension/background.js:34.",
+      "impact": "Cross-origin script execution: evil.example sends {cmd:'annotate', note:'<img src=x onerror=...>'} and the payload runs in the top-level document of whatever tab is active - a bank, a webmail - defeating the same-origin policy the browser would otherwise enforce.",
+      "recommendation": "Build the bubble with textContent (or a DOM builder / Trusted Types) in the content script, and re-sanitise in the privileged context instead of trusting the caller.",
+      "status": "confirmed"
+    },
+    {
+      "title": "The debugger permission is requested but never used",
+      "location": {
+        "path": "tabsnap-extension/manifest.json",
+        "symbol": "permissions",
+        "line": 19
+      },
+      "class": "excessive permissions",
+      "severity": "medium",
+      "evidence": "manifest.json lists 'debugger' in permissions; no chrome.debugger call exists anywhere in the extension. 'scripting' is likewise declared and unused.",
+      "impact": "chrome.debugger can attach to any tab and drive the DevTools protocol - read every request, extract cookies, execute script. Holding it enlarges the blast radius of any compromise of the service worker (which, per the finding above, every website can already talk to) and of any supply-chain change to the extension.",
+      "recommendation": "Remove 'debugger' and 'scripting' from the manifest.",
+      "status": "confirmed"
+    },
+    {
+      "title": "Every extension file is web-accessible to every origin",
+      "location": {
+        "path": "tabsnap-extension/manifest.json",
+        "symbol": "web_accessible_resources",
+        "line": 36
+      },
+      "class": "information disclosure",
+      "severity": "low",
+      "evidence": "web_accessible_resources declares resources ['*'] for matches ['<all_urls>'], so any page can fetch chrome-extension://<id>/lib/sync.js, popup.html and the rest.",
+      "impact": "Reliable fingerprinting of the extension's presence and version by any site, plus disclosure of internal endpoints and logic; also lets a page frame popup.html.",
+      "recommendation": "List only the assets a page genuinely needs (usually none) and scope matches to the workspace origins.",
+      "status": "confirmed"
+    }
+  ]
+}

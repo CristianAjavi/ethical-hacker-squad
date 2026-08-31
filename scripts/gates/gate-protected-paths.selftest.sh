@@ -6,6 +6,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The gate under test is the copy inside $work, not this tree: gates resolve
+# their lib/*.py from their own BASH_SOURCE, so running the source gate would
+# load the source checkers and no case could blind one to prove which check
+# actually caught the defect.
 GATE="$HERE/gate-protected-paths.sh"
 if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
 elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
@@ -34,7 +38,7 @@ case_run() {
   # tell whose branch this is" silently got told, passed locally and failed on the
   # runner. A battery that inherits the environment is not proving what it claims.
   out="$(env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF -u BASE_REF -u CHANGED_FILES_FILE \
-        EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
+        EHS_REPO_ROOT="$work" bash "$work/scripts/gates/gate-protected-paths.sh" "${args[@]}" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else

@@ -1,0 +1,506 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v4",
+    "arm": "mantis",
+    "run": 4,
+    "snapshot_mode": "MODE-OFF (no --sync; single static snapshot; vcs_type=none, target is not a git repo; all verdicts permitted)",
+    "toolchains_available": ["python3", "node", "npm"],
+    "toolchains_missing": ["php", "dotnet", "cargo/rustc", "psql", "docker"],
+    "stages_run": [
+      "history (vcs_type=none: no VCS history to mine, recorded)",
+      "structural-index (degraded to grep fallback, HINT-only, offline)",
+      "summarize",
+      "architecture (KB synthesis of 6 components)",
+      "threat-model (trust boundaries: internet->portal/api/edge/notes; tenant isolation; secrets)",
+      "plan",
+      "researcher",
+      "dedupe",
+      "review (13 negative-constraint gate applied; mapped to FP-01..FP-13)",
+      "critic (production viability)",
+      "chain (inline: elevate->SSRF; forged-session->cross-tenant IDOR; noted, no separate super-findings emitted)",
+      "calibrate (severity)",
+      "report"
+    ],
+    "stages_skipped": [
+      "reproduce: no php/dotnet/cargo/psql/docker offline to build+run PoCs; findings confirmed statically per mantis README target-agnostic fallback",
+      "patch: TARGET is read-only by instruction; no fixes applied or written",
+      "reflect: harness exposes no per-subagent transcript logs to this inline run; explicit empty transcript list -> no trajectory learnings"
+    ],
+    "ruled_out": [
+      {"assertion": "SQL injection in invoice list order-by", "location": "billing-portal/app/Http/Controllers/InvoiceController.php:33", "rule": "FP-09", "killed_by": "sort resolved through Invoice::sortColumn() allowlist (Models/Invoice.php:54) to one of SORTABLE; dir is a hardened asc/desc ternary. Mitigation works; no attacker-controlled text reaches ORDER BY."},
+      {"assertion": "SQL injection via days in aging()", "location": "billing-portal/app/Http/Controllers/InvoiceController.php:71", "rule": "FP-04", "killed_by": "$days is (int)-cast before interpolation into the interval literal; only digits can reach SQL. Pedantic."},
+      {"assertion": "Command injection in PdfRenderer::render template arg", "location": "billing-portal/app/Services/PdfRenderer.php:36", "rule": "FP-09", "killed_by": "template validated against fixed TEMPLATES map; layout/source passed through escapeshellarg; target built with %d int cast. Mitigation effective."},
+      {"assertion": "SQL injection in queue_board queue_id", "location": "helpdesk/tickets/views.py:81", "rule": "FP-04", "killed_by": "queue_id = int(request.GET.get('queue',0)); int() cast neutralizes injection, organization_id is parameterized. Pedantic."},
+      {"assertion": "Command injection in scan_attachment", "location": "helpdesk/tickets/tasks.py:59", "rule": "FP-09", "killed_by": "stored_path built from server uuid.hex + extension drawn from the form ALLOWED_EXTENSIONS allowlist; no request-controlled text reaches the shell. Deliberate safe contrast to export_queue_csv."},
+      {"assertion": "SQL injection in ledger.account_balance_at dynamic SQL", "location": "ledger-db/sql/003_functions.sql:16", "rule": "FP-04", "killed_by": "p_account_id is typed bigint; concatenation can only yield digits, p_asof is bound with USING. Pedantic."},
+      {"assertion": "SQL injection via LIMIT in listNotes", "location": "notes-workspace/lib/db.ts:35", "rule": "FP-09", "killed_by": "limit is validated by zod z.coerce.number().int().min(1).max(200) in app/actions/notes.ts:18 before reaching the query. Upstream mitigation effective."},
+      {"assertion": "Stored XSS via dangerouslySetInnerHTML of note.html", "location": "notes-workspace/app/notes/[id]/page.tsx:33", "rule": "FP-09", "killed_by": "note.html is produced only by renderNoteHtml (markdown-it html:false + link-scheme allowlist, lib/policy.ts:34); raw author HTML is escaped. Mitigation works."},
+      {"assertion": "SQL injection via window_hours in evaluation_series", "location": "edge-flags/src/store.rs:98", "rule": "FP-04", "killed_by": "window_hours is an i64 from the typed Path extractor and clamped 1..720 in routes.rs:96; no string channel. Pedantic."},
+      {"assertion": "Wildcard CORS AllowedOrigins in fleet production settings", "location": "fleet-api/appsettings.Production.json:30", "rule": "FP-13", "killed_by": "the Cors:AllowedOrigins '*' key is never read by code; the console CORS policy reads Cors:PublicOrigins (Program.cs:49). Dead config, not on any live data path."},
+      {"assertion": "Exposed HS256 signing key FixtureSigningKey in appsettings.json", "location": "fleet-api/appsettings.json:18", "rule": "FP-13", "killed_by": "documented RFC 7515 A.1 worked-example key used only by round-trip tests; runtime reads Jwt:SigningKey from user-secrets/env. Not a live secret."},
+      {"assertion": "audit_log tamper via broad table GRANT to ledger_app", "location": "ledger-db/sql/004_grants.sql:8", "rule": "FP-05", "killed_by": "audit_log has FORCE RLS with only SELECT+INSERT policies (002_rls.sql:82); UPDATE/DELETE have no permissive policy and are denied despite the grant. Mitigation holds."}
+    ]
+  },
+  "findings": [
+    {
+      "title": "SQL injection in invoice type-ahead search (q interpolated into LIKE)",
+      "location": {"path": "billing-portal/app/Http/Controllers/InvoiceController.php", "symbol": "search", "line": 57},
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "$term = trim($request->query('q','')) is spliced directly into \"... number like '%{$term}%' or notes like '%{$term}%' ...\" (line 57). Only account_id is bound; term is raw. A q value such as %' UNION SELECT ... -- breaks out of the LIKE literal.",
+      "impact": "Authenticated tenant can read arbitrary rows across all accounts (UNION), enumerate schema, and exfiltrate other tenants' invoice/customer data; potential write via stacked statements depending on driver.",
+      "recommendation": "Bind the term as a parameter and build the LIKE pattern in PHP: where('number','like','%'.$term.'%') with a placeholder, or DB::select(..., [$account, \"%$term%\", \"%$term%\"]).",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "Attacker control proven: ingress is the q request query param (line 47) flowing unescaped to the SQL sink at line 57; source is client-supplied, not trusted config."},
+        {"rule": "FP-12", "answer": "DOES_NOT_HOLD", "reason": "Path/line coherence verified: file, symbol search(), and the interpolation at line 57 all exist as cited."},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD", "reason": "Not pedantic linting: this is raw string interpolation, not a parameterized query missing paranoia."}
+      ]
+    },
+    {
+      "title": "Mass assignment of guarded financial columns via forceFill(request->all())",
+      "location": {"path": "billing-portal/app/Http/Controllers/InvoiceController.php", "symbol": "update", "line": 104},
+      "class": "Mass assignment / broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "update() loads the invoice scoped to the caller's account then calls $invoice->forceFill($request->all())->save(). forceFill bypasses the model's $guarded set (Models/Invoice.php:29) which protects account_id, total_cents, paid_at, credit_applied_cents.",
+      "impact": "A caller PATCHing /invoices/{id} can set total_cents=0, paid_at=now (mark unpaid invoices paid), inflate credit_applied_cents, or move the invoice to another account_id — direct financial fraud / integrity loss.",
+      "recommendation": "Never forceFill request input. Use $invoice->fill($request->validate([... only editable fields ...])) so $fillable/$guarded are enforced, or an explicit allowlist of columns.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "Attacker controls the entire request body ($request->all()) which reaches the guarded columns; ingress is the PATCH form payload."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "Not a hypothetical caller-misuse: the code itself force-fills untrusted input; the model's own guard is deliberately bypassed."}
+      ]
+    },
+    {
+      "title": "Hardcoded fallback Laravel APP_KEY committed in config",
+      "location": {"path": "billing-portal/config/app.php", "symbol": "key", "line": 52},
+      "class": "Hardcoded secret / weak key management",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "'key' => env('APP_KEY', 'base64:c2FtcGxlLWtleS1mb3ItYmlsbGluZy1wb3J0YWwtMDE='). If APP_KEY is unset the app boots on a known, source-committed key. APP_KEY signs/encrypts session cookies, encrypted cookies and signed URLs (session.encrypt=true in config/security.php).",
+      "impact": "Anyone with the repo can forge/decrypt session cookies and signed URLs, leading to authentication bypass and tampering of any deployment that relied on the default.",
+      "recommendation": "Remove the fallback: 'key' => env('APP_KEY') and fail closed if empty; rotate the key in every environment; run php artisan key:generate per deploy.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Intrinsic-flaw rule keeps it: a hardcoded static cryptographic secret is VALID regardless of whether the fallback is exercised in a given deploy."},
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not mere missing-hygiene: a known signing/encryption key is directly exploitable (cookie/signed-URL forgery), not defense-in-depth."}
+      ]
+    },
+    {
+      "title": "APP_DEBUG defaults to true (verbose error pages in production)",
+      "location": {"path": "billing-portal/config/app.php", "symbol": "debug", "line": 28},
+      "class": "Security misconfiguration / information disclosure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "'debug' => (bool) env('APP_DEBUG', true) with 'env' defaulting to 'production' (line 15). Comment states the detailed handler 'stays on unless an operator explicitly turns it off'.",
+      "impact": "Laravel's debug handler leaks stack traces, environment variables (including secrets), SQL and file paths to any client that triggers an exception.",
+      "recommendation": "Default APP_DEBUG to false; require an explicit opt-in for debug, and assert debug is false when APP_ENV=production.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not benign hygiene: an insecure-by-default that ships secrets/stack traces to attackers is a concrete disclosure, not a missing header."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "Triggered by the default configuration itself, not by a hypothetical misconfiguring caller."}
+      ]
+    },
+    {
+      "title": "CORS allows any origin with credentials on the portal API",
+      "location": {"path": "billing-portal/config/security.php", "symbol": "cors.allowed_origins", "line": 28},
+      "class": "CORS misconfiguration",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "allowed_origins => ['*'] (line 28) together with supports_credentials => true (line 38) over paths api/* and sanctum/csrf-cookie. Laravel's CORS handler reflects the request Origin when credentials are enabled, so any site can make credentialed cross-origin calls.",
+      "impact": "Any malicious website a logged-in customer visits can read authenticated API/CSRF responses using the victim's session cookie, enabling account/data takeover.",
+      "recommendation": "Replace the wildcard with an explicit allowlist (or a validated per-tenant vanity-domain check); never combine reflected/'*' origins with supports_credentials=true.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The Origin is attacker-controlled (any third-party page) and is reflected into ACAO with credentials; trust boundary is crossed at the browser."},
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not defense-in-depth: credentialed wildcard CORS is itself the exploit primitive for cross-site read."}
+      ]
+    },
+    {
+      "title": "Session cookie is non-HttpOnly, non-Secure, SameSite=None",
+      "location": {"path": "billing-portal/config/security.php", "symbol": "session.http_only", "line": 62},
+      "class": "Insecure cookie configuration",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "http_only => false (line 62), secure => false (line 68), same_site => 'none' (line 70) for the billing_session cookie; comment says an embedded PDF viewer reads the session id from document.cookie.",
+      "impact": "Any XSS can read the session id from JS (HttpOnly off); SameSite=None + Secure=false permits the cookie to travel over plain http and cross-site, widening theft/CSRF surface.",
+      "recommendation": "Set http_only=true, secure=true, same_site='lax' (or 'strict'); stop exposing the session id to page scripts — pass a scoped token to the PDF worker instead.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Reason to keep despite looking like hygiene: disabling HttpOnly on the primary auth cookie is a concrete escalation of any XSS to full session theft, not passive hardening."}
+      ]
+    },
+    {
+      "title": "Legacy reset token generated from md5(email . microtime . mt_rand)",
+      "location": {"path": "billing-portal/app/Http/Controllers/AuthController.php", "symbol": "legacyResetToken", "line": 105},
+      "class": "Weak randomness / broken token",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "substr(md5($user->email . microtime() . mt_rand()), 0, 24) — non-CSPRNG (mt_rand), low-entropy time seed, truncated md5. Method is protected and currently has no callers (grep-confirmed) while the live flow uses random_bytes(32).",
+      "impact": "If reactivated during the mailed-link migration, reset tokens are predictable/brute-forceable, enabling account takeover.",
+      "recommendation": "Delete the dead method or replace with bin2hex(random_bytes(32)); never reintroduce mt_rand/md5 for security tokens.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Intrinsic broken-algorithm flaw (md5 + mt_rand); Rule 08 keeps it VALID even though the function is not currently called."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Reproducibility unresolved offline: exploitability depends on the token being wired back in, so severity held at low/probable."}
+      ]
+    },
+    {
+      "title": "JWT signature validation disabled (SignatureValidator returns unverified token)",
+      "location": {"path": "fleet-api/Services/TokenService.cs", "symbol": "BuildValidationParameters", "line": 35},
+      "class": "Authentication bypass / broken JWT validation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "SignatureValidator = (token, _) => new JwtSecurityToken(token) parses the token without any cryptographic check. Because ValidIssuer/ValidAudience are compared against fields that live inside the same unverified token, an attacker sets them freely.",
+      "impact": "Anyone can mint a JWT with role=fleet-admin and any tenant_id and be fully authenticated/authorized (the app's FallbackPolicy trusts these tokens). Complete auth and multi-tenant isolation bypass.",
+      "recommendation": "Remove the custom SignatureValidator; validate the signature against the IdP JWKS (IssuerSigningKeyResolver with cached keys) and keep ValidateIssuerSigningKey=true.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The token is fully attacker-authored (Authorization header); with no signature check every claim is attacker-controlled at the ingress."},
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Intrinsic auth-logic flaw in the validation routine itself, independent of any specific caller."}
+      ]
+    },
+    {
+      "title": "SQL injection in device search via FromSqlRaw string interpolation",
+      "location": {"path": "fleet-api/Controllers/DevicesController.cs", "symbol": "Search", "line": 54},
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "FromSqlRaw($\"SELECT TOP 25 * FROM devices WHERE tenant_id = {TenantId} AND serial LIKE '%{q}%' ORDER BY serial\"). The C# interpolated string is concatenated before FromSqlRaw sees it (FromSqlRaw does NOT parameterize; only FromSqlInterpolated does), so q is raw SQL.",
+      "impact": "Authenticated caller injects arbitrary SQL against the fleet DB — cross-tenant device disclosure, UNION-based exfiltration, and (SqlServer) potential stacked statements.",
+      "recommendation": "Use FromSqlInterpolated($\"... serial LIKE {'%'+q+'%'}\") or FromSqlRaw with {0} placeholders and a SqlParameter for q; keep TenantId parameterized too.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "q is the attacker-controlled [FromQuery] parameter (line 45) reaching the SQL sink unescaped."},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD", "reason": "Not pedantic: FromSqlRaw over an interpolated string is genuine concatenation, not a safe parameterized API."}
+      ]
+    },
+    {
+      "title": "Unauthenticated, cross-tenant device retirement (AllowAnonymous DELETE)",
+      "location": {"path": "fleet-api/Controllers/DevicesController.cs", "symbol": "Retire", "line": 98},
+      "class": "Broken access control / missing authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "[AllowAnonymous] on DELETE /api/devices/{id}; the handler looks up the device by id only (FirstOrDefaultAsync(d => d.Id == id), line 102) with no tenant filter, then sets RetiredAt. No auth, no tenant scoping.",
+      "impact": "Any unauthenticated internet caller can soft-delete (retire) any device of any tenant by enumerating ids — a destructive, cross-tenant denial-of-service against fleet inventory.",
+      "recommendation": "Remove [AllowAnonymous]; require authentication and filter by d.TenantId == TenantId; if a pre-SSO path is truly needed, gate it with a signed one-time token, not anonymous access.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The id path segment is attacker-controlled and reaches a state-changing sink with no authorization boundary in between."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "The endpoint itself opts out of auth; no hypothetical caller misuse is required."}
+      ]
+    },
+    {
+      "title": "Hardcoded production database password in appsettings.Production.json",
+      "location": {"path": "fleet-api/appsettings.Production.json", "symbol": "ConnectionStrings.Fleet", "line": 9},
+      "class": "Hardcoded secret",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "ConnectionStrings:Fleet = \"...User Id=fleet_app;Password=Fl33tSvc-2024-prod;...\" committed in the repo, and the .csproj copies appsettings.Production.json to the build output (CopyToOutputDirectory).",
+      "impact": "Production DB credentials are exposed to anyone with source/artifact access, enabling direct database access outside the app's authorization.",
+      "recommendation": "Move the connection secret to a secret store / environment / user-secrets; purge and rotate the leaked password; keep only non-secret keys in appsettings.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Hardcoded static credential is an intrinsic flaw kept VALID by Rule 08 regardless of runtime reachability."},
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "Not trusted-origin-only: the secret is disclosed to any reader of the repo/build artifact, an untrusted-audience boundary."}
+      ]
+    },
+    {
+      "title": "JWT lifetime validation disabled and 24h clock skew in production",
+      "location": {"path": "fleet-api/appsettings.Production.json", "symbol": "Jwt.ValidateLifetime", "line": 15},
+      "class": "Security misconfiguration (token expiry)",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "\"ValidateLifetime\": false and \"ClockSkewMinutes\": 1440 in production; TokenService reads both (ValidateLifetime, ClockSkew) from config.",
+      "impact": "Tokens never expire (and even if lifetime were on, a 24h skew defeats expiry), so a single captured gateway token is valid indefinitely — no revocation window.",
+      "recommendation": "Keep ValidateLifetime=true; if buffered-replay is required use short-lived tokens plus a signed replay window at ingest, not disabled expiry; reduce ClockSkew to a few minutes.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not passive hardening: disabling expiry removes a control that bounds credential theft, a concrete weakening of the auth model."}
+      ]
+    },
+    {
+      "title": "MQTT broker configured without TLS in production (plaintext 1883)",
+      "location": {"path": "fleet-api/appsettings.Production.json", "symbol": "Mqtt.TlsRequired", "line": 21},
+      "class": "Cleartext transport",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "\"BrokerUri\": \"tcp://mqtt-fleet-prod.internal:1883\", \"TlsRequired\": false; comment cites gateways not yet re-flashed with the CA bundle.",
+      "impact": "Fleet telemetry/commands traverse the VPC in cleartext; anyone with subnet access can sniff or inject MQTT messages.",
+      "recommendation": "Require TLS (tls://:8883) with server verification; complete the gateway CA rollout rather than disabling transport security fleet-wide.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Cleartext transport for control/telemetry is an exploitable exposure to any on-subnet attacker, not a cosmetic hardening gap."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Requires an adjacent network position to trigger; feasibility not reproducible offline, so held at probable."}
+      ]
+    },
+    {
+      "title": "Legacy API key handler uses MD5 and non-constant-time comparison",
+      "location": {"path": "fleet-api/Auth/LegacyApiKeyHandler.cs", "symbol": "HandleAuthenticateAsync", "line": 39},
+      "class": "Weak hash / timing side channel",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "Presented X-Gateway-Key is MD5-hashed (line 39) and compared with digest == expected (line 46) — unsalted MD5 plus an ordinary '==' string compare. The scheme is not registered in Program.cs (only JwtBearer is added), so the handler is currently unreachable.",
+      "impact": "If re-enabled, MD5 makes key digests cheap to precompute and the non-constant-time compare leaks match progress via timing; both weaken gateway key auth.",
+      "recommendation": "Remove the dead handler, or if kept, use a keyed HMAC/SHA-256 with CryptographicOperations.FixedTimeEquals for comparison.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Broken-algorithm (MD5) intrinsic flaw kept by Rule 08 even though the scheme is unregistered/uncalled."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Timing-oracle exploitability is not reproducible offline and the handler is unwired, so severity held low."}
+      ]
+    },
+    {
+      "title": "Privilege escalation to admin via attacker-supplied X-Flags-Elevate header",
+      "location": {"path": "edge-flags/src/auth.rs", "symbol": "authenticate", "line": 59},
+      "class": "Privilege escalation / broken authorization",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "is_admin = elevated || roles.contains(admin_claim), where elevated is read straight from the request header X-Flags-Elevate == \"true\" (lines 50-54). Nothing verifies the request actually originates from the internal console.",
+      "impact": "Any caller with any valid (or, given routes.rs, any) token gains admin by adding one header, allowing flag create/force-rollout/archive — including setting webhook_url (see SSRF finding) and toggling features tenant-wide.",
+      "recommendation": "Drop header-based elevation; derive admin solely from verified token claims. If a trusted proxy must elevate, authenticate the proxy (mTLS/allowlist) and strip the header at the edge.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "X-Flags-Elevate is an untrusted client-settable header used directly as the authorization decision; ingress is attacker-controlled."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "The auth function itself grants admin from the header; no downstream caller misuse is needed."}
+      ]
+    },
+    {
+      "title": "SQL injection in flag search (term interpolated into ILIKE)",
+      "location": {"path": "edge-flags/src/store.rs", "symbol": "search_flags", "line": 17},
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "format!(\"SELECT * FROM flags WHERE tenant_id = $1 AND archived=false AND (key ILIKE '%{term}%' OR description ILIKE '%{term}%') ORDER BY {} {} LIMIT 200\", ...). sort/dir come from safe enums, but term (q.q from ListQuery) is interpolated raw; only tenant_id is bound.",
+      "impact": "Authenticated caller injects SQL against the flags DB — cross-tenant flag disclosure, UNION exfiltration of other tables, and data tampering.",
+      "recommendation": "Bind term as a parameter ($2) and build the pattern with concatenation in Rust, e.g. key ILIKE '%' || $2 || '%'; never format! user text into the query.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "term flows from the attacker-controlled q query field (routes.rs ListQuery) into the SQL string sink at line 17."},
+        {"rule": "FP-04", "answer": "DOES_NOT_HOLD", "reason": "Genuine string-format injection, not a safe parameterized call missing paranoia."}
+      ]
+    },
+    {
+      "title": "SSRF via owner-controlled flag webhook_url in rollout notifier",
+      "location": {"path": "edge-flags/src/webhook.rs", "symbol": "notify_rollout", "line": 28},
+      "class": "Server-side request forgery",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "notify_rollout POSTs to flag.webhook_url (line 28) with no scheme/host/IP validation. webhook_url is set through upsert_flag (store.rs:59) from FlagUpsert with no allowlist; the upsert is admin-gated but admin is trivially obtained via the X-Flags-Elevate header bug.",
+      "impact": "An (elevated) caller sets webhook_url to http://169.254.169.254/... or an internal service; when the flag hits 100% the server issues an attacker-directed POST, reaching cloud metadata / internal-only endpoints from inside the trust zone.",
+      "recommendation": "Validate webhook_url against an https-only host allowlist and block private/link-local/loopback IP ranges (resolve then check); consider an egress proxy. Fix the elevation bug too.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "webhook_url is caller-supplied and drives an outbound request destination; attacker controls the SSRF target field."},
+        {"rule": "FP-05", "answer": "NOT_APPLICABLE", "reason": "This is not a stretched adjacent class on a reviewed mitigation; it is a first-class SSRF sink with its own tainted input."}
+      ]
+    },
+    {
+      "title": "Docker socket mounted into the edge-flags container",
+      "location": {"path": "edge-flags/docker-compose.yml", "symbol": "api.volumes", "line": 19},
+      "class": "Container escape / excessive privilege",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "The api service mounts /var/run/docker.sock:/var/run/docker.sock so the rollout job can `docker restart` sidecars. Full read/write access to the host Docker daemon is equivalent to host root.",
+      "impact": "Any code-exec or SSRF-to-local foothold in the container (see the SQLi/elevation/SSRF findings) escalates to full host compromise via the Docker API (mount host FS, run privileged containers).",
+      "recommendation": "Remove the socket mount; drive restarts through a minimal-scope broker (a restart API on the sidecars, or a socket-proxy that only allows `restart` on named containers).",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not defense-in-depth commentary: the mount is a concrete host-takeover primitive that amplifies every other finding in this service."},
+        {"rule": "FP-06", "answer": "NOT_APPLICABLE", "reason": "This is the production docker-compose deployment file, not a test/mock path."}
+      ]
+    },
+    {
+      "title": "Hardcoded database password in docker-compose environment",
+      "location": {"path": "edge-flags/docker-compose.yml", "symbol": "api.environment.FLAGS__DATABASE__URL", "line": 11},
+      "class": "Hardcoded secret",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "FLAGS__DATABASE__URL: postgres://flags:flags-svc-2024@db:5432/flags in the api and migrate services, while the db service correctly reads POSTGRES_PASSWORD_FILE from a secret. The app-side password is inline in the committed file.",
+      "impact": "The DB password is exposed to anyone with repo access and contradicts the file-secret used by the db service; enables direct DB access.",
+      "recommendation": "Source the app connection string from the same secret (env_file or a *_FILE convention); purge and rotate the committed password.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Static committed credential — intrinsic secret-exposure flaw kept by Rule 08."}
+      ]
+    },
+    {
+      "title": "Webhook HMAC falls back to an empty signing key when env var is unset",
+      "location": {"path": "edge-flags/src/webhook.rs", "symbol": "sign", "line": 46},
+      "class": "Weak cryptographic signing",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "let secret = std::env::var(\"FLAGS_WEBHOOK_SIGNING_KEY\").unwrap_or_default(); an unset variable yields an empty-string HMAC key (the code even relies on new_from_slice accepting any size).",
+      "impact": "If the env var is missing, every rollout notification is signed with a publicly-known empty key, so receivers cannot distinguish forged callbacks — signature provides no authenticity.",
+      "recommendation": "Fail startup if FLAGS_WEBHOOK_SIGNING_KEY is absent/empty; require a minimum key length.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Degenerate/empty-key signing is an intrinsic crypto weakness retained by Rule 08 even without a concrete downstream victim proven offline."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Depends on deployment leaving the var unset; not reproducible offline, so held low."}
+      ]
+    },
+    {
+      "title": "Remote code execution via pickle.loads of a client-controlled cookie",
+      "location": {"path": "helpdesk/tickets/views.py", "symbol": "ticket_list", "line": 52},
+      "class": "Insecure deserialization (RCE)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "saved = pickle.loads(base64.b64decode(raw_cookie)) where raw_cookie = request.COOKIES.get('hd_filters'). pickle deserialization of attacker-controlled bytes executes arbitrary code via __reduce__.",
+      "impact": "Any authenticated agent (cookie is client-set) achieves remote code execution on the Django worker — full server compromise.",
+      "recommendation": "Never unpickle client data. Store filters as JSON (json.loads) or in a server-side session; sign the cookie if it must be client-held.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The hd_filters cookie is fully attacker-controlled at ingress (line 48) and flows to the pickle sink at line 52."},
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "pickle-on-untrusted-input is an intrinsic RCE sink independent of any other caller."}
+      ]
+    },
+    {
+      "title": "OS command injection via export filename in Celery task (shell=True)",
+      "location": {"path": "helpdesk/tickets/tasks.py", "symbol": "export_queue_csv", "line": 42},
+      "class": "OS command injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "subprocess.run(f\"zip -j -q {dest} {tmp_path}\", shell=True), dest = EXPORT_ROOT + filename + '.zip'. filename originates from request.GET.get('filename', ...) in ticket_export (views.py:96) and is passed unmodified into export_queue_csv.delay. A filename like `x; curl ... | sh #` executes.",
+      "impact": "Authenticated caller runs arbitrary shell commands on the Celery worker via the export dialog filename — remote code execution.",
+      "recommendation": "Drop shell=True and pass an argv list: subprocess.run(['zip','-j','-q',dest,tmp_path]); additionally sanitize/whitelist filename to a safe basename.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "filename is the attacker-controlled query param (views.py:96) reaching the shell sink at tasks.py:42 across the task boundary."},
+        {"rule": "FP-06", "answer": "DOES_NOT_HOLD", "reason": "Not a test/mock path: this is the production export task on the request path, verified reachable from ticket_export."}
+      ]
+    },
+    {
+      "title": "Django DEBUG defaults on and SECRET_KEY has an insecure hardcoded default",
+      "location": {"path": "helpdesk/config/settings.py", "symbol": "SECRET_KEY", "line": 21},
+      "class": "Security misconfiguration / hardcoded secret",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "DEBUG = os.environ.get('DJANGO_DEBUG','1') == '1' (defaults True, line 19) and SECRET_KEY defaults to 'django-insecure-hd-6f2b1c9a4d7e0b5318ca77e2049fbd6c' (lines 21-24).",
+      "impact": "DEBUG=True leaks settings/stack traces/SQL to any error-triggering client; a known SECRET_KEY lets an attacker forge signed sessions, password-reset tokens and any signed value — session/account takeover.",
+      "recommendation": "Default DEBUG=False; require SECRET_KEY from the environment and fail closed if unset; rotate the leaked key.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Hardcoded SECRET_KEY is an intrinsic static-secret flaw retained by Rule 08."},
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "A known signing key plus debug leakage are directly exploitable (signed-token forgery, secret disclosure), not passive hygiene."}
+      ]
+    },
+    {
+      "title": "Session and CSRF cookies transmitted without Secure flag",
+      "location": {"path": "helpdesk/config/settings.py", "symbol": "SESSION_COOKIE_SECURE", "line": 118},
+      "class": "Insecure cookie configuration",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "SESSION_COOKIE_SECURE = False and CSRF_COOKIE_SECURE = False (lines 118-119); comment says the last hop to app servers is plain http.",
+      "impact": "Session/CSRF cookies can be sent over http, exposing them to network sniffing on any non-TLS hop or downgrade.",
+      "recommendation": "Set both to True and terminate TLS end-to-end (or to the app tier); rely on the proxy only for external TLS, not the cookie boundary.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Kept as a real exposure of the auth cookie on the cleartext internal hop, though severity is low given the documented TLS-terminating proxy."}
+      ]
+    },
+    {
+      "title": "SECURITY DEFINER function post_journal lacks a fixed search_path",
+      "location": {"path": "ledger-db/sql/003_functions.sql", "symbol": "post_journal", "line": 27},
+      "class": "Privilege escalation (Postgres search_path)",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "post_journal is SECURITY DEFINER (owned by ledger_owner) but, unlike archive_account which sets SET search_path = ledger, pg_temp, it has NO search_path pin. It references unqualified objects/functions (journals, entries, audit_log, current_setting, jsonb_array_elements).",
+      "impact": "The calling role (ledger_app) can prepend a schema it controls to search_path so unqualified names resolve to attacker objects executed as the definer (ledger_owner), enabling privilege escalation / arbitrary action as owner. The deliberate contrast with archive_account confirms the omission.",
+      "recommendation": "Add SET search_path = ledger, pg_temp to post_journal (and schema-qualify all object references), matching archive_account.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Missing search_path on a SECURITY DEFINER function is a well-known intrinsic Postgres escalation flaw, valid on the routine's own definition."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Full exploitation depends on the caller's CREATE rights (public schema is locked down in 004_grants.sql); not reproducible offline without a live cluster, so held probable."}
+      ]
+    },
+    {
+      "title": "provision.sh fetches out-of-band migrations over plaintext HTTP and applies them as schema owner",
+      "location": {"path": "ledger-db/deploy/provision.sh", "symbol": "MIGRATION_MIRROR fetch", "line": 48},
+      "class": "Insecure transport / remote SQL execution (MITM)",
+      "severity": "high",
+      "status": "probable",
+      "evidence": "MIGRATION_MIRROR=\"http://artifacts.internal.example/ledger/migrations\" (line 17); curl -fsSL over http downloads latest.tar.gz (line 48), tar -xzf extracts it, and the staged *.sql are run with psql -U ledger_owner (lines 82-86). No signature/checksum, no TLS.",
+      "impact": "A network MITM (or spoofed internal host) serves malicious SQL that provision.sh executes as ledger_owner — arbitrary schema/data control and privilege escalation on every deploy.",
+      "recommendation": "Fetch over https with certificate verification and verify a detached signature/checksum of the tarball before extracting; pin the artifact source.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The migration payload comes from an untrusted network channel (unauthenticated http) and is executed as owner; the source is attacker-influenceable via MITM."},
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Not mere hygiene: cleartext fetch feeding a privileged SQL executor is a concrete code-execution path."}
+      ]
+    },
+    {
+      "title": "db.env containing the DB password is written world-readable (0644)",
+      "location": {"path": "ledger-db/deploy/provision.sh", "symbol": "chmod db.env", "line": 69},
+      "class": "Secret exposure / weak file permissions",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "The heredoc writes LEDGER_DB_PASSWORD into ${CONFIG_DIR}/db.env, then chmod 0644 makes it readable by every local user; comment notes multiple accounts read it and 'do not share a group'.",
+      "impact": "Any local user on the host reads the ledger_app DB password, bypassing the intended role/RLS boundary.",
+      "recommendation": "chmod 0640 (or 0600) with an appropriate owner/group; grant read via group membership rather than world-readable.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "World-readable credential file is a concrete local disclosure, not a theoretical hygiene nit."},
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "Any local (untrusted-relative-to-DB) user is an attacker able to read the secret at this sink."}
+      ]
+    },
+    {
+      "title": "Export directory made world-writable (chmod -R 0777)",
+      "location": {"path": "ledger-db/deploy/provision.sh", "symbol": "chmod EXPORT_DIR", "line": 118},
+      "class": "Weak file permissions",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "chmod -R 0777 \"$EXPORT_DIR\" (/srv/ledger/exports) so every local user can read, modify, replace or delete statement bundles picked up by the reporting/archiver/ops jobs.",
+      "impact": "Local users can tamper with or plant files consumed by downstream jobs (integrity loss, possible code/content injection into archives) and read exported financial statements.",
+      "recommendation": "Use a shared group with 0770 and setgid, not 0777; grant per-service access explicitly.",
+      "triage": [
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "World-writable shared directory consumed by other jobs is an exploitable integrity/confidentiality gap, not benign hardening."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Downstream impact depends on how consumers treat the files; not reproducible offline, held at probable."}
+      ]
+    },
+    {
+      "title": "Session cookie is unsigned base64 JSON — full authentication and role forgery",
+      "location": {"path": "notes-workspace/lib/session.ts", "symbol": "readSession", "line": 21},
+      "class": "Authentication bypass / broken session integrity",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "readSession base64url-decodes the nw_session cookie and JSON.parses it with NO signature/MAC check; writeSession (line 50) just base64-encodes JSON. userId, workspaceId and role are taken verbatim (role==='admin' honored).",
+      "impact": "Any user crafts a cookie {userId, workspaceId:<any>, role:'admin', issuedAt:now} to impersonate any user, become admin, and pivot to any workspace's data (server actions trust session.workspaceId). Middleware also copies the forged userId into the x-nw-user header. Complete auth/tenant bypass.",
+      "recommendation": "Sign the session (HMAC/JWT with a server secret) and verify it in readSession, or use a server-side session store keyed by an opaque random id; httpOnly does not provide integrity.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The cookie value is entirely attacker-authored and consumed as identity/role with no integrity gate; ingress is fully untrusted."},
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Trusting an unauthenticated token as a security principal is an intrinsic auth-logic flaw, independent of callers."}
+      ]
+    },
+    {
+      "title": "/api/share is unauthenticated (excluded from middleware) and reads any note by id",
+      "location": {"path": "notes-workspace/app/api/share/route.ts", "symbol": "POST", "line": 19},
+      "class": "Missing authorization / IDOR (data exfiltration)",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "middleware.ts matcher '/((?!api|_next/static|_next/image|favicon.ico).*)' excludes all /api routes, so the auth wall never runs for /api/share. The POST handler reads the note via getNote(body.noteId) (line 30, unscoped by workspace/owner) and requires no session (readSession result only labels shared_by). It then POSTs note.title/html to the caller-chosen (allowlisted) target.",
+      "impact": "An unauthenticated attacker who knows/guesses a note id exfiltrates that note's content to one of the workspace's integration hosts, across workspace boundaries — no login required.",
+      "recommendation": "Require a valid session in the route handler and scope getNote to the caller's workspace/ownership; do not rely on middleware for /api routes it does not match.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "noteId and target are attacker-controlled request-body fields; the route sits outside the auth boundary (middleware excludes /api) so untrusted input reaches the note-read sink."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "The handler itself omits the authz check; no hypothetical misuse by a caller is required."}
+      ]
+    },
+    {
+      "title": "updateNoteAction updates any note by id without workspace/ownership check",
+      "location": {"path": "notes-workspace/app/actions/notes.ts", "symbol": "updateNoteAction", "line": 66},
+      "class": "Broken object-level authorization (IDOR write)",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "updateNoteAction calls currentSession() (auth presence only) then getNote(input.id!) and saveNote(input.id!, ...) using the client-supplied id with no check that the note belongs to session.workspaceId (contrast createNoteAction which scopes to session.workspaceId).",
+      "impact": "Any authenticated user can overwrite the title/source/html of any other workspace's note by id — cross-tenant integrity loss (and a stored-content vector into other workspaces).",
+      "recommendation": "Load the note and assert existing.workspace_id === session.workspaceId (or filter the UPDATE by workspace_id) before saving; return 404 otherwise.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "input.id is attacker-controlled form data reaching the update sink with no ownership boundary enforced."},
+        {"rule": "FP-01", "answer": "DOES_NOT_HOLD", "reason": "The action itself skips the scope check; not a caller-side misuse assumption."}
+      ]
+    },
+    {
+      "title": "Middleware reflects arbitrary Origin with Access-Control-Allow-Credentials",
+      "location": {"path": "notes-workspace/middleware.ts", "symbol": "middleware", "line": 16},
+      "class": "CORS misconfiguration",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "For every matched (non-api) request the middleware sets Access-Control-Allow-Origin to the request's own Origin (line 16) and Access-Control-Allow-Credentials: true (line 17), with Vary: Origin — an unconditional reflect-with-credentials.",
+      "impact": "Any third-party site can make credentialed cross-origin requests to the workspace pages/RSC endpoints and read responses using the victim's cookie, enabling cross-site data theft.",
+      "recommendation": "Reflect only Origins on an explicit allowlist (the desktop/extension/marketing origins) before enabling credentials; otherwise omit ACAC.",
+      "triage": [
+        {"rule": "FP-13", "answer": "DOES_NOT_HOLD", "reason": "The reflected Origin is attacker-controlled; combined with credentials it crosses the same-origin trust boundary."},
+        {"rule": "FP-02", "answer": "DOES_NOT_HOLD", "reason": "Credentialed origin reflection is the exploit primitive itself, not a missing-header hardening item."}
+      ]
+    },
+    {
+      "title": "Dead legacy session verifier uses salted MD5",
+      "location": {"path": "notes-workspace/lib/session.ts", "symbol": "verifyLegacySession", "line": 67},
+      "class": "Weak hash",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "verifyLegacySession computes createHash('md5').update(salt + payload) and compares with '===' (line 67-69). No in-app caller (grep-confirmed); documented as used only by an out-of-repo backfill script.",
+      "impact": "If reused, MD5 with a simple salt||payload construction is vulnerable to collision/length-extension-style forgery and the '===' compare is not constant-time; weak session integrity.",
+      "recommendation": "Delete the dead function or replace with an HMAC-SHA-256 verify using timingSafeEqual.",
+      "triage": [
+        {"rule": "FP-08", "answer": "HOLDS", "reason": "Broken-hash (MD5) intrinsic flaw kept by Rule 08 even though the function is currently uncalled in this repo."},
+        {"rule": "FP-03", "answer": "UNKNOWN", "reason": "Exploitability depends on the external backfill script reusing it; not reproducible offline, held low."}
+      ]
+    }
+  ]
+}

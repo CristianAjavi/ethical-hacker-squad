@@ -56,6 +56,11 @@ else
   gate_scope "the fixtures under scripts/gates/fixtures/findings, good and bad"
 fi
 gate_out_of_scope "whether a finding is true - a well-formed artifact can carry a confident mistake"
+# Named because it is the trap: bench/runs/**/*.json is a round's SCORING INPUT in the
+# reduced shape that round's prompt asked for, not this deliverable. Two shapes with
+# overlapping names, and measuring one against the other's required fields produces a
+# large, confident, meaningless number.
+gate_out_of_scope "bench/runs/**, whose JSON follows each round's prompt, not this schema"
 
 if ! command -v python3 >/dev/null 2>&1; then
   gate_warn "python3 is not installed: nothing was measured"

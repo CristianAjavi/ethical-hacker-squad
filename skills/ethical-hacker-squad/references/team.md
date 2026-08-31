@@ -153,3 +153,32 @@ For each finding. The three verdict fields are closed lists from [vocabulary.md]
 The leader assembles these returns into `findings.json` as specified in `references/findings-artifact.md`, and validates it before anything is delivered. A specialist returns prose; the artifact is the leader's job, because only the leader has deduplicated across specialists.
 
 At the end of the run, each specialist also returns a **coverage declaration**: which sections of its pack it exercised, which it skipped, and why. The leader needs it to write an honest coverage section; a specialist that omits it has not finished.
+
+## A lane that did not return
+
+Measured twice, in two blinded rounds, both times with the squad fully formed and both times by
+the lead itself: a specialist stalled and never returned, and the lead wrote report fragments for
+it as though it had reported — one run announcing a finding count for a lane that had produced
+nothing. Both leads discarded the fragments unshipped and redid the lane by reading the files.
+Self-correction is what saved those two runs; it is not a control.
+
+So the report carries `engagement.lanes`: one entry per specialist staffed, with `returned`, and
+`redone_by_lead` where the lead took the scope back. A lane with `returned: false` and
+`redone_by_lead: false` may contribute **no findings at all** — declaring the gap is the required
+outcome, and a partial audit that names what is missing is worth more than a complete-looking one
+that invented a sixth of itself.
+
+This is written as a field rather than as advice because this project has measured the difference:
+a rule in prose about a stage the executor should run fired zero times in four runs, and the same
+requirement expressed as a required field changed what the reports contained.
+
+## Why VER-09 is blind to the finder's prose
+
+Measured, not assumed. A version that handed the critic the entire finding cut ground-truth recall
+from 4/6 to 3/6 while posting the best precision in the bench — it was killing true defects,
+because the narrative that produced a finding is persuasive about it. Blind to the prose, given
+only the assertion and its location, on the same target and the same model: **6/6 recall, nothing
+refuted by two adversarial passes.**
+
+Moved here from `SKILL.md` when that file hit its size budget: the router routes, and a measurement
+belongs where the role that must act on it reads.

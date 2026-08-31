@@ -222,6 +222,24 @@ main() {
   gate_info "audited directory: ${TARGET_DIR#"$ROOT"/} (${nf:-0} file(s))"
   awk -F'|' '$1=="STAT"{s[$2]+=$3} END{for (k in s) printf "· total %s: %d\n", k, s[k]}' "$out" | LC_ALL=C sort
 
+  # --- a battery step a red gate can skip is not a control ------------------
+  BSR="$SELF_DIR/lib/battery_step_reachable.py"
+  if [ -f "$BSR" ]; then
+    _bsr=$(mktemp "${TMPDIR:-/tmp}/ehs-bsr.XXXXXX")
+    PYTHONSAFEPATH=1 python3 "$BSR" "$ROOT" > "$_bsr" 2>&1 || true
+    if grep -q '^ERR|' "$_bsr"; then
+      gate_warn "$(sed -n 's/^ERR|//p' "$_bsr" | head -1)"
+      [ "$rc" -eq 0 ] && rc="$GATE_UNMEASURABLE"
+    else
+      sed -n 's/^STAT|\(.*\)|\(.*\)/· \1 battery step(s) across \2 workflow(s), none skippable by an earlier failure/p' "$_bsr"
+      if grep -q '^SKIPPABLE|' "$_bsr"; then
+        sed -n 's/^SKIPPABLE|\(.*\)|\(.*\)|\(.*\)/  FAIL        \1 job \2: "\3" runs the batteries after a step that can fail, with no condition that survives it/p' "$_bsr"
+        rc=1
+      fi
+    fi
+    rm -f "$_bsr"
+  fi
+
   if [ "$rc" -eq 0 ] && [ "$SELFTEST_SKIPPED" -eq 1 ]; then
     gate_warn "the ${nf} workflow(s) triggered no findings, but the self-test was skipped: I cannot sign this result"
     rc="$GATE_UNMEASURABLE"

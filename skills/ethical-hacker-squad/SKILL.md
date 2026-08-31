@@ -38,8 +38,8 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | File | Load it when |
 |---|---|
 | [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
-| [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
-| [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
+| [references/coverage.md](references/coverage.md) | After the inventory. When looking at a file is finished. It does not route; the pack table is below. |
+| [references/knowledge/README.md](references/knowledge/README.md) | Always, to staff roles: its table maps inventory to pack. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
 | [references/triage.md](references/triage.md) | Before any specialist writes a finding. The ten rules that rule a finding out, each answerable, and the invariant that a `confirmed` finding has none of them unanswered. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the final report. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,450 lines across nineteen files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,445 lines across nineteen files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
@@ -71,11 +71,13 @@ Do not load a pack for a role you did not staff. The corpus is 4,450 lines acros
 
 Inspect structure, manifests, languages, frameworks, input surfaces, authentication, storage, deployment, CI/CD and tests. Detect sensitive artifacts without revealing their content. Record **how the code got here** as well as what it is: an agent instruction file, repository-scoped editor or agent configuration, a coding agent among the dependencies. That is a routing signal in `references/coverage.md`, never a verdict — it can be deleted from a tree, and the client's account of its own process is not evidence. Not every project needs every role.
 
-Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read only the matching sections of `references/coverage.md` to decide which packs are worth loading.
+Build a short matrix: component, technology, attack surface, trust boundary, assigned specialist. Then read the pack table in `references/knowledge/README.md` to decide which packs are worth loading.
 
 ### 3. Form the adaptive squad
 
 Staff two to four relevant specialists. Do not spend an agent on an absent domain: no `ehs-mobile` without a mobile artifact, no `ehs-ai-safety` without an LLM call. Run them in parallel when their files and tests do not collide. Reserve capacity for `ehs-remediator` and `ehs-verifier` in `harden` mode.
+
+**A lane whose specialist did not return was NOT RUN.** Declare it undone or audit it yourself; never write its findings as if reported. Record every lane in `engagement.lanes`.
 
 ### 4. Record what you found unaided
 
@@ -108,7 +110,7 @@ The verifier works from the finding and the diff, never from the fixer's conclus
 
 Every `confirmed` and `probable` finding goes to `ehs-verifier` under `VER-09`, in a fresh context that receives **the assertion and its location and not the finder's narrative**. Survivors ship; casualties go to `ruled_out` naming the line that killed them.
 
-The blindness is the whole mechanism, and it is measured. A version that handed the critic the entire finding cut ground-truth recall from 4/6 to 3/6 while posting the best precision in the bench — it was killing true defects. Blind to the prose, on the same target and model: **6/6 recall, nothing refuted by two adversarial passes.**
+The blindness is the whole mechanism, and it is measured; `references/team.md` carries the numbers and what a non-blind critic cost.
 
 ### 9. Deliver the report
 
