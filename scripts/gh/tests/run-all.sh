@@ -126,5 +126,21 @@ fi
 if [ -n "$UNMEASURED" ]; then
   exit 2
 fi
-echo "ALL SUITES GREEN"
+# WHAT A GREEN HERE DOES NOT COVER.
+#
+# This file and `scripts/gates/run-all.sh` share a basename, and running this one
+# and seeing a green reads as "everything passes". It is not: this suite runs the
+# self-test BATTERIES, and the gates themselves run in the other file. The
+# difference is not theoretical - it was measured on 2026-08-25 by falsifying the
+# corpus line count in SKILL.md: `scripts/gates/run-all.sh` returned FAIL 1 on
+# gate-corpus-contract, and this suite returned 75 OK / 0 FAIL with the same lie
+# in the tree.
+#
+# So the last line says what was not checked, rather than leaving a reader to
+# find out from CI. A suite that reports a green without naming its scope is a
+# suite that overstates itself.
+echo "ALL SUITES GREEN — batteries only."
+echo "  NOT covered here: the gates themselves. Run \`bash scripts/gates/run-all.sh\`"
+echo "  before concluding a change is clean; a green above says the batteries pass,"
+echo "  not that the tree does."
 exit 0
