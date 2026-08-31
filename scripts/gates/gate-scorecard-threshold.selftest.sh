@@ -59,7 +59,7 @@ case_run gated-check-absent-from-results 2 "is not in the results at all" '
 import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$F"'"
 d=json.loads(p.read_text())
-d["checks"]=[c for c in d["checks"] if c["name"]!="Branch-Protection"]
+d["checks"]=[c for c in d["checks"] if c["name"]!="Security-Policy"]
 p.write_text(json.dumps(d,indent=1))'
 
 case_run gated-check-inconclusive 2 "came back inconclusive" '
@@ -67,8 +67,59 @@ import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$F"'"
 d=json.loads(p.read_text())
 for c in d["checks"]:
+    if c["name"]=="Security-Policy": c["score"]=-1
+p.write_text(json.dumps(d,indent=1))'
+
+# --- the relocated check ------------------------------------------------
+# Branch-Protection is NOT gated: it is measured, printed, and answered for by
+# named files. The four cases below are the ones that decide whether that is an
+# honest arrangement or a hole with a paragraph in front of it.
+
+# It is inconclusive on every real run. That must not block, and must not vanish.
+case_run relocated-check-inconclusive-does-not-block 0 "Branch-Protection: -1, inconclusive" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$F"'"
+d=json.loads(p.read_text())
+for c in d["checks"]:
     if c["name"]=="Branch-Protection": c["score"]=-1
 p.write_text(json.dumps(d,indent=1))'
+
+# The mutant that matters: drop it from the gated list and say so NOWHERE. This
+# is what softening the gate actually looks like from the inside, and before
+# measurement 5 existed it came out as a clean green over a shorter list.
+case_run check-dropped-without-being-relocated 1 "documented not-gated checks and" '
+import os,json,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"scripts/gates/data/scorecard-thresholds.json"
+d=json.loads(p.read_text())
+d["not_gated_here"]=[]
+p.write_text(json.dumps(d,indent=1))'
+
+# In both lists at once: one of the two is a leftover and which one decides
+# whether the check has teeth, so the gate refuses to guess.
+case_run check-both-gated-and-not-gated 1 "is declared as gated AND as not gated" '
+import os,json,pathlib
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"scripts/gates/data/scorecard-thresholds.json"
+d=json.loads(p.read_text())
+d["checks"].append({"check":"Branch-Protection","min":8,"why":"leftover"})
+p.write_text(json.dumps(d,indent=1))
+doc=w/"docs/gate-requirements.md"
+doc.write_text(doc.read_text().replace(
+  "| `Security-Policy` | must be `10` |",
+  "| `Branch-Protection` | `>= 8` | leftover |\n| `Security-Policy` | must be `10` |",1))'
+
+# "Something else really checks it", pointing at a file that is not there.
+case_run relocated-names-a-file-that-is-gone 1 "does not exist. A control retired" '
+import os,pathlib
+(pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/protection-check.sh").unlink()'
+
+# And the not-gated table deleted from the document while the data file still
+# relocates the check: enforced in one place, unreadable in the other.
+case_run not-gated-table-deleted-from-doc 1 "g9:not-gated" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"docs/gate-requirements.md"
+p.write_text(re.sub(r"<!--\s*g9:not-gated\s*-->.*?<!--\s*/g9:not-gated\s*-->","",p.read_text(),flags=16))'
 
 case_run aggregate-falls-past-the-contract 1 "more than the" '
 import os,json,pathlib
@@ -105,6 +156,10 @@ if [ "$fail" -eq 0 ]; then
   echo "Result: OK. A gated check below its minimum fails, an inconclusive or absent check is"
   echo "        could-not-measure rather than a pass, the aggregate is judged by movement, and"
   echo "        the documented thresholds cannot drift from the enforced ones."
+  echo "        And the gate cannot be softened by editing it: a check dropped from the gated"
+  echo "        subset without being written into the not-gated table FAILS, a check in both"
+  echo "        lists FAILS, a not-gated check naming a file that no longer exists FAILS, and"
+  echo "        the not-gated one still has its live score printed on every run."
   exit 0
 fi
 exit 1

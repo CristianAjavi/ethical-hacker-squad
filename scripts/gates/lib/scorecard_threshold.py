@@ -7,9 +7,9 @@ and it is a good reason: the aggregate is a risk-weighted average that EXCLUDES
 checks returning `?`, so it can fall for doing things right. What was missing is
 the other half - the per-check subset that does reflect real risk here.
 
-Four measurements:
+Six measurements:
 
-  1. drift       the table under `## G9` in docs/gate-requirements.md still says
+  1. drift       BOTH tables under `## G9` in docs/gate-requirements.md still say
                  exactly what scripts/gates/data/scorecard-thresholds.json
                  enforces, check for check and number for number.
   2. thresholds  every declared check is present in the results and at or above
@@ -20,6 +20,24 @@ Four measurements:
   4. regression  the aggregate may not fall more than max_drop_from_baseline
                  below the recorded baseline. No baseline recorded is printed as
                  "nothing to compare", not silently treated as fine.
+  5. relocation  a check may sit in `checks` or in `not_gated_here`. In both is a
+                 contradiction and in neither is a check that quietly stopped
+                 existing, so either is a finding. This is what stops the list
+                 above from being softened by deletion: dropping a check from
+                 `checks` without writing it into `not_gated_here` FAILS.
+  6. the escape  every file a `not_gated_here` entry names as the thing that
+                 really checks the property must exist. "Something else measures
+                 it" pointing at nothing is how a control is retired in writing
+                 while reading as still enforced.
+
+WHY 5 AND 6 EXIST. `Branch-Protection` was gated at a minimum of 8 that CI could
+never read - the workflow token cannot reach the protection block - so G9 exited
+2 on every push from the day it started gating, and with a maintainer token the
+real number was 3, so the threshold had never been reachable either. Moving it
+out of the gated subset was the honest answer and is also the dangerous one: the
+same edit, made silently, is how a repository stops checking something and keeps
+the green. So the move is only expressible in writing, with a live score printed
+on every run and a named file that has to exist.
 
 Usage: scorecard_threshold.py <repo-root> <results.json>
 
@@ -35,8 +53,14 @@ from pathlib import Path
 
 DATA = "scripts/gates/data/scorecard-thresholds.json"
 DOC = "docs/gate-requirements.md"
-DOC_TABLE = re.compile(r"##\s*G9\s*—\s*Repository quality metric(.*?)(?=\n##\s)", re.S)
+# Two delimited regions rather than one loose search. The tables sit in the same
+# section and have the same row shape, so a single regex over the section would
+# read the not-gated table as thresholds - and a check moved between them would
+# come out as no change at all.
+GATED_REGION = re.compile(r"<!--\s*g9:gated\s*-->(.*?)<!--\s*/g9:gated\s*-->", re.S)
+NOT_GATED_REGION = re.compile(r"<!--\s*g9:not-gated\s*-->(.*?)<!--\s*/g9:not-gated\s*-->", re.S)
 ROW = re.compile(r"^\|\s*`([A-Za-z-]+)`\s*\|\s*(?:must be\s*)?`?>?=?\s*(\d+)`?\s*\|", re.M)
+NAME_ROW = re.compile(r"^\|\s*`([A-Za-z-]+)`\s*\|", re.M)
 
 
 class Unmeasured(Exception):
@@ -52,8 +76,12 @@ def main() -> int:
     try:
         data = json.loads((root / DATA).read_text(encoding="utf-8"))
         declared = {c["check"]: int(c["min"]) for c in data["checks"]}
+        # A missing key here would be an unusable file, not an empty list: the
+        # whole point of measurement 5 is that "not gated" has to be written
+        # down, and a file that cannot say so cannot be gated against.
+        relocated = {c["check"]: c for c in data["not_gated_here"]}
         agg_cfg = data["aggregate"]
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise Unmeasured(f"{DATA} is unusable: {exc}") from exc
 
     findings: list[str] = []
@@ -64,11 +92,11 @@ def main() -> int:
         doc = (root / DOC).read_text(encoding="utf-8")
     except OSError as exc:
         raise Unmeasured(f"cannot read {DOC}: {exc}") from exc
-    m = DOC_TABLE.search(doc)
+    m = GATED_REGION.search(doc)
     checks += 1
     if not m:
-        findings.append(f"{DOC}: there is no `## G9` section; the thresholds are enforced from a "
-                        "data file with nothing next to it explaining them")
+        findings.append(f"{DOC}: there is no `<!-- g9:gated -->` region; the thresholds are "
+                        "enforced from a data file with nothing next to it explaining them")
     else:
         documented = {name: int(score) for name, score in ROW.findall(m.group(1))}
         if documented != declared:
@@ -77,6 +105,47 @@ def main() -> int:
             findings.append(
                 f"{DOC}: the documented G9 thresholds and {DATA} differ - documented {only_doc}, "
                 f"enforced {only_data}")
+
+    # The same drift check over the OTHER table. Without it, a check could be
+    # taken out of the gated subset in the data file and out of the document
+    # too, and every remaining measurement would still be green: the gate would
+    # be measuring a shorter list and saying so nowhere.
+    m2 = NOT_GATED_REGION.search(doc)
+    checks += 1
+    if not m2:
+        findings.append(f"{DOC}: there is no `<!-- g9:not-gated -->` region, so what {DATA} takes "
+                        "out of the gated subset is written down nowhere a reader would find it")
+    else:
+        documented_out = set(NAME_ROW.findall(m2.group(1)))
+        if documented_out != set(relocated):
+            findings.append(
+                f"{DOC}: the documented not-gated checks and {DATA} differ - documented "
+                f"{sorted(documented_out - set(relocated))}, enforced "
+                f"{sorted(set(relocated) - documented_out)}")
+
+    # ---- 5. a check is gated, or relocated in writing. Never both, never ----
+    #         neither. Deleting a row is the soft way to stop checking.
+    checks += 1
+    both = sorted(set(declared) & set(relocated))
+    if both:
+        findings.append(
+            f"{DATA}: {', '.join(both)} is declared as gated AND as not gated here. One of the two "
+            "is a leftover, and which one it is decides whether the check has teeth")
+
+    # ---- 6. "something else really checks it" has to point at something ----
+    for name, entry in sorted(relocated.items()):
+        checks += 1
+        named = entry.get("measured_by") or []
+        if not named:
+            findings.append(f"{DATA}: {name} is taken out of the gated subset and names nothing "
+                            "that checks the property instead")
+            continue
+        missing = [f for f in named if not (root / f).exists()]
+        if missing:
+            findings.append(
+                f"{DATA}: {name} says it is really checked by {', '.join(missing)}, and that does "
+                "not exist. A control retired in favour of a file that is not there is a control "
+                "retired")
 
     # ---- the results ---------------------------------------------------
     try:
@@ -110,6 +179,21 @@ def main() -> int:
                    "declared in scripts/gates/data/scorecard-thresholds.json"))
         else:
             print(f"  {name}: {score} (>= {minimum})")
+
+    # ---- the relocated checks: printed, every run, with their real score --
+    #      A check that stops being gated does not stop being measured. The
+    #      number stays on screen so a fall is visible to whoever reads the run,
+    #      and an entry that quietly disappeared from the results says so too.
+    for name in sorted(relocated):
+        score = scored.get(name)
+        if score is None:
+            shown = "absent from the results"
+        elif score == -1:
+            shown = "-1, inconclusive"
+        else:
+            shown = str(score)
+        by = ", ".join(relocated[name].get("measured_by") or []) or "nothing named"
+        print(f"  {name}: {shown} - NOT GATED on this number; really checked by {by}")
 
     # ---- 4. the aggregate, by movement rather than by level ------------
     baseline_rel = agg_cfg.get("baseline_file")
