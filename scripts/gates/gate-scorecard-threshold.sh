@@ -12,11 +12,14 @@
 #   docs/gate-requirements.md has declared all along.
 #
 # WHAT IT MEASURES
-#   Seven checks against their declared minimum; that the documented table and
-#   the enforced data file still agree, check for check and number for number;
-#   and the aggregate by MOVEMENT rather than by level, against a baseline a
-#   human edits - a workflow that could rewrite its own baseline could ratchet
-#   itself down one run at a time.
+#   The gated checks against their declared minimum; that BOTH documented tables
+#   and the enforced data file still agree, check for check and number for
+#   number; that every check sits in exactly one of the two, so a threshold
+#   cannot be softened by deleting a row; that a check moved out of the gated
+#   subset names a real file that checks the property instead, and that its live
+#   score is printed anyway; and the aggregate by MOVEMENT rather than by level,
+#   against a baseline a human edits - a workflow that could rewrite its own
+#   baseline could ratchet itself down one run at a time.
 #
 #   A check Scorecard could not run comes back as -1. That is COULD NOT MEASURE,
 #   never a pass.
@@ -52,7 +55,7 @@ while [ $# -gt 0 ]; do
 done
 
 gate_header "scorecard-threshold (the per-check subset that has teeth)"
-gate_scope "seven Scorecard checks against their declared minimum, the documented table against the enforced one, and the aggregate by movement"
+gate_scope "the gated Scorecard checks against their declared minimum, BOTH documented tables against the enforced data file, that every check sits in exactly one of them, that what replaces a relocated check exists, and the aggregate by movement"
 gate_out_of_scope "every check outside the gated subset: published, deliberately not gated"
 
 if ! command -v python3 >/dev/null 2>&1; then

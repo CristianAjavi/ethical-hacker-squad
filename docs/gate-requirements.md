@@ -355,15 +355,30 @@ Track OpenSSF Scorecard, but **do not gate on the aggregate score.** The aggrega
 
 Gate on the subset that reflects real risk here:
 
+<!-- g9:gated -->
+
 | Check | Threshold | Why it matters here |
 |---|---|---|
 | `Dangerous-Workflow` | must be `10` | A single `pull_request_target` with untrusted checkout is the exact CSA-documented chain. |
 | `Token-Permissions` | `>= 9` | An over-permissioned `GITHUB_TOKEN` is what turns an injection into a compromise. |
 | `Pinned-Dependencies` | `>= 8` | Tags are mutable and have been repointed at malicious commits in the wild. |
-| `Branch-Protection` | `>= 8` | The whole promotion model assumes nobody pushes directly. |
 | `Binary-Artifacts` | must be `10` | A knowledge repository has no reason to contain binaries. |
 | `License` | must be `10` | |
 | `Security-Policy` | must be `10` | A security tool without a disclosure policy is a contradiction. |
+
+<!-- /g9:gated -->
+
+### Measured, published, and deliberately not gated on this number
+
+A check leaves the table above by being written into the one below, never by being deleted. `gate-scorecard-threshold.sh` reads both, refuses to run if a check appears in neither or in both, prints the live score of every check in this table on every run, and fails if the file named as the real check does not exist. A control that is retired in silence is the failure this whole document is written against; a control that is *relocated in writing*, with its live number still on screen, is a different thing.
+
+<!-- g9:not-gated -->
+
+| Check | Really checked by | Why not this number |
+|---|---|---|
+| `Branch-Protection` | `scripts/gh/governance.json`, `scripts/gh/protection-check.sh`, `scripts/gh/apply-governance.sh` | Scorecard reads the protection block through an API call needing administration scope. The workflow token does not have it, and `.github/workflows/protection-drift.yml` already refused the alternative — a personal access token as a secret in a public security repository — as a larger surface than the problem it solves. So from CI the check is `-1` on every run, and `-1` is COULD NOT MEASURE, which is how G9 exited `2` on every push from the day it started gating. Measured once with a maintainer token it is `3`, not the `8` that was declared: the threshold was never reachable either, so resolving the `-1` would have turned a permanent `2` into a permanent `1`. The property the threshold was written for — *nobody pushes directly to `main`* — holds and is enforced: force pushes and deletions disabled, linear history required, pull requests required, two required status checks. |
+
+<!-- /g9:not-gated -->
 
 The aggregate is recorded as informational with a **no-regression** rule: it may not drop more than 0.5 below the previous recorded value without failing. Exit `2` if Scorecard could not run.
 
