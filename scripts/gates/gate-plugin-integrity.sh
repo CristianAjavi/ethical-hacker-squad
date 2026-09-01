@@ -32,7 +32,8 @@
 #                                 (an explicit human decision, not the bot's)
 #   EHS_MAX_SKILL_MD_BYTES        default 12288
 #   EHS_MAX_REF_BYTES             default 32768
-#   EHS_MAX_TREE_BYTES            default 524288 (see RE-BASELINED note below)
+#   EHS_MAX_TREE_BYTES            default 786432 (three re-baselines; see the
+#                                 RE-BASELINED notes below for each figure)
 #   EHS_MAX_TREE_FILES            default 64
 # ---------------------------------------------------------------------------
 set -uo pipefail
