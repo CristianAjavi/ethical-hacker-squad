@@ -43,6 +43,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
+| the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -360,6 +361,21 @@ So the prefix stays, demoted from *the* classifier to one signal among several, 
 
 It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 25 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
 
+**The control went green because its input went missing, 2026-09-01.** The first push of the
+`alert-surface` branch had G7 **passing** on a diff that moved three protected paths. Nothing was
+overridden and nothing was narrowed: the commit had simply been written without its
+`Claude-Session:` trailer, which is one of the two signals this gate reads. G7 behaved exactly as
+specified — it prints *an absent mark is not a human* on every run — but a reader sees a green
+check, not that sentence. **A signal that can go missing by omission produces a silence that looks
+like a pass**, and the only reason it was caught is that a claim in the pull-request body predicted
+red and the check said green.
+
+`automation_branch_prefixes` holds only `bot/`. The `loop/` branches this repository's own
+continuous-improvement work runs on are not covered, so the trailer is the *only* signal on them,
+and it is the one a harness can drop. Closing that is tracked separately; it is recorded here
+because the gap is in this gate's inputs and a reader of this section should not have to find it
+in a pull request.
+
 ## G7b — A bound may not move without the figure that moved it
 
 G7 asks **who** moved a limit. It does not ask whether the number that moved still agrees with the sentence that states it — and on 2026-09-01, one of them did not.
@@ -376,6 +392,53 @@ Measured over the whole history: **15 budget constants moved, 13 of them tighter
 **What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Both are printed on every run.
 
 Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
+
+## G7c — The file that tells you how to read an alert has to be right
+
+`.github/dependabot.yml` carries the comment a triager reads before deciding whether a red
+alert matters. Its whole purpose was one sentence: *do not let a real alert hide behind the
+assumption that every npm finding here is a fixture.*
+
+**Measured 2026-09-01, against the five open alerts on the default branch: every factual claim
+in that comment was false.** It said there was no `requirements.txt` — one had been added under
+`bench/cases/intake-portal` and produces three of the five alerts. It said enabling alerts would
+report *those two — one high, one low* — the figure is five: one high, two medium, two low. It
+said *the express pin is deliberately old* — `express` appears in no planted entry and no decoy
+in `bench/ground-truth.json`, so that alert is incidental, not ground truth. And it said there
+was no `Dockerfile` — `bench/cases/intake-portal/Dockerfile` exists. **One alert of five is a
+plant.** The document written to stop a real alert hiding behind a fixture had become the hiding
+place, and nothing read it.
+
+This is `G7b` one level up: not a number that moved behind the sentence that states it, an
+**inventory** that did. A claim of absence never ages; the tree does.
+
+`gate-alert-surface.sh` enumerates the **manifests on disk** — the source, not the declaration —
+and checks six things against `scripts/gates/data/alert-surface.json`: every manifest found is
+declared and its ecosystem matches its filename; every declared path still exists; `managed: true`
+holds **iff** an `updates` block covers it, in both directions, so a bot pointed at a bench fixture
+is a finding; every unmanaged manifest states why; every absence the config's prose asserts is
+genuinely absent; and the `planted`/`decoys` symbols declared for a fixture are **exactly** what
+the answer key plants there, in both directions.
+
+**It found three more defects on its first two runs, all of them mine**: the undeclared
+`Dockerfile`, my own transcription of the false `Dockerfile` absence claim, and a `planted` list
+written from a grep that held `lodahs` and missed `preinstall` (P-19) and the decoy `left-pad`
+(D-20). A list built from memory cannot see what nothing points at.
+
+Two things it deliberately does not measure. **The alert count**, because that number moves when
+an upstream advisory is published and no change here caused it — a gate that cries at the world
+gets ignored the same way this alert channel did. And the **prose** of `dependabot.yml`: a gate
+cannot read English, only the absence claims transcribed into the data file, so a claim added to
+the comment and not copied across stays invisible. That hole is named in the data file rather
+than left for someone to find.
+
+Fixed in the same change: `tooling/claude-cli` — the one manifest in this repository where an
+alert would be **real**, installed with `npm ci` by `release.yml` — had no `updates` block. The
+argument this config already makes for keeping action SHAs current applies to it, and nobody had
+made it.
+
+Self-test: 13 cases, each proved in the negative against a synthetic tree, plus one that runs the
+gate against this repository as it stands.
 
 ## G8 — Regression guard on quality issues
 
