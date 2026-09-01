@@ -82,6 +82,25 @@ set -uo pipefail
 #   now closed - the binding control on "too much at once" moved to the delta
 #   guard, which does not go slack as the corpus grows.
 #
+#   RE-BASELINED A THIRD TIME 2026-09-01, to 768 KiB, and this time with the
+#   number that makes the review honest: on `main` the served tree measured
+#   653,513 B against a 655,360 B cap. **1,847 bytes of headroom** - less than a
+#   tenth of one procedure. The cap was not hit by an unusual change; it was
+#   already spent, and whichever increment came next was going to trip it. The
+#   change that surfaced this added 10,986 B and passed gate-tree-delta.sh with
+#   its 64 KiB human-branch budget untouched, which is the control that actually
+#   answers "too much at once". 768 KiB restores room for roughly fifteen more
+#   procedures and keeps the stated property: a bulk dump is still an order of
+#   magnitude away.
+#
+#   And the reason nobody saw it coming is now fixed. The gate printed
+#   "653513 / 655360" on every green run and that line was true, unread and
+#   useless: a cap that only speaks when it has already failed someone's commit
+#   teaches contributors that it is an obstacle rather than a bound. It now says
+#   so out loud while there is still room to act, one full reference file ahead
+#   of the wall. The notice does not fail the gate - a warning that blocks is
+#   just a slower failure.
+#
 #   KNOWN WEAKNESS, CLOSED 2026-08-21: an absolute cap is a poor instrument for
 #   "a bot added too much at once", because it loosens as the corpus grows and
 #   eventually only deleting knowledge satisfies it. The control that keeps its
@@ -90,7 +109,7 @@ set -uo pipefail
 #   branch, 64 KiB for a human one. This cap stays as the outer bound.
 MAX_SKILL_MD_BYTES="${EHS_MAX_SKILL_MD_BYTES:-12288}"
 MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
-MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-655360}"
+MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-786432}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an
@@ -450,6 +469,13 @@ if (( TREE_BYTES > MAX_TREE_BYTES )); then
   fail "the served tree (${SERVED_PRESENT[*]}) weighs $TREE_BYTES B > $MAX_TREE_BYTES B (blast-radius limit of the corpus)"
 else
   ok "the served tree (${SERVED_PRESENT[*]}) weighs $TREE_BYTES B / $MAX_TREE_BYTES B"
+  # Say it while there is still room to act. Below one reference file of
+  # headroom the next procedure trips the cap, and the contributor who trips it
+  # is never the one who spent the budget.
+  if (( MAX_TREE_BYTES - TREE_BYTES < MAX_REF_BYTES )); then
+    info "NOTE: only $((MAX_TREE_BYTES - TREE_BYTES)) B of headroom left, under the $MAX_REF_BYTES B a single reference file may weigh."
+    info "      The next procedure will fail this cap. Re-baseline it deliberately, with the measurement written down, before that happens."
+  fi
 fi
 if (( ${#TREE_FILES[@]} > MAX_TREE_FILES )); then
   fail "the served tree has ${#TREE_FILES[@]} files > $MAX_TREE_FILES"

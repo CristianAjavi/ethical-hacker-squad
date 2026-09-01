@@ -1,8 +1,8 @@
 # Knowledge pack - ai-safety (agent runtime: packages, boundary, topology and accountability)
 
-> **When to load this file:** the target installs or ships agent packages (a skill, a plugin, an editor extension, a rules file), hands an agent a shell or a filesystem write tool, runs two or more agents that pass work to each other, or takes actions with real effects whose author has to be reconstructable weeks later.
-> **Do not load it if:** there is a single agent with no installable package, no write or shell tool and no side effects — the prompt boundary and the tool chain are already covered by `ai-safety.md` §0-§3.
-> **Cost:** ~136 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
+> **When to load this file:** the target installs or ships agent packages (a skill, a plugin, an editor extension, a rules file), hands an agent a shell or a filesystem write tool, runs two or more agents that pass work to each other, takes actions with real effects whose author has to be reconstructable weeks later, or reaches a model provider through a base URL that configuration decides.
+> **Do not load it if:** there is a single agent with no installable package, no write or shell tool, no side effects and a provider endpoint fixed in code — the prompt boundary and the tool chain are already covered by `ai-safety.md` §0-§3.
+> **Cost:** ~180 lines. Third file of this pack. `ai-safety.md` holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility notes that govern all three files; `ai-safety-data-output.md` holds §4-§10 (`AI-12`..`AI-22`, `AI-24`). `AI-01` orders this file too: every procedure below assumes you already know which agent holds which tool.
 
 ## Selective loading index
 
@@ -10,6 +10,7 @@
 |---|---|---|
 | §11 Agent packages and execution boundary | installable skills, plugins or extensions; a shell or write tool; credentials in the launching environment | AI-25, AI-28 |
 | §12 Multi-agent topology and accountability | two or more agents, a handoff route or queue, actions with irreversible effects | AI-26, AI-27 |
+| §13 The inference endpoint | a base URL, an AI gateway or a proxy between the client and the model provider; any provider host that configuration can move | AI-30 |
 
 ## How to use a procedure
 
@@ -130,6 +131,50 @@ Take one irreversible action the agent can perform and trace backwards in code, 
 
 **Traceability**: `LLM03:2026` · `ASI03` · `ASI10` · `AML.M0024` · `A09:2025` · `CWE-778` · `CWE-223` · `NIST 800-53 AU` · `ASVS 5.0 V16`
 **Tooling**: `rg -n "logger\.|structlog|opentelemetry|langfuse|langsmith"` over the agent module → tracing that exists for debugging is not an audit trail; check subject, retention and tamper resistance before calling it one. Overlaps `infra-cloud` `INF-06` (platform logging): agree who writes it, so the finding is reported once, at the agent layer.
+
+## §13 The inference endpoint
+
+An agent's model provider is a dependency like any other, except that nothing in the repository pins it. The client library takes a base URL from configuration, and whoever sets that value sees every prompt, every retrieved document and every key that travels beside them — and answers with text the application already trusts.
+
+There is a dynamic way to ask this question: send probes through the endpoint in use and look for inconsistencies between what it claims to be and how it behaves. That instrument exists, it is good, and it is not this one. It needs a working key, it spends the client's credits against a third party, and it can only run once traffic is already flowing. The procedure below asks the same question from the configuration alone: it costs nothing, needs no key, and runs before the first request is made.
+
+### AI-30 The inference endpoint nobody pinned: what decides where the model traffic goes
+
+**Where to look**
+- The value itself: `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `ANTHROPIC_BASE_URL`, `AZURE_OPENAI_ENDPOINT`, `base_url=`, `baseURL:`, `api_base`, `endpoint=`, `LITELLM_PROXY_URL`, `OLLAMA_HOST`, `HF_ENDPOINT`, `--api-base`, and the `api_base` field of a LiteLLM or LangChain model config
+- Where the value comes from, which is the whole procedure: a committed `.env`, a Helm value, a ConfigMap, a CI variable, a code default that falls back to something that is not the provider — and, worst of all, a settings row or admin field that changes the endpoint with no deploy and no review
+- What sits in between: LiteLLM, one-api, new-api, portkey, helicone, openrouter, an internal "AI gateway", or plain `HTTPS_PROXY`/`NO_PROXY` reaching the client library — and, for each, who operates it and under whose authority
+- The transport on that client: `verify=False`, `httpx.Client(verify=…)`, `rejectUnauthorized: false`, `NODE_TLS_REJECT_UNAUTHORIZED=0`, a custom CA bundle mounted into the image
+- What happens to the answer: whether tool-call arguments returned by the endpoint are re-validated before execution (`AI-03`), and whether the response is believed when it names its own model
+
+**Vulnerable pattern**
+Three findings, in the order they compound.
+1. **The endpoint is externally controlled.** An environment variable, a ConfigMap or an admin field decides it, and the authority to change that value is not the authority to read every prompt the system sends. Nobody had to break in; the setting was always meant to be set.
+2. **The relay is trusted to be who it says.** No host pinning, or verification switched off, so whatever sits on that path reads the traffic and rewrites it. A gateway is a legitimate architecture; an unverified one is a party with full read and write on the conversation.
+3. **The answer is trusted as content.** The response can carry a rewritten tool command — an install pointed at a different index, a `curl … | sh`, an `eval` — and the application runs it because a model said so. The quieter variant injects instructions instead: a system prompt nobody in the project wrote, prepended by the relay, steering an agent whose operator never chose that text.
+
+The third is `AI-03` with the trust boundary moved. The sink is unchanged; what changed is that the untrusted author is the transport rather than a retrieved document, which is why a review that cleared the retrieval path can still be reading a compromised answer.
+
+**What rules it out (false positive)**
+- The base URL is a constant in code with no environment override and no settings row, and the deployment sets no proxy variable that reaches the client (`FP-02`).
+- The host is pinned to the provider with verification on, **and** a test fails when it changes. The test is the exculpation; the constant on its own only records today's intent (`FP-01`).
+- The gateway is operated by the same trust principal as the application, under the same change control, and it already sees prompts that principal may read. The finding then moves to that gateway rather than disappearing: its own endpoint configuration is this procedure again, one hop along (`FP-05`).
+- No response is trusted as an instruction: tool calls are re-validated against a closed schema and an allowlist before execution, and no returned text reaches a shell (`AI-03`).
+- The control is an egress policy outside the repository — a network rule that permits only the provider's host. That is `FP-08`: without the exported rule the answer is `UNKNOWN`, not `HOLDS`.
+
+Rules: FP-01, FP-02, FP-05, FP-08.
+
+**Minimal test**
+Two halves, both local, both inert, neither needing a key or a single token of budget.
+
+*Resolve, do not call.* Load the configuration the way the application loads it and print the client's resolved base URL and whether certificate verification is on, for each environment that ships — printing a fingerprint of the key, never the key. An endpoint that moves when an environment variable moves, and no deploy pipeline that sets it, is finding 1, established without contacting anyone.
+
+*Answer it yourself.* Point the client at a stub on loopback that returns a provider-shaped response containing a tool call, and watch whether the application executes it. That is finding 3, demonstrated against your own process. A `python3 -m http.server` sibling with a canned JSON body is enough; nothing leaves the machine.
+
+The dynamic half — probing an endpoint already in use to see whether it substitutes the model, injects tokens or rewrites commands — spends the client's credits against a third party and is `REQUIRES AUTHORIZATION`. Ask for it with a cap, and do not run it to satisfy curiosity: the static half above decides whether it is worth asking.
+
+**Traceability**: `LLM01:2026` · `LLM04:2026` · `LLM10:2026` · `ASI04` · `ASI05` · `CWE-15` · `CWE-346` · `CWE-345` · `CWE-295` · `CWE-494` · `CWE-829`
+**Tooling**: `rg -n "base_url|baseURL|api_base|BASE_URL|OPENAI_API_BASE|OLLAMA_HOST|HF_ENDPOINT|LITELLM"` gives the call sites; `rg -n "verify\s*=\s*False|rejectUnauthorized|NODE_TLS_REJECT_UNAUTHORIZED"` gives the transport. Neither answers the question that matters, which is where the value comes from — grep finds the read, and you still have to walk back to the writer. A grep that returns nothing is worth reporting only after you have shown the same grep firing on a line you planted; otherwise the empty result is `NOT MEASURED`, not absence.
 
 ## Identifier note for this file
 

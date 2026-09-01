@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over twenty files, 4,511 lines in total, 170 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over twenty files, 4,556 lines in total, 171 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -28,7 +28,7 @@ Eight packs, one per role, spread over twenty files, 4,511 lines in total, 170 n
 | `supply-chain-source-lifecycle.md` | `ehs-supply-chain` | ~165 | `SUP-21`..`SUP-26` | A repository whose releases you audit, any signature-verification command, binaries tracked in the tree, any runtime or engine version, any suppression or VEX file |
 | `ai-safety.md` | `ehs-ai-safety` | ~337 | `AI-01`..`AI-11`, `AI-29` | LLM API calls, agent frameworks, tool dispatchers, MCP servers or config |
 | `ai-safety-data-output.md` | `ehs-ai-safety` | ~350 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
-| `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~136 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
+| `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~181 | `AI-25`..`AI-28`, `AI-30` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~354 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
 | `local-app.md` | `ehs-local-app` | ~274 | `LOC-01`..`LOC-10`, `LOC-15`..`LOC-16` | A command-line tool, a published library or SDK, an installer, a local daemon; §0 (who the attacker is) and §10 (undecodable input breaking the reader) apply to every local audit |
 | `local-app-desktop-ipc.md` | `ehs-local-app` | ~90 | `LOC-11`..`LOC-14` | An Electron/Tauri/WebView shell, a registered URL scheme or file association, a unix socket, named pipe or `127.0.0.1` listener, a self-updater or a runtime plugin directory |
