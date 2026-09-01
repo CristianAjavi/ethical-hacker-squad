@@ -35,6 +35,13 @@
 #   what the run tells them is there. It is not called a human change, because
 #   nothing available when this gate runs proves that one was.
 #
+#   That listing is now ORDERED rather than flat: the paths that carry weight
+#   first, negative-proof material folded into one counted line. Measured over
+#   the 28 merged changes that tripped this gate, 38 of the 150 paths it named
+#   were fixture inputs and on the worst change 2 real limits sat under 19 lines
+#   of them. Folding is a display decision, held to that by seven battery cases:
+#   a FINDING names every path and so does an override. Nothing left `paths`.
+#
 #   If the commit range CANNOT be read and a protected path was touched, half the
 #   classifier did not run and the verdict is 2, not 0.
 #

@@ -52,6 +52,16 @@ Four measurements:
                 diff line carries it, so granting one is a separate act visible in
                 the pull-request timeline, and the run says loudly it was used.
 
+  6. legibility the UNATTRIBUTED listing puts the paths that carry weight first
+                and folds negative-proof material into one counted line. Measured
+                across the 28 merged changes that tripped this gate: 38 of the 150
+                paths it named were fixture inputs, and on the worst change 2
+                genuine limits sat under 19 lines of them. This is a DISPLAY
+                decision and only that - a finding names every path, an override
+                names every path, and nothing leaves `paths`. See
+                `$comment_why_not_narrowed` in the data file for the exemption
+                this replaced and the measurement that refused it.
+
 THE LIMIT, WRITTEN DOWN BECAUSE IT IS REAL
   In a single-maintainer repository there is NO signal at gate time that
   separates the maintainer from the maintainer's agent: they commit with the
@@ -112,6 +122,94 @@ def read_authorship(arg: str) -> list[str] | None:
         return None
 
 
+def fold_group(path: str, groups: list[dict]) -> dict | None:
+    """The listing group `path` belongs to, or None when it must be named in full.
+
+    Plain `fnmatch`, where `*` crosses `/`: these patterns describe a REGION of
+    the tree, not one directory level, and they are deliberately not the `/**`
+    form `matches()` implements for `paths`. An `except` entry wins over a match,
+    which is what keeps a `.expected` assertion out of the fold - the input is
+    the proof, the assertion is what says the proof proved anything.
+    """
+    for g in groups:
+        pats = [str(m) for m in (g.get("match") or [])]
+        skip = [str(e) for e in (g.get("except") or [])]
+        if any(fnmatch.fnmatch(path, m) for m in pats) and not any(
+                fnmatch.fnmatch(path, e) for e in skip):
+            return g
+    return None
+
+
+def fold_bucket(path: str, group: dict) -> str:
+    """Where a folded path is, named at the level the pattern is about.
+
+    Grouping by the file's own parent directory was the first attempt and it made
+    the fold LONGER than the list it replaced: a family whose fixtures nest one
+    level deeper produced thirteen distinct parents on a single line. The level a
+    reader needs is the one the PATTERN names - for
+    `scripts/gates/fixtures/*/bad/*` that is the `bad` directory of each family -
+    so the key is the path truncated after the last LITERAL segment of the
+    pattern that matched it. A pattern with no literal segment after a wildcard
+    falls back to the parent directory, which is the old behaviour and still
+    right for a flat group.
+    """
+    segs = path.split("/")
+    best = ""
+    for m in [str(x) for x in (group.get("match") or [])]:
+        if not fnmatch.fnmatch(path, m):
+            continue
+        psegs = m.split("/")
+        keep = max((i for i, s in enumerate(psegs) if "*" not in s), default=-1)
+        cut = "/".join(segs[:keep + 1]) if 0 <= keep < len(segs) else ""
+        if len(cut) > len(best):
+            best = cut
+    return best or path.rsplit("/", 1)[0]
+
+
+def print_listing(touched: list[tuple[str, str]], groups: list[dict]) -> None:
+    """The paths a maintainer has to look at, the ones that carry weight first.
+
+    FOLDING IS A DISPLAY DECISION AND NOTHING ELSE. It never reaches a finding,
+    never reaches the override listing, never changes a verdict, and never takes
+    a path out of `paths`. This function is called from the two branches that
+    say "allowed, go and look" and from nowhere else.
+
+    It exists because of a measurement. Across the 28 merged changes that tripped
+    G7, 38 of the 150 paths it named were fixture inputs - and on the worst of
+    them the 2 genuine limits sat under 19 lines of negative-proof material. A
+    reviewer who has to find two lines in twenty-one finds neither, and the
+    control that names everything equally is the control that gets skimmed. The
+    same measurement is why the fixtures were NOT exempted instead: G7 fired on
+    fixtures ALONE in 0 of those 28, so an exemption would have cost 38 paths
+    their who-signal and saved not one firing.
+    """
+    shown = [(f, p) for f, p in touched if fold_group(f, groups) is None]
+    folded: dict[str, tuple[dict, list[str]]] = {}
+    for f, _p in touched:
+        g = fold_group(f, groups)
+        if g is not None:
+            folded.setdefault(str(g.get("label") or "folded"), (g, []))[1].append(f)
+    for f, p in shown:
+        print(f"  - {f} (matches `{p}`)")
+    for label, (g, files) in folded.items():
+        where: dict[str, int] = {}
+        for f in files:
+            k = fold_bucket(f, g)
+            where[k] = where.get(k, 0) + 1
+        spread = ", ".join(f"{d} ({n})" for d, n in sorted(where.items()))
+        head = (f"  - {len(files)} {label}, folded into this line so the "
+                f"{len(shown)} above stay findable")
+        if not shown:
+            # The case the measurement has never seen. Saying "so the 0 above stay
+            # findable" would be nonsense, and a fold with nothing to protect has
+            # to say plainly that nothing else moved.
+            head = (f"  - {len(files)} {label} and NOTHING ELSE: no other limit moved "
+                    f"in this change")
+        print(head + f": {spread}")
+        print(f"    they are still protected and still G7's business; folded because "
+              f"{g.get('watched_by')}")
+
+
 def automation_marks(branch: str, prefixes: list[str], commits: list[str] | None,
                      markers: dict) -> list[str]:
     """Every incriminating signal found, each named so the finding can cite it.
@@ -164,6 +262,7 @@ def main() -> int:
         declared = list(data["paths"])
         prefixes = list(data["automation_branch_prefixes"])
         markers = dict(data.get("automation_commit_markers") or {})
+        fold = list((data.get("listing_fold") or {}).get("groups") or [])
     except (OSError, ValueError, KeyError) as exc:
         raise Unmeasured(f"{DATA} is unusable: {exc}") from exc
 
@@ -235,8 +334,7 @@ def main() -> int:
         # Reporting this as the old "human branch, allowed" would be the same
         # mistake one level down: absence of a reading is not absence of a mark.
         print(f"{len(touched)} protected path(s) in this diff:")
-        for f, p in touched:
-            print(f"  - {f} (matches `{p}`)")
+        print_listing(touched, fold)
         blind = (
             "the commit range could not be read, so the only automation signal left was the "
             "branch name - which is chosen by whoever is editing. A protected path was touched "
@@ -245,8 +343,7 @@ def main() -> int:
     else:
         print(f"UNATTRIBUTED: {len(touched)} protected path(s) in this diff carry no automation "
               f"mark, allowed and listed so the reviewer knows where to look:")
-        for f, p in touched:
-            print(f"  - {f} (matches `{p}`)")
+        print_listing(touched, fold)
 
     if override and not marks:
         print(f"NOTE: the label `{override}` is on this pull request and nothing needed it. "
