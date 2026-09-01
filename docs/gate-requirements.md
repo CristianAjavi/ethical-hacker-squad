@@ -377,6 +377,49 @@ and it is the one a harness can drop. Closing that is tracked separately; it is 
 because the gap is in this gate's inputs and a reader of this section should not have to find it
 in a pull request.
 
+
+### The rule that could never be satisfied, 2026-09-01
+
+G7 failed on **every** Dependabot pull request in the `github_actions` ecosystem, and could never
+have passed one. Two changes, each right on its own, cross:
+
+| Piece | When | What it did |
+|---|---|---|
+| `23c240f` | 2026-08-21 | protects `.github/workflows/**` |
+| `9e17a07` (PR #73) | 2026-09-01 | adds `dependabot`, `[bot]`, `github-actions` to `identity_substrings` |
+
+Their intersection is unsatisfiable, because **editing workflow files is the work of that
+ecosystem**. It is a regression rather than a design decision, and the runs prove it: the same
+branch `dependabot/github_actions/github-actions-0856f00088` went green on 31 August and red four
+times on 1 September. Over the last 100 `PR-context gates` runs, 86 passed and 14 failed; four of
+the fourteen were that one branch. G7 is not a required check, so nothing was blocked — which is
+worse, not better: a control that shouts on every change and blocks nothing is a control people
+stop reading, and PR #63, a **one-line bump of `github/codeql-action/upload-sarif`, a security
+action**, sat red from 31 August.
+
+**The fix is not an exemption for Dependabot.** Exempting the bot would open a real hole — a bot
+pull request that widens `permissions:`, injects a `run:` step or adds a job is a supply-chain
+vector, and a bot identity is exactly what an attacker would forge. So `content_exemptions` in
+`scripts/gates/data/protected-paths.json` asks **what changed**, never who changed it: for a file
+under `.github/workflows/**`, every added and removed line must be a `uses:` pinned to a 40-hex
+commit SHA. One line that is not — anywhere in that file — and the file stays protected.
+
+Three properties are worth stating because each has a case in the battery:
+
+- **It can only make a pinned repository more pinned.** A bump to `@v4` or `@main` is a mutable
+  reference and is not exempt. Pinning is the reason this repository holds SHAs at all.
+- **It clears a file, not a pull request.** A clean bump travelling beside another protected path
+  does not carry that path through.
+- **It fails closed.** The exemption needs the *diff*, not the file list, and the gate prints
+  `NOT MEASURED: no diff was supplied` when it has none. Without a diff nothing is exempt. A rule
+  that turns into a pass when its input goes missing is the false green recorded in G7b and G7d,
+  and it would have been trivial to build it that way here.
+
+Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
+allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+work: with no diff there is no exemption, so every verdict written before exemptions existed still
+holds.
+
 ## G7b — A bound may not move without the figure that moved it
 
 G7 asks **who** moved a limit. It does not ask whether the number that moved still agrees with the sentence that states it — and on 2026-09-01, one of them did not.

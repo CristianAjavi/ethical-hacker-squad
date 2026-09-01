@@ -122,6 +122,60 @@ def read_authorship(arg: str) -> list[str] | None:
         return None
 
 
+def read_diff(arg: str) -> dict[str, list[str]] | None:
+    """Changed lines per file, from a unified diff. `-` means it could not be read.
+
+    Returns {path: [changed lines without their +/- marker]}. A file that appears
+    in the diff with no +/- lines maps to an empty list, which is a reading, not a
+    blindness - the two are different answers and only one of them may exempt.
+    """
+    if arg == "-" or not arg:
+        return None
+    try:
+        text = Path(arg).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    per: dict[str, list[str]] = {}
+    cur = None
+    for line in text.splitlines():
+        if line.startswith("+++ b/"):
+            cur = line[6:].strip()
+            per.setdefault(cur, [])
+        elif line.startswith("--- ") or line.startswith("diff --git") or line.startswith("@@"):
+            if line.startswith("diff --git"):
+                cur = None
+            continue
+        elif cur is not None and line[:1] in "+-" and not line.startswith(("+++", "---")):
+            per[cur].append(line[1:])
+    return per
+
+
+def content_exempt(path: str, exemptions: list[dict],
+                   diff: dict[str, list[str]] | None) -> dict | None:
+    """The exemption that clears this file, or None.
+
+    Fails CLOSED on purpose. No diff, or this file absent from the diff we were
+    given, means the question was not asked and the file stays protected. A rule
+    that becomes a pass when its input goes missing is indistinguishable from a
+    rule that measured and found nothing.
+    """
+    for ex in exemptions:
+        if not matches(path, str(ex.get("applies_to") or "")):
+            continue
+        if diff is None or path not in diff:
+            continue
+        try:
+            pat = re.compile(str(ex["line_pattern"]))
+        except (KeyError, re.error):
+            continue
+        lines = diff[path]
+        if not lines:
+            continue
+        if all(pat.match(ln) for ln in lines):
+            return ex
+    return None
+
+
 def fold_group(path: str, groups: list[dict]) -> dict | None:
     """The listing group `path` belongs to, or None when it must be named in full.
 
@@ -256,12 +310,14 @@ def main() -> int:
     commits = read_authorship(sys.argv[4] if len(sys.argv) > 4 else "-")
     override = (sys.argv[5] if len(sys.argv) > 5 else "-").strip()
     override = "" if override == "-" else override
+    diff = read_diff(sys.argv[6] if len(sys.argv) > 6 else "-")
 
     try:
         data = json.loads((root / DATA).read_text(encoding="utf-8"))
         declared = list(data["paths"])
         prefixes = list(data["automation_branch_prefixes"])
         markers = dict(data.get("automation_commit_markers") or {})
+        exemptions = list(data.get("content_exemptions") or [])
         fold = list((data.get("listing_fold") or {}).get("groups") or [])
     except (OSError, ValueError, KeyError) as exc:
         raise Unmeasured(f"{DATA} is unusable: {exc}") from exc
@@ -300,15 +356,35 @@ def main() -> int:
     blind = ""
     marks = automation_marks(branch, prefixes, commits, markers)
     touched = [(f, p) for f in changed for p in declared if matches(f, p)]
+
+    # A protected file whose every changed line is one this repository has
+    # declared harmless stops being a limit THIS diff moves. The exemption is
+    # about WHAT changed, never about who changed it, and it needs the diff:
+    # with no diff it does not apply and the file stays protected.
+    cleared: list[tuple[str, str, dict]] = []
+    if exemptions and marks:
+        keep = []
+        for f, pat in touched:
+            ex = content_exempt(f, exemptions, diff)
+            if ex is None:
+                keep.append((f, pat))
+            else:
+                cleared.append((f, pat, ex))
+        touched = keep
     range_read = "unreadable" if commits is None else f"{len(commits)} commit(s)"
 
+    for f, pat, ex in cleared:
+        print(f"EXEMPT {f} (protected by `{pat}`) is marked as automated and every changed line "
+              f"in it matches the declared exemption `{ex['id']}`; it does not move a limit")
     print(f"measured: branch {branch!r}, commit range {range_read}, "
           f"{len(changed)} changed file(s) against {len(declared)} protected pattern(s), "
           f"{checks + len(changed)} checks")
 
     # ---- 2, 3 and 4 ----------------------------------------------------
     if not touched:
-        print("no protected path in this diff")
+        print("no protected path in this diff"
+              + (f" that this change moves ({len(cleared)} cleared by a declared exemption)"
+                 if cleared else ""))
         if marks:
             print(f"marked as automated ({marks[0]}), but it touched none of the limits")
     elif marks:
@@ -351,6 +427,10 @@ def main() -> int:
               f"removing, or the next reader learns to expect it.")
     print("NOT MEASURED: whether the change to a protected path is a good one. This gate asks who "
           "is changing it, not whether they should.")
+    if exemptions and diff is None:
+        print("NOT MEASURED: no diff was supplied, so no content exemption could be evaluated and "
+              "every protected path stayed protected. That is the safe direction, and it is why it "
+              "is said out loud rather than left to look like a clean run.")
     if touched and not marks and commits is not None:
         print("NOT MEASURED: whether a PERSON made this change. No signal available when this gate "
               "runs proves that - a pull-request approval does not exist yet, and everything else "
