@@ -93,6 +93,8 @@ suite "protection-check: the live protection vs the declared one" \
   bash "$SP/test-protection-check.sh"
 suite "competitive-freshness: has a measured subject moved" \
   bash "$SP/test-competitive-freshness.sh"
+suite "competitive-discovery: is the list still the field" \
+  bash "$SP/test-competitive-discovery.sh"
 
 # The net, computed HERE and not where the last suite happened to be when it was
 # written: a `suite` line added below that point would be invoked and still
