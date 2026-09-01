@@ -113,6 +113,39 @@ def main() -> int:
         return 2
 
     worst = 0
+
+    # A dataset nobody listed is a dataset nobody measures, and the silence
+    # reads exactly like a pass. Every stage directory beside this config has to
+    # be either measured or exempted IN WRITING; there is no third state.
+    stages_dir = Path(sys.argv[1]).parent
+    listed = {ds.get("name") for ds in cfg.get("datasets", []) if isinstance(ds, dict)}
+    exempt = {}
+    for e in cfg.get("exempt", []) or []:
+        if isinstance(e, dict) and e.get("name"):
+            exempt[e["name"]] = (e.get("reason") or "").strip()
+    try:
+        found = sorted(d for d in stages_dir.iterdir()
+                       if d.is_dir() and (d / "cases.json").is_file())
+    except OSError as exc:
+        print(f"2|cannot enumerate {stages_dir}: {exc}")
+        found = []
+        worst = max(worst, 2)
+    for d in found:
+        name = d.as_posix()
+        if name in listed:
+            continue
+        if name in exempt:
+            if not exempt[name]:
+                print(f"1|{name}: exempted from the floor with no reason written down. An "
+                      f"exemption a reader cannot argue with is a skip")
+                worst = max(worst, 1)
+            else:
+                print(f"0|{name}: not measured by the floor, on purpose — {exempt[name]}")
+            continue
+        print(f"1|{name}: a stage dataset that the probe config neither measures nor exempts. "
+              f"It is silently unmeasured, which reads like a pass")
+        worst = max(worst, 1)
+
     for ds in cfg["datasets"]:
         name = ds["name"]
         try:

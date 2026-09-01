@@ -147,6 +147,32 @@ PY
     *) rm -rf "$work"; gate_fail "self-test: a truncated key returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
+  # A stage dataset nobody listed must FAIL, or the way to pass this gate is to
+  # not be in its config -- which is how a check ends up watching an empty room.
+  python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" listed
+  out="$(run_probe "$work" stages/probe-config.json)"
+  case "$out" in
+    *"stages/two: a stage dataset that the probe config neither measures nor exempts"*) : ;;
+    *) rm -rf "$work"; gate_fail "self-test: an unlisted stage dataset returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
+  esac
+
+  # An exemption with no reason is a skip wearing a label, and fails too.
+  python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" reasonless
+  out="$(run_probe "$work" stages/probe-config.json)"
+  case "$out" in
+    *"exempted from the floor with no reason"*) : ;;
+    *) rm -rf "$work"; gate_fail "self-test: a reasonless exemption returned '$out', expected 1"; return "$GATE_FAIL" ;;
+  esac
+
+  # ...and one that states its reason passes, or nothing could ever be exempted.
+  python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" reasoned
+  out="$(run_probe "$work" stages/probe-config.json)"
+  case "$out" in
+    *"1|stages/two"*) rm -rf "$work"; gate_fail "self-test: an exemption with a reason still failed: '$out'"; return "$GATE_FAIL" ;;
+    *"not measured by the floor, on purpose"*) : ;;
+    *) rm -rf "$work"; gate_fail "self-test: an exemption with a reason returned '$out'"; return "$GATE_FAIL" ;;
+  esac
+
   # An unreadable config is 2.
   printf '%s\n' '{ not json' > "$work/leaky/cfg.json"
   out="$(run_probe "$work/leaky" cfg.json)"
@@ -161,14 +187,14 @@ PY
 
 main() {
   gate_header "stage-eval-floor (a per-stage dataset has to need the stage)"
-  gate_scope "for every dataset in bench/stages/probe-config.json, whether its own wording sorts the cases into their answers without a model"
+  gate_scope "for every dataset in bench/stages/probe-config.json, whether its own wording sorts the cases into their answers without a model; and whether every directory under bench/stages/ is listed there at all"
   gate_out_of_scope "whether the key is right (gate-triage-stage.sh), whether a case is realistic, and whether any model answers it correctly"
 
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
-    gate_info "self-test: a leaky dataset fails, a clean one passes, six leaky cases report 2 rather than a clearance, and a truncated key and an unparseable config both report 2"
+    gate_info "self-test: a leaky dataset fails, a clean one passes, six leaky cases report 2 rather than a clearance, an unlisted stage dataset and a reasonless exemption both fail while an exemption that states its reason passes, and a truncated key and an unparseable config both report 2"
   else
     SELFTEST_SKIPPED=1
     gate_warn "self-test SKIPPED via GATE_SELFTEST=0: the verdict cannot be 0"

@@ -795,6 +795,40 @@ dataset that cannot show it. The claim is bounded to the two files as published 
 instrument to say otherwise.** The ceiling, `max(majority + 0.20, 0.50)`, and the ten-case floor
 were both written into the probe before any dataset was run through it.
 
+### The second stage, and why one floor was not enough
+
+The reading above ended with the count that is unfavourable here: nine per-stage
+datasets there, one here. `bench/stages/routing` makes it two, and building it
+produced a result about the instrument rather than about them.
+
+`gate-stage-eval-floor.sh` was written for the triage stage: pool every other
+case by answer, see which pool the held-out case shares vocabulary with, fail
+when the wording sorts the cases by itself. Pointed at the routing dataset it
+returns **18% of 22 — exactly the majority-class rate**, which reads as a clean
+bill of health. It is not one. Two `web-api` routing cases are an upload handler
+and a link preview and share almost no vocabulary, so the probe learns nothing
+and reports so; meanwhile the shortcut a routing set actually offers is
+**matching the table it was drawn from**, which the probe never looks at.
+
+So the routing gate carries a second instrument built for its own stage: a router
+made of `coverage.md`'s own words — backticked tokens from each `Signal` cell,
+plus the content words the table does not spread over more than three rows. It
+scores **13/22 on the role and 11/22 on role and sections together**, and it
+names the nine cases it misses, which are the nine the pre-registration makes the
+primary metric.
+
+The lesson generalises past this repository, and it is the argument against
+adopting a competitor's granularity by copying it: **a per-stage eval needs a
+floor built for that stage.** A single blind probe applied to nine stages would
+clear the ones whose shortcut it cannot see. `mantis` ships nine datasets and no
+floor of either kind; this bench now ships two datasets and two floors, one of
+which exists because the other was inapplicable and said so.
+
+The count still favours them, and the honest form of it is: **two stages against
+nine, with a control on each of ours and none published on theirs.** Neither
+number is a claim about which product routes or triages better, and no such claim
+appears anywhere in this repository.
+
 ### What this reading did not do
 
 It did not re-run either product. The scores in §4 are still the ones taken on 2026-08-22
