@@ -6,6 +6,23 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Fixed
+
+- **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
+  user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
+  protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
+  their intersection is unsatisfiable, because editing workflow files **is** the work of the
+  `github_actions` ecosystem. Regression proved from the runs: the same branch went green on
+  31 Aug and red four times on 1 Sep, leaving PR #63 — a one-line bump of
+  `github/codeql-action/upload-sarif`, a security action — red since 31 August. The fix is **not**
+  an exemption for Dependabot, which would open a real hole: `content_exemptions` in
+  `scripts/gates/data/protected-paths.json` asks *what* changed, so a workflow file is cleared
+  only when every added and removed line is a `uses:` pinned to a 40-hex SHA. It can only make a
+  pinned repo more pinned, it clears a file rather than a pull request, and it **fails closed** —
+  the exemption needs the diff, and with none the gate says so and protects everything. Seven new
+  self-test cases, exactly one of which may pass; 32 total, 0 failures. See
+  `docs/gate-requirements.md` §G7.
+
 ### Added
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
