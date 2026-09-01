@@ -88,9 +88,29 @@ case_run unattributed-may-touch-them-and-is-listed feat/whatever \
 # PR #72 raised MAX_TREE_BYTES inside scripts/gates/** on a branch the agent had
 # named `loop/...`, and the gate passed it green. Case one is that exact diff.
 # --------------------------------------------------------------------------
-case_run agent-trailer-on-a-branch-named-anything loop/inference-endpoint \
+# The branch here was `loop/inference-endpoint` until 2026-09-01, when `loop/` became
+# an automation prefix. It had to move: with the prefix in place the name alone
+# incriminates, so the case would have gone red whether or not the trailer was there
+# and stopped proving the one thing it claims - that the TRAILER carries the verdict
+# on its own. The `loop/` scenario it used to cover is now the case above, which needs
+# no trailer at all. A case that passes for a reason it does not name measures nothing.
+case_run agent-trailer-on-a-branch-named-anything feature/inference-endpoint \
   'scripts/gates/gate-plugin-integrity.sh' 1 "carries a \`Claude-Session:\` trailer" "" \
   'cafe123\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\tClaude-Session: https://claude.ai/code/session_x'
+
+# --------------------------------------------------------------------------
+# T-ehs-27. `loop/` is where every improvement run of this repository works, and
+# until 2026-09-01 it was not in `automation_branch_prefixes` - so on a `loop/`
+# branch the ONLY signal left was the commit trailer, which is exactly the signal
+# a harness can forget to write. Measured over the 12 most recent merged PRs
+# (#69-#80): 16 of 17 branch commits carried the trailer, so adding the prefix
+# adds ZERO new reds. It only stops the red going out when nobody signs.
+# This case is that omission: a `loop/` branch, a protected path, and a commit
+# range that looks entirely human. Before the prefix it passed GREEN.
+# --------------------------------------------------------------------------
+case_run loop-branch-is-an-admission-without-a-trailer loop/mejora-continua \
+  'scripts/gates/gate-secret-scan.sh' 1 "starts with \`loop/\`" "" \
+  'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
 
 case_run bot-identity-on-a-branch-named-anything feature/deps-bump \
   '.github/workflows/ci.yml' 1 "names \`\[bot\]\` as an author or committer" "" \

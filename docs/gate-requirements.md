@@ -371,11 +371,23 @@ check, not that sentence. **A signal that can go missing by omission produces a 
 like a pass**, and the only reason it was caught is that a claim in the pull-request body predicted
 red and the check said green.
 
-`automation_branch_prefixes` holds only `bot/`. The `loop/` branches this repository's own
-continuous-improvement work runs on are not covered, so the trailer is the *only* signal on them,
-and it is the one a harness can drop. Closing that is tracked separately; it is recorded here
-because the gap is in this gate's inputs and a reader of this section should not have to find it
-in a pull request.
+**Closed on 2026-09-01.** `automation_branch_prefixes` now holds `bot/` and `loop/`. Until then it
+held only `bot/`, so on the `loop/` branches this repository's own continuous-improvement work runs
+on, the trailer was the *only* signal — the one a harness can drop. The cost of the hardening was
+measured before it was paid: over the twelve most recently merged pull requests (#69–#80), **16 of
+17 branch commits already carried the trailer**, so the gate was already firing on those branches.
+Adding the prefix produces **no new red**; it only stops the red going out when nobody signs.
+
+Do not re-measure that ratio on `main`. The squash merge rewrites the message with `--body-file`
+and drops the trailer, so `main` reads 10 of 40 — a number about the merge, not about what this
+gate sees. The figure that matters is the one on the **branch** commits.
+
+Two things had to move with it. The self-test case `agent-trailer-on-a-branch-named-anything` ran
+on `loop/inference-endpoint`; once `loop/` incriminates on its own, that case would have gone red
+with or without the trailer and stopped proving the only thing it claims, so its branch moved to
+`feature/`. And a new case, `loop-branch-is-an-admission-without-a-trailer`, holds the scenario the
+old one used to cover — a `loop/` branch touching a protected path with a commit range that looks
+entirely human. **It was written red before the fix**: rc 0 against a wanted 1.
 
 
 ### The rule that could never be satisfied, 2026-09-01
