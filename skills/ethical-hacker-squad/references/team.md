@@ -21,7 +21,7 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 
 ## Dispatching through Claude Code
 
-- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate, and decide priorities. You do not delegate integration or judgement.
+- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
 - **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in a single message so they run in parallel.
 
 ### Preferred path: the plugin's own subagents
@@ -62,7 +62,7 @@ The measurement behind this rule is in `bench/`: against the same model working 
 
 ## Leader / security-lead
 
-Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
+Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results under `DUP-01`..`DUP-06` of `triage.md` — a merge is a claim, and an undecided pair is `possible_duplicate_of` rather than a merge — and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
 
 ## Web and API AppSec / web-api
 

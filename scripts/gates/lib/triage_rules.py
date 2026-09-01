@@ -5,9 +5,13 @@ Checks that the triage rule set exists, is closed, is cited only by real ids,
 and that the packs declared converted really are — with a ratchet so the ones
 still being converted can only move forwards.
 
-  1. rules        triage.md declares FP-01..FP-NN inside its marked region,
-                  contiguous and unique, each with a `HOLDS` requirement
-  2. citations    every FP-id cited anywhere under skills/ or agents/ exists
+  1. rules        triage.md declares FP-01..FP-NN inside its marked region, and
+                  DUP-01..DUP-0N inside the merge one; contiguous and unique,
+                  each with a `HOLDS` requirement
+  2. citations    every FP- and DUP-id cited anywhere under skills/ or agents/
+                  exists. A rule family with no citation check is a family that
+                  can be invented in prose, which is the hole this closes for
+                  the merge rules on the day they were added
   3. answers      the four answers are the only ones the contract uses, and the
                   files that carry findings point at the rules file
   4. conformance  a pack marked `required` cites rules in every procedure; a
@@ -27,7 +31,10 @@ PACKS_JSON = "scripts/meter/packs.json"
 CONFORMANCE_JSON = "scripts/gates/data/triage-conformance.json"
 RULE_ROW = re.compile(r"^\|\s*`(FP-\d{2})`\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$", re.M)
 REGION = re.compile(r"<!--\s*triage:rules\s*-->(.*?)<!--\s*/triage:rules\s*-->", re.S)
-CITE = re.compile(r"`?(FP-\d{2})`?")
+MERGE_ROW = re.compile(r"^\|\s*`(DUP-\d{2})`\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$", re.M)
+MERGE_REGION = re.compile(
+    r"<!--\s*triage:merge-rules\s*-->(.*?)<!--\s*/triage:merge-rules\s*-->", re.S)
+CITE = re.compile(r"`?((?:FP|DUP)-\d{2})`?")
 ANSWERS = ("HOLDS", "DOES_NOT_HOLD", "UNKNOWN", "NOT_APPLICABLE")
 CARRIERS = [
     "skills/ethical-hacker-squad/references/team.md",
@@ -85,7 +92,39 @@ def main() -> int:
                 f"{rules_rel}:{rid} is a rule in name only: a rule states the exculpating "
                 "condition and what a HOLDS requires, in enough words to be answerable"
             )
-    known = set(ids)
+    # The merge family, measured the same way. It is a second region on purpose:
+    # triage_rules.py and triage_stage.py both read the FP one by marker, and a
+    # family appended inside it would have been silently answered as an FP rule.
+    mregion = MERGE_REGION.search(text)
+    if not mregion:
+        raise Unmeasured(f"{rules_rel} has no <!-- triage:merge-rules --> region to read")
+    mrows = MERGE_ROW.findall(mregion.group(1))
+    if not mrows:
+        raise Unmeasured(f"{rules_rel}: the merge region declares no rule rows")
+    mids = [r[0] for r in mrows]
+    checks += 2
+    mnumbers = sorted(int(i.split("-")[1]) for i in mids)
+    if mnumbers != list(range(1, len(mnumbers) + 1)):
+        findings.append(f"{rules_rel}: merge rule ids are not contiguous from DUP-01: {mids}")
+    if len(set(mids)) != len(mids):
+        findings.append(f"{rules_rel}: duplicate merge rule ids: {mids}")
+    for rid, condition, holds in mrows:
+        checks += 1
+        if len(condition) < 40 or len(holds) < 20:
+            findings.append(
+                f"{rules_rel}:{rid} is a rule in name only: a merge rule states the separating "
+                "condition and what a HOLDS requires, in enough words to be answerable"
+            )
+    # A separating rule that is only ever DOES_NOT_HOLD decides nothing, so the
+    # file has to say what a merge costs when one of them does hold.
+    checks += 1
+    if "possible_duplicate_of" not in text:
+        findings.append(
+            f"{rules_rel}: the merge rules never name `possible_duplicate_of`, so an UNKNOWN "
+            "answer has nowhere to go and the only written outcome is the merge - which is the "
+            "expensive error")
+
+    known = set(ids) | set(mids)
 
     # ---- 3. the answer vocabulary is closed and the carriers point here ---
     for answer in ANSWERS:
@@ -153,7 +192,8 @@ def main() -> int:
               f"{f', {none_declared} declaring none' if none_declared else ''}"
               f"{' (required)' if policy.get('required') else ''}")
 
-    print(f"measured: {len(ids)} rules, {checks} checks")
+    print(f"measured: {len(ids)} rules that rule a finding out, {len(mids)} that rule a "
+          f"merge out, {checks} checks")
     for f in findings:
         print(f"FINDING {f}")
     return 1 if findings else 0

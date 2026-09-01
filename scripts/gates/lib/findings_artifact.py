@@ -38,6 +38,7 @@ FIXTURES = "scripts/gates/fixtures/findings"
 VOCAB_REGION = r"<!--\s*vocabulary:declare {name}\s*-->(.*?)<!--\s*/vocabulary:declare\s*-->"
 TERM = re.compile(r"^\|\s*`([a-z ]+)`\s*\|", re.M)
 RULE_ID = re.compile(r"`(FP-\d{2})`")
+MERGE_RULE_ID = re.compile(r"`(DUP-\d{2})`")
 # High-precision formats, the same ones the report contract refuses.
 SECRETS = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,}|sk-ant-[A-Za-z0-9_-]{16,}|"
@@ -130,9 +131,13 @@ def main() -> int:
     families = load_json(root, FAMILIES)["families"]
     vocab = vocabulary(root)
     family_re = re.compile("^(?:" + "|".join(families.values()) + ")$")
-    rules = set(RULE_ID.findall(read(root, TRIAGE)))
+    triage_text = read(root, TRIAGE)
+    rules = set(RULE_ID.findall(triage_text))
     if not rules:
         raise Unmeasured(f"{TRIAGE} declares no rules")
+    merge_rules = set(MERGE_RULE_ID.findall(triage_text))
+    if not merge_rules:
+        raise Unmeasured(f"{TRIAGE} declares no merge rules")
 
     kdir = Path(packs["knowledge_dir"])
     heading = re.compile(packs["procedure_heading"])
@@ -349,6 +354,55 @@ def main() -> int:
                 if t.get("answer") in ("HOLDS", "UNKNOWN", "NOT_APPLICABLE") and not t.get("reason"):
                     fail(f"{where}: triage `{t.get('rule')}` answered `{t['answer']}` with no reason naming the artifact")
 
+        # Invariant 10. `merged_into` above closes this for a candidate absorbed
+        # inside one specialist's unaided pass. The leader's merge ACROSS
+        # specialists - ordered three times in team.md, governed by nothing -
+        # left no trace at all, which is the same substitution one level up.
+        # A merge is not a deletion: the absorbed finding keeps its id here.
+        by_id = {f["id"]: f for f in (data.get("findings") or [])
+                 if isinstance(f, dict) and isinstance(f.get("id"), str)}
+        for fid, f in by_id.items():
+            into = f.get("duplicate_of")
+            maybe = f.get("possible_duplicate_of") or []
+            if isinstance(into, str):
+                if into == fid:
+                    fail(f"{fid}: is its own duplicate")
+                elif into not in by_id:
+                    fail(f"{fid}: `duplicate_of` names {into!r}, which is not a finding here - a "
+                         "merge that points at nothing is a deletion with a footnote")
+                elif by_id[into].get("duplicate_of"):
+                    fail(f"{fid}: merged into {into!r}, which is itself merged into "
+                         f"{by_id[into]['duplicate_of']!r} - a chain is how the reader loses the "
+                         "surviving entry; point every duplicate at the one that survives")
+                answered = f.get("merge_rules") if isinstance(f.get("merge_rules"), list) else []
+                given = {m.get("rule") for m in answered if isinstance(m, dict)}
+                for missing in sorted(merge_rules - given):
+                    fail(f"{fid}: merged with `{missing}` unanswered - a merge deletes a finding "
+                         "from the reader's list and pays what a claim pays")
+                for m in answered:
+                    if not isinstance(m, dict):
+                        continue
+                    if m.get("rule") and m["rule"] not in merge_rules:
+                        fail(f"{fid}: merge_rules cites `{m['rule']}`, which triage.md does not declare")
+                    if m.get("answer") == "HOLDS":
+                        fail(f"{fid}: merged while `{m.get('rule')}` HOLDS, which is the answer that "
+                             "says these are two findings")
+                    if m.get("answer") == "UNKNOWN":
+                        fail(f"{fid}: merged with `{m.get('rule')}` UNKNOWN - an undecided pair is "
+                             "`possible_duplicate_of`, never a merge; the wrong merge is the "
+                             "expensive error and the long report is the cheap one")
+                    if m.get("answer") in ("HOLDS", "UNKNOWN", "NOT_APPLICABLE") and not m.get("reason"):
+                        fail(f"{fid}: merge rule `{m.get('rule')}` answered `{m['answer']}` with no reason")
+            if isinstance(maybe, list):
+                for other in maybe:
+                    if other == fid:
+                        fail(f"{fid}: is a possible duplicate of itself")
+                    elif isinstance(other, str) and other not in by_id:
+                        fail(f"{fid}: `possible_duplicate_of` names {other!r}, which is not a finding here")
+                    elif other == into:
+                        fail(f"{fid}: names {other!r} as both a merge and an undecided pair - the "
+                             "two states are the decision and the lack of it")
+
         blob = json.dumps(data)
         if SECRETS.search(blob):
             fail(f"{target.name}: an unredacted secret format appears in the artifact")
@@ -370,7 +424,8 @@ def main() -> int:
         elif not expected_bad and found:
             problems.extend(f"{target.name}: {m}" for m in found)
 
-    print(f"measured: {total} artifact(s), {len(rules)} triage rules, {len(procedures)} procedures")
+    print(f"measured: {total} artifact(s), {len(rules)} triage rules, {len(merge_rules)} merge rules, "
+          f"{len(procedures)} procedures")
     for p in problems:
         print(f"FINDING {p}")
     return 1 if problems else 0
