@@ -945,3 +945,53 @@ the substitution invariant 4 exists to prevent, happening one level up where not
 Reading their file is what made that visible.
 
 This section, like the ones above it, re-ran neither product. No number in §4 moves.
+
+### The list was not the field — 2026-09-01
+
+Everything above this line re-reads products that were already on a list of three, fixed on
+2026-08-22. `scripts/gh/competitive-freshness.sh` asks, well, whether each pin is still the tip.
+It cannot ask whether the list is still the field, and for ten days nothing did.
+
+Five searches of this project's own lane, run on 2026-09-01, returned **36 candidates**. Fifteen
+carried a skill or agent marker. **Six of them are comparable products this analysis had never
+heard of.** Nothing was wrong; nothing was looking — which is the shape of every other hole this
+repository has closed, arriving this time in the document that judges the competition.
+
+The one that matters is **`maxgfr/ultrasec`**: MIT, created 2026-06-16, pushed 2026-08-31, and
+its stated purpose is this project's stated purpose. A deterministic zero-dependency engine
+builds a cross-file link-graph and enumerates candidate source→sink taint paths; it correlates
+several external scanners into one issue rather than three; it ranks by composite EPSS · CISA
+KEV · CVSS; and the model does the judging plus an adversarial verification pass in which **an
+uncertain high-severity stays `needs-human` rather than being auto-dismissed** — which is this
+corpus's exit-code-2 doctrine, arrived at independently, in a product we did not know existed.
+
+**It has zero stars.** That is the finding about our method, not about them. Had the discovery
+check used a popularity floor — the obvious design, and the one a reasonable person writes
+first — it would have hidden the most comparable product in the field exactly as thoroughly as
+the closed list did. So the bar is a skill or agent marker at the top of the default branch,
+answerable in one API call, and it is written down as *is this the same kind of thing* rather
+than *is this important*.
+
+The other five are pinned with `benchmarked: false`: `prasannasalunkhe18/ThreatLens` (Semgrep and
+CodeQL discovery plus LLM verification — the same two-stage shape as tooling-then-`VER-09`),
+`kalpmodi/akira` and `braydos-h/BreachPilot` (autonomous offensive agents: same class of product,
+opposite posture, since this corpus is defensive by contract and does not chain exploits),
+`wrsmith108/claude-skill-security-auditor` (32 stars, the most direct name-level competitor, last
+pushed 2026-02-10), and `dungnotnull/web-app-security-audit-agent-skill` (a prose skill suite
+carrying its own scoring engine and quality reviewer).
+
+Three are declined in writing, with the reason recorded: a smart-contract auditor (different
+target class), a guide to *securing the skills you install* and a pre-install skill scanner (both
+face the other way — they are adjacent to `AI-22`, not competitors to it). A sixth group of six
+repositories is declined by a written pattern: `rNN-<somebody>-claude-skills-security`, every one
+"derived from" another person's list, all pushed on 2026-04-28 under unrelated owner names, with
+**38 to 51 stars each**. They are republications, and their star counts are the second half of
+the argument against a popularity bar.
+
+**What this section does not claim.** Not one of the six has been benchmarked. A pin says where
+to look; it does not say what was found, and `competitive-freshness.sh` now prints the
+unbenchmarked ones by name so that a reader cannot mistake a pin for a measurement. Running them
+costs harness and model time and that is a decision about spend, not a thing to slip into a
+documentation change. The claim in `README.md` was corrected to say six comparable products are
+known and three have been run — the previous sentence, "all three have now been run", was true
+about the list and had stopped being true about the field.
