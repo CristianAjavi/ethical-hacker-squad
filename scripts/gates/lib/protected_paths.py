@@ -48,8 +48,9 @@ Four measurements:
 
   5. override   a maintainer may let one marked change through, and the only
                 channel for that is OUTSIDE the diff: a label on the pull
-                request. The branch cannot carry it, the commit cannot carry it,
-                and the run says loudly that it was used.
+                request. It is not part of the change: no branch name, commit or
+                diff line carries it, so granting one is a separate act visible in
+                the pull-request timeline, and the run says loudly it was used.
 
 THE LIMIT, WRITTEN DOWN BECAUSE IT IS REAL
   In a single-maintainer repository there is NO signal at gate time that
@@ -219,7 +220,8 @@ def main() -> int:
             # whole value of this channel is that using it leaves a mark of its own.
             print(f"OVERRIDDEN by the pull-request label `{override}`. A maintainer decided "
                   f"this marked change may move the limits below. The label lives on the pull "
-                  f"request, not in the diff, so the branch could not grant it to itself:")
+                  f"request, not in the diff, so granting it was a separate act, "
+                  f"recorded in the pull-request timeline rather than in this change:")
             for f, p in touched:
                 print(f"  - {f} (matches `{p}`) - MOVED BY AN AUTOMATION, WITH CONSENT")
         else:

@@ -40,7 +40,9 @@
 #
 #   THE WAY OUT is a LABEL on the pull request, `override/g7-reviewed`, passed in
 #   by the workflow. A label is not in the diff, not in the branch and not in a
-#   commit, so a branch cannot grant itself one; and the run prints, in capitals,
+#   commit, so granting one is a separate act on GitHub, visible in the pull-
+#   request timeline rather than in the change it waves through; and the run
+#   prints, in capitals,
 #   every limit that moved with consent. In a single-maintainer repository this
 #   is as far as the separation goes and the docstring of the core says so: the
 #   maintainer and the maintainer's agent commit with the same account, so no
