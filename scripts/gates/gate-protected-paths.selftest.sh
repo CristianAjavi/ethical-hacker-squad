@@ -138,6 +138,57 @@ import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/protected-paths.json"
 d=json.loads(p.read_text()); d["paths"].append("SECURITY.md"); p.write_text(json.dumps(d,indent=2))'
 
+# --------------------------------------------------------------------------
+# THE FOLD, and the line it must never cross.
+#
+# Measured across the 28 merged changes that tripped G7: 38 of the 150 paths it
+# named were fixture INPUTS, and on the worst change 2 genuine limits sat under
+# 19 lines of them. A list where the two lines that matter are buried under
+# nineteen that do not is a list nobody reads to the end, so the UNATTRIBUTED
+# listing folds that material into one counted line.
+#
+# That is a DISPLAY decision and these cases are what keeps it one. Folding may
+# never reach a FINDING and never reach an OVERRIDE listing: when G7 actually
+# fails, or when a maintainer waves a marked change through, every path is named
+# in full. Removing a control and burying it in a summary are the same edit, and
+# cases three and four are the ones that would catch this fold becoming the
+# second thing.
+# --------------------------------------------------------------------------
+case_run fold-names-the-real-limit-in-full feat/whatever \
+  $'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml\nscripts/gates/fixtures/safepath/bad/2-cd-inside-run.yml\nscripts/gates/fixtures/hardening/unmeasurable/01-with-tabs.yml\nscripts/gates/gate-secret-scan.sh' \
+  0 "- scripts/gates/gate-secret-scan.sh (matches" "" 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
+case_run fold-counts-what-it-folded feat/whatever \
+  $'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml\nscripts/gates/fixtures/safepath/bad/2-cd-inside-run.yml\nscripts/gates/fixtures/hardening/unmeasurable/01-with-tabs.yml\nscripts/gates/gate-secret-scan.sh' \
+  0 "3 negative-proof inputs, folded" "" 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
+# The one that matters. A marked change touching ONLY folded material still
+# fails, and the failure names the file - a finding is not a summary.
+case_run a-finding-names-every-folded-path-in-full bot/knowledge-loop \
+  'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml' 1 "06-uses-without-sha.yml (protected by" "" 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
+case_run an-override-names-every-folded-path-in-full loop/x \
+  'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml' 0 "06-uses-without-sha.yml (matches" "" 'cafe123\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\tClaude-Session: https://claude.ai/code/session_x' 'override/g7-reviewed'
+
+# The fold cannot be allowed to read as "nothing moved". When there is nothing
+# left to protect from the noise, it says so instead of counting against zero.
+case_run only-negative-proof-moved-and-it-says-so feat/whatever \
+  $'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml\nscripts/gates/fixtures/safepath/bad/2-cd-inside-run.yml' 0 "and NOTHING ELSE" "" 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
+# The input is the proof; the .expected is what says the proof proved anything.
+# Nothing watches an assertion being weakened, so it never folds.
+case_run an-expected-assertion-is-never-folded feat/whatever \
+  $'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml\nscripts/gates/fixtures/findings/bad/26-reported-inside-a-surface-declared-not-read.expected' 0 "not-read.expected (matches" "" 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
+# Absent-safe, and a mutant guard in one: with the declaration gone nothing
+# folds and every path is named. If this case ever goes green with the fold
+# still declared, the fold is matching nothing.
+case_run no-fold-declared-lists-every-path feat/whatever \
+  'scripts/gates/fixtures/hardening/bad/06-uses-without-sha.yml' 0 "06-uses-without-sha.yml (matches" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/protected-paths.json"
+d=json.loads(p.read_text()); d.pop("listing_fold",None); p.write_text(json.dumps(d,indent=2))' 'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
+
 case_run branch-unknown NONE \
   'README.md' 2 "" '
 import os,pathlib,shutil
