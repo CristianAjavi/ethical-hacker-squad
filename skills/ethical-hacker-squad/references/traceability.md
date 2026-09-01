@@ -118,10 +118,11 @@ Five packs ship as more than one file (`mobile` and `supply-chain` as three). Th
 | `CWE-88`, `CWE-426`, `CWE-427`, `CAPEC-6`, `CAPEC-38`, `CAPEC-471`, `ATT&CK T1574` | local-app | `local-app.md` §3 | `LOC-05`..`LOC-07` |
 | `CWE-250`, `CWE-269`, `CWE-276`, `CWE-732` | local-app | `local-app.md` §4 | `LOC-08`, `LOC-09` |
 | `CWE-1188`, `CWE-665` | local-app | `local-app.md` §5 | `LOC-10` |
-| `CWE-829`, `CWE-79` (desktop renderer) | local-app | `local-app.md` §6 | `LOC-11`, `LOC-12` |
-| `CWE-346`, `CWE-1385` | local-app | `local-app.md` §7 | `LOC-13` |
-| `CWE-494` (code arriving at runtime) | local-app / supply-chain | `local-app.md` §8 / `supply-chain.md` §6 | `LOC-14`, `SUP-09`..`SUP-12` |
+| `CWE-829`, `CWE-79` (desktop renderer) | local-app | `local-app-desktop-ipc.md` §6 | `LOC-11`, `LOC-12` |
+| `CWE-346`, `CWE-1385` | local-app | `local-app-desktop-ipc.md` §7 | `LOC-13` |
+| `CWE-494` (code arriving at runtime) | local-app / supply-chain | `local-app-desktop-ipc.md` §8 / `supply-chain.md` §6 | `LOC-14`, `SUP-09`..`SUP-12` |
 | `CWE-214`, `CWE-312`, `CWE-522`, `CWE-532` (on the local machine) | local-app | `local-app.md` §9 | `LOC-15` |
+| `CWE-176`, `CWE-248`, `CAPEC-267` (undecodable input breaking the reader) | local-app | `local-app.md` §10 | `LOC-16` |
 
 ## Known coverage gaps
 
@@ -133,7 +134,7 @@ Declare these rather than implying they are covered:
 - **`CIS Benchmark` numeric recommendations** — cited by existence only, for licence reasons.
 - **Microsoft's cloud security benchmark** — consulted while drafting `PRV-12` and **not** cited: it is not in `docs/sources-allowlist.json` and its licence was not verified. Its control identifiers therefore appear nowhere in the corpus, and cloud-provider-specific control ids are not claimed as coverage.
 - **CI platforms other than GitHub Actions** — closed for GitLab CI, Jenkins, Azure Pipelines, CircleCI and Bitbucket Pipelines by `INF-19`..`INF-23`, which carry each platform's own symbols. What remains open is narrower and is stated inside those procedures: `INF-19`, `INF-21` and `INF-23` each depend on a setting that lives in the platform rather than in the repository — variable protection and fork-secret exposure, credential scope, runner configuration — so without the exported setting the answer is `UNKNOWN`, not "covered". Platforms with no procedure at all: Tekton, Argo Workflows, Drone, Buildkite, TeamCity.
-- **CLI, desktop and library surfaces** — now covered by `local-app.md` (`LOC-01`..`LOC-15`). What remains uncovered inside that surface: native memory safety, anything needing a debugger or a fuzzer, Windows mechanisms beyond DLL search order and registry protocol handlers (services, COM, scheduled tasks, ACL inheritance), and macOS TCC and entitlement analysis. Declare those as not exercised.
+- **CLI, desktop and library surfaces** — now covered by `local-app.md` (`LOC-01`..`LOC-16`). What remains uncovered inside that surface: native memory safety, anything needing a debugger or a fuzzer, Windows mechanisms beyond DLL search order and registry protocol handlers (services, COM, scheduled tasks, ACL inheritance), and macOS TCC and entitlement analysis. Declare those as not exercised.
 - **A finding verified while its identical siblings go unmeasured** — no `VER-*` procedure requires re-running the reproduction against every other place that shares the broken property. `REM-01` instructs the repairer to search for them; `VER-02` measures the original case, `VER-03` variants of the same control and `VER-08` the three runs over that one finding. A patch applied to one of nine identical handlers passes all of them. Until a procedure closes this, **a verification whose family was never enumerated is reported as `partially verified`, with the count**, never as `verified`. The candidate identifier is held by a pre-registered round (`bench/runs/2026-08-24-chain-completion/`), which is why this is a declaration and not a procedure.
 - **Deprecated API idioms that are not yet a vulnerability** — a superseded authentication helper, a call a library deprecated but nobody has filed a CVE against. No procedure, and deliberately so: static analysis has no vulnerability to match and composition analysis finds the package version fine, because what is stale is the *call*. Closing it needs a currency oracle from outside the repository — a deprecation map, a release feed — and without one every answer would be `UNKNOWN` under `FP-08`, which is prose rather than a procedure. Declare it as not exercised when the target's dependencies are old.
 - **Binary exploitation, firmware, embedded, ICS, smart contracts** — out of scope of every pack.

@@ -1,6 +1,6 @@
 # Knowledge corpus — loading map
 
-Eight packs, one per role, spread over nineteen files, 4,450 lines in total, 169 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
+Eight packs, one per role, spread over twenty files, 4,511 lines in total, 170 numbered procedures. **Never load all of them.** A pack you did not staff a role for is pure context cost, and a loaded pack that does not match the inventory produces confident findings about code that is not there.
 
 ## Loading rules
 
@@ -16,7 +16,7 @@ Eight packs, one per role, spread over nineteen files, 4,450 lines in total, 169
 |---|---|---|---|---|
 | `web-api.md` | `ehs-web-api` | ~358 | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | HTTP routes, controllers, sessions and tokens, ORM and raw SQL, outbound fetch, uploads and deserialization |
 | `web-api-clientside-logic.md` | `ehs-web-api` | ~306 | `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`..`WEB-27` | Browser-rendered output, `Access-Control-*` and caching, payment or quota flows, crypto and secrets, GraphQL, WebSocket, and any control whose presence is being read as proof that it works |
-| `web-api-logging.md` | `ehs-web-api` | ~120 | `WEB-22`, `WEB-28` | Exception handlers, a logger, stack traces returned to a client, a log viewer, a log aggregator |
+| `web-api-logging.md` | `ehs-web-api` | ~138 | `WEB-22`, `WEB-28` | Exception handlers, a logger, stack traces returned to a client, a log viewer, a log aggregator |
 | `mobile.md` | `ehs-mobile` | ~313 | `MOB-01`..`MOB-12` | `AndroidManifest.xml`, `.apk`, `.aab`, Kotlin/Java app sources |
 | `mobile-runtime-trust.md` | `ehs-mobile` | ~119 | `MOB-13`, `MOB-16`..`MOB-18` | A screen that authorizes an effect, biometric or PIN unlock, CodePush/Expo/live updates, a backend whose only client is the app |
 | `mobile-ios.md` | `ehs-mobile` | ~59 | `MOB-14`..`MOB-15` | `Info.plist`, `.xcodeproj`, entitlements, `.ipa`, Swift/Objective-C sources |
@@ -30,7 +30,8 @@ Eight packs, one per role, spread over nineteen files, 4,450 lines in total, 169
 | `ai-safety-data-output.md` | `ehs-ai-safety` | ~350 | `AI-12`..`AI-24` | Vector stores, agent memory, model output reaching a sink, system prompts with rules or credentials, agentic loops |
 | `ai-safety-agent-runtime.md` | `ehs-ai-safety` | ~136 | `AI-25`..`AI-28` | An installable agent package (skill, plugin, MCP server), an agent that can write to its own configuration, several agents handing work to each other, or an action that must be attributable |
 | `privacy-abuse.md` | `ehs-privacy-abuse` | ~354 | `PRV-01`..`PRV-13` | Personal data in models or events, third-party SDKs, telemetry, user data reaching a model, who reads personal records |
-| `local-app.md` | `ehs-local-app` | ~321 | `LOC-01`..`LOC-15` | A command-line tool, a desktop or WebView shell, a published library or SDK, an installer or updater, a local daemon or a loopback listener |
+| `local-app.md` | `ehs-local-app` | ~274 | `LOC-01`..`LOC-10`, `LOC-15`..`LOC-16` | A command-line tool, a published library or SDK, an installer, a local daemon; §0 (who the attacker is) and §10 (undecodable input breaking the reader) apply to every local audit |
+| `local-app-desktop-ipc.md` | `ehs-local-app` | ~90 | `LOC-11`..`LOC-14` | An Electron/Tauri/WebView shell, a registered URL scheme or file association, a unix socket, named pipe or `127.0.0.1` listener, a self-updater or a runtime plugin directory |
 | `remediation.md` | `ehs-remediator` | ~197 | `REM-01`..`REM-07` | `harden` mode, applying a patch |
 | `remediation-verification.md` | `ehs-verifier` | ~252 | `VER-01`..`VER-09` | checking someone else's work: a patch in `harden`/`verify`, or a finished finding list in `audit` (`VER-09`) |
 

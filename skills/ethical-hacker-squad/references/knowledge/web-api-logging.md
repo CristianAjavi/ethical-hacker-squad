@@ -2,7 +2,7 @@
 
 > **When to load this file:** the target logs anything an outside caller can influence, returns errors to a client, ships traces to a third party, or renders logs in a viewer.
 > **Do not load it if:** the audit has no application code, or you are only looking at routes and authorization (`web-api.md`) or at client-side sinks, CSRF, CORS, business logic and cryptography (`web-api-clientside-logic.md`).
-> **Cost:** ~120 lines. Two procedures that face in opposite directions and are read together.
+> **Cost:** ~138 lines. Two procedures that face in opposite directions and are read together.
 > **Third file of this pack.** `web-api.md` is the entry point and holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; `web-api-clientside-logic.md` holds §6-§10 with `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27`. This file exists because those two are at the per-file size budget, and a pack file that cannot grow stops being where the next procedure goes.
 
 ## Selective loading index
@@ -52,8 +52,10 @@ for fixes that. So list the call sites mechanically first, then apply judgement 
 ```
 python3 - "$TARGET" <<'PY'
 import ast, sys, pathlib
+sys.stdout.reconfigure(errors="backslashreplace")   # a path can hold bytes stdout cannot encode
 root = pathlib.Path(sys.argv[1])
 LOG = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
+skipped = []
 
 
 def is_log_call(n):
@@ -72,13 +74,20 @@ def is_log_call(n):
 
 for f in root.rglob("*.py"):
     try:
-        tree = ast.parse(f.read_text(errors="ignore"))
-    except SyntaxError:
+        tree = ast.parse(f.read_text(encoding="utf-8", errors="replace"))
+    except (SyntaxError, OSError, UnicodeError) as e:
+        skipped.append((f, type(e).__name__))       # LOC-16 shape 3: never silently
         continue
     for n in ast.walk(tree):
         if is_log_call(n) and n.args and (
                 not isinstance(n.args[0], ast.Constant) or len(n.args) > 1):
             print(f"{f.relative_to(root)}:{n.lineno}")
+
+if skipped:
+    print(f"NOT READ: {len(skipped)} file(s) — this enumeration does NOT cover them:",
+          file=sys.stderr)
+    for f, why in skipped:
+        print(f"  {f}: {why}", file=sys.stderr)
 PY
 ```
 
@@ -89,6 +98,15 @@ with `getattr(logger, level)(message, *args, ...)`, so the call is a `Call` and 
 the clause returns **207** — exactly one more, and that one is the advisory. A query that
 misses the defect it was written for is worse than no query, because the empty result reads
 as coverage.
+
+**The skip list is the same argument, one level down.** The loop used to swallow every
+`SyntaxError` and move on, so a file it never parsed was indistinguishable from a file with
+no log calls. Measured on a two-file fixture: one file holding an attacker-controlled log
+call plus one file this interpreter cannot parse returned `plain.py:3` and exit code `0`,
+with no mention of the second — the enumeration built to stop silent misses was itself
+missing silently. It now names what it did not read, on stderr so it can never be mistaken
+for a call site. The class is `LOC-16` in `local-app.md`; the reason `errors="ignore"` became
+`errors="replace"` and the encoding became explicit is the same procedure.
 
 It lists every logging call whose message is not a plain literal — deferred `%s` included,
 because deferring changes when the string is built and nothing about what ends up in it. On
