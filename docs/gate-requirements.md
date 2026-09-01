@@ -41,6 +41,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
+| negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -78,6 +79,8 @@ Two of those 57 cases are worth naming. `gate-plugin-integrity.sh` states in a c
 ### And the check that keeps it that way
 
 The batteries above are the fix. `gate-negative-proof.sh` is the other half this repository's closure rule always asks for: it fails when a gate carries no negative proof at all.
+
+**And a second half to that half.** `gate-negative-proof.sh` asks whether proof EXISTS. It cannot see proof that is gone, and its own docstring is honest that counting files cannot judge a battery. Measured on 2026-09-01 against `9ccd3ab`: moving one negative fixture and its `.expected` sidecar out of the tree took `gate-findings-artifact.sh` from 30 artifacts to 29 and it signed **`VERDICT: 0`**. Every gate in the repository stayed green while a negative proof was retired, and nothing recorded that the case had ever existed. Weakening a fixture in place IS caught — gut the defect and leave the file and the gate says *"a fixture under bad/ validated cleanly, so it proves nothing"* — so the shape that survived is precisely **deletion**, the one edit that removes the evidence along with the thing it proved. `gate-negative-proof-census.sh` compares the count on disk against `scripts/gates/data/negative-proof-census.json`, in both directions: fewer means a proof was retired, more means the baseline went stale and stopped being one. The file sits under `scripts/gates/**`, so lowering the number is an edit G7 puts in front of a reviewer.
 
 A gate proves itself in exactly one of two shapes, and the gate accepts only those two:
 
