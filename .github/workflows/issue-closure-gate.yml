@@ -20,7 +20,11 @@ name: PR-context gates
 on:
   pull_request:
     # `edited` is required: the gate depends on the PR body, which is edited by hand.
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    # `labeled`/`unlabeled` are required for a different reason: G7's only override
+    # channel is a LABEL, chosen because it is the one signal that does not live in
+    # the change: granting one is a separate act, recorded in the pull-request
+    # timeline. A label that does not re-run the gate is not an override.
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 permissions: {}
 
@@ -71,13 +75,18 @@ jobs:
           # into the shell text of this step.
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           BASE_REF: origin/${{ github.base_ref }}
+          # The maintainer's override. Note what crosses the boundary: not the
+          # label list, which is untrusted, but a decision about it resolved to
+          # one of exactly two LITERALS written here. Nothing an outside caller
+          # can influence reaches the shell.
+          EHS_G7_OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'override/g7-reviewed') && 'override/g7-reviewed' || '-' }}
         run: |
           set -uo pipefail
           rc=0
           ./scripts/gates/gate-protected-paths.sh --branch "$HEAD_REF" --base "$BASE_REF" || rc=$?
           case "$rc" in
             0) echo "::notice title=Gate OK::Measured and correct." ;;
-            1) echo "::error title=Gate FAILS::An automated branch touches a path that defines its own limits." ;;
+            1) echo "::error title=Gate FAILS::A change carrying a mark of automation touches a path that defines its own limits. If that is deliberate, a maintainer applies the label override/g7-reviewed and the gate re-runs." ;;
             2) echo "::error title=COULD NOT MEASURE::The gate could not measure. An rc=0 never means 'I did not review it'." ;;
             *) echo "::error title=Gate broken::unexpected exit code $rc" ;;
           esac

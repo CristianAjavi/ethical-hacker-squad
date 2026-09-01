@@ -3,20 +3,72 @@
 
 An automation that can edit its own limits has none. The paths in
 scripts/gates/data/protected-paths.json define what this system may do and what
-it may read; a branch whose name marks it as automated may not touch them, and a
-human branch may, because a maintainer reviews it.
+it may read; a change to them that carries a mark of automation fails, and one
+that carries none is listed for a human to review.
 
-Three measurements:
+WHAT CHANGED, AND WHY IT HAD TO
+  Until 2026-09-01 the single question "is the editor an automation?" was
+  answered by the BRANCH PREFIX, and the branch is named by whoever is editing.
+  In PR #72 an agent raised `MAX_TREE_BYTES` from 655,360 to 786,432 inside
+  `scripts/gates/**` - the literal case in this gate's own docstring - and this
+  gate signed it green, because the branch was called `loop/...` and the list of
+  automation prefixes says `bot/`. The control that forbids an automation from
+  editing its own limits was asking the automation whether it was one.
 
-  1. drift      the fenced list under `## G7 — Protected paths` in
+  The fix is not a longer prefix list; any list of names has the same hole. It is
+  that a self-declaration is worth something in exactly one direction:
+
+      an admission INCRIMINATES, a denial EXCULPATES NOTHING.
+
+  So the branch prefix stays, demoted from classifier to one incriminating
+  signal, and a second one joins it that the editor does not choose as a name:
+  the marks its own harness writes into the commits - a `Claude-Session:`
+  trailer, an `@anthropic.com` or `[bot]` identity. Measured on the four commits
+  merged as PR #72: all four carry the trailer. The mark can be stripped, and
+  then this gate is back where it was - but stripping it is an act, where
+  choosing a branch name was not even a decision.
+
+  And nothing is called human any more. There is no evidence available at gate
+  time that proves a person made a change: a PR approval does not exist yet when
+  CI runs, and every other signal is written by the editor. So the third state is
+  written down as what it is - UNATTRIBUTED - and it does not pass silently.
+
+Four measurements:
+
+  1. drift      the fenced list under `## G7 - Protected paths` in
                 docs/gate-requirements.md matches the data file exactly. The rule
                 and the sentence that documents it cannot diverge.
-  2. verdict    an automated branch touching a protected path fails, naming the
-                path and the pattern that caught it.
-  3. visibility a human branch touching one is reported, never silently allowed,
-                so the reviewer knows what to look at.
+  2. verdict    a change marked as automated that touches a protected path fails,
+                naming the path, the pattern, and WHICH signal caught it.
+  3. visibility an unattributed change touching one is reported, never silently
+                allowed, so the reviewer knows what to look at.
+  4. honesty    if the commit range could not be read AND the diff touches a
+                protected path, half the classifier did not run: that is
+                could-not-measure, not a pass.
+
+  5. override   a maintainer may let one marked change through, and the only
+                channel for that is OUTSIDE the diff: a label on the pull
+                request. It is not part of the change: no branch name, commit or
+                diff line carries it, so granting one is a separate act visible in
+                the pull-request timeline, and the run says loudly it was used.
+
+THE LIMIT, WRITTEN DOWN BECAUSE IT IS REAL
+  In a single-maintainer repository there is NO signal at gate time that
+  separates the maintainer from the maintainer's agent: they commit with the
+  same account and the same email. So this gate cannot prove a person made a
+  change, and it does not try. What it does is make the class impossible to pass
+  unnoticed - the failure names the signal that marked the change and every limit
+  it moved - and put the decision to proceed somewhere the automation cannot
+  reach on its own.
 
 Usage: protected_paths.py <repo-root> <branch> <changed-files-file>
+                          [<authorship-file>] [<override-label>]
+
+The authorship file is one line per commit in the range, TAB-separated:
+`<sha>\t<author name and email>\t<committer name and email>\t<trailers>`.
+`-` or an absent argument means the range could not be read. The override label
+is `-` when absent.
+
 A branch of `-` or an unreadable file list is could-not-measure, never a pass.
 
 EXIT: 0 measured fine · 1 measured, findings listed · 2 could not measure
@@ -45,17 +97,73 @@ def matches(path: str, pattern: str) -> bool:
     return fnmatch.fnmatch(path, pattern)
 
 
+def read_authorship(arg: str) -> list[str] | None:
+    """The commit range as lines, or None when it could not be read.
+
+    None and [] are different answers and the difference is the whole point of
+    measurement 4: [] is "I read the range and it is empty", None is "I could not
+    read it". Collapsing them would turn a blind gate into a green one.
+    """
+    if arg in ("", "-"):
+        return None
+    try:
+        return [ln for ln in Path(arg).read_text(encoding="utf-8", errors="replace").splitlines()]
+    except OSError:
+        return None
+
+
+def automation_marks(branch: str, prefixes: list[str], commits: list[str] | None,
+                     markers: dict) -> list[str]:
+    """Every incriminating signal found, each named so the finding can cite it.
+
+    One direction only. Each entry here is a reason to call the change automated;
+    an empty list is NOT a reason to call it human.
+    """
+    found: list[str] = []
+    for p in prefixes:
+        if branch.startswith(p):
+            found.append(f"the branch name starts with `{p}`, which this repository "
+                         f"reserves for automation")
+    if commits:
+        keys = [str(k) for k in markers.get("trailer_keys", [])]
+        ids = [str(s) for s in markers.get("identity_substrings", [])]
+        for line in commits:
+            sha = line.split("\t", 1)[0][:9] or "?"
+            for key in keys:
+                if f"{key}:" in line:
+                    found.append(f"commit {sha} carries a `{key}:` trailer, which an agent "
+                                 f"harness writes and a person does not type")
+            low = line.lower()
+            for sub in ids:
+                if sub.lower() in low:
+                    found.append(f"commit {sha} names `{sub}` as an author or committer")
+    # One reason per kind is enough for a reviewer; twenty commits with the same
+    # trailer is one fact, not twenty.
+    seen, unique = set(), []
+    for f in found:
+        kind = re.sub(r"commit \S+ ", "", f)
+        if kind not in seen:
+            seen.add(kind)
+            unique.append(f)
+    return unique
+
+
 def main() -> int:
     if len(sys.argv) < 4:
-        raise Unmeasured("usage: protected_paths.py <repo-root> <branch> <changed-files-file>")
+        raise Unmeasured("usage: protected_paths.py <repo-root> <branch> <changed-files-file> "
+                         "[<authorship-file>]")
     root = Path(sys.argv[1]).resolve()
     branch = sys.argv[2]
     listing = Path(sys.argv[3])
+    commits = read_authorship(sys.argv[4] if len(sys.argv) > 4 else "-")
+    override = (sys.argv[5] if len(sys.argv) > 5 else "-").strip()
+    override = "" if override == "-" else override
 
     try:
         data = json.loads((root / DATA).read_text(encoding="utf-8"))
         declared = list(data["paths"])
         prefixes = list(data["automation_branch_prefixes"])
+        markers = dict(data.get("automation_commit_markers") or {})
     except (OSError, ValueError, KeyError) as exc:
         raise Unmeasured(f"{DATA} is unusable: {exc}") from exc
 
@@ -90,33 +198,78 @@ def main() -> int:
     except OSError as exc:
         raise Unmeasured(f"cannot read the changed-file list ({listing}): {exc}") from exc
 
-    automated = any(branch.startswith(p) for p in prefixes)
+    blind = ""
+    marks = automation_marks(branch, prefixes, commits, markers)
     touched = [(f, p) for f in changed for p in declared if matches(f, p)]
+    range_read = "unreadable" if commits is None else f"{len(commits)} commit(s)"
 
-    print(f"measured: branch {branch!r} ({'automated' if automated else 'human'}), "
+    print(f"measured: branch {branch!r}, commit range {range_read}, "
           f"{len(changed)} changed file(s) against {len(declared)} protected pattern(s), "
           f"{checks + len(changed)} checks")
 
-    # ---- 2 and 3 -------------------------------------------------------
+    # ---- 2, 3 and 4 ----------------------------------------------------
     if not touched:
         print("no protected path in this diff")
-    elif automated:
+        if marks:
+            print(f"marked as automated ({marks[0]}), but it touched none of the limits")
+    elif marks:
+        for mark in marks:
+            print(f"automation signal: {mark}")
+        if override:
+            # Loud on purpose. An override that reads like a pass is a pass, and the
+            # whole value of this channel is that using it leaves a mark of its own.
+            print(f"OVERRIDDEN by the pull-request label `{override}`. A maintainer decided "
+                  f"this marked change may move the limits below. The label lives on the pull "
+                  f"request, not in the diff, so granting it was a separate act, "
+                  f"recorded in the pull-request timeline rather than in this change:")
+            for f, p in touched:
+                print(f"  - {f} (matches `{p}`) - MOVED BY AN AUTOMATION, WITH CONSENT")
+        else:
+            for f, p in touched:
+                findings.append(
+                    f"this change is marked as automated and its diff touches {f} (protected by "
+                    f"`{p}`); an automation that can edit its own limits has none. Signal: "
+                    f"{marks[0]}")
+    elif commits is None:
+        # Half the classifier did not run and the diff is in the half that matters.
+        # Reporting this as the old "human branch, allowed" would be the same
+        # mistake one level down: absence of a reading is not absence of a mark.
+        print(f"{len(touched)} protected path(s) in this diff:")
         for f, p in touched:
-            findings.append(
-                f"branch {branch!r} is automated and its diff touches {f} (protected by `{p}`); "
-                "an automation that can edit its own limits has none")
+            print(f"  - {f} (matches `{p}`)")
+        blind = (
+            "the commit range could not be read, so the only automation signal left was the "
+            "branch name - which is chosen by whoever is editing. A protected path was touched "
+            "and this gate cannot say by what. Pass --authorship, or run where the base ref "
+            "resolves")
     else:
-        print(f"human branch: {len(touched)} protected path(s) in this diff, allowed and listed "
-              "so the reviewer knows where to look:")
+        print(f"UNATTRIBUTED: {len(touched)} protected path(s) in this diff carry no automation "
+              f"mark, allowed and listed so the reviewer knows where to look:")
         for f, p in touched:
             print(f"  - {f} (matches `{p}`)")
 
+    if override and not marks:
+        print(f"NOTE: the label `{override}` is on this pull request and nothing needed it. "
+              f"An override standing on a change that carries no automation mark is worth "
+              f"removing, or the next reader learns to expect it.")
     print("NOT MEASURED: whether the change to a protected path is a good one. This gate asks who "
           "is changing it, not whether they should.")
+    if touched and not marks and commits is not None:
+        print("NOT MEASURED: whether a PERSON made this change. No signal available when this gate "
+              "runs proves that - a pull-request approval does not exist yet, and everything else "
+              "is written by the editor. `UNATTRIBUTED` means no mark was found, never that a "
+              "human was.")
 
     for f in findings:
         print(f"FINDING {f}")
-    return 1 if findings else 0
+    if findings:
+        # A drift finding is a determinate failure and outranks a partial blindness:
+        # both block, and only one of them tells the reader what to go and fix.
+        return 1
+    if blind:
+        print(f"UNMEASURED {blind}")
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
