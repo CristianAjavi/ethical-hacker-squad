@@ -15,7 +15,7 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-26` |
 | AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-29` |
 | Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
-| Local applications | `ehs-local-app` | `knowledge/local-app.md` | `LOC-01`..`LOC-15` |
+| Local applications | `ehs-local-app` | `knowledge/local-app.md` + `knowledge/local-app-desktop-ipc.md` | `LOC-01`..`LOC-16` |
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` | `REM-01`..`REM-07` |
 | Verifier | `ehs-verifier` | `knowledge/remediation-verification.md` | `VER-01`..`VER-09` |
 

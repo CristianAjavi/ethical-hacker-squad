@@ -704,3 +704,100 @@ So the two moves, in the order the evidence supports:
 Neither is started. Recording what they shipped is not the same as matching it, and this
 section is the first half only.
 
+## Second reading, 2026-09-01 — and the first thing taken from a competitor's diff
+
+`competitive-freshness.sh` reported the same two products moved again. This reading differs
+from the one above in one respect: it produced a change in this repository rather than a note.
+
+### `Tencent/AI-Infra-Guard` — `4908db1` → `bb15526`
+
+32 commits, 32 files. Eight of them are translated READMEs and most of the rest are their own
+product. One file is not: `mcp-scan/pytests/test_surrogate_sanitization.py`, new, with a
+`strip_surrogates` helper behind it. The docstring states the failure plainly — `os.walk`
+decodes a non-UTF-8 filename with `surrogateescape`, the lone surrogates that produces cannot
+be serialised, and the scan dies with `UnicodeEncodeError` the moment the scanned tree
+contains such a name.
+
+**This corpus had no procedure for that class.** **The absence was measured with the instrument proved first.** `scripts/ehs.py` searches the title and all six fields of every one of the 170 procedures; run against a class the corpus does hold it returns it (`path traversal` → `WEB-12`, `LOC-01`; `zero-width` → `AI-20`), so it fires when a procedure exists. Run against this class on the committed corpus it returned nothing for `surrogate`, `non-utf-8` and `UnicodeDecodeError`, and the single hit for `errors=` was a recipe *using* `errors="ignore"`, not a procedure warning about it. The same query now returns exactly `LOC-16` — the before-and-after on one instrument is the reach proof, and the seven pre-existing hits for `encoding` all belonged to other classes (`AI-20` smuggles characters into a model's context; `WEB-26` takes a length off the wire). The class is now `LOC-16`,
+and it is broader than the crash: whoever can name a file in a scanned tree can abort a
+scanner, a decode error swallowed silently turns a filter bypass into a clean report, and a
+file skipped without being counted publishes `not measured` as `OK` — a defect this procedure names, never a verdict anyone may write — the same doctrine this
+project already applies to its own gates, arriving from outside.
+
+**It found a defect here on the way in.** `WEB-28`'s enumeration recipe — the one whose own
+prose says it exists because reading a large repository by judgement misses the file holding
+the defect — swallowed every `SyntaxError` and moved on. Measured on a two-file fixture: one
+file with an attacker-controlled log call, one this interpreter cannot parse; the recipe
+printed `plain.py:3`, exited `0`, and never mentioned the second. It now names what it did
+not read, on stderr. That is the honest shape of this section: a competitor's bug-fix commit
+was worth more to this repository than their feature list.
+
+### `google/mantis` — `5f76be0` → `27467b3`
+
+5 commits, 66 files, and it deepens the same two axes named above rather than opening a third:
+`reference/evals/` gains `run_eval.py`, `stage_agents.py`, a `deduplicator_agent/` and a ninth
+dataset (`synthetic_dataset.json`); the sandbox layer is refactored into
+`reference/core/environments/` with four backends; `embeddings.py` is new; two more skills ship
+(`mantis-configure`, `mantis-launch`).
+
+The per-stage gap is therefore not closing on its own, and it is now the oldest open item in
+this document. It stays where the previous section left it: **their granularity, this
+project's blinding and pre-registration**, and the answer never inside the question.
+
+### The per-stage gap, worked — their granularity, measured against a floor they cannot clear
+
+The item above stopped being a note on 2026-09-01 and became `gate-stage-eval-floor.sh`. What
+follows is what reading their datasets produced, including the part that went against the first
+reading.
+
+**What they built.** `reference/evals/` at `27467b3` holds nine datasets, one per pipeline stage,
+plus `run_eval.py` and `stage_agents.py`. Two are directly comparable to this project's triage
+stage: `review_dataset.json` (six findings routed to `confirmed` or `false_positive` under
+thirteen rejection rules) and `critic_dataset.json` (four routed to `viable` or `non_viable`).
+The granularity is real and this bench has one stage against their nine. **That half of the gap
+did not close and is wider than it was.**
+
+**What reading them showed.** Their case whose expected answer is `false_positive` under the rule
+`sample_test_or_mock_code` is titled *"...in mock auth provider"*, described as *"test credentials
+in mock authentication fixture used exclusively during offline unit tests"*, and filed at
+`tests/mocks/mock_auth.py`. The rule's own name is in the question three times. The pattern
+repeats: *"legacy deprecated logging branch"* → `unreachable_dead_code`; *"Client-side username
+length validation"* at `static/js/` → `client_side_only_enforcement`; *"only accessible when
+executed by root"* → `missing_attacker_vector`; *"Theoretical SSRF"* →
+`framework_level_sanitization`. **A stub of seven substrings and no model scores 10 of 10 across
+both files.**
+
+**And then the instrument disagreed with the stub, which is the part worth keeping.** Those seven
+substrings were chosen after reading the inputs, so the stub demonstrates the leak is there and a
+person can find it — it cannot be the measurement. The measurement is
+`scripts/gates/lib/stage_eval_floor.py`: leave-one-out nearest centroid over word overlap,
+nothing tuned, the same code on any dataset, reading only the text the stage is handed. Run blind
+on those two files it returns **83% of 6** and **25% of 4**, both under their own ceilings. On
+four cases there is almost nothing to learn from, so a low number there is noise with a percent
+sign rather than a clean bill of health. **The floor therefore reports `2` — could not measure —
+below ten cases, and a `0` is refused at that size**, because an instrument that signs off on
+four cases would be lying upward. Their two comparable datasets cannot be cleared by any blind
+separability probe at the size they ship, and that is a statement about what is measurable, not a
+score against them.
+
+**What it measured here.** Run on this project's own stage dataset, before the gate existed to
+protect it: **the wording alone sorts 14% of 14 cases against a 43% majority class** — the words
+are less use than always answering the commonest label. That property is why the cases carry real
+source files rather than a paraphrase of the verdict, and until this run it had been asserted and
+never measured. The one `NOT_APPLICABLE` case is dropped from the denominator and named in the
+output: held out, its class centroid is empty, so the probe can never emit it and counting it
+would move the score without measuring anything.
+
+**What this does not claim.** It does not measure their reviewer or their critic. Their agents
+were not run — that needs API budget nobody authorized — and a stage could be excellent behind a
+dataset that cannot show it. The claim is bounded to the two files as published at `27467b3`:
+**those datasets can be answered from their own wording, and they are too small for a blind
+instrument to say otherwise.** The ceiling, `max(majority + 0.20, 0.50)`, and the ten-case floor
+were both written into the probe before any dataset was run through it.
+
+### What this reading did not do
+
+It did not re-run either product. The scores in §4 are still the ones taken on 2026-08-22
+against `4908db1`, `5f76be0` and `e5d7aa0`, and a diff read is not a measurement. Nothing in
+this section changes a number.
+

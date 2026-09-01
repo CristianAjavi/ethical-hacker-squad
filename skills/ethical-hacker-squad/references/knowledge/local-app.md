@@ -2,7 +2,8 @@
 
 > **When to load this file:** the inventory has a command-line tool, a desktop application (Electron, Tauri, native shell), a published library or SDK, an installer or updater, a local daemon, or any program whose attack surface is the machine it runs on rather than an HTTP route.
 > **Do not load it if:** the scope is only a web backend with no local artifact, only IaC and containers, or only dependency manifests.
-> **Cost:** ~321 lines. Load by section using the index; **§0 first**, because on a local surface the hard part is naming the attacker, not finding the pattern.
+> **Cost:** ~274 lines. Load by section using the index; **§0 first**, because on a local surface the hard part is naming the attacker, not finding the pattern.
+> **Second file of this pack:** `local-app-desktop-ipc.md` holds §6-§8 and `LOC-11`..`LOC-14` — Electron and WebView renderer isolation, protocol handlers and deep links, local IPC and loopback listeners, and code that arrives at runtime. Open it as soon as the inventory has a desktop shell, a socket or a self-updater; it carries its own index. **§0 stays here and governs it too.**
 
 ## Selective loading index
 
@@ -14,12 +15,11 @@
 | §3 Process surface | subprocess calls, `PATH`, plugins, config discovery | LOC-05..LOC-07 |
 | §4 Privileges and permissions | files created at runtime, setuid, sudo helpers, services | LOC-08..LOC-09 |
 | §5 Published library defaults | a package other people import | LOC-10 |
-| §6 Desktop shells | Electron, Tauri, embedded WebView, protocol handlers | LOC-11..LOC-12 |
-| §7 Local IPC and listeners | unix sockets, named pipes, `127.0.0.1` servers, debug ports | LOC-13 |
-| §8 Update and plugin loading | self-update, plugin directories, runtime downloads | LOC-14 |
+| §6-§8 → `local-app-desktop-ipc.md` | a desktop or WebView shell, a socket or loopback listener, a self-updater or a plugin directory | LOC-11..LOC-14 |
 | §9 Secrets at rest | token caches, config files, logs, crash reports | LOC-15 |
+| §10 The encoding boundary | a walk over a tree somebody else can write into, batch scanning, log ingestion | LOC-16 |
 
-Injection, deserialization and file-content handling do **not** live here: they transfer from `web-api.md` §3 and §5 (`WEB-07`..`WEB-12`) and apply unchanged to a local process. Dependencies and publishing are `supply-chain.md`. Container and CI packaging is `infra-cloud.md`.
+Injection, deserialization and file-content handling do **not** live here: they transfer from `web-api.md` §3 and §5 (`WEB-07`..`WEB-12`) and apply unchanged to a local process. Dependencies and publishing are `supply-chain.md`. Container and CI packaging is `infra-cloud.md`. `LOC-16` is about undecodable bytes breaking the tool that reads them; invisible characters smuggled *into a model's context* are `AI-20` in `ai-safety-data-output.md`, a different victim.
 
 ## §0 Who the attacker is here
 
@@ -225,82 +225,6 @@ Rules: FP-01, FP-02, FP-06.
 **Traceability**: `CWE-1188` · `CWE-665` · `ASVS 5.0 V15`\
 **Tooling**: read the exported signatures directly (`rg -n "^def |^class |export function|pub fn"`); a scanner will not tell you which default is the dangerous one.
 
-## §6 Desktop shells
-
-### LOC-11 Renderer isolation and the preload surface
-**Where to look**
-- Electron: `BrowserWindow` `webPreferences` with `nodeIntegration: true`, `contextIsolation: false`, `sandbox: false`, `webSecurity: false`, `allowRunningInsecureContent`, `<webview>` with `nodeintegration`; the preload script and every `contextBridge.exposeInMainWorld` surface; `ipcMain.handle` without validating the channel payload; `shell.openExternal` reached from renderer input.
-- Tauri: capability and allowlist entries granting `shell`, `fs` with a `**` scope, or `http` with a wide allowlist.
-- Embedded WebViews in native desktop apps; for Android and iOS WebViews use `mobile.md` instead.
-
-**Vulnerable pattern** — content the application did not author is rendered in a context that can reach Node, the shell or the filesystem. With `contextIsolation` off or a broad `contextBridge` API, a single cross-site scripting in the renderer becomes command execution on the user's machine.
-
-**What rules it out (false positive)**
-- `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, and a preload that exposes a small, typed API which validates every argument before acting.
-- Only local, application-authored content is loaded; remote URLs are opened in the OS browser rather than in a window.
-- The `fs` or `shell` capability is scoped to a specific directory or command, not to a wildcard.
-
-Rules: FP-01, FP-02, FP-05.
-
-**Minimal test** — read `webPreferences` and the preload together; then, in a scratch build, load a local page that calls each exposed bridge method with an out-of-contract argument and observe whether it is rejected.\
-**Traceability**: `CWE-829` · `CWE-79` · `CWE-1188` · `ASVS 5.0 V3`\
-**Tooling**: `rg -n "webPreferences|contextIsolation|nodeIntegration|contextBridge|ipcMain|openExternal"`; for Tauri read the capability files. The absence of a match is not proof — check the defaults of the framework version in use.
-
-### LOC-12 Custom URL schemes, deep links and file associations
-**Where to look**
-- macOS `Info.plist` `CFBundleURLTypes` and `CFBundleDocumentTypes`; Linux `.desktop` entries with `Exec=` and `%u`; Windows registry protocol handlers; Electron `setAsDefaultProtocolClient` plus the `open-url` and `second-instance` handlers; the argv parser that receives the URL.
-
-**Vulnerable pattern** — any web page can cause the application to be launched with an attacker-chosen string. If the handler interpolates that string into a command line, a path, or a window that then loads it, the browser has become a remote entry point into a local process. The `%u` placeholder in a `.desktop` file and a handler that concatenates are the two recurring shapes.
-
-**What rules it out (false positive)**
-- The handler parses the URL, validates the scheme and host, and maps it to a fixed set of actions with no path or command interpolation.
-- Any action with side effects requires a user confirmation that names what will happen.
-- The scheme is registered but the handler ignores everything except a known token format.
-
-Rules: FP-01, FP-05.
-
-**Minimal test** — construct a payload URL locally and invoke it through the OS (`open "app://..."` on macOS, `xdg-open` on Linux), with the application instrumented to print the argv it received. Inspect what arrived before deciding what it can do.\
-**Traceability**: `CWE-88` · `CWE-829` · `CAPEC-6`\
-**Tooling**: `rg -n "setAsDefaultProtocolClient|open-url|CFBundleURLTypes|Exec=.*%u"`; read the argv handler, not the registration.
-
-## §7 Local IPC and listeners
-
-### LOC-13 Local sockets and listeners without peer or origin checks
-**Where to look**
-- Unix domain sockets and named pipes created by a daemon or helper; `127.0.0.1` HTTP or WebSocket servers used for OAuth callbacks, IDE integration, dev servers, or an internal control API; debug ports (`--inspect`, JDWP, remote debugging); gRPC bound to loopback.
-
-**Vulnerable pattern** — two distinct failures. A unix socket with permissive modes and no peer credential check lets any local user drive the daemon. An HTTP listener on loopback with no `Origin` check and no token lets **any web page the user visits** drive it, because the browser will happily send the request; where the API answers to a hostname rather than to `Origin`, DNS rebinding removes even the same-origin obstacle.
-
-**What rules it out (false positive)**
-- The socket lives in a `0700` per-user directory, is `0600`, and the daemon checks peer credentials.
-- The HTTP listener validates `Origin` against an allowlist, requires a high-entropy token in a header (not in the URL), binds to `127.0.0.1` on a random port, and rejects requests whose `Host` it does not recognise.
-- The listener exists only during an interactive flow and closes immediately after.
-
-Rules: FP-01, FP-04, FP-06.
-
-**Minimal test** — while the app runs, list what it is listening on, then send one request with a foreign `Origin` header and no credentials and record the response code. Loopback only, no third party involved.\
-**Traceability**: `CWE-346` · `CWE-1385` · `CWE-668` · `ASVS 5.0 V4`\
-**Tooling**: `lsof -nP -iTCP -sTCP:LISTEN` or `ss -ltnp`; `curl -sS -H 'Origin: https://evil.example' http://127.0.0.1:<port>/<path> -o /dev/null -w '%{http_code}\n'`. A 200 with no token is the finding; a 403 is not proof the token check is sound.
-
-## §8 Update and plugin loading
-
-### LOC-14 Code that arrives at runtime without integrity verification
-**Where to look**
-- Self-update code and `autoUpdater` configuration (feed URL, whether code signing is enforced); installers that download and execute; documentation recommending a pipe from a download into a shell; plugin directories loaded by glob; runtime `pip install`, `npm install` or `curl` of an artifact that is then executed.
-
-**Vulnerable pattern** — executable content is fetched or loaded at runtime and nothing verifies who produced it, or the verification exists but fails open. Sub-cases worth separating: an update channel over plain HTTP; a signature checked after the payload has already been written to a privileged path; a plugin directory writable by another local user; a pinned key that is never actually compared.
-
-**What rules it out (false positive)**
-- A signature is verified against a pinned key **before** the payload is executed or moved into place, and a verification failure aborts the update.
-- The platform enforces it: OS code signing and notarization, a package manager with its own verified channel.
-- The plugin directory is owned by root or by the installing user and is not writable by others, and plugins are enumerated from a fixed list rather than a glob.
-
-Rules: FP-01, FP-06.
-
-**Minimal test** — read the update path end to end and answer three questions: what is fetched, over what scheme, and what happens on a verification failure. Then check the mode and ownership of the plugin and install directories.\
-**Traceability**: `CWE-494` · `CWE-829` · `ATT&CK T1195` · `SLSA Build L2`\
-**Tooling**: `rg -n "autoUpdater|electron-updater|feedURL|http://|install.*&&.*sh"`; for the shipped artifact, verify the signature with the platform tool rather than trusting the build script.
-
 ## §9 Secrets at rest
 
 ### LOC-15 Credentials and personal data left on the machine
@@ -319,3 +243,32 @@ Rules: FP-01, FP-06.
 **Minimal test** — run a command with a distinctive fake token, then search the data directory, the log files and `ps -eo args` output for that string. Report where it appeared, never the real value.\
 **Traceability**: `CWE-312` · `CWE-522` · `CWE-532` · `CWE-214` · `ASVS 5.0 V14`\
 **Tooling**: `rg -n --hidden "<canary>" ~/.config/<app> ~/.cache/<app>` in a scratch profile, plus `ps -eo args` captured while the command runs. Never run a repository-wide secret scan against paths outside the authorized scope.
+
+## §10 The encoding boundary
+
+### LOC-16 Bytes that break the analyser: non-UTF-8 paths and undecodable content
+**Where to look**
+- Any walk over a tree the program does not own, followed by serialization of what it found: Python `os.walk`/`os.listdir`/`Path.rglob` feeding `json.dumps`, a Pydantic model or a log record; Go `filepath.WalkDir` with `encoding/json`; Node `fs.readdir` without `{ encoding: "buffer" }`; Java `Files.walk` decoded with the platform charset.
+- Every read of target content that names an error handler: `errors="ignore"`, `errors="replace"`, `errors="surrogateescape"`, `new String(bytes, Charset.defaultCharset())`, `strings.ToValidUTF8`.
+- Jobs whose unit of work is a whole directory somebody else can write into: secret scanners and SAST steps in CI, SBOM generators, indexers, backup and sync agents, log shippers, upload processors, archive extractors.
+
+**Vulnerable pattern** — three shapes, failing in opposite directions.
+1. **Abort.** A POSIX filename is bytes, not text. Python decodes an invalid one with `surrogateescape`, producing lone surrogates in `U+DC80`-`U+DCFF` (inside the low-surrogate block `U+DC00`-`U+DFFF`) that no JSON encoder will emit: the first `json.dumps` raises `UnicodeEncodeError` and the run dies. Whoever can create a filename in the scanned tree stops the scan, and everything the walk had not reached is never examined — while the job reads as an infrastructure flake, not as a disabled control. Tencent shipped `strip_surrogates` for exactly this in `AI-Infra-Guard` on 2026-09-01.
+2. **Silent drop.** `errors="ignore"` deletes the undecodable bytes *before* the matcher sees them, so the pattern that would have matched no longer exists; a consumer downstream that decodes the raw bytes differently gets the payload back. A filter bypass whose symptom is a clean report.
+3. **Skipped and undeclared.** The decode error is caught, the file is skipped, and the summary reports zero findings without reporting zero files read. A control that cannot say what it did not cover is publishing `not measured` as `OK`.
+
+**What rules it out (false positive)**
+- The walk carries bytes end to end (`os.scandir` on a `bytes` path, `fs.readdir` with `encoding: "buffer"`, `[]byte`) and converts only at the edge, through a lossless transport such as hex or base64 for the name.
+- Undecodable input is normalized at one declared choke point before serialization **and a test feeds it a lone surrogate** — the test is the evidence; the existence of a sanitizer function is not.
+- A skipped file is counted and named in the output, so the report separates "read and clean" from "not read".
+- Nothing but the principal that runs the tool can write into the tree: no upload, no extracted archive, no clone, no contributor. Name that principal — §0 of this pack.
+
+Rules: FP-02, FP-06, FP-09.
+
+**Minimal test** — in a scratch directory, plant one file whose *name* is not valid UTF-8 and whose *content* is not either, then run the tool over that directory:
+```
+mkdir -p /tmp/ehs-probe && python3 -c 'open(b"/tmp/ehs-probe/bad\xff.txt","wb").write(b"canary\xffvalue")'
+```
+Three outcomes, three verdicts: it crashes → shape 1; it finishes and never mentions the file → shape 3; it finishes, mentions the file, and the canary is missing from the evidence → shape 2. Local, non-destructive, no privileges.\
+**Traceability**: `CWE-176` · `CWE-248` · `CAPEC-267` · `ASVS 5.0 V1`\
+**Tooling**: `rg -n 'errors\s*=\s*.(ignore|replace|surrogateescape)|os\.walk|filepath\.WalkDir|Files\.walk'` → it tells you where to read; whether the walk and the serializer agree on what a name is shows only in the test above. Plant the byte with `printf` or Python, never by typing it: an editor normalizes it away before it reaches disk.

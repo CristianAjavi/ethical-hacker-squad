@@ -26,7 +26,8 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
-| agent roster census | running | `gate-agent-roster.sh` + inline self-test (4 cases) |
+| agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
+| stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
