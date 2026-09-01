@@ -995,3 +995,69 @@ costs harness and model time and that is a decision about spend, not a thing to 
 documentation change. The claim in `README.md` was corrected to say six comparable products are
 known and three have been run — the previous sentence, "all three have now been run", was true
 about the list and had stopped being true about the field.
+
+## Their coverage matrix, and the denominator it does not have — 2026-09-01
+
+`maxgfr/ultrasec` was found by `scripts/gh/competitive-discovery.sh` the day before this entry
+and had never been read. It is the closest product in the field: MIT, a cross-file taint engine,
+18 supply-chain scanners, adversarial verification, and — the reason it is worth an entry —
+`src/coverage.ts`, 577 lines whose opening comment is the doctrine this repository runs on,
+arrived at independently:
+
+> A short report reads as "nothing there". It actually means "nothing there, in what I looked at".
+> Those are very different statements to hand a maintainer, and nothing in the audit distinguishes
+> them: a repo with no findings and a repo nobody checked produce the same SUMMARY.md.
+
+**What they have and we did not.** Their coverage table is scored *from the findings*. Every
+category of a pluggable standard (ASVS, OWASP Top 10, API Top 10, MASVS, CWE Top 25) lands in
+exactly one of three states — `examined`, `engine`, `unexamined` — and a category nothing touched
+is rendered `⬜ **not examined**` with the sentence "not a clean bill of health — it is a gap in
+the audit". Categories no deterministic signal can settle are flagged `judgment` and the auditor
+must answer them in writing, because *"not applicable" without a reason is how coverage silently
+shrinks between audits*. They also render scanners that **failed** as coverage loss rather than as
+a footnote, after a run where three of nine scanners died, one of them the only IaC scanner, and
+the report's short IaC section read exactly like a clean one. Every part of that is right, and our
+report had no equivalent: coverage was declared in prose by the leader and joined to nothing.
+
+**Where it stops, and it is one line.** The state is computed as
+
+```
+const engineCovers = (c.kinds ?? []).some((k) => enumerated.has(k));
+const state = hits > 0 ? "examined" : engineCovers ? "engine" : "unexamined";
+```
+
+`enumerated` is `enumeratedKindsOf(findings)` — the kinds carried by the findings **of this same
+run**. So a category is credited as covered because some *other* finding, anywhere in the run,
+happened to carry one of its kinds. Nothing in the computation refers to what was read. The
+docstring says so plainly: "a class the engine covers but this repo never exercised still counts
+as looked-at — the walk ran, it just found nothing." That is capability, not execution. If the
+walker skipped four hundred of five hundred files — unparseable, gitignored, too large, a symlink
+it would not follow — the hundred it did read produce findings across many kinds, every category
+they touch goes green, and **the four hundred unread files appear in the coverage table nowhere at
+all.** They fixed this for tools (`failedToolLines`) and not for files. There is no denominator in
+the matrix.
+
+**What we did instead of copying it.** `engagement.coverage` has held the denominator since before
+this entry — `inventoried`, `read`, `not_read`, with invariant 3 forcing every inventoried surface
+into exactly one of the last two. What we lacked was their join. So we added the join and measured
+it before deciding what it should cost:
+
+- **Invariant 11 enforces the half that is a flat contradiction.** A finding whose path lies inside
+  a `not_read` surface fails, matched at a path segment boundary. A finding is proof someone
+  looked; the declaration says nobody did; one of the two is false and the reader cannot tell
+  which. Measured before shipping: over the 60 real artifacts in `bench/runs`, 277 findings carry
+  a path and **zero** contradict a `not_read` entry — the rule convicts no past work.
+- **The rest is printed, not judged, and the measurement is why.** 273 of those same 277 findings
+  (98.6%) lie under no inventoried surface at all, because the inventory names surfaces a reader
+  would recognise and the findings name files. A gate that failed on that would accuse almost
+  every good report this repository has written — the shape of check that ends up arguing with
+  everyone who complied. So the validator prints the join on every run and the gap is written
+  down as a known coverage gap in `references/traceability.md`, where a claim of absence has to
+  anchor to it.
+
+A second rule was designed, measured, and **withdrawn before it shipped**: every `not_read` surface
+must be named in `coverage_declaration`. It is their `judgment` requirement, and it is right in
+spirit. Run against the real artifacts, it accused four of the best runs in the bench, whose
+`not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
+absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
+first is the only reason it is not in this repository.

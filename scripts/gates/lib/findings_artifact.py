@@ -50,6 +50,19 @@ class Unmeasured(Exception):
     pass
 
 
+def _under(path: str, surface: str) -> bool:
+    """True when `path` lies inside `surface`, matched at a segment boundary.
+
+    A surface is documented as being named "as the reader would name it", so it
+    can be a path (`migrations/`) or a sentence ("the frame layer, absent from
+    the target tree"). Only the first shape can ever be a prefix of a file path,
+    and requiring the boundary is what stops `lib` from swallowing `library/`.
+    """
+    s = (surface or "").strip().lstrip("./").rstrip("/")
+    q = (path or "").strip().lstrip("./")
+    return bool(s) and bool(q) and (q == s or q.startswith(s + "/"))
+
+
 def read(root: Path, rel: str) -> str:
     try:
         return (root / rel).read_text(encoding="utf-8")
@@ -189,6 +202,10 @@ def main() -> int:
         targets = fixtures
 
     total = 0
+    # [findings with a path, of those inside a `read` surface, of those
+    #  inside no inventoried surface at all]. Printed, never a verdict: see
+    #  the summary line for why the third number cannot be one.
+    paths_seen = [0, 0, 0]
     for target in targets:
         expected_bad = target.parent.name == "bad"
         try:
@@ -403,6 +420,60 @@ def main() -> int:
                         fail(f"{fid}: names {other!r} as both a merge and an undecided pair - the "
                              "two states are the decision and the lack of it")
 
+        # 11. A finding may not live where the report says it did not look.
+        #
+        # `engagement.coverage` already forces every inventoried surface into
+        # exactly one of `read` or `not_read`. What nothing compared, until this
+        # block, is that partition against the findings it sits beside: they were
+        # two documents in one file. Measured on the fixture that models a
+        # CONFORMING artifact, an entry declaring `not_read: ["migrations/"]` and
+        # reporting a defect at `migrations/003_add_invoices.sql:12` passed all
+        # ten invariants and signed verdict 0. Both sentences cannot be true, and
+        # whichever one is false, the reader is being told the audit is something
+        # it is not.
+        #
+        # `maxgfr/ultrasec` reaches the same problem from the other side and is
+        # worth naming, because its answer is the better-known one: it scores a
+        # coverage matrix FROM the findings, so a category with no finding shows
+        # as `unexamined` rather than being silently omitted. That is the half we
+        # did not have. Its state machine, though, reads
+        #     hits > 0 ? "examined" : engineCovers ? "engine" : "unexamined"
+        # where `engineCovers` is true when ANY finding anywhere in the run
+        # carries one of the category's kinds - so a class is credited as covered
+        # by the engine's capability, not by anything having been read. There is
+        # no denominator in it at all. Ours is the opposite trade: we hold the
+        # denominator and never joined it to the findings. This closes the join
+        # in the only direction that is a flat contradiction rather than a
+        # judgement call.
+        #
+        # Matching is at a path segment boundary, which is what keeps this from
+        # accusing the compliant: `not_read` is documented as naming surfaces
+        # "as the reader would name it", and in the 60 real artifacts under
+        # bench/runs those names are usually descriptive sentences, which can
+        # never be a path prefix. Measured over those 60: 277 findings carry a
+        # path and ZERO contradict a `not_read` entry. The rule accuses no
+        # existing work; it forbids a class that has not happened yet.
+        cov_read = [s for s in (cov.get("read") or []) if isinstance(s, str)] if isinstance(cov, dict) else []
+        cov_skip = [s for s in (cov.get("not_read") or []) if isinstance(s, str)] if isinstance(cov, dict) else []
+        cov_inv = [s for s in (cov.get("inventoried") or []) if isinstance(s, str)] if isinstance(cov, dict) else []
+        for f in (data.get("findings") or []):
+            if not isinstance(f, dict):
+                continue
+            loc = f.get("location")
+            path = loc.get("path") if isinstance(loc, dict) else None
+            if not isinstance(path, str) or not path.strip():
+                continue
+            for surface in cov_skip:
+                if _under(path, surface):
+                    fail(f"{f.get('id')}: reported at {path!r}, inside {surface!r}, which "
+                         "`engagement.coverage.not_read` says was not examined - a finding is "
+                         "proof someone looked, so one of the two statements is false")
+            paths_seen[0] += 1
+            if any(_under(path, s) for s in cov_read):
+                paths_seen[1] += 1
+            elif not any(_under(path, s) for s in cov_inv):
+                paths_seen[2] += 1
+
         blob = json.dumps(data)
         if SECRETS.search(blob):
             fail(f"{target.name}: an unredacted secret format appears in the artifact")
@@ -426,6 +497,22 @@ def main() -> int:
 
     print(f"measured: {total} artifact(s), {len(rules)} triage rules, {len(merge_rules)} merge rules, "
           f"{len(procedures)} procedures")
+    # The join between the coverage declaration and the findings, as a number
+    # rather than as a rule. It is NOT a verdict, and the measurement is the
+    # reason: across the 60 real artifacts in bench/runs, 273 of 277 findings
+    # with a path lie under no inventoried surface at all. A gate that failed on
+    # that would accuse 98.6% of this repository's own best work, which is how a
+    # new check ends up arguing with everyone who complied. The two documents
+    # are simply written in different vocabularies - the inventory names
+    # surfaces a reader would recognise, the findings name files - and the gap
+    # between them is recorded as a known coverage gap in
+    # `references/traceability.md` rather than pretended away here.
+    if paths_seen[0]:
+        print(f"coverage join: {paths_seen[0]} finding(s) carry a path, {paths_seen[1]} of them "
+              f"inside a surface declared `read`, {paths_seen[2]} inside no inventoried surface "
+              f"at all (reported, not judged)")
+    else:
+        print("coverage join: no finding in this run carries a path, so the join was NOT MEASURED")
     for p in problems:
         print(f"FINDING {p}")
     return 1 if problems else 0
