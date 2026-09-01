@@ -829,6 +829,58 @@ nine, with a control on each of ours and none published on theirs.** Neither
 number is a claim about which product routes or triages better, and no such claim
 appears anywhere in this repository.
 
+### Their paid probe, and the free half of the same question
+
+`bb15526` also carries `services/api_checker/`: eight black-box probes aimed at an **LLM API
+relay** — a middleman that resells access to a model provider. They check whether the model
+list is consistent with what the endpoint will actually serve, whether an exact-echo prompt
+comes back exact, what family the endpoint claims to be, a glitch-token fingerprint, a token
+delta that betrays a hidden prompt injected into every request, an echo-rewrite probe that
+catches a `pip install` turned into a different index or a `curl`, SSE stream integrity, and a
+context canary for silent truncation. Beside it, single-token distribution fingerprinting
+scored against a 167-model reference.
+
+It is a good instrument and it was **not run**. It is dynamic, it needs a working key, and it
+spends the key owner's credits against a third party — safety-contract rule 9 forbids that
+without an explicit cap and the user's approval, and the rule does not bend because the
+target is a competitor's feature. So what follows is read from their published description,
+not measured.
+
+**What they cannot ask is the question that comes first.** Every one of those probes needs
+traffic already flowing through an endpoint somebody already chose. None of them asks how that
+endpoint got chosen, who can change it tomorrow, or what the application will do with the
+answer. That question is answerable from configuration alone, at zero cost, before a single
+token is spent — and it is the one an auditor with a repository in front of them and no
+credentials can actually run.
+
+`AI-30` is that half. Three findings in one procedure: the endpoint is externally controlled
+(an environment variable, a ConfigMap, a settings row that moves it with no deploy, so the
+authority to change it is not the authority to read every prompt); the relay is trusted to be
+who it says (no pinning, or verification switched off); and the answer is trusted as content
+(a rewritten tool command executed because a model returned it, or a system prompt nobody in
+the project wrote, prepended in transit). The third is `AI-03` with the trust boundary moved —
+same sink, different untrusted author — which is why a review that cleared the retrieval path
+can still be reading a compromised answer.
+
+**Stated in the unfavourable direction too.** Their probe finds a relay that is lying *right
+now*, which no amount of static reading can do; ours finds the door the relay came through,
+which no probe can do. Neither subsumes the other, and this repository holds only one of the
+two. The dynamic half is written into `AI-30` as `REQUIRES AUTHORIZATION` with a cap rather
+than left out, so an auditor who has the authorization knows to ask for it — and knows the
+static half decides whether it is worth asking.
+
+**And it found something here on the way in, as the last reading did.** `AI-30` needed a
+routing row, and `references/coverage.md` had never named `ai-safety-agent-runtime.md` at all:
+four procedures, `AI-25`..`AI-28`, present in the corpus, counted by every meter, listed in
+`team.md` and in `README.md`, and absent from the one table a leader routes through. The
+routing check that existed faced outward — every route lands on a real section — which by
+construction cannot see a file no route mentions. Turned around, it measured **14 unrouted
+sections** on the first run: ten in the `remediation` pack, which is staffed by mode and now
+carries a written exemption, and four real ones — `AI-21`, `PRV-13`, `LOC-15`, `LOC-16`. The
+pattern is the same one this document keeps recording in both directions: the check that
+passes is rarely the check that was needed, and the direction it does not face is where the
+silence lives.
+
 ### What this reading did not do
 
 It did not re-run either product. The scores in §4 are still the ones taken on 2026-08-22

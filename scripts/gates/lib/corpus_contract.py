@@ -17,6 +17,8 @@ scripts/meter/packs.json so that the layout lives in exactly one place:
   6. roster           team.md, agents/ and packs.json name the same roles, the
                       same agents and the same files
   7. routing          every `pack.md §N` in coverage.md names a section that exists
+  8. reachability     every pack file is routed to by at least one row of
+                      coverage.md, or its pack declares IN WRITING why not
 
 EXIT CODES (the repository contract):
   0 measured, no findings · 1 measured, findings listed · 2 could not measure
@@ -431,6 +433,59 @@ def main() -> int:
             checks += 1
             if number not in sections[name]:
                 findings.append(f"{COVERAGE}: routes to `{name}` §{number}, which has no such section")
+
+    # ---- 8. reachability -----------------------------------------------
+    # Check 7 walks the routes and asks whether each lands somewhere real. It
+    # cannot see what NO route mentions, and that silence reads exactly like
+    # coverage. Two levels, because the hole appeared at both:
+    #   file    `ai-safety-agent-runtime.md` held four procedures while the one
+    #           table the leader consults to decide what to open never named it.
+    #   section with the file routed, `§13` inside it can still be reachable by
+    #           nobody -- the same silence, one level down. Measured when this
+    #           check was written: 14 unrouted sections, 10 of them the
+    #           remediation pack (exempt) and 4 real ones.
+    # A file can be unrouted on purpose -- the remediation pack is staffed by
+    # MODE, not by an inventory signal -- so the third state is an exemption
+    # WITH A REASON, never an absence.
+    routed_files = set(re.findall(r"`([a-z0-9-]+\.md)`", coverage))
+    routed_secs: dict[str, set[str]] = {}
+    for name, refs in ROUTE.findall(coverage):
+        got = routed_secs.setdefault(name, set())
+        for lo, hi in re.findall(r"§(\d+)\s*-\s*§?(\d+)", refs):
+            got.update(str(i) for i in range(int(lo), int(hi) + 1))
+        got.update(SECTION.findall(refs))
+    for pack in packs["packs"]:
+        reason = str(pack.get("unrouted_reason") or "").strip()
+        for name in pack.get("files", []):
+            checks += 1
+            if name not in routed_files:
+                if not reason:
+                    findings.append(
+                        f"{COVERAGE}: no row routes to `{name}`. A pack file the routing table "
+                        f"never names is loaded by nobody, and the silence reads like coverage. "
+                        f"Add a row, or give pack `{pack['pack']}` an `unrouted_reason` in {PACKS_JSON}"
+                    )
+                continue
+            if reason:
+                findings.append(
+                    f"{PACKS_JSON}: pack `{pack['pack']}` claims no route reaches it, and "
+                    f"{COVERAGE} routes to `{name}`. Remove the exemption or the row"
+                )
+                continue
+            have = {
+                sm.group(1)
+                for line in read(root, str(kdir / name)).splitlines()
+                if line.startswith("## ")
+                for sm in [SECTION.search(line)]
+                if sm
+            }
+            for number in sorted(have - routed_secs.get(name, set()), key=int):
+                checks += 1
+                findings.append(
+                    f"{COVERAGE}: `{name}` is routed to, but no row names \u00a7{number}. "
+                    f"A section nobody routes to is opened by nobody, and an unrouted section "
+                    f"is indistinguishable from a covered one"
+                )
 
     print(f"measured: {total_procs} procedures, {total_lines} lines, {len(on_disk)} files, "
           f"{checks} checks")

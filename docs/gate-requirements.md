@@ -12,7 +12,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 |---|---|---|
 | `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test, `gate-plugin-version.sh` + self-test |
 | `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
-| `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections) |
+| `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
@@ -172,12 +172,13 @@ What it enforces:
 5. **Anatomy and identifiers.** Every procedure carries the six mandatory fields from `scripts/meter/packs.json`; its `Traceability` line names at least one identifier or declares explicitly that none applies; every backticked token matches a family in `scripts/gates/data/identifier-families.json`; and no identifier appears outside backticks.
 6. **The roster.** `references/team.md`, `agents/` and `packs.json` name the same roles, agents and files. A pack no role owns is never loaded; an agent absent from the roster is never dispatched.
 7. **Routing.** Every `` `pack.md` §N `` in `coverage.md` names a section that exists.
+8. **Reachability, which is check 7 turned around.** Every pack file is routed to by at least one row of `coverage.md`, and every section of a routed file is named by some row. Check 7 walks the routes outward and cannot see what no route mentions, and that silence reads exactly like coverage: `ai-safety-agent-runtime.md` held `AI-25`..`AI-28` while the one table the leader consults to decide what to open never named the file, and four more procedures — `AI-21`, `PRV-13`, `LOC-15`, `LOC-16` — sat in sections no row reached. A pack may be unrouted **on purpose** — `remediation` is staffed by mode, not by an inventory signal — and that is a third state written down as `unrouted_reason` in `packs.json`, never an absence. Declaring the exemption *and* routing to the file is itself a finding, so the two cannot silently disagree.
 
 **Two declared exemptions, both visible in the output.** A `Traceability` line may state that no external identifier applies (`internal process`, `no external identifier`, `the one from the original finding`) — five procedures in `remediation.md` do. And text that quotes a superseded figure on purpose — a changelog entry saying what a file *used to* declare — is exempt only inside a `<!-- counts:historical -->` region, in the same idiom `gate-verdict-vocabulary.sh` uses. Both are counted and printed on every run rather than silently swallowed.
 
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
-Proved in the negative by `gate-corpus-contract.selftest.sh`: 20 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 26 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## The triage rules
 

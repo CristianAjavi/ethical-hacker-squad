@@ -49,7 +49,7 @@ The second dimension is not capability at all.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,511 lines of corpus across eight role packs, with 170 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,556 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -92,7 +92,7 @@ Eight packs, one per role. Five of them are stored as **more than one file** (`m
 | | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-26` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
 | ai-safety | `ai-safety.md` | `AI-01`..`AI-11`, `AI-29` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
 | | `ai-safety-data-output.md` | `AI-12`..`AI-24` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
-| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
+| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28`, `AI-30` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
 | local-app | `local-app.md` | `LOC-01`..`LOC-10`, `LOC-15`..`LOC-16` | who the second principal is, path traversal and archive extraction, temporary files and races, argument injection and search paths, permissions and privileged helpers, insecure library defaults, secrets left on the machine, and undecodable bytes that abort or silently narrow the analysis |
 | | `local-app-desktop-ipc.md` | `LOC-11`..`LOC-14` | Electron and WebView renderer isolation, protocol handlers and deep links, local IPC and loopback listeners, code that arrives at runtime |
 | privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
