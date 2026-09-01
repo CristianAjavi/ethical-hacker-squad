@@ -45,17 +45,17 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
 | [references/findings-artifact.md](references/findings-artifact.md) | When writing the deliverable. `findings.json` beside the report: the fields, and the invariants a validator enforces on them. |
-| [references/report.md](references/report.md) | When writing the final report. |
+| [references/report.md](references/report.md) | When writing the report, and before room runs out. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
 Do not load a pack for a role you did not staff. The corpus is 4,556 lines across twenty files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
-- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
-- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in one message so they run in parallel.
+- **You are the leader** (the main thread): you inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
+- **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in one message so they run in parallel. Never let the same agent both fix and verify.
 
-`references/team.md` holds the nine plugin subagents, the write access each is given, what to do when the skill was copied rather than installed as a plugin, and why every constraint has to travel into the prompt. Never let the same agent both fix and verify.
+`references/team.md` holds the nine plugin subagents, the write access each gets, what to do when the skill was copied rather than installed as a plugin, and why every constraint must travel into the prompt.
 
 ## Leader workflow
 
@@ -116,6 +116,8 @@ Consolidate duplicates and separate confirmed findings, probable risks pending v
 
 Never claim a system is "secure" or free of vulnerabilities. State scope, depth and limitations.
 
+**An audit that leaves nothing on disk did not happen.** Write `report.md` and `findings.json` into a deliverable directory, validate both, and close on screen with the handover block of `references/report.md`: counts by severity, the **absolute path**, the validator exit codes, and what you could not measure. No deliverable means say so — never a summary in its place.
+
 ## Editing and coordination rules
 
 - Preserve the user's existing changes.
@@ -125,9 +127,3 @@ Never claim a system is "secure" or free of vulnerabilities. State scope, depth 
 - Escalate immediately to the user an active secret, unauthorized access, or third-party impact, with sensitive details redacted.
 - Prefer root causes over cosmetic patches.
 
-## Example invocations
-
-- `Use ethical-hacker-squad to audit this repository without modifying files.`
-- `Use ethical-hacker-squad in harden mode on /path/project and fix the confirmed findings.`
-- `Use ethical-hacker-squad to review this local APK; do not test remote services.`
-- `Use ethical-hacker-squad on the chatbot, focusing on prompt injection, tool authorization and data leakage.`

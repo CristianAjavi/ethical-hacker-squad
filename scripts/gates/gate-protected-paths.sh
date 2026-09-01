@@ -65,7 +65,7 @@
 # Usage:
 #   scripts/gates/gate-protected-paths.sh [--branch NAME] [--changed-files FILE]
 #                                         [--base REF] [--authorship FILE]
-#                                         [--override LABEL]
+#                                         [--override LABEL] [--diff FILE]
 #   Environment: GITHUB_HEAD_REF, GITHUB_BASE_REF, CHANGED_FILES_FILE, BASE_REF.
 #
 # EXIT CODES (repo contract): 0 measured fine · 1 measured FAILS · 2 could not
@@ -84,6 +84,7 @@ CHANGED="${CHANGED_FILES_FILE:-}"
 BASE="${BASE_REF:-${GITHUB_BASE_REF:-}}"
 AUTHORSHIP=""
 OVERRIDE="${EHS_G7_OVERRIDE:--}"
+DIFF=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,6 +93,7 @@ while [ $# -gt 0 ]; do
     --base)          BASE="${2:-}"; shift 2 ;;
     --authorship)    AUTHORSHIP="${2:-}"; shift 2 ;;
     --override)      OVERRIDE="${2:--}"; shift 2 ;;
+    --diff)          DIFF="${2:-}"; shift 2 ;;
     -h|--help)       sed -n '2,53p' "$0"; exit 0 ;;
     *)               shift ;;
   esac
@@ -153,15 +155,30 @@ if [ -z "$AUTHORSHIP" ]; then
   fi
 fi
 
-out="$(python3 "$CORE" "$ROOT" "$BRANCH" "$CHANGED" "$AUTHORSHIP" "$OVERRIDE" 2>&1)"; rc=$?
+# The diff itself, not just the names. A content exemption asks WHAT changed in a
+# protected file, and it can only be answered from here. `-` when it cannot be
+# read: the core then applies no exemption at all, which is the safe direction.
+DTMP=""
+if [ -z "${DIFF:-}" ]; then
+  DTMP="$(mktemp "${TMPDIR:-/tmp}/ehs-diff-XXXXXX")"
+  if git -C "$ROOT" diff -U0 "$BASE"...HEAD > "$DTMP" 2>/dev/null; then
+    DIFF="$DTMP"
+  else
+    rm -f "$DTMP"; DTMP=""; DIFF="-"
+  fi
+fi
+
+out="$(python3 "$CORE" "$ROOT" "$BRANCH" "$CHANGED" "$AUTHORSHIP" "$OVERRIDE" "$DIFF" 2>&1)"; rc=$?
 [ -n "$TMP" ] && rm -f "$TMP"
 [ -n "$ATMP" ] && rm -f "$ATMP"
+[ -n "$DTMP" ] && rm -f "$DTMP"
 while IFS= read -r line; do
   case "$line" in
     FINDING\ *)      gate_fail "${line#FINDING }" ;;
     UNMEASURED\ *)   gate_warn "${line#UNMEASURED }" ;;
     NOT\ MEASURED*)  gate_out_of_scope "${line#NOT MEASURED: }" ;;
     OVERRIDDEN\ *)   gate_log ""; gate_log "$line" ;;
+    EXEMPT\ *)       gate_log "EXEMPT ${line#EXEMPT }" ;;
     NOTE:\ *)        gate_log "NOTE: ${line#NOTE: }" ;;
     *)               gate_info "$line" ;;
   esac

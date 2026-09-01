@@ -6,7 +6,43 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Fixed
+
+- **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
+  user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
+  protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
+  their intersection is unsatisfiable, because editing workflow files **is** the work of the
+  `github_actions` ecosystem. Regression proved from the runs: the same branch went green on
+  31 Aug and red four times on 1 Sep, leaving PR #63 — a one-line bump of
+  `github/codeql-action/upload-sarif`, a security action — red since 31 August. The fix is **not**
+  an exemption for Dependabot, which would open a real hole: `content_exemptions` in
+  `scripts/gates/data/protected-paths.json` asks *what* changed, so a workflow file is cleared
+  only when every added and removed line is a `uses:` pinned to a 40-hex SHA. It can only make a
+  pinned repo more pinned, it clears a file rather than a pull request, and it **fails closed** —
+  the exemption needs the diff, and with none the gate says so and protects everything. Seven new
+  self-test cases, exactly one of which may pass; 32 total, 0 failures. See
+  `docs/gate-requirements.md` §G7.
+
 ### Added
+
+- **The handover: a run that ends now has to say where the deliverable landed.**
+  `references/report.md` specified the report in 180 lines and never once said the leader must
+  tell the user where the file is. Measured 2026-09-01 from a user who had run the squad
+  several times: *"nunca entiendo como entrega los resultados o pareciera que nunca los da"* —
+  the artifact was being produced, the handover was not. `SKILL.md` step 9 now names
+  `report.md` and `findings.json`, requires the **absolute path**, and points at a new mandatory
+  handover section in `references/report.md` with five fields: the path, confirmed counts by
+  severity plus `probable` and `ruled_out`, each validator's exit code with `2` reported as
+  *not measured, not a pass*, what could not be measured, and the branch where there is **no**
+  deliverable — which must say so instead of printing a summary of findings that exist only in
+  the transcript. `scripts/gates/gate-handover-contract.sh` (16 self-test cases) enforces the
+  wiring in both directions against `scripts/gates/data/handover-contract.json`, and runs each
+  named validator against an absent deliverable to confirm it answers `2`. No new
+  deliverable-scanner was built: `gate-report-contract.sh` and `gate-findings-artifact.sh`
+  already answer `2` correctly, which was verified first — their gap is that both need an
+  explicit `--deliverable`, so a run that produced nothing never reaches them. Room for step 9
+  came from deleting `## Example invocations`, duplicated verbatim at `README.md:143-146`; the
+  `EHS_MAX_SKILL_MD_BYTES` cap was not raised. See `docs/gate-requirements.md` §G7d.
 
 - **The file that tells you how to read an alert was wrong about every fact in it.** `.github/dependabot.yml` carries the comment a triager reads before deciding whether a red alert matters, and its purpose was one sentence: *do not let a real alert hide behind the assumption that every npm finding here is a fixture.* **Measured against the five open alerts on the default branch, all four of its factual claims were false**: it said there is no `requirements.txt` (one had been added under `bench/cases/intake-portal`, and it produces **three of the five alerts**); it said alerts would report *those two - one high, one low* (the figure is **five**: one high, two medium, two low); it said *the express pin is deliberately old* (`express` appears in **no** planted entry and **no** decoy in `bench/ground-truth.json`, so that alert is incidental); and it said there is no `Dockerfile` (`bench/cases/intake-portal/Dockerfile` exists). **One alert of five is ground truth** - `lodahs`, P-20. The document written to stop a real alert hiding behind a fixture had become the hiding place, and nothing read it. This is the budget-ledger class one level up: not a number that moved behind its sentence, an **inventory** that did, and a claim of absence never ages while the tree does. `gate-alert-surface.sh` + `data/alert-surface.json` enumerate the **manifests on disk** and check six things: every manifest found is declared with the ecosystem its filename implies; no declaration outlives its file; `managed: true` holds **iff** an `updates` block covers it, in **both** directions, so a bot pointed at a bench fixture is a finding; every unmanaged manifest states why; every asserted absence is genuinely absent; and the `planted`/`decoys` symbols declared for a fixture are **exactly** what the answer key plants there, both directions. **It found three further defects on its first two runs and all three were mine**: the undeclared `Dockerfile`, my own transcription of the false `Dockerfile` absence claim, and a `planted` list written from a grep that held `lodahs` and missed `preinstall` (P-19) and the decoy `left-pad` (D-20) - a list built from memory cannot see what nothing points at. Two things it refuses to measure and says so on every run: the **alert count**, because that number moves when an upstream advisory is published and no change here caused it, and a gate that cries at the world gets ignored exactly the way this channel did; and the **prose** of `dependabot.yml`, because a gate cannot read English - only the absence claims transcribed into the data file, so a claim added to the comment and not copied across stays invisible, and that hole is named in the data file rather than left to be found. Fixed in the same change: **`tooling/claude-cli` - the one manifest here where an alert would be real**, installed with `npm ci` by `release.yml` to run `plugin validate --strict` - had no `updates` block; the argument this config already makes for keeping action SHAs current applies to it and nobody had made it. Self-test: 13 cases proved in the negative against a synthetic tree, plus one that runs the gate against this repository as it stands.
 - **A budget moved and the line that states it did not.** G7 asks *who* moved a limit. Nothing asked whether the number that moved still agrees with the sentence that states it — and one of them did not.

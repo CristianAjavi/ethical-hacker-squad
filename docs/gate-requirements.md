@@ -44,6 +44,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -376,6 +377,49 @@ and it is the one a harness can drop. Closing that is tracked separately; it is 
 because the gap is in this gate's inputs and a reader of this section should not have to find it
 in a pull request.
 
+
+### The rule that could never be satisfied, 2026-09-01
+
+G7 failed on **every** Dependabot pull request in the `github_actions` ecosystem, and could never
+have passed one. Two changes, each right on its own, cross:
+
+| Piece | When | What it did |
+|---|---|---|
+| `23c240f` | 2026-08-21 | protects `.github/workflows/**` |
+| `9e17a07` (PR #73) | 2026-09-01 | adds `dependabot`, `[bot]`, `github-actions` to `identity_substrings` |
+
+Their intersection is unsatisfiable, because **editing workflow files is the work of that
+ecosystem**. It is a regression rather than a design decision, and the runs prove it: the same
+branch `dependabot/github_actions/github-actions-0856f00088` went green on 31 August and red four
+times on 1 September. Over the last 100 `PR-context gates` runs, 86 passed and 14 failed; four of
+the fourteen were that one branch. G7 is not a required check, so nothing was blocked — which is
+worse, not better: a control that shouts on every change and blocks nothing is a control people
+stop reading, and PR #63, a **one-line bump of `github/codeql-action/upload-sarif`, a security
+action**, sat red from 31 August.
+
+**The fix is not an exemption for Dependabot.** Exempting the bot would open a real hole — a bot
+pull request that widens `permissions:`, injects a `run:` step or adds a job is a supply-chain
+vector, and a bot identity is exactly what an attacker would forge. So `content_exemptions` in
+`scripts/gates/data/protected-paths.json` asks **what changed**, never who changed it: for a file
+under `.github/workflows/**`, every added and removed line must be a `uses:` pinned to a 40-hex
+commit SHA. One line that is not — anywhere in that file — and the file stays protected.
+
+Three properties are worth stating because each has a case in the battery:
+
+- **It can only make a pinned repository more pinned.** A bump to `@v4` or `@main` is a mutable
+  reference and is not exempt. Pinning is the reason this repository holds SHAs at all.
+- **It clears a file, not a pull request.** A clean bump travelling beside another protected path
+  does not carry that path through.
+- **It fails closed.** The exemption needs the *diff*, not the file list, and the gate prints
+  `NOT MEASURED: no diff was supplied` when it has none. Without a diff nothing is exempt. A rule
+  that turns into a pass when its input goes missing is the false green recorded in G7b and G7d,
+  and it would have been trivial to build it that way here.
+
+Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
+allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+work: with no diff there is no exemption, so every verdict written before exemptions existed still
+holds.
+
 ## G7b — A bound may not move without the figure that moved it
 
 G7 asks **who** moved a limit. It does not ask whether the number that moved still agrees with the sentence that states it — and on 2026-09-01, one of them did not.
@@ -439,6 +483,48 @@ made it.
 
 Self-test: 13 cases, each proved in the negative against a synthetic tree, plus one that runs the
 gate against this repository as it stands.
+
+
+## G7d — The report was written and nothing said where it landed
+
+`references/report.md` specifies the deliverable in 180 lines: which sections are mandatory,
+which vocabulary each verdict must use, which rule kills which claim. Every line is about the
+**file**. Not one of them said the leader must tell the user where the file is once the run is
+over, and `SKILL.md` step 9 — three sentences, the smallest step in the workflow — did not
+either.
+
+**Measured 2026-09-01, from a user who had run the squad several times:** *"nunca entiendo como
+entrega los resultados o pareciera que nunca los da"*. The artifact was being produced. The
+handover was not, because nothing in the corpus asked for one.
+
+Why no existing control could see it is the part worth keeping. Two gates already guard the
+deliverable — `gate-report-contract.sh --deliverable` and `gate-findings-artifact.sh
+--deliverable` — and both correctly answer `2` when the directory is missing or empty; that was
+verified before this gate was written, and it is the reason no third deliverable-scanner was
+built. But **both are invoked with an explicit path.** A run that produced nothing never reaches
+either of them. A gate that fires only once someone remembered to point it at a directory
+protects the case that already went right.
+
+So `gate-handover-contract.sh` looks at no deliverable at all. It checks that the *instruction*
+is wired: present in step 9, naming both files and the word **absolute**, pointing at a
+specification, and that specification complete in both directions against
+`scripts/gates/data/handover-contract.json`. Its sixth check runs each named validator against
+an absent deliverable and requires the answer `2` — because the handover block tells the leader
+to print those exit codes, and a named script that answered `0` on nothing would make the
+printed number mean the opposite of what the block says it means.
+
+**Step 9 grew by moving something out, not by raising a cap.** `SKILL.md` was 12,281 B against
+a 12,288 B ceiling — seven bytes — and that is the real reason delivery was the shortest step in
+the file: it was the section that lost. `EHS_MAX_SKILL_MD_BYTES` was not touched; its own
+justification in the ledger forbids it (*"The answer to needing more is references/, not a
+higher number"*). The room came from deleting `## Example invocations`, whose four lines are in
+`README.md:143-146` verbatim — documentation about how to invoke the skill, paid for on every
+fire, by a reader who has already invoked it.
+
+What this gate does **not** measure, and says so on every run: whether the leader actually prints
+the block. No static check makes a model obey an instruction. That is a `bench/` question, and
+calling this gate's `0` "the handover works" would be exactly the substitution the block itself
+forbids.
 
 ## G8 — Regression guard on quality issues
 
