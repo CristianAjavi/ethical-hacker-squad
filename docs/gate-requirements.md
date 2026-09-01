@@ -44,6 +44,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -439,6 +440,48 @@ made it.
 
 Self-test: 13 cases, each proved in the negative against a synthetic tree, plus one that runs the
 gate against this repository as it stands.
+
+
+## G7d — The report was written and nothing said where it landed
+
+`references/report.md` specifies the deliverable in 180 lines: which sections are mandatory,
+which vocabulary each verdict must use, which rule kills which claim. Every line is about the
+**file**. Not one of them said the leader must tell the user where the file is once the run is
+over, and `SKILL.md` step 9 — three sentences, the smallest step in the workflow — did not
+either.
+
+**Measured 2026-09-01, from a user who had run the squad several times:** *"nunca entiendo como
+entrega los resultados o pareciera que nunca los da"*. The artifact was being produced. The
+handover was not, because nothing in the corpus asked for one.
+
+Why no existing control could see it is the part worth keeping. Two gates already guard the
+deliverable — `gate-report-contract.sh --deliverable` and `gate-findings-artifact.sh
+--deliverable` — and both correctly answer `2` when the directory is missing or empty; that was
+verified before this gate was written, and it is the reason no third deliverable-scanner was
+built. But **both are invoked with an explicit path.** A run that produced nothing never reaches
+either of them. A gate that fires only once someone remembered to point it at a directory
+protects the case that already went right.
+
+So `gate-handover-contract.sh` looks at no deliverable at all. It checks that the *instruction*
+is wired: present in step 9, naming both files and the word **absolute**, pointing at a
+specification, and that specification complete in both directions against
+`scripts/gates/data/handover-contract.json`. Its sixth check runs each named validator against
+an absent deliverable and requires the answer `2` — because the handover block tells the leader
+to print those exit codes, and a named script that answered `0` on nothing would make the
+printed number mean the opposite of what the block says it means.
+
+**Step 9 grew by moving something out, not by raising a cap.** `SKILL.md` was 12,281 B against
+a 12,288 B ceiling — seven bytes — and that is the real reason delivery was the shortest step in
+the file: it was the section that lost. `EHS_MAX_SKILL_MD_BYTES` was not touched; its own
+justification in the ledger forbids it (*"The answer to needing more is references/, not a
+higher number"*). The room came from deleting `## Example invocations`, whose four lines are in
+`README.md:143-146` verbatim — documentation about how to invoke the skill, paid for on every
+fire, by a reader who has already invoked it.
+
+What this gate does **not** measure, and says so on every run: whether the leader actually prints
+the block. No static check makes a model obey an instruction. That is a `bench/` question, and
+calling this gate's `0` "the handover works" would be exactly the substitution the block itself
+forbids.
 
 ## G8 — Regression guard on quality issues
 

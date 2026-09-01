@@ -178,3 +178,51 @@ The last three are not weak results, they are the absence of a result, and each 
 
 Prioritize concrete actions. Point out unreviewed surfaces, environment dependencies, and remote tests that need further authorization. Where a fix was deliberately not applied, record the reason and who has to decide.
 <!-- /report:section -->
+
+<!-- report:section id=handover class=mandatory -->
+## The handover: where it landed, and what the reader sees on screen
+
+Mandatory, and it is not part of the report file — it is what the leader prints in the session
+after writing it. This section exists because the deliverable and the conversation are two
+different channels, and for a long time this skill specified only the first. The measured
+symptom: a user who ran the squad repeatedly and could not tell whether it had ever produced a
+report. It had; nothing in the corpus ever told the leader to say where.
+
+**Write the deliverable outside the audited tree.** In `audit` mode `references/team.md`
+requires `git status --porcelain` to come back unchanged, so a report written inside the target
+breaks the mode's own contract. Default to a sibling directory named for the engagement. If the
+user named a destination, that one wins.
+
+<!-- handover:field id=path -->
+**The absolute path of the deliverable directory, and of both files in it.** Not "the report has
+been generated", not a path relative to a working directory the user does not share with you: the
+absolute path they can paste into an editor. This is the single field whose absence makes every
+other one worthless, because a reader who cannot open the artifact is left with only the summary
+they were told not to trust.
+
+<!-- handover:field id=counts -->
+**Confirmed findings by severity, then the `probable` count, then the `ruled_out` count.** Three
+numbers, taken from `findings.json` rather than retyped from memory. The ruled-out count belongs
+here for the same reason it has a section in the report: a bare "4 findings" reads as the whole
+result, and "4 confirmed, 2 probable, 11 ruled out" reads as an audit.
+
+<!-- handover:field id=validators -->
+**The exit code of each validator that ran**, named: `gate-report-contract.sh --deliverable` and
+`gate-findings-artifact.sh --deliverable`. Print the number. A `2` is reported as *not measured,
+not a pass*, in those words — the whole verdict vocabulary is defeated the moment a `2` is
+summarised on screen as "checks passed".
+
+<!-- handover:field id=not-measured -->
+**What could not be measured, in the same breath as what was.** The coverage declaration already
+holds this, and it is precisely the part that never survives into the spoken summary. Name the
+surfaces with no pack, the checks blocked on authorization, and any specialist that returned
+nothing. A handover that lists only findings teaches the reader that silence means safety.
+
+<!-- handover:field id=no-deliverable -->
+**When there is no deliverable, that is the message.** If the run ended without files on disk —
+the audit was cut short, the write failed, the leader ran out of context — say so plainly and
+name what is missing. Do not print counts, do not print a narrative summary of findings held only
+in the conversation, and do not describe the run as complete. An audit whose result exists only
+in a chat transcript is an audit nobody can act on tomorrow, and presenting it as finished is the
+one failure in this file that the client discovers instead of us.
+<!-- /report:section -->
