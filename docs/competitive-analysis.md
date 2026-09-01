@@ -887,3 +887,61 @@ It did not re-run either product. The scores in §4 are still the ones taken on 
 against `4908db1`, `5f76be0` and `e5d7aa0`, and a diff read is not a measurement. Nothing in
 this section changes a number.
 
+
+### Their deduplication ladder, and the question it does not ask — 2026-09-01
+
+`27467b3` ships `mantis-dedupe/SKILL.md`, 371 lines, read in full. It is the most complete
+treatment of finding-level deduplication published in this field, and it is worth saying so
+plainly before the disagreement.
+
+Three tiers. **Tier 1** is exact: `sha256(canonical_fingerprint | canonical_cwe | target_symbol)`,
+plus a `canonical_filepath + CWE + target_symbol` anchor and a three-line proximity window.
+**Tier 2** normalises each candidate to five lines — Component, Vulnerability Class, Root Cause
+Mechanism, Failure Condition, Taint Dataflow — and compares those instead of the prose.
+**Tier 3** embeds the normalisation with `vertex_ai/gemini-embedding-001` and merges at cosine
+`>= 0.90`, declares distinct below `0.70`, with a structural guard that refuses to merge across
+CWE families.
+
+Three things in it are right, and this corpus now reasons the same way without having copied a
+line:
+
+- **A signature promotes, it does not decide.** An exact hash match makes a pair a *candidate*
+  for merging and nothing more. This is the same one-direction reading `gate-protected-paths.sh`
+  applies to a branch prefix, arrived at independently and for the same reason.
+- **Same file, different line, is DISTINCT.** They wrote the rationale in. It is `DUP-03` here.
+- **`possible_duplicate_of` is a soft, non-terminal state.** They have it; nothing in this
+  repository did until now.
+
+Three holes:
+
+1. **The `0.70`–`0.90` band has no written rule.** Twenty points of cosine, the exact region
+   where the hard cases live, and the file does not say what happens in it. That is not a
+   detail: it is where every pair that is worth arguing about lands.
+2. **Tier 3 spends a third party's API credits on every pair compared.** Under safety-contract
+   rule 9 that needs an explicit cap and the user's approval, so it cannot be the default path
+   of a deduplicator that runs on every engagement.
+3. **The decision is a similarity score.** It never asks the question the reader of the report
+   actually has: *does one fix close both?* Two findings can be near-identical in every
+   normalised field and still need two separate edits — a shared pattern at two call sites is
+   the ordinary case — and two findings can read quite differently and be closed by the same
+   line.
+
+So the increment is not a better score. It is a different question, asked deterministically at
+zero credits: **`DUP-01`..`DUP-06` in `references/triage.md`**, six separating conditions, any
+one of which holding means the two findings are two. `DUP-05` — caller and callee, where the
+callee has other callers — is the one worth noting, because it is the case their ladder merges
+unconditionally and it is decided by *counting callers*, mechanically, rather than by comparing
+text.
+
+And the asymmetry, which neither product states: **a wrong merge deletes a finding, a missed
+merge lengthens the report.** So `UNKNOWN` resolves to `possible_duplicate_of`, never to a
+merge. Their band with no rule becomes, here, the written default.
+
+The half of this that is ours to be embarrassed about: the leader has been ordered to
+deduplicate in three places of `references/team.md` since the corpus existed, with no criterion,
+no gate and no trace in the artifact. `merged_into` covered only a candidate absorbed inside one
+specialist's own unaided pass. A leader's merge across specialists left nothing behind at all —
+the substitution invariant 4 exists to prevent, happening one level up where nothing was looking.
+Reading their file is what made that visible.
+
+This section, like the ones above it, re-ran neither product. No number in §4 moves.

@@ -1,4 +1,6 @@
-# Triage rules — the ten questions that rule a finding out
+# Triage rules — the sixteen questions that rule a finding out
+
+Two families. `FP-01`..`FP-10` rule out a **report**: the finding is not real, or not reportable, or not that severe. `DUP-01`..`DUP-06` rule out a **merge**: two findings that look like one are two. Both families end a finding's life as a separate entry, and until this file only the first had rules.
 
 Half the value of this corpus is knowing when **not** to report. Every procedure carries a `What rules it out (false positive)` field, and until now that field was free prose: nothing named the rules, nothing required an answer, and nothing could check that a specialist had worked through them. A distributed discipline that nobody verifies is a discipline in name only.
 
@@ -42,7 +44,7 @@ Answers travel with the finding, in the `triage` block of the return format in `
 
 ## What this does not do
 
-It does not decide whether a procedure's detection pattern is right — a wrong pattern produces a finding these rules cannot save you from. It does not measure severity beyond the `FP-10` downgrade. And a rule answered honestly can still be answered wrongly: the rules make the reasoning visible and checkable, not automatically correct.
+It does not decide **which** of two merged findings survives, or how to write the surviving one — that is the leader's judgement and it is recorded, not governed. It does not decide whether a procedure's detection pattern is right — a wrong pattern produces a finding these rules cannot save you from. It does not measure severity beyond the `FP-10` downgrade. And a rule answered honestly can still be answered wrongly: the rules make the reasoning visible and checkable, not automatically correct.
 
 ## Citing them from a procedure
 
@@ -55,3 +57,42 @@ Rules: FP-02, FP-04, FP-08
 The bullets stay as they are — they say what the exculpation looks like in that stack. The line says which questions this class demands, so a specialist knows what must be answered before reporting, and a gate can check that the field was written as a triage step rather than as prose.
 
 Rules are cited where they apply. A procedure that genuinely invokes only one rule cites one, and a procedure whose class admits **no** exculpation writes `Rules: none (reason).` — `AI-22` does, because only the user can change the squad's rules and never the audited content, and three `VER-*` procedures do, because they always run.
+
+## Merge rules — the six questions that rule a merge out
+
+A false positive is one way a finding stops being reported. **A merge is the other**, and nothing governed it. `references/team.md` orders the leader to deduplicate in three separate places and gives no criterion; the artifact records the outcome nowhere. `engagement.unaided_pass.dropped[].resolution: merged` covers only a candidate absorbed inside **one specialist's own pass** — when the leader folds `ehs-web`'s finding into `ehs-appsec`'s, the absorbed one leaves no trace at all. That is the substitution invariant 4 of `references/findings-artifact.md` was written to make visible, happening one level up where nothing was looking.
+
+These rules are the mirror image of the ones above. Each states a **separating** condition, answered with the same four answers, and a single `HOLDS` means the two findings are two.
+
+### The test a merge has to pass
+
+**Two findings are one when a single fix closes both.** Not when they share a CWE, not when they sit in the same file, not when they read alike. The reader of a report is somebody who is going to repair something, and a merge is a promise that one repair discharges the whole entry.
+
+The test is necessary and not sufficient: `DUP-02` holds even where one fix does close both, because what it protects is the inventory rather than the repair.
+
+There is another way to ask this question — score the two texts for similarity and merge above a threshold. It needs an embedding provider, it spends third-party credits on every pair compared, and between its merge threshold and its distinct threshold it leaves a band of scores with no rule written for it at all. The test above is deterministic, costs nothing, and its unresolved band has an answer: **do not merge**.
+
+### The two errors do not cost the same
+
+A wrong merge **deletes a finding**: the remediator fixes the sink that got named and never learns of the other one. A missed merge makes the report longer. So the default is asymmetric, and that is a consequence rather than a preference:
+
+- Every separating rule `DOES_NOT_HOLD`, and one fix demonstrably closes both → `duplicate_of`. The absorbed finding **stays in the artifact with its own id**; it is rendered under its parent, not deleted.
+- Any rule `HOLDS` → two findings. Name the rule and stop.
+- Any rule `UNKNOWN` → **`possible_duplicate_of`, never a merge.** Both ship, both are counted, and the pair is named so a reader can collapse it if it turns out to be one.
+
+<!-- triage:merge-rules -->
+| Id | The separating condition | A `HOLDS` requires |
+|---|---|---|
+| `DUP-01` | **One source, two sinks.** The same attacker-controlled value reaches two different dangerous operations. A fix at the source closes both; a fix at either sink closes one. | The two sink locations, and the observation that the recommendation being made is **not** at the source. Where the recommendation is at the source and no other path reaches either sink, this does not hold and the pair may merge. |
+| `DUP-02` | **Two sources, one sink.** Two independent entry points feed one dangerous operation. | The two source locations. This rule holds **even when one fix closes both**: what it protects is not the repair but the record that the second entry point was found, without which the next reader cannot tell whether it was considered or missed. |
+| `DUP-03` | **Same class, same file, different line.** Two occurrences of one pattern at two lines are two edits. | The two line numbers. They merge only when the repair is a single edit — one shared helper, one configuration value — and then the finding's location is that edit and neither line. |
+| `DUP-04` | **Different trust boundary.** The same weakness class with a different principal on the other side: one value unescaped in a server-rendered template and in a client-side sink, one missing check on an internal service and on a public route. | The two boundaries named in the terms `FP-06` uses. A different boundary means a different severity, a different reachability and, nearly always, a different repair. |
+| `DUP-05` | **Caller and callee, where the callee has other callers.** A defect in a shared function, reached through one caller, reads as the caller's defect. It is the callee's, and the caller is an instance. | **The count of callers, taken mechanically rather than by eye.** More than one: the finding belongs at the callee with the callers listed as instances. Exactly one: they are one finding. This is the rule to measure instead of judging. |
+| `DUP-06` | **Different reachability precondition.** The same defect, one instance reachable unauthenticated and the other behind a role, a feature flag or a non-default setting. | The precondition that differs, in the terms `vocabulary.md` uses to separate `critical` from `high`. Merging keeps the higher severity and silently rewrites the other instance's preconditions, which makes the surviving entry false about half of what it covers. |
+<!-- /triage:merge-rules -->
+
+### What a merge costs to claim
+
+A finding carrying `duplicate_of` carries `merge_rules` with every rule answered and none `HOLDS` — the same contract a `confirmed` finding has with `FP-01`..`FP-10`. `possible_duplicate_of` carries no such obligation: it is the state for *not having decided*, and charging for it would push work toward the merge, which is the direction that loses findings.
+
+These rules are not cited from procedures the way `FP-*` are — a procedure describes one class of defect and cannot know what else the engagement found. They are answered by whoever proposes the merge, which is the leader. A `DUP-` identifier written anywhere in the corpus must exist here, and `gate-triage-rules.sh` checks that in both directions.

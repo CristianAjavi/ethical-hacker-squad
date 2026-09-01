@@ -49,6 +49,9 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `findings[].inference` | **Required for `probable`**: the one link that was inferred. A `probable` finding that cannot name it is a `confirmed` finding without the evidence, or a `candidate` in disguise. |
 | `findings[].what_would_settle_it` | **Required for `probable`**: the artifact, file or symbol that turns the inference into an observation. A gap named with no way to close it sends the reader nowhere, and this is the field a second reader uses to decide whether to go and look. |
 | `findings[].unaided_label` | The label this finding carried in `engagement.unaided_pass.candidates`, when it came from your own reading rather than from a procedure. It is the join that lets the validator prove nothing found before the pack was opened went missing after. |
+| `findings[].duplicate_of` | The id of the finding this one was merged into. The absorbed finding **stays in the artifact with its own id** and is rendered under its parent; a merge that deletes the entry deletes the record that it was ever found. Requires `merge_rules`. |
+| `findings[].possible_duplicate_of` | Ids this finding may be the same as, where a `DUP-*` rule came back `UNKNOWN`. Both findings ship and both are counted. This is the state for **not having decided**, and it carries no proof obligation. |
+| `findings[].merge_rules` | Required with `duplicate_of`: the `DUP-01`..`DUP-06` rules of `triage.md`, answered, same shape as `triage`. A merge is a claim and pays what a claim pays. |
 | `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
 | `findings[].traceability` | The standard identifiers, verbatim. |
 | `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
@@ -68,6 +71,7 @@ These are not shape checks. They are the reasons the file is worth having:
 7. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.
 8. **Every `triage.rule` exists** in `triage.md`, and a reason is present whenever the answer is not `DOES_NOT_HOLD`.
 9. **No unredacted secret travels.** The high-precision formats — `ghp_`, `AKIA`, `sk-ant-`, PEM headers — are refused in any string, exactly as `gate-report-contract.sh` refuses them in the prose.
+10. **A merge leaves a trace, and an undecided pair is not a merge.** `duplicate_of` points at a finding that exists in this artifact, is not itself a duplicate, and is not the finding itself; no id appears in both `duplicate_of` and `possible_duplicate_of`; and `duplicate_of` requires `merge_rules` with every rule of `triage.md`'s merge family answered and none `HOLDS`. Invariant 4 closed this one level down, for a candidate absorbed inside a single specialist's unaided pass. The leader's cross-specialist merge — ordered three times in `references/team.md`, governed by nothing — was the same substitution with nothing looking at it. The rule that no chain is allowed is not tidiness: a duplicate pointing at a duplicate is how a reader loses the surviving entry.
 
 ## What it does not do
 
