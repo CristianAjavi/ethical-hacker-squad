@@ -4,22 +4,34 @@
 # The three places that name the squad's agents agree with each other.
 #
 # WHY IT EXISTS
-#   `.claude-plugin/plugin.json` declared eight agents while `agents/` held nine.
-#   The missing one was `ehs-local-app`: a complete role with a written agent
-#   definition, a row in `references/team.md`, and its own 321-line knowledge
-#   pack carrying `LOC-01`..`LOC-15`. Everything about it existed except the one
-#   line that ships it, so **fifteen procedures never reached a single user of
-#   the plugin** while every document in the repository said they had.
+#   Three sources of truth for one set -- the manifest, the directory, the
+#   roster -- and, until this gate, nothing that compared them. A role present
+#   in one and absent from another ships to nobody while every document in the
+#   repository says it shipped.
 #
-#   Nothing compared the lists. That is the whole defect: three sources of truth
-#   for the same set, and no check that they are the same set.
+#   This file's own history is the second reason, and the sharper one. It was
+#   written alongside commit 7e2aad4, whose message says the manifest declared
+#   eight agents while `agents/` held nine and that `ehs-local-app` was the
+#   missing one. Run this census against that commit's parent: **nine on disk,
+#   nine declared, all distinct, verdict 0**. The role was already there. The
+#   "fix" appended a second copy of an entry that already existed, and the
+#   commit's proof -- "reverting the manifest to the state the issue describes"
+#   -- measured a tree built by hand to match the issue, not the tree it was
+#   repairing. A repair that names its own baseline can always reproduce the
+#   defect it came to fix.
+#
+#   The duplicate then sat for a day inside the very gate meant to catch it,
+#   because a set comparison cannot count: `{a, b, a}` is `{a, b}`, so all
+#   three sources agreed and the census signed it. `claude plugin validate`
+#   passed it too. Hence the count that now runs before the collapse.
 #
 # WHAT IT MEASURES
 #   The set of agent files on disk, the set declared in the plugin manifest, and
 #   the set named in the roster table of `references/team.md`. All three must be
 #   identical. A file present in one and absent from another is named, in the
 #   direction it is missing, because "eight versus nine" does not tell a reader
-#   which one to go and add.
+#   which one to go and add. Before any of that: the declared list must name
+#   each role **once**, counted as a list, not as a set.
 #
 # WHAT IT DOES NOT MEASURE
 #   Whether an agent is any good, whether its pack matches its description, or
@@ -50,7 +62,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift 2 ;;
     --self-test) ONLY_SELFTEST=1; shift ;;
-    -h|--help) sed -n '2,34p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) gate_warn "unknown argument: $1"; exit "$GATE_UNMEASURABLE" ;;
   esac
 done
@@ -79,7 +91,22 @@ if not isinstance(declared_raw, list):
     print("2|the plugin manifest declares no `agents` list")
     raise SystemExit(0)
 
-declared = {Path(p).stem for p in declared_raw}
+bad = False
+
+# A set cannot count. Group by stem BEFORE collapsing, or a repeated entry --
+# or two paths resolving to the same agent -- is invisible to every comparison
+# below: the sets agree with themselves no matter how many times a name appears.
+by_stem = {}
+for p in declared_raw:
+    by_stem.setdefault(Path(p).stem, []).append(p)
+for stem, paths in sorted(by_stem.items()):
+    if len(paths) > 1:
+        bad = True
+        print(f"1|{stem}: declared {len(paths)} times in the plugin manifest "
+              f"({', '.join(paths)}) -- the squad is a set, and a manifest that "
+              f"repeats a role does not describe it")
+
+declared = set(by_stem)
 on_disk = {p.stem for p in agents_dir.glob("*.md")}
 named = set(re.findall(r"`(ehs-[a-z0-9-]+)`", roster.read_text(encoding="utf-8")))
 named &= on_disk | declared  # the roster mentions ids in prose too; only the census matters
@@ -88,7 +115,6 @@ if not on_disk:
     print("2|no agent file on disk, so there is nothing to compare")
     raise SystemExit(0)
 
-bad = False
 for label, a, b in (
     ("on disk but NOT declared in the plugin manifest — it ships to nobody", on_disk, declared),
     ("declared in the plugin manifest but NOT on disk — it ships as a broken path", declared, on_disk),
@@ -101,7 +127,7 @@ for label, a, b in (
         print(f"1|{', '.join(missing)}: {label}")
 
 if not bad:
-    print(f"0|{len(on_disk)} agent(s), and the manifest, the directory and the roster name the same set")
+    print(f"0|{len(on_disk)} agent(s), declared {len(declared_raw)} time(s), and the manifest, the directory and the roster name the same set")
 PY
 }
 
@@ -139,6 +165,26 @@ selftest() {
     *) rm -rf "$work"; gate_fail "self-test: a declared-but-absent agent returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
+  # A role declared twice. This is the case a set comparison cannot see, and the
+  # reason the check above counts before it collapses: with `ehs-alpha` listed
+  # twice the three sets still agree with each other, so every other assertion
+  # in this file passes and the manifest is still wrong.
+  printf '%s\n' '{"agents": ["./agents/ehs-alpha.md", "./agents/ehs-beta.md", "./agents/ehs-alpha.md"]}' > "$work/.claude-plugin/plugin.json"
+  out="$(census "$work")"
+  case "$out" in
+    1\|*ehs-alpha*declared\ 2\ times*) : ;;
+    *) rm -rf "$work"; gate_fail "self-test: an agent declared twice returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
+  esac
+
+  # ...and two different paths that resolve to the same role, which reads as a
+  # longer list to a human and as the same single agent to the loader.
+  printf '%s\n' '{"agents": ["./agents/ehs-alpha.md", "./agents/ehs-beta.md", "./vendor/ehs-alpha.md"]}' > "$work/.claude-plugin/plugin.json"
+  out="$(census "$work")"
+  case "$out" in
+    1\|*ehs-alpha*declared\ 2\ times*) : ;;
+    *) rm -rf "$work"; gate_fail "self-test: two paths for one role returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
+  esac
+
   # Unreadable manifest must be 2, never a pass.
   printf '%s\n' '{ not json' > "$work/.claude-plugin/plugin.json"
   out="$(census "$work")"
@@ -160,7 +206,7 @@ main() {
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
-    gate_info "self-test: an undeclared agent, a declared-but-absent one and an unparseable manifest all behave"
+    gate_info "self-test: an undeclared agent, a declared-but-absent one, a role declared twice, two paths for one role and an unparseable manifest all behave"
   else
     SELFTEST_SKIPPED=1
     gate_warn "self-test SKIPPED via GATE_SELFTEST=0: the verdict cannot be 0"
