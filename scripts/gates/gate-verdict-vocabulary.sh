@@ -474,7 +474,8 @@ printf '  checked: %d check(s) — %d declared term(s), %d rejected, %d use regi
   "$N_CHECKED" "$N_DECL" "$N_REJ" "$N_REGIONS"
 printf '           over %d file(s) of agents/ and skills/\n' "$N_SCAN"
 printf '  NOT checked (out of scope by design):\n'
-printf '    - real audit reports: no machine-readable finding is emitted yet (backlog #7);\n'
+printf '    - real audit reports: this repository holds none of its own. Backlog #7 ships,\n'
+printf '      so a delivered findings.json can be validated; there is none here to read;\n'
 printf '    - the cross-dimension invariants declared in vocabulary.md;\n'
 printf '    - GitHub issue labels (severity/*, status/*): a separate namespace, mapped\n'
 printf '      in the alias table of vocabulary.md and not edited from here;\n'

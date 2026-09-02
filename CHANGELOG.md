@@ -8,6 +8,15 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **Two gates blamed a backlog item that had already shipped.**
+  `gate-negative-evidence.sh` and `gate-verdict-vocabulary.sh` each declared, in their
+  out-of-scope sections and on every run, that no machine-readable finding was emitted
+  and pointed at backlog #7 as the reason — while #7's schema, validator and fixtures were
+  in the tree. The caveat still holds (this repository audits other trees and holds no report
+  of its own) so the lines stay; what changed is the reason attached to them, which now says
+  the artifact ships and there is simply no report here to read. `gate-competitive-backlog.sh`
+  is what keeps a reason from going stale unnoticed again.
+
 - **A pointer in `references/team.md` sent the reader to the file they were already reading.**
   Its *"Fallback path: no plugin agents available"* section said *"`references/team.md` holds the
   fallback: what to copy into a `general-purpose` prompt"* — and the content is really in
@@ -46,6 +55,35 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`gate-competitive-backlog.sh` — the roadmap, measured against the gate directory.**
+  `docs/competitive-analysis.md` §5 lists fifteen items, each naming the gate that would keep
+  it, and carried no status at all: the only way to learn what had shipped was to grep and
+  infer. Nobody did, and two gates went on printing, <!-- backlog:quoted -->
+  *"no machine-readable finding is emitted yet (backlog #7)"*, on every run while item 7's
+  schema, validator and fixtures were shipping.
+  The caveat was true; the reason had gone stale, and a stale reason reads like a live one.
+  The table now carries a **Status** column — measured, not asserted: **7 shipped, 1 partial,
+  7 open** — and four checks keep it honest. **B1** the status is one of three declared values.
+  **B2** a `shipped` or `partial` row names a gate the runner has, from `run-all.sh --list`
+  rather than a glob, so this gate and the runner cannot disagree about what a gate is.
+  **B3** no `open` row is quietly kept by a gate that already exists — an item built and never
+  crossed off sends the next reader to build it twice. **B4** no line in the repository cites
+  `backlog #N` beside a word of absence when row N ships; 13 citations checked across 10 files.
+  B4's word list is present-tense on purpose: the first draft flagged the sentence that
+  *narrates why item 7 was written*, which is how every gate header here opens. Quoting a
+  retired reason is exempted by the token `backlog:quoted` on the line or the one above, and
+  **every exemption is counted and printed** — one line today. 17 self-test cases, four of them
+  negative controls.
+
+- **`gate-competitive-backlog.selftest.sh`.** It went red on its first run, and every red was
+  real: all four could-not-measure arms were dead code (the core called `unmeasured(...)`, the
+  name of the *list*, so each arm raised `TypeError` instead of firing); two cases then passed
+  on the wrong signal, because a traceback prints the offending source line and a needle matched
+  the text of a message that was never emitted; and the `scanned == 0` guard could not fire at
+  all, since it counted files containing the word "backlog" and this gate's own wrapper, core
+  and self-test all contain it — **the same unfireable shape already fixed once in A4 of
+  `gate-corpus-identifiers.sh`, and the first time a self-test caught it instead of a mutant.**
 
 - **`gate-corpus-identifiers.sh` gained A4: every id the corpus cites from its own packs has to
   resolve to one it declares.** The gate exists because of a line in the corpus's citation policy —

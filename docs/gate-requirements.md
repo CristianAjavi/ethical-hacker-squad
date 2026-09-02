@@ -729,6 +729,92 @@ A4 checks that every internal cross-reference resolves to a declared id. Three t
 Two arms return **2 — could not measure**, on the same doctrine as A3's probes: the corpus is the authority on how it declares and how it cites. If the rule tables stop declaring ids in a first cell, A4 would be matching 960 cross-references against half the declarations, so it says so instead. If not one cross-reference is left, it says that too — a green over nothing measured is the failure this repository names most often.
 
 
+## The roadmap had no status, so two gates blamed an item that had shipped
+
+`docs/competitive-analysis.md` §5 is the plan for being better than the
+neighbouring products: fifteen numbered items, each naming the gate that would
+keep it. For two weeks it carried no status column, so the only way to learn
+what had already been built was to grep the gate directory and infer.
+
+Nobody inferred. `gate-negative-evidence.sh` and `gate-verdict-vocabulary.sh`
+both printed, in their out-of-scope declarations, on every single run:
+
+<!-- backlog:quoted -->
+> no machine-readable finding is emitted yet (backlog #7)
+
+while item 7's schema, validator and fixtures were shipping. The caveat itself
+was still true — this repository audits other trees and holds no report of its
+own — but the reason attached to it had gone stale, and **a stale reason reads
+exactly like a live one**. A reader who trusted those two lines would have gone
+and built the findings artifact a second time.
+
+`gate-contract-inventory.sh` already keeps `docs/gate-requirements.md` and the
+gate directory in agreement, and says in as many words that *"what the row says
+is a human's judgement and is deliberately not checked here"*. That is the other
+document and the other question. `gate-competitive-backlog.sh` asks whether what
+a row **claims** is still true:
+
+- **B1** every row's status is one of `shipped` / `partial` / `open`.
+- **B2** every `shipped` or `partial` row names a `gate-*.sh` the runner has —
+  and the inventory comes from `run-all.sh --list`, not from a glob, so this
+  gate and the runner cannot disagree about what a gate is.
+- **B3** no `open` row is quietly kept by a gate that already exists. An item
+  built and never crossed off sends the next reader to build it twice; it is the
+  same defect pointing the other way.
+- **B4** no line anywhere in the repository cites `backlog #N` beside a word of
+  absence when row N ships.
+
+Measured on the tree that introduced it: 15 items — 7 shipped, 1 partial, 7
+open — and B4 found the two stale lines above, which is why they now read
+*"backlog #7 ships, so a delivered `findings.json` can be validated; there is
+none here to read"*.
+
+**B4's word list is present-tense on purpose.** The first draft included
+`"we did not"` and immediately flagged the sentence two sections above this one,
+which narrates *why* item 7 was written. Past-tense narration of a motive opens
+every gate header in this repository; a check that flagged it would be fighting
+the house style to find nothing. B4 reads one line at a time and only claims of
+absence made in the present.
+
+**And quoting the defect is how this repository documents it.** A gate header
+opens by quoting the sentence that motivated it; a docs section blockquotes the
+line it retired — the blockquote four paragraphs above is one; a self-test has
+to contain the exact string it tests. All three tripped B4 while it was being
+written, and none of them was a stale reason: they were the record of one. A
+line carrying the token `backlog:quoted`, or sitting directly under one, is
+exempt, **every exemption is counted and printed on the run**, and the token
+excuses that one line — never a file, never a shape. A real stale reason cannot
+hide behind a blockquote unless somebody types the token beside it.
+
+### What the self-test found that the gate's own green run did not
+
+The battery went red on its first execution, and every red was real:
+
+1. **All four could-not-measure arms were dead code.** The core called
+   `unmeasured(...)` — the name of the *list* — so each arm raised `TypeError`
+   instead of firing. The gate had only ever been run on a healthy tree, where
+   no arm is reached.
+2. **A crash was arriving as a confident red.** Python exits 1 on an unhandled
+   exception, and 1 is this contract's "measured, FAILS". The wrapper now tells
+   them apart by the only thing that separates them — *a real failure names its
+   findings* — and silence at rc 1 is could-not-measure. This turned out to be a
+   repository-wide defect; see the section below.
+3. **Two cases passed on the wrong signal.** A traceback prints the offending
+   source line, so a needle matched the text of a message that was never
+   emitted. The harness now refuses any case whose output contains a traceback,
+   except the one case whose subject *is* the crash.
+4. **The `scanned == 0` guard could not fire.** It counted files containing the
+   word "backlog", and this gate's own wrapper, core and self-test all contain
+   it. It counts resolvable `backlog #N` citations now. The identical shape had
+   already been fixed once, in A4 of `gate-corpus-identifiers.sh`, where every
+   declaration counted as its own citation — **the second time this repository
+   shipped an unfireable guard, and the first time a self-test caught it.**
+5. **The control case went red on its own harness, twice.** A self-test for B4
+   must contain the string B4 looks for, and B4 walks the whole tree. The
+   fixtures assemble their citations from pieces; excluding self-tests from the
+   walk would have been the easy fix and the wrong one, because a stale reason
+   parked in a self-test is still a stale reason.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.
