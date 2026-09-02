@@ -389,6 +389,22 @@ with or without the trailer and stopped proving the only thing it claims, so its
 old one used to cover — a `loop/` branch touching a protected path with a commit range that looks
 entirely human. **It was written red before the fix**: rc 0 against a wanted 1.
 
+**The battery itself grew two guards on the same day**, after it filled a 228 GB disk. The script
+was copied out of the repository to mutate one case; `HERE` then pointed at a scratch directory,
+`git rev-parse` failed there, and the last fallback — two levels up from wherever the file happens
+to sit — resolved to a temp tree. Every case tars a fresh copy of that tree, so it was copied
+thirty-three times until the machine could no longer run anything.
+
+The second guard is the one that matters. With no gate to run, every case returned `rc=127` and the
+battery printed `FAILED … (wanted 1)` — **a case verdict for a harness that never measured**. This
+file's own contract reserves exit 2 for that and nothing enforced it. A run that could not measure
+must never be able to look like a case that did. Both guards are proven from outside the repository:
+rc 2, no copy made.
+
+The blind fallback is not unique to this battery — **18 of the 23 self-tests resolve their source
+tree the same way, and 11 of those tar-copy it**. Lifting the guard into a shared helper is tracked
+separately; it is recorded here because the measurement was taken here.
+
 
 ### The rule that could never be satisfied, 2026-09-01
 
