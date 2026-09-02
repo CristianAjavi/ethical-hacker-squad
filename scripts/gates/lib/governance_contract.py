@@ -13,8 +13,15 @@ Output protocol, one finding per line, read by gate-governance-contract.sh:
 
     MISSING|<context>     declared as required, not enforced by the protection
     EXTRA|<context>       enforced by the protection, not declared as required
+    UNWATCHED|<field>     a top-level field the comparator script never reads
+    DISAGREE|<field>      the census and the block carrying the reasoning differ
     STAT|<key>|<value>
     ERR|<message>         could not measure (exit code 2 for the caller)
+
+The comparator script is an OPTIONAL second argument. When it is not supplied
+the UNWATCHED check cannot run, and the absence is printed as a STAT rather
+than passed over: a check that quietly does not run reads exactly like a check
+that passed.
 
 Invoked as `python3 lib/governance_contract.py <file>`: the directory that goes
 first on sys.path is this library's own, never a working directory that could
@@ -26,10 +33,11 @@ import sys
 
 
 def main(argv):
-    if len(argv) != 2:
-        print("ERR|usage: governance_contract.py <governance.json>")
+    if len(argv) not in (2, 3):
+        print("ERR|usage: governance_contract.py <governance.json> [apply-governance.sh]")
         return 2
     path = argv[1]
+    comparator = argv[2] if len(argv) == 3 else None
 
     try:
         with open(path, encoding="utf-8") as fh:
@@ -91,10 +99,62 @@ def main(argv):
     for ctx in sorted(set(have) - set(want)):
         print("EXTRA|%s" % ctx)
 
+    # -- UNWATCHED -----------------------------------------------------------
+    # The evidence that a field is compared is that the comparator mentions its
+    # jq path. It is a coarse instrument and its limit is stated rather than
+    # implied: a mention inside a comment counts, so this catches "nobody wrote
+    # the comparator" and not "somebody wrote a comparator that reads the field
+    # and does nothing with it". The first is what has happened; the second has
+    # not, and a check that pretends to catch both would be the lie.
+    fields = sorted(k for k in state if not k.startswith("_"))
+    if comparator is None:
+        print("STAT|unwatched_check|not-run-no-comparator-supplied")
+    else:
+        try:
+            with open(comparator, encoding="utf-8") as fh:
+                source_text = fh.read()
+        except OSError as exc:
+            print("ERR|the comparator %s is not readable: %s" % (comparator, exc))
+            return 2
+        for field in fields:
+            if ".%s" % field not in source_text:
+                print("UNWATCHED|%s" % field)
+        print("STAT|fields_checked|%d" % len(fields))
+
+    # -- DISAGREE ------------------------------------------------------------
+    census = state.get("security_and_analysis_declared")
+    if isinstance(census, dict):
+        pairs = [
+            ("dependabot_security_updates",
+             _status(state.get("dependabot_security_updates"))),
+            ("secret_scanning",
+             _status((state.get("secret_scanning") or {}).get("enabled")
+                     if isinstance(state.get("secret_scanning"), dict) else None)),
+            ("secret_scanning_push_protection",
+             _status((state.get("secret_scanning") or {}).get("push_protection")
+                     if isinstance(state.get("secret_scanning"), dict) else None)),
+        ]
+        for key, derived in pairs:
+            if derived is None:
+                continue
+            if census.get(key) != derived:
+                print("DISAGREE|%s census=%s block=%s"
+                      % (key, census.get(key), derived))
+        print("STAT|census_keys|%d" % len(census))
+
     print("STAT|source_branch|%s" % source)
     print("STAT|declared_required|%d" % len(want))
     print("STAT|enforced_by_protection|%d" % len(have))
     return 0
+
+
+def _status(value):
+    """A declared boolean as the API spells it, or None when it is not declared."""
+    if value is True:
+        return "enabled"
+    if value is False:
+        return "disabled"
+    return None
 
 
 if __name__ == "__main__":

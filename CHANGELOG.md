@@ -8,6 +8,41 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A repository setting was governing this project and nothing here knew it existed.**
+  `dependabot_security_updates` is disabled on the live repository. That is the right value —
+  security updates are **not** scoped by the `updates:` blocks in `.github/dependabot.yml`, so no
+  directory allowlist keeps them off `bench/cases/**`, and a bot bumping a pin there edits an
+  answer key underneath a published measurement. But it was right by luck: no file declared it, so
+  the next person to look would have read `false` as drift and fixed it. Found while measuring the
+  GitHub state, from a line the push output printed and the alerts API had been refusing with 403.
+  Now declared in `scripts/gh/governance.json` with the reasoning, compared by
+  `apply-governance.sh` §6b, and transcribed into the two files a triager actually opens —
+  `.github/dependabot.yml` and `scripts/gates/data/alert-surface.json`, which promised that a real
+  alert "must be handled" without saying no fix pull request would ever arrive to start with.
+
+- **The comparators could only find fields they had been told about.** Sections 5, 6 and 6b each go
+  looking for one named field, which is structurally incapable of noticing a setting nobody named —
+  the defect above. §6c enumerates the keys `security_and_analysis` actually returns and compares
+  **both directions**: a key the API returns and nothing declares, a key declared that the API does
+  not return, and a status that differs. Run against the live repository the moment it was written,
+  it found two more in the same position as the first: `secret_scanning_non_provider_patterns` and
+  `secret_scanning_validity_checks`, now decisions with reasons rather than defaults nobody read
+  (the second sends candidate secrets to providers to test them, and this repository's fixtures are
+  fake secrets). Proven in negative against the live API three ways — dropped key, phantom key,
+  wrong status — each firing with its own message. No `--apply` path: an undeclared key is a
+  decision to take, not a value to push.
+
+- **`governance.json` could declare a field that nothing compared, in green.** Measured before
+  fixing: a fabricated `web_commit_signoff_required` — a real GitHub setting, the shape of thing
+  added in good faith — sat in the live file through all **38** gates without one of them noticing.
+  Same shape as the finding this gate was built for, a required context enforced only in prose, one
+  level up. `gate-governance-contract.sh` now fails on a top-level field `apply-governance.sh` never
+  reads, and on a disagreement between `security_and_analysis_declared` and the block carrying the
+  same decision's reasoning. Its limit is written rather than implied: the evidence is that the
+  field's `jq` path appears in the comparator, which catches a comparator nobody wrote and not one
+  written badly. Two negative fixtures, each measured outside `bad/` to fail for exactly one reason;
+  governance family of the negative-proof census 5 → 7 inputs.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
