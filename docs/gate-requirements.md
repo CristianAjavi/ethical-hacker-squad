@@ -446,6 +446,16 @@ resolved to gates the runner discovers under a different name, so it reported *a
 document promises and nobody runs* — correctly. Measured on the base commit first (rc 0), so the
 red was the new prose and not a pre-existing condition. The names now carry `.selftest.sh`.
 
+It then fired a **second** time, on the paragraph written to record the first — the same defect, one
+turn later, which is the case fixed instead of the class. That is what earned the gate its hint: a
+phantom here is almost never a control that vanished, it is a suffix that was dropped, so when the
+neighbour exists the finding now names it. Fixture `bad/3-the-suffix-was-dropped` proves the wording
+through a `.expected` sidecar, whose lines must appear in the finding. Before it, the battery
+asserted exit codes only — a gate could go mute and no case would notice. The sidecar carries the
+name the repository already uses rather than a new one: `gate-negative-proof-census.sh` counts
+`.expected` files as *assertions*, so a differently-named file would have worked and stayed outside
+the census that exists to stop negative proof shrinking in silence. That census is what caught it.
+
 
 ### The rule that could never be satisfied, 2026-09-01
 

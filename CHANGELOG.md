@@ -8,6 +8,26 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A gate that names the defect and stops there costs the reader the fix.**
+  `gate-contract-inventory.sh` reads every `` `gate-…` `` in `docs/gate-requirements.md` as a control
+  the contract promises, and reports the ones the runner does not discover. It is right, and it fired
+  **twice in one sitting** on the person writing the prose — both times because a suffix had been
+  dropped: the document said `gate-x` where the runner lists `gate-x.sh`, or where the subject was
+  actually `gate-x.selftest.sh`, which is excluded on purpose and therefore reads as a promise of a
+  gate. A phantom here is almost never a control that vanished. So the finding now names the
+  neighbour when one exists: *the runner discovers `gate-x.sh`: add `.sh` for the gate itself, or
+  `.selftest.sh` if you meant its battery.* Proved by reproducing the original defect and reading the
+  message back. The self-test grew the ability to assert it: a fixture may now carry a
+  `.expected` sidecar whose lines must appear in the finding, so **wording** is testable and not only
+  the verdict — until now the battery checked exit codes alone, which is why a gate could go mute
+  without a case noticing. The sidecar is deliberately the name this repository already uses:
+  `fixtures/findings` has 29 of them and `gate-negative-proof-census.sh` counts `.expected` files as
+  *assertions*, so a fresh name — `expect.txt`, which is what this was written as first — would have
+  worked perfectly and stayed **outside the census that exists to stop negative proof shrinking in
+  silence**. Caught by that census going red. Written red first, in two steps: the new fixture passed
+  while the sidecar was still unread, went to rc 2 the moment the harness looked at it, and to 0 with
+  the hint in place; then the assertion was falsified on purpose to confirm the harness reads it.
+
 - **Eighteen self-tests would copy whatever tree they landed next to.** Every battery that mutates
   a case works on a throwaway copy of the repository, and each resolved the tree to copy on its own,
   ending in the same blind fallback: two levels up from wherever the file happens to sit. On
