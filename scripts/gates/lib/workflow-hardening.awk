@@ -208,6 +208,24 @@ function record_triggers_inline(v, ln,   body, n, i, parts) {
     }
 }
 
+# ---- rule 5: `pull_request` filtered by BASE branch ------------------------
+# `on.pull_request.branches` matches the BASE branch of the pull request, never
+# the head. Measured 2026-09-01 on two live pull requests of this repository,
+# read in the same call: with `branches: [main, stable]` in ci.yml, #84 (base
+# `main`) showed seven checks and #85 (base `loop/g7-prefijo-loop`) showed four.
+# `gates`, `meter` and `workflow-hardening` were ABSENT - not skipped, not
+# reported as deferred - so the checks screen looked conforming while the whole
+# gate suite had never run on that code. This scanner was silent on that file.
+function record_base_filter(key, ln, raw,   p, r) {
+    if (pr_filter_line) return
+    pr_filter_key  = key
+    pr_filter_line = ln
+    p = index(raw, "# hardening-allow: base-filter")
+    if (p == 0) { pr_filter_mark = 0; return }
+    pr_filter_mark   = 1
+    pr_filter_reason = trim(substr(raw, p + 30))
+}
+
 # ---- rule 2: every job declares `permissions:` -----------------------------
 function finalize_job() {
     if (job != "") {
@@ -275,6 +293,7 @@ index($0, "\t") > 0 { has_tab = 1 }
         finalize_job()
         k = keyof(line)
         section = k
+        cur_trig = ""
         if (k == "on") {
             saw_on = 1; on_ind = -1
             record_triggers_inline(valof(line), FNR)
@@ -294,10 +313,20 @@ index($0, "\t") > 0 { has_tab = 1 }
                 nm = trim(substr(tl, 2))
                 sub(/:.*$/, "", nm)
                 record_trigger(nm, FNR)
+                cur_trig = nm
             } else {
                 k = keyof(line)
                 if (k != "") record_trigger(k, FNR)
+                cur_trig = k
+                # `pull_request: {branches: [main]}` written on one line: the body
+                # never gets a record of its own, so it has to be read right here.
+                if (cur_trig == "pull_request" && valof(line) ~ /branches/)
+                    record_base_filter("branches", FNR, line)
             }
+        } else if (ci > on_ind && cur_trig == "pull_request") {
+            k = keyof(line)
+            if (k == "branches" || k == "branches-ignore")
+                record_base_filter(k, FNR, line)
         }
     } else if (section == "jobs") {
         if (jobs_ind < 0) jobs_ind = ci
@@ -366,6 +395,16 @@ END {
     if (("pull_request" in trig) && nsecret > 0) {
         for (n in secretref)
             fail("secrets-untrusted", "the workflow fires on `pull_request` (reachable from a fork) and reads the secrets context (`" n "`); no job that processes untrusted content may receive secrets", secretref[n])
+    }
+
+    # ---- rule 5: `pull_request` must not be filtered by base branch --------
+    if (("pull_request" in trig) && pr_filter_line) {
+        if (pr_filter_mark && pr_filter_reason != "") {
+            # exempted: the marker is on the line itself and carries a reason
+        } else if (pr_filter_mark)
+            fail("pr-base-filter", "`" pr_filter_key "` under `pull_request` carries `# hardening-allow: base-filter` with nothing after it; an exemption nobody has to justify is the filter again with extra steps. Write the reason on that line", pr_filter_line)
+        else
+            fail("pr-base-filter", "`" pr_filter_key "` under `pull_request` filters by the BASE branch, not the head: a pull request opened against any other branch does not fire this workflow at all, and its checks come out ABSENT rather than skipped. Remove the filter, or declare the exemption on that line with `# hardening-allow: base-filter <reason>`", pr_filter_line)
     }
 
     # If the file is not interpretable, I do not stand behind any structural FAIL.

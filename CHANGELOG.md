@@ -18,10 +18,8 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `run-all.sh` takes care to print *NOT RUN HERE (declared, not silenced)*; this filter silenced three
   jobs for real, the first of which runs every gate in the repository. Stacked pull requests are a
   pattern this repository already uses, and code reaches `main` through them. The filter is gone; the
-  three other `pull_request` workflows never had one. **This is the case, not the class**: nothing yet
-  stops a future workflow from re-introducing a base filter, and the check that would — a rule in
-  `gate-workflow-hardening.sh`, which is where the trigger parser already lives — is tracked and not
-  written. The fix ships without its tooth on purpose, and this sentence is the record of that.
+  three other `pull_request` workflows never had one. That change was **the case, not the class**, and
+  shipped saying so; the class is closed by rule 5 of `gate-workflow-hardening.sh`, below.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
@@ -39,6 +37,27 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`gate-workflow-hardening.sh` rule 5: `pull_request` may not be filtered by base branch.**
+  The check for the defect above. `on.pull_request.branches` matches the **base** branch, never the
+  head, so restricting it silently unhooks the workflow from every pull request opened against
+  anything else — this repository's own CI carried that shape for a month and the scanner that audits
+  workflows was **silent on it**: run against the pre-fix `ci.yml`, today's `lib/workflow-hardening.awk`
+  printed `STAT|fail|0`. Rule 5 fails on `branches:` and on `branches-ignore:` under `pull_request`.
+  `branches:` under `push:` is a different filter — it matches the branch that was pushed — and the
+  rule tells them apart by which trigger's body it is reading; `good/05-push-filtered-pull-request-not.yml`
+  is the negative control, because a rule that confused the two would fire on most of this repository.
+  The escape hatch is loud and has to be earned: `# hardening-allow: base-filter <reason>` on the
+  filtered line exempts it, a **bare marker with no reason does not**, and `bad/16-*.expected` pins
+  that the refusal says which of the two it is. No workflow takes the hatch today.
+  Four negative fixtures, two positive, and five mutants — rule removed, `branches-ignore` forgotten,
+  bare marker accepted, refusal kept but reworded to the generic message, and the `push`/`pull_request`
+  guard dropped — **all five turn the gate red**. The gate's self-test also learned to read a
+  `<fixture>.expected` sidecar: a rule name is not a message, and without it a gate can go mute one
+  branch at a time with nothing turning red. `hardening` in
+  `scripts/gates/data/negative-proof-census.json`: 16 inputs / 0 assertions → 20 / 1.
+  See `docs/gate-requirements.md` § *A workflow that filters `pull_request` by base branch*.
+
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
