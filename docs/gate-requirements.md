@@ -895,6 +895,49 @@ data — so the fixtures are assembled from pieces. Its own `1` arm goes through
 ever returned `1` having emitted none, that is exactly the bug this gate is named
 after.
 
+## Prose wraps, and the gate walked past the defect it was built for
+
+`gate-competitive-backlog.sh` shipped at 12:41 reading **one line at a time**: for every
+citation of a roadmap row it looked on that same line for a word of absence — `yet`,
+`nowhere`, `not implemented`. Twenty-five minutes later, widening that read by a single
+line of context turned up `references/vocabulary.md:322-324`:
+
+<!-- backlog:quoted -->
+> "It cannot check an actual audit report, because we do not yet emit one in a
+> machine-readable form. That arrives with the findings artifact of backlog item 7" <!-- backlog:quoted -->
+
+The `yet` is on one line and the citation on the next, because the paragraph is wrapped
+at eighty columns. It was the **second instance of the exact class the gate was built
+for** — a live-sounding reason for something that had already shipped — sitting in the
+corpus while the gate that hunts it printed `VERDICT 0`.
+
+**The width is measured, not chosen.** On this tree:
+
+| Window | Hits | What they were |
+|---|---|---|
+| ±0 lines | 0 | — |
+| ±1 line | 2 | one real claim, one quotation already carrying the marker |
+| ±2 lines | 3 | the two above, plus a self-test needle — test data, not a claim |
+
+One line of context either way is where the wrap lives; two reaches into fixtures. The
+exemption window widens with it, or widening the search would silently retire every
+`backlog:quoted` marker an author had placed on the line above the claim — and one such
+marker exists, in `CHANGELOG.md`.
+
+Two self-test cases hold the width, both ways round: a claim split across two lines
+fires, and the same claim carrying the marker does not. They cite **row 3, not row 7**,
+and that detail is the point. Under a deliberately narrowed window the split case still
+exited 1 — but from `CHANGELOG.md:87`, a line that quotes the retired row-7 message on
+purpose. The exit code was right for the wrong reason, and only a needle naming a row
+nothing else cites separated the two:
+
+```
+FAILED  absence-and-citation-split-across-two-lines  rc=1 but never says: cites backlog #3 beside
+```
+
+A gate that reads prose has to read it at the width prose is written in, and a case that
+asserts an exit code without asserting what was said is not yet a measurement.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.

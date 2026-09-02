@@ -319,7 +319,9 @@ comes to measure nothing.
 - This file is excluded from the rejected-term scan, since it necessarily contains every
   rejected term. In exchange the gate checks this file against itself: no term may be
   declared in two dimensions, and no term may be both declared and rejected.
-- The gate reads **specifications**, not deliverables. It cannot check an actual audit
-  report, because we do not yet emit one in a machine-readable form. That arrives with the
-  findings artifact of backlog item 7, and this vocabulary is its enum.
+- The gate reads **specifications**, not deliverables. The machine-readable form ships —
+  the findings artifact of backlog item 7, whose enum is this vocabulary — so a delivered
+  `findings.json` CAN be validated against these terms. What this repository does not hold
+  is a report of its own: it audits other trees. The gate therefore checks the specification
+  and not a deliverable, for want of a deliverable and not for want of a schema.
 - The cross-dimension invariants above are not checked by anything today.

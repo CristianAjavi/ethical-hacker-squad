@@ -126,6 +126,28 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"docs/knowledge-loop.md"
 tag="back"+"log #7"
 p.write_text(p.read_text()+"\n> no finding is emitted yet ("+tag+")\n")'
 
+# Prose WRAPS, so the pair above is not the whole measurement: it only proves the
+# gate sees a claim whose two halves share a line. The real one it walked past had
+# the absence word on one line and the citation on the next, and a line-at-a-time
+# read is blind to it by construction. These two are that shape, again both ways
+# round - because a window that fires on a wrap has to keep honouring the marker
+# across the same width, or widening it would silently retire every exemption.
+# They cite row 3, not row 7: the CHANGELOG quotes the retired row-7 printf, so a
+# needle naming row 7 can be satisfied by a line that is not the fixture at all.
+# Under a deliberately narrowed window the red arrived from CHANGELOG.md and the
+# case still read as passing - the exit code was right for the wrong reason.
+case_run absence-and-citation-split-across-two-lines 1 "cites backlog #3 beside" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"docs/knowledge-loop.md"
+tag="back"+"log #3"
+p.write_text(p.read_text()+"\n> we do not emit one yet\n> in that form ("+tag+")\n")'
+
+case_run the-split-claim-carrying-the-marker 0 "which quote a retired reason on purpose" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"docs/knowledge-loop.md"
+tag="back"+"log #3"
+p.write_text(p.read_text()+"\n> we do not emit one yet\n> in that form ("+tag+") <!-- backlog:quoted -->\n")'
+
 # --- the could-not-measure arms: a battery that stops reaching its document
 case_run status-column-removed 2 "no backlog table with a \`Status\` column" "$(py_doc "t=t.replace('| # | Status | Item |','| # | Item |',1)")"
 case_run table-header-with-no-rows 2 "header and no rows" "$(py_doc "

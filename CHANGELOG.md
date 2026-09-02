@@ -8,6 +8,19 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The stale-reason gate read one line at a time, and prose wraps.** `gate-competitive-backlog.sh`
+  shipped looking for a word of absence on the same physical line as the citation.
+  Twenty-five minutes later, one line of context either way turned up
+  `references/vocabulary.md:322-324` — "we do not yet emit one in a machine-readable form.
+  That arrives with the findings artifact of backlog item 7" <!-- backlog:quoted --> — the `yet` on one line, the
+  citation on the next, wrapped at eighty columns. It was a second instance of the exact
+  class the gate exists to catch, and the gate had printed a clean verdict over it. The
+  window is now ±1 line and the width is **measured**, not chosen: on this tree ±0 finds
+  nothing, ±1 finds two, ±2 reaches into self-test fixtures. The exemption widens with it,
+  so a `backlog:quoted` marker written on the line above a quotation keeps working. The
+  sentence itself was rewritten: the machine-readable form ships, and what this repository
+  lacks is a report of its own, since it audits other trees.
+
 - **Eleven gates reported a crash as a measured failure.** The exit contract has three
   values on purpose — `0` measured and clean, `1` measured and FAILS, `2` COULD NOT MEASURE
   and never a pass — and python exits `1` on an unhandled exception. Every python-backed

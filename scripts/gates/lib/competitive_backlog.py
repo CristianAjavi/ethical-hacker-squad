@@ -10,7 +10,7 @@
 #   infer - which is how two gates came to print, on every run,
 #
 #       "delivered audit reports: no machine-readable finding is emitted yet
-#        (backlog #7)"
+#        (backlog #7)"                                        <- backlog:quoted
 #
 #   while item 7's schema, validator and fixtures were shipping. The caveat was
 #   still true; the REASON attached to it had gone stale, and a stale reason is
@@ -171,8 +171,20 @@ def main(root, doc, inventory_text):
             scanned += 1
             body_lines = body.split("\n")
             for n, line in enumerate(body_lines, 1):
-                low = line.lower()
-                marked = EXEMPT in line or (n > 1 and EXEMPT in body_lines[n - 2])
+                # Prose WRAPS. The first version read one line at a time and missed
+                # a real one: references/vocabulary.md says "we do not yet emit one
+                # in a machine-readable form. That arrives with the findings
+                # artifact of backlog item 7" -- backlog:quoted -- with the "yet"
+                # on one line and the citation on the next. It was the second instance of the exact
+                # defect this gate was built for, and the gate walked past it.
+                #
+                # The width is MEASURED, not chosen: on this tree +/-0 finds 0,
+                # +/-1 finds 2 (one real, one a quotation that carries the marker),
+                # and +/-2 finds a third that is a self-test needle - test data, not
+                # a claim. One line of context either way is where the wrap lives.
+                win = " ".join(body_lines[max(0, n - 2):n + 1]).lower()
+                marked = any(EXEMPT in body_lines[i]
+                             for i in range(max(0, n - 2), min(len(body_lines), n + 1)))
                 for m in CITE.finditer(line):
                     num = int(m.group(1))
                     if num not in rows:
@@ -180,7 +192,7 @@ def main(root, doc, inventory_text):
                     cites += 1
                     if rows[num][0] != "shipped":
                         continue
-                    hit = next((w for w in ABSENCE if w in low), None)
+                    hit = next((w for w in ABSENCE if w in win), None)
                     if hit and marked:
                         exempt += 1
                     elif hit:
