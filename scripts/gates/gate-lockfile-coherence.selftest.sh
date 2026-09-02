@@ -63,6 +63,26 @@ YAML
   cp "$HERE/lib/lockfile_coherence.py" "$d/scripts/gates/lib/"
 }
 
+# add_env_line <VAR> <value> — append one env var to the seeded workflow.
+#
+# This used to be `sed -i ''`, which is BSD/macOS syntax: on GNU sed the empty
+# string is read as the script and the mutation dies. Measured on CI 2026-09-02:
+# five cases came back `HARNESS ... the mutation itself failed` while the same
+# file was 16/16 on the author's Mac. python3 is already a hard requirement of
+# this battery, so there is no portability question left to answer.
+add_env_line() {
+  python3 - "$1" "$2" <<'PY'
+import pathlib, sys
+var, value = sys.argv[1], sys.argv[2]
+p = pathlib.Path(".github/workflows/release.yml")
+s = p.read_text(encoding="utf-8")
+needle = "  PLUGIN_NAME: 'ethical-hacker-squad'\n"
+if needle not in s:
+    raise SystemExit("the seeded workflow does not carry the anchor line")
+p.write_text(s.replace(needle, needle + "  %s: '%s'\n" % (var, value), 1), encoding="utf-8")
+PY
+}
+
 # $1 name  $2 wanted rc  $3 needle  $4 shell mutation on $work  $5 "lab" to run the copy
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4" which="${5:-}" work="$TMP/$1"
@@ -96,12 +116,10 @@ case_run control-coherent-root 0 "tell one story" ""
 # With the RIGHT value, on purpose. The defect is the second copy, not the
 # disagreement: the disagreement is only what it turns into later.
 case_run the-third-copy-comes-back 1 "second place to say the same version" \
-  "sed -i '' \"s|  PLUGIN_NAME: 'ethical-hacker-squad'|  PLUGIN_NAME: 'x'\\\\
-  CLAUDE_CODE_VERSION: '2.1.221'|\" .github/workflows/release.yml"
+  "add_env_line CLAUDE_CODE_VERSION 2.1.221"
 
 case_run the-third-copy-comes-back-wrong 1 "second place to say the same version" \
-  "sed -i '' \"s|  PLUGIN_NAME: 'ethical-hacker-squad'|  PLUGIN_NAME: 'x'\\\\
-  CLAUDE_CODE_VERSION: '2.1.246'|\" .github/workflows/release.yml"
+  "add_env_line CLAUDE_CODE_VERSION 2.1.246"
 
 # A rename was a way out of the rule until `names_a_package` looked for the
 # package's bare name inside the stem as well as the other way round.
@@ -111,18 +129,20 @@ case_run the-third-copy-comes-back-wrong 1 "second place to say the same version
 # value check was catching it, so the case measured the value path and claimed
 # to measure the name path. With 9.9.9 only the name can fire.
 case_run the-copy-renamed-around-the-rule 1 "second place to say the same version" \
-  "sed -i '' \"s|  PLUGIN_NAME: 'ethical-hacker-squad'|  PLUGIN_NAME: 'x'\\\\
-  ANTHROPIC_AI_CLAUDE_CODE_VERSION: '9.9.9'|\" .github/workflows/release.yml"
+  "add_env_line ANTHROPIC_AI_CLAUDE_CODE_VERSION 9.9.9"
 
 # A name that gives nothing away. Caught by value instead, and the message says
 # so rather than pretending the name resolved.
 case_run the-copy-under-a-name-that-hides-it 1 "matched by value" \
-  "sed -i '' \"s|  PLUGIN_NAME: 'ethical-hacker-squad'|  PLUGIN_NAME: 'x'\\\\
-  CLI_VERSION: '2.1.221'|\" .github/workflows/release.yml"
+  "add_env_line CLI_VERSION 2.1.221"
 
 # ---- the manifest and the lock, both ways ----------------------------------
 case_run lock-not-regenerated 1 "records 2.1.221" \
-  "sed -i '' 's|\"@anthropic-ai/claude-code\": \"2.1.221\"|\"@anthropic-ai/claude-code\": \"2.1.246\"|' tooling/claude-cli/package.json"
+  "python3 -c \"
+import json,pathlib
+p=pathlib.Path('tooling/claude-cli/package.json'); d=json.loads(p.read_text())
+d['devDependencies']['@anthropic-ai/claude-code']='2.1.246'
+p.write_text(json.dumps(d))\""
 
 case_run a-dependency-nobody-declared 1 "no longer" \
   "python3 -c \"
