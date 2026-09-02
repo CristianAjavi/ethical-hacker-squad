@@ -49,8 +49,11 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| verify.sh mirrors the CI gates job | running | `gate-verify-mirror.sh` + self-test (15 cases) |
 
-Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
+Run everything locally with **`bash scripts/verify.sh`**, not with `run-all.sh`. The `gates` job of CI runs *two* runners — `scripts/gates/run-all.sh` walks the gates, `scripts/run-batteries.sh` walks every `*.selftest.sh` in the tree — and this line used to name only the first while calling it everything. On 2026-09-02 that produced the failure it predicts: a pull request body reporting "full suite: 34 run, 34 green" while CI went red in that same job, on the other runner, over eighteen cases. Thirty-four was the honest count of one runner and silent about the other. `verify.sh` runs both in CI's order under the same exit-code doctrine, and `gate-verify-mirror.sh` fails if the two lists ever stop matching in either direction.
+
+`gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
 ## Exit-code semantics — applies to every gate
 
