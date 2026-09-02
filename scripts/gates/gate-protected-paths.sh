@@ -190,7 +190,7 @@ case "$rc" in
      else
        gate_ok "the limits are documented as enforced, and nothing carrying a mark of automation touched them"
      fi ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

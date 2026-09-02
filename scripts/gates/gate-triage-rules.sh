@@ -62,7 +62,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "the rule set is closed, every citation resolves, and no pack slipped backwards" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

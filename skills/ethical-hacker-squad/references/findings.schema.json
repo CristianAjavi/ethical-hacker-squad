@@ -13,7 +13,11 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "ehs.findings/v1"
+      "enum": [
+        "ehs.findings/v1",
+        "ehs.findings/v2"
+      ],
+      "description": "`ehs.findings/v2` adds the engagement-memory block: engagement.target_digest, engagement.baseline, findings[].fingerprint, findings[].baseline_state and the top-level carried_over. Those fields are optional at v1 and required at v2, and the invariants that govern them apply the moment any of them is present - a v1 artifact that opts into memory is held to the same arithmetic."
     },
     "engagement": {
       "type": "object",
@@ -32,6 +36,46 @@
         "commit": {
           "type": "string",
           "description": "Commit or version of the target, when it has one."
+        },
+        "target_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "A digest over the in-scope tree as it was actually read. `commit` is what the target calls itself and a dirty worktree can lie about it; this is what was in front of the squad. Two artifacts carrying the same digest audited the same bytes, and that is what makes a comparison between them mean anything."
+        },
+        "baseline": {
+          "type": "object",
+          "required": [
+            "target_digest",
+            "generated_at",
+            "findings_count"
+          ],
+          "additionalProperties": false,
+          "description": "The previous artifact this run was compared against. Present only when a comparison actually happened - declaring a baseline is a claim that the matcher ran, and the invariants make the artifact prove it.",
+          "properties": {
+            "target_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "generated_at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}",
+              "description": "When the baseline artifact was produced, ISO 8601."
+            },
+            "findings_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many findings the baseline carried. This is the number the accounting invariant balances against: every one of them is either continued by a finding here or answered in `carried_over`."
+            },
+            "source": {
+              "type": "string",
+              "description": "Where the baseline was read from, so a reader can fetch it."
+            }
+          }
+        },
+        "baseline_absent_reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why there is no baseline: first engagement on this target, the previous artifact was not made available, the target moved. Required whenever `baseline` is missing at v2. An absent baseline is a fact about this run and the reader is owed it; without this field the same silence covers `no previous audit exists` and `nobody looked for one`."
         },
         "mode": {
           "type": "string",
@@ -285,6 +329,38 @@
               }
             }
           },
+          "severity_calibration": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "rule",
+                "answer"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rule": {
+                  "type": "string",
+                  "pattern": "^SEV-[0-9]{2}$"
+                },
+                "answer": {
+                  "type": "string",
+                  "enum": [
+                    "HOLDS",
+                    "DOES_NOT_HOLD",
+                    "UNKNOWN",
+                    "NOT_APPLICABLE"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "Required whenever the answer is not DOES_NOT_HOLD, and required for DOES_NOT_HOLD too when the finding is `critical` or `high`: the artifact that supports the answer. There, DOES_NOT_HOLD is the answer that buys the label, so it pays what the label costs."
+                }
+              }
+            },
+            "description": "The severity caps of triage.md, answered. Required on every `critical` and `high` finding: the `always` caps are the price of those two labels. The ceiling a rule imposes is NOT recorded here - it is read from triage.md, so a finding cannot restate the cap it is about to exceed. HOLDS and UNKNOWN both bind the ceiling; not knowing whether a cap applies is not permission to sit above it."
+          },
           "limits": {
             "type": "string"
           },
@@ -295,6 +371,88 @@
           "unaided_label": {
             "type": "string",
             "description": "The label this finding carried in `engagement.unaided_pass.candidates`, when it originated there rather than from a procedure. It is the join that lets a validator prove nothing found before the pack was opened went missing after."
+          },
+          "fingerprint": {
+            "type": "object",
+            "required": [
+              "algorithm",
+              "value",
+              "inputs",
+              "ordinal"
+            ],
+            "additionalProperties": false,
+            "description": "A CANDIDATE KEY, never an identity. Measured over 117 real artifacts and 587 findings: no key over these fields is unique. path+line+procedure covers 539 and collides on 4.5%; path+component+procedure covers 372 and collides on 6.5%; path+procedure covers 544 and collides on 26.7%. A field that cannot be unique must not be spelled like an id, so this one declares what went into it and carries an ordinal for its collisions.",
+            "properties": {
+              "algorithm": {
+                "type": "string",
+                "const": "ehs.fp/v1",
+                "description": "`sha256:` followed by the hex digest of the values named in `inputs`, taken in the order they are listed there, each list-valued field first sorted and joined by U+001E, and the whole joined by U+001F, encoded UTF-8. The validator RECOMPUTES this and refuses a value that does not reproduce: an algorithm nothing recomputes is prose wearing a field name. Line numbers are deliberately not an available input - a fingerprint that moves when a comment is added above the defect reports every rebase as a new finding."
+              },
+              "value": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "inputs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "location.path",
+                    "location.component",
+                    "procedure",
+                    "traceability"
+                  ]
+                },
+                "description": "Which fields this key was actually computed over, so a reader can see its strength rather than assume it. A key over one weak field and a key over four strong ones are not the same claim and must not look alike."
+              },
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Breaks ties between findings that share a value inside ONE artifact, assigned by sorting those findings on `id`. It disambiguates a collision; it is not an identity and it does not survive a run in which the colliding set changed."
+              }
+            }
+          },
+          "baseline_state": {
+            "type": "string",
+            "description": "What this finding is against the baseline. Terms are declared in dimension 5 of references/vocabulary.md and are NOT repeated here."
+          },
+          "lineage": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "description": "The baseline fingerprint value(s) this finding continues. More than one means the baseline had split what this run reports as a single defect."
+          },
+          "changed_fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "What moved since the baseline, as dotted field names. Required by `updated` and refused by `unchanged`: without it, `updated` is a mood rather than a diff."
+          },
+          "regression": {
+            "type": "object",
+            "required": [
+              "previous_disposition",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "description": "This finding was reported gone and came back. A regression is only a regression against somebody's claim that it was closed, so this field cannot be set on a finding with no lineage - there would be nothing to have regressed from.",
+            "properties": {
+              "previous_disposition": {
+                "type": "string",
+                "description": "How the previous engagement disposed of it. Terms are declared in dimension 6 of references/vocabulary.md."
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What brought it back, in this run's evidence."
+              }
+            }
           },
           "duplicate_of": {
             "type": "string",
@@ -341,6 +499,46 @@
               }
             },
             "description": "Required with `duplicate_of`: the DUP rules of triage.md, answered. Same shape as `triage`."
+          }
+        }
+      }
+    },
+    "carried_over": {
+      "type": "array",
+      "description": "Every baseline finding this run did not report again, and what happened to it. SARIF v2.1.0 synthesises these into the result list with baselineState absent; they go in a separate array here because a finding in this contract is the assertion that a defect exists, and filing an absent one beside it would make severity, triage and invariant 11 each either false or a special case. Silence is the cheapest way to lose a defect: a finding that stops appearing reads, to anyone diffing two artifacts, exactly like a finding that was fixed.",
+      "items": {
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "procedure",
+          "disposition"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "The baseline finding's title, so a reader need not fetch it."
+          },
+          "procedure": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The procedure that produced the baseline finding, carried forward verbatim. Required here rather than on findings alone, because this array is the only place a defect leaves the live list: a store that can say a defect was fixed and not say what found it hands the next engagement a list it cannot re-derive. `ad-hoc` is a legal answer; no answer is not."
+          },
+          "disposition": {
+            "type": "string",
+            "description": "What happened to it. Terms are declared in dimension 6 of references/vocabulary.md and are NOT repeated here."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "What establishes the disposition: the commit that closed it, the line of the control that refutes it. Required by `fixed`, which is the only disposition that lowers a reader's guard."
+          },
+          "surface": {
+            "type": "string",
+            "description": "For `out of scope`, the surface it lived in. It has to be one this artifact's coverage actually excludes, or the claim is unchecked."
           }
         }
       }

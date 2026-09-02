@@ -105,7 +105,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "every consequence in the key is the one the table forces, the seal matches, coverage holds, and no case carries its own answer" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

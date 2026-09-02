@@ -202,9 +202,14 @@ nothing beyond the position they already held, cap or downgrade it. Requires a s
 you already had; blast radius confined to the attacker's own tenant; needs non-default
 configuration; XSS defaults to medium unless stored and admin-facing.
 
-We have nothing. `report.md` correctly says severity is a judgement about *this* system
-rather than a copied scanner label — and then gives the model no rule to apply. Severity
-inflation is the signature failure of every LLM auditor, and we are unprotected.
+For two months we had nothing: `report.md` correctly said severity is a judgement about
+*this* system rather than a copied scanner label, and then gave the model no rule to
+apply. `SEV-01`..`SEV-10` in `references/triage.md` closes that, and it is not a copy of
+Mantis's list. Theirs is 27 caps read as guidance; ours is ten, answered the four ways
+`FP-*` is answered, with `UNKNOWN` binding the ceiling exactly as `HOLDS` does — so not
+knowing whether a cap applies is not permission to sit above it. And no cap stores its
+own ceiling on the finding: the ceiling is read from the catalogue, so a finding cannot
+restate the cap it is about to exceed.
 
 ### 2.9 A redaction pass before the report is written — convergence 2/5
 
@@ -481,31 +486,49 @@ notice into our tree; Apache-2.0 sources (AIG, Mantis, AgSec) additionally carry
 and attribution obligations that would end our clean-MIT claim. Re-implement from the
 idea, in our own words, every time.
 
-| # | Item | Conv. | Cost | Source licence (verified 2026-08-16) | Gate that keeps it | Meter dimension it creates |
-|---|---|---|---|---|---|---|
-| 1 | **One closed verdict vocabulary.** A single `vocabulary.md` defining status, severity, confidence and verification outcome; `team.md`, `report.md`, `ehs-verifier.md` and `remediation.md` all reference it. Fixes the `not executed` / `not verified` / `withdrawn` drift found above. | 5/5 | **S** | PentAGI MIT · Mantis Apache-2.0 · PT-Agents MIT | Gate fails if any of the four files uses a term the vocabulary does not declare | `verdict.vocabulary_conformance` |
-| 2 | **Negative-evidence gate for the verifier.** No "not vulnerable" without proof the test reached the code; build failure, missing file or non-zero exec status is `could not measure` (2), never "no bug". | 1/5 | **S** | Mantis Apache-2.0 | Extends the existing 0/1/2 gate doctrine to findings; negative fixture required | `verification.negative_verdicts_with_reach_proof` |
-| 3 | **Benign control in `remediation.md` part B.** Unpatched baseline must trigger; legitimate input must still reach the patched path; attack must not trigger. Missing (b) ⇒ verification incomplete, never verified. | 1/5 | **S** | Mantis Apache-2.0 | `VER-*` procedure plus a gate check that the rule is present and referenced | `verification.benign_control_declared` |
-| 4 | **Mandatory redaction pass before the report is written.** Placeholder classes for secrets, PII, internal hosts and weaponised payload parameters. | 2/5 | **S** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate scans the deliverable for high-precision secret formats (the checksum-validated prefixes `tooling.md` already documents) and fails on a hit | `redaction.classes_defined`, `redaction.selfscan_hits` |
-| 5 | **Ruled-out section required in the report.** "We tested X, Y and Z and did not find them", plus what actively resisted and how to turn it into a regression test. | 3/5 | **S** | PentAGI MIT · AIG Apache-2.0 · Mantis Apache-2.0 | `report.md` marks it mandatory; gate checks the spec still requires it | `report.mandatory_sections` |
-| 6 | **Named FP triage checklist (~10 rules) shared across all 7 packs**, answerable PASS/FAIL/UNKNOWN/NOT_APPLICABLE with a mandatory reason when not PASS. Each procedure's `What rules it out` cites the rule ids it invokes. | 2/5 | **M** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate fails on a procedure whose FP field cites no rule id, and on a finding marked confirmed with any rule at FAIL | `triage.rule_coverage`, `triage.rules_declared` |
-| 7 | **Findings artifact.** `findings.json` beside the markdown: procedure id, location, status, severity, confidence, verification outcome, traceability ids, redaction applied. One schema, one validator. | 4/5 | **M** | PT-Agents MIT · AgSec Apache-2.0 · Mantis Apache-2.0 · AIG Apache-2.0 | Schema validator as a gate; `2` when the file is unreadable, `1` when it violates the schema | `findings.schema_conformance` — and it finally makes our own output measurable |
-| 8 | **Severity calibration catalogue**, 8-10 caps under the marginal-capability principle, written by us. | 1/5 | **M** | Mantis Apache-2.0 | Gate fails a `critical`/`high` finding that cites no calibration rule | `severity.calibration_rules`, `severity.findings_calibrated` |
-| 9 | **Close the G1 hole, then the scope artifact.** First: a gate that actually fails when an auditor agent lists `Edit`/`Write`/`NotebookEdit` — specified in `gate-requirements.md` G1, implemented nowhere (§3.5). Then a versioned `scope.md`/`scope.json`: authorised targets, out-of-scope, stop conditions, evidence expectations, authorisation reference, plus a pre-action check the leader must pass. | 3/5 | **S** then **M** | PT-Agents MIT (CI-grep pattern) · PentAGI MIT · AgSec Apache-2.0 | Gate: no auditor lists a write tool, **and** every agent carrying `Bash` embeds the scope block; negative fixture for both | `agents.tool_restriction_conformance` (N/7 auditors), `agents.scope_block_conformance` (N/8) |
-| 10 | **Onboarding surface.** An inventory view of all 122 procedures (id, pack, traceability, whether the minimal test is local or requires authorisation) plus a routing command and one worked example engagement with a sample report. | 3/5 | **M** | AgSec Apache-2.0 · PT-Agents MIT | Gate: inventory regenerated from the corpus, fails if stale | `corpus.inventory_freshness`, `procedure.authorization_class` |
-| 11 | **Executable minimal tests.** Raise the 52/122 with an inline command; where a procedure genuinely cannot have one, say so in the field instead of writing prose. | — | **M** | Ours (measurement is new) | Gate: a *new* procedure must carry an executable test or an explicit declaration of why not | `procedure.executable_minimal_test` |
-| 12 | **Two-wave auditing and distributed writes.** Wave 1 returns `{suspect, reason}` cheaply, wave 2 goes deep only on hits; specialists write findings to disk and return ids. Plus a per-pack scope flag for CI. | 4/5 | **M** | Mantis Apache-2.0 · PT-Agents MIT · AgSec Apache-2.0 | — (protocol change in `SKILL.md` and `team.md`) | `orchestration.wave_protocol_declared` |
-| 13 | **`infra-cloud` gap closure by reference.** Point `Tooling` fields at external fingerprint/CVE corpora instead of embedding any; target the 9 high gaps that make it our worst pack. | 1/5 | **M** | AIG Apache-2.0 — **NOTICE mandates visible attribution; reference only, never embed** | Existing tooling-documentation gate | moves `PCC(infra-cloud)` — but only after `baseline.json` is re-scored (see §6.3) |
-| 14 | **Signed evidence manifest.** SHA-256 of every finding and every tool output shipped beside the report; Ed25519 later if a client asks. | 1/5 | **L** | PentAGI MIT (their version is an unimplemented RFC) | Gate verifies the manifest covers every file in the deliverable | `deliverable.manifest_coverage` |
-| 15 | **Engagement memory.** Persistent findings state across runs, so a second audit of the same repository does not restart from zero. **Constraint: it must not cost citability** — the PentAGI failure mode is a store that cannot tell you which procedure produced a finding. | 3/5 | **L** | PentAGI MIT · PT-Agents MIT · Mantis Apache-2.0 | Gate: every stored finding retains its procedure id | `memory.findings_with_procedure_id` |
+**Status** is measured, not asserted. `shipped` means a gate named in this row exists in
+the inventory `run-all.sh --list` prints; `partial` means part of the row shipped and the
+rest did not; `open` means no gate keeps it yet. `gate-competitive-backlog.sh` checks all
+three against the gate directory on every run, and refuses to let a line elsewhere in the
+repository call a shipped item missing — the failure that made this column necessary.
 
-**Sequencing.** Items 1-5 are all **S**, all land inside machinery we already have, and
-together they close the two highest-convergence gaps (verdict vocabulary, negative
-evidence) plus the leak risk. Do them first, in that order — and pull the **S** half of
-item 9 forward to sit with them, because a specified-but-unimplemented safety gate is a
-worse defect than any of the capabilities we are missing. Items 6-8 and the **M** half
-of 9 are the real project: they turn free-text discipline into enforced structure.
-Items 10-15 wait.
+| # | Status | Item | Conv. | Cost | Source licence (verified 2026-08-16) | Gate that keeps it | Meter dimension it creates |
+|---|---|---|---|---|---|---|---|
+| 1 | **shipped** | **One closed verdict vocabulary.** A single `vocabulary.md` defining status, severity, confidence and verification outcome; `team.md`, `report.md`, `ehs-verifier.md` and `remediation.md` all reference it. Fixes the `not executed` / `not verified` / `withdrawn` drift found above. | 5/5 | **S** | PentAGI MIT · Mantis Apache-2.0 · PT-Agents MIT | Gate fails if any of the four files uses a term the vocabulary does not declare — `gate-verdict-vocabulary.sh` | `verdict.vocabulary_conformance` |
+| 2 | **shipped** | **Negative-evidence gate for the verifier.** No "not vulnerable" without proof the test reached the code; build failure, missing file or non-zero exec status is `could not measure` (2), never "no bug". | 1/5 | **S** | Mantis Apache-2.0 | Extends the existing 0/1/2 gate doctrine to findings; negative fixture required — `gate-negative-evidence.sh` | `verification.negative_verdicts_with_reach_proof` |
+| 3 | **shipped** | **Benign control in `remediation.md` part B.** Unpatched baseline must trigger; legitimate input must still reach the patched path; attack must not trigger. Missing (b) ⇒ verification incomplete, never verified. | 1/5 | **S** | Mantis Apache-2.0 | `VER-*` procedure plus a gate check that the rule is present and referenced — `gate-benign-control.sh` | `verification.benign_control_declared` |
+| 4 | **shipped** | **Mandatory redaction pass before the report is written.** Placeholder classes for secrets, PII, internal hosts and weaponised payload parameters. | 2/5 | **S** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate scans the deliverable for high-precision secret formats (the checksum-validated prefixes `tooling.md` already documents) and fails on a hit — `gate-report-contract.sh` | `redaction.classes_defined`, `redaction.selfscan_hits` |
+| 5 | **shipped** | **Ruled-out section required in the report.** "We tested X, Y and Z and did not find them", plus what actively resisted and how to turn it into a regression test. | 3/5 | **S** | PentAGI MIT · AIG Apache-2.0 · Mantis Apache-2.0 | `report.md` marks it mandatory; gate checks the spec still requires it — `gate-report-contract.sh` | `report.mandatory_sections` |
+| 6 | **shipped** | **Named FP triage checklist (~10 rules) shared across all 7 packs**, answerable PASS/FAIL/UNKNOWN/NOT_APPLICABLE with a mandatory reason when not PASS. Each procedure's `What rules it out` cites the rule ids it invokes. | 2/5 | **M** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate fails on a procedure whose FP field cites no rule id, and on a finding marked confirmed with any rule at FAIL — `gate-triage-rules.sh` | `triage.rule_coverage`, `triage.rules_declared` |
+| 7 | **shipped** | **Findings artifact.** `findings.json` beside the markdown: procedure id, location, status, severity, confidence, verification outcome, traceability ids, redaction applied. One schema, one validator. | 4/5 | **M** | PT-Agents MIT · AgSec Apache-2.0 · Mantis Apache-2.0 · AIG Apache-2.0 | Schema validator as a gate; `2` when the file is unreadable, `1` when it violates the schema — `gate-findings-artifact.sh` | `findings.schema_conformance` — and it finally makes our own output measurable |
+| 8 | **shipped** | **Severity calibration catalogue.** `SEV-01`..`SEV-10` in `references/triage.md`: absolute caps under the marginal-capability principle, each answerable, each a ceiling rather than a score. `UNKNOWN` binds exactly as `HOLDS` does. | 1/5 | **M** | Mantis Apache-2.0 | Invariants 12-19 fail a `critical`/`high` finding that leaves an `always` cap unanswered or sits above a cap that binds — `gate-findings-artifact.sh`; the catalogue itself — `gate-severity-calibration.sh` | `severity.calibration_rules`, `severity.findings_calibrated`, `severity.caps_compared` |
+| 9 | partial | **Close the G1 hole, then the scope artifact.** First: a gate that actually fails when an auditor agent lists `Edit`/`Write`/`NotebookEdit` — specified in `gate-requirements.md` G1, implemented nowhere (§3.5). Then a versioned `scope.md`/`scope.json`: authorised targets, out-of-scope, stop conditions, evidence expectations, authorisation reference, plus a pre-action check the leader must pass. | 3/5 | **S** then **M** | PT-Agents MIT (CI-grep pattern) · PentAGI MIT · AgSec Apache-2.0 | Gate: no auditor lists a write tool, **and** every agent carrying `Bash` embeds the scope block; negative fixture for both — `gate-agent-tools.sh` | `agents.tool_restriction_conformance` (N/7 auditors), `agents.scope_block_conformance` (N/8) |
+| 10 | open | **Onboarding surface.** An inventory view of all 122 procedures (id, pack, traceability, whether the minimal test is local or requires authorisation) plus a routing command and one worked example engagement with a sample report. | 3/5 | **M** | AgSec Apache-2.0 · PT-Agents MIT | Gate: inventory regenerated from the corpus, fails if stale | `corpus.inventory_freshness`, `procedure.authorization_class` |
+| 11 | open | **Executable minimal tests.** Raise the 52/122 with an inline command; where a procedure genuinely cannot have one, say so in the field instead of writing prose. | — | **M** | Ours (measurement is new) | Gate: a *new* procedure must carry an executable test or an explicit declaration of why not | `procedure.executable_minimal_test` |
+| 12 | open | **Two-wave auditing and distributed writes.** Wave 1 returns `{suspect, reason}` cheaply, wave 2 goes deep only on hits; specialists write findings to disk and return ids. Plus a per-pack scope flag for CI. | 4/5 | **M** | Mantis Apache-2.0 · PT-Agents MIT · AgSec Apache-2.0 | — (protocol change in `SKILL.md` and `team.md`) | `orchestration.wave_protocol_declared` |
+| 13 | open | **`infra-cloud` gap closure by reference.** Point `Tooling` fields at external fingerprint/CVE corpora instead of embedding any; target the 9 high gaps that make it our worst pack. | 1/5 | **M** | AIG Apache-2.0 — **NOTICE mandates visible attribution; reference only, never embed** | Existing tooling-documentation gate | moves `PCC(infra-cloud)` — but only after `baseline.json` is re-scored (see §6.3) |
+| 14 | open | **Signed evidence manifest.** SHA-256 of every finding and every tool output shipped beside the report; Ed25519 later if a client asks. | 1/5 | **L** | PentAGI MIT (their version is an unimplemented RFC) | Gate verifies the manifest covers every file in the deliverable | `deliverable.manifest_coverage` |
+| 15 | **shipped** | **Engagement memory.** `ehs.findings/v2`: a target digest, a baseline, a `baseline_state` on every finding, a structural fingerprint that the validator RECOMPUTES, and a `carried_over` array that accounts for every baseline finding the run did not report again. The state `unmeasured` is a declared term rather than a missing field, so a comparison that did not happen cannot be read as one that found nothing — which is the measured failure mode of the closest thing in the field: Mantis's matcher falls back to embeddings, `compute_embedding` catches every exception and returns a mock vector, the dimension check then skips every candidate, and a deployment with no model reports each run as entirely new with nothing saying so. **The citability constraint is met and enforced**: `procedure` is required on every carried-over entry and the id has to resolve against the corpus. | 3/5 | **L** | PentAGI MIT · PT-Agents MIT · Mantis Apache-2.0 | Invariants 20–32 — `gate-findings-artifact.sh`; the contract around them, and whether the corpus still exercises a comparison at all — `gate-engagement-memory.sh`; and whether the comparison reaches the human reader rather than living in JSON alone — the `engagement-memory` section on the mandatory floor of `gate-report-contract.sh` | `memory.findings_with_procedure_id`, `memory.baselines_declared`, `memory.fingerprints_reproduced` |
+
+**Sequencing, and where it actually got to.** The plan was: items 1-5 first (all **S**,
+all inside machinery we already had), with the **S** half of item 9 pulled forward, because
+a specified-but-unimplemented safety gate is a worse defect than any missing capability.
+Then 6-8 and the **M** half of 9 as the real project, turning free-text discipline into
+enforced structure. Items 10-15 wait.
+
+**Measured 2026-09-01: that plan is done as far as item 7, and item 8 is where it stopped.**
+Items 1-8 all ship with a gate that runs; the **S** half of 9 ships as
+`gate-agent-tools.sh` and its **M** half — the scope artifact — does not. Items
+10-15 have no gate. This paragraph said none of that for two weeks, and two gates were
+still printing *"no machine-readable finding is emitted yet (backlog #7)"* in their
+out-of-scope declarations while item 7's schema, validator and fixtures shipped — the
+reason had gone stale, the caveat behind it had not. **Item 15 then shipped out of order**, ahead of 10–14 and ahead of the scope
+artifact, because it was the item where the neighbouring products had moved and
+we had not: four of the five keep findings across runs, and the one with the
+soundest key for it fails open. Taking it early cost the sequencing argument and
+bought the axis where the gap was live. **The next item is still the scope
+artifact**, the **M** half of 9, and it is now the oldest thing on this list that
+was specified before anything below it and built after.
 
 ---
 

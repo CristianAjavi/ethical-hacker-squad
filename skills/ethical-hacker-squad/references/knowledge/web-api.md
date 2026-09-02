@@ -4,7 +4,7 @@
 > **Do not load it if:** the scope is only an APK/IPA with no reachable backend, only IaC and containers, only dependencies, or a library with no network surface.
 > **Cost:** ~358 lines. Load by section using the index; you do not need to read it end to end.
 > **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it carries its own index.
-> **Third file of this pack:** `web-api-logging.md` holds §11 with `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence.
+> **Third file of this pack:** `web-api-logging.md` holds §11 with `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it — and §12 with `WEB-29`..`WEB-31`, where one layer decides what a sequence of bytes means and a second layer decides differently. Open it whenever the target logs anything an outside caller can influence, or decides anything about a string before normalising, folding or re-encoding it.
 
 ## Selective loading index
 

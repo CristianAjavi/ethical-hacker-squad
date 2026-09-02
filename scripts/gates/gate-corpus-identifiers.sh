@@ -71,7 +71,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "no id is declared twice, no pack skips a number, every bounded standards identifier the corpus cites exists, and every citation of its own ids resolves" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

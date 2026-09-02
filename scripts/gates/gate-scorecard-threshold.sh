@@ -83,7 +83,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "every gated check is at or above its declared minimum, and the aggregate did not fall" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

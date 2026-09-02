@@ -72,6 +72,10 @@ Nothing here is reproduced. Each entry is a pointer plus our own note on what it
 
 Listed only where they altered what a pack tells the agent to look for.
 
+- **Wunder et al., arXiv:2308.15259** (v1 2023-08-29, v2 2024-05-08; IEEE S&P 2024) — 196 CVSS users scoring widespread vulnerabilities. In the follow-up with 59 of them, *"For the same vulnerabilities from the main study, 68% of these users gave different severity ratings."* The human inter-rater figure behind `SEV-*` being answered rather than assumed: if trained people disagree at that rate on a scored framework, a model's unexamined label is worth less still.
+- **Al Haddad et al., arXiv:2510.18508** (2025-10-21) — four LLMs against SSVC's decision points over 384 real vulnerabilities: *"all models tended to over-predict risk"*, with one model reaching fair agreement under weighted Cohen's kappa. Severity inflation in LLM auditors is measured, not suspected, and handing a model a decision tree relocates the inflation into the decision points rather than removing it. Per-point F1 and kappa figures were `not read from the PDF` and must not be cited.
+- **Koscinski et al., arXiv:2508.13644** (2025-08-19; ACM CCS 2025, DOI 10.1145/3719027.3765210) — CVSS, EPSS, SSVC and the Exploitability Index over 600 vulnerabilities: *"Cohen's Kappa values are close to zero across all comparisons"*, Krippendorff's Alpha predominantly negative, 5 CVEs shared across all four top-100 lists. Note what it measures: agreement **between scoring systems**, not the reproducibility of any one. The narrow conclusion is enough — there is no external oracle to import, so the discipline has to be ours and checkable.
+- **SSVC pilot**, CERT/CC, `https://certcc.github.io/SSVC/topics/evaluation_of_draft_trees/` — six analysts over nine CVEs, **Fleiss' kappa** (not Cohen's; these figures do not tabulate against the three above): Exploitation 0.807, Technical Impact 0.679, Safety Impact 0.122, Mission Impact 0.146. The authors' own caveats: *"These participant demographics limit the generalizability of the results of the pilot"*, *"we expect the organizational homogeneity of the participants has inflated the agreement somewhat"*, *"We did not execute a new rater agreement experiment with the updated descriptions."* Agreement holds on the decision points that are observable and collapses on the ones needing the client's context — which is why `SEV-*` is a list of observable caps and not a decision tree. SSVC's documentation is CC BY-NC 4.0 (code files MIT-SEI): its structure is cited, none of its prose reproduced.
 - **Greshake et al., arXiv:2302.12173** (2023-02-23) — introduced indirect prompt injection. Drives `AI-02`..`AI-04`. The AISec'23 venue often cited alongside it is `not declared on arXiv`.
 - **Maloyan & Namiot, arXiv:2601.17548** (2026-01-24) — systematization over agentic coding assistants: 42 techniques, 78 studies, above 85% success with adaptive strategies and under 50% mitigation for most defences. Source of the delivery-vector file list in `AI-02`.
 - **CaMeL, arXiv:2503.18813** (Google DeepMind / ETH) — control- and data-flow separation with capabilities enforced at the call site; 77% of AgentDojo tasks solved with provable security against 84% undefended. The design `AI-05` looks for.
@@ -92,6 +96,39 @@ Listed only where they altered what a pack tells the agent to look for.
 - **Meli et al., NDSS 2019** and **Basak et al., ESEM 2023** — secret detection precision and recall; distinctive format beats entropy. `SUP-17`.
 - **Jacobs et al., 2023** — EPSS threshold 0.088 delivers the same coverage as CVSS ≥ 7 at an eighth of the effort. The triage order in `SUP-14`.
 - **Endor Labs, State of Dependency Management** — under 9.5% of dependency vulnerabilities are reachable. Why an SCA hit without a call path is informational.
+
+## Designs read at the source, and where this repository diverged
+
+Not papers, and neither of them changed a pack. They shaped the *contract* — the
+findings artifact and the memory rules around it — and each is listed with the part
+that was adopted beside the part that was refused, because a design copied without
+its failure mode is a design nobody read.
+
+- **SARIF v2.1.0**, OASIS Standard — the `result.baselineState` property. Verified in
+  the normative JSON Schema (`schemas/sarif-schema-2.1.0.json`), whose enum is exactly
+  `new`, `unchanged`, `updated`, `absent`. **Adopted:** the first three terms and the
+  idea that a result carries its state relative to a baseline rather than the reader
+  inferring it from a diff. **Refused:** `absent`. SARIF can afford it because a SARIF
+  result is a neutral record; a finding in this contract is the assertion that a defect
+  exists, so an absent one filed beside the live ones makes severity, triage and
+  invariant 11 each either false or a special case. The absent case lives in
+  `carried_over` instead, and the fourth term is `unmeasured` — the state SARIF has no
+  word for, and the one that separates a comparison that found nothing from a
+  comparison that did not happen. Asked for the enum in prose rather than from the
+  schema, the same source came back with a fifth value, `reintroduced`, which is in
+  neither: a fabricated enum member survives review by looking exactly like a real one,
+  which is why the machine-readable form is the one cited here.
+- **Mantis** (Apache-2.0; licence verified 2026-08-16) — cross-run finding
+  reconciliation. **Adopted:** the tiered key. Its first tier digests a canonical
+  fingerprint, a canonical CWE and the target symbol, which survives line shifts and
+  paraphrased titles — the reason `ehs.fp/v1` excludes line numbers rather than
+  including them for precision. **Refused:** the fallback. The embedding tier catches
+  every exception and returns a mock vector, the dimension check then skips every
+  candidate, and a deployment with no model reports each run as entirely new with
+  nothing in the output saying so. That single behaviour is why `unmeasured` is a
+  declared term rather than a missing field, why invariant 21 refuses a comparative
+  state without a baseline, and why invariant 28 makes the baseline balance instead of
+  trusting the matcher.
 
 ## Annual reports used for prioritization
 

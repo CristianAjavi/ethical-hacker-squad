@@ -59,7 +59,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "no attributed verbatim span, every cited owner attributed, every allowlisted source licensed" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

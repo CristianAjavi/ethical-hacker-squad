@@ -6,7 +6,175 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Added
+
+- **The engagement memory reaches the human reader.** A new mandatory report section,
+  `engagement-memory`, with two rules on the floor of `gate-report-contract.sh`: every
+  finding prints what it is against the previous run, and every finding the previous run
+  reported and this one did not is listed with what happened to it. As shipped an hour
+  earlier the comparison lived only in `findings.json`, which a client does not read —
+  `baseline_state` and `disposition` were declared in `vocabulary.md`, encoded in the
+  schema, and named nowhere in the document the engagement actually delivers. Mandatory
+  and not conditional on purpose: a section that disappears on a first run brings back the
+  substitution invariant 28 refuses, because a reader who sees nothing cannot tell "first
+  engagement" from "nobody compared". The on-screen handover gained the fourth number for
+  the same reason, and on a first engagement it is said rather than omitted — omitting it
+  is how a reader learns that a missing number means zero.
+
+- **The report floor is checked in both directions.** `gate-report-contract.sh` asked the
+  specification about every section the gate lists and never asked which sections the
+  specification declares, so a section could be added, be read by every leader, govern
+  what a client receives, and be registered nowhere. The comment beside the conditional
+  list already asserted the property; a comment is not a check. The reverse pass found one
+  on its first run: `handover`, declared mandatory in `report.md` since the handover work
+  and on neither list — deleting it would not have failed this gate. Now registered, with
+  a self-test case that adds an unregistered section and expects red.
+
+- **Invariants 31 and 32, and the note that said they were not enforced.** `vocabulary.md`
+  still described its cross-dimension invariants as "doctrine, not yet gated" because "we
+  do not emit a machine-readable finding yet" — both halves untrue since the schema
+  landed. Each is now marked with what holds it up, and marking them honestly exposed two
+  that nothing did: `confirmed` required only that confidence not be `low`, so the middle
+  term went through unchallenged (measured across 153 artifacts and 807 findings: three
+  real blinded bench runs took that door), and `verification: refuted` did not require
+  `status: withdrawn`, so a finding could survive its own refutation as a live claim the
+  reader may already have acted on. Zero violations of the second in those 807, which is
+  the cheapest moment to gate it. Two negative fixtures, each measured to fail for exactly
+  one reason.
+
+- **Engagement memory: what this run is against the last one.** An audit that cannot
+  remember the previous audit reports the same list every time, and the reader cannot
+  tell a defect that came back from one that never left. `ehs.findings/v2` adds a target
+  digest, a baseline, a `baseline_state` on every finding, a structural fingerprint and a
+  `carried_over` array; invariants 20–30 are the arithmetic over them, and
+  `gate-engagement-memory.sh` guards the contract they rest on.
+
+  Three decisions carry the design. **The fingerprint is executable**: `ehs.fp/v1` is
+  specified precisely enough that the validator RECOMPUTES it and refuses a value that
+  does not reproduce, because an algorithm nothing recomputes is prose wearing a field
+  name. Its inputs deliberately exclude line numbers — measured over 117 real artifacts
+  and 587 findings, a line-based key re-identified 55 findings where the structural key
+  re-identified 18, and it looks better precisely because it is counting matches a rebase
+  would have destroyed. No key over these fields is unique (`path+line+procedure`
+  collides on 24 of 587), so the fingerprint is a candidate key with a declared `ordinal`
+  and never an identity. **`unmeasured` is a declared term, not a missing field**, so a
+  comparison that did not happen cannot be read as one that found nothing. And **the
+  baseline balances**: every baseline finding is either continued by a finding here or
+  answered in `carried_over`, counts checked against `engagement.baseline.findings_count`,
+  because a finding that simply stops appearing reads exactly like a finding that was
+  fixed.
+
+  The failure mode this is built against is measured, not hypothetical. Mantis's Tier 1
+  key is sound; its embedding fallback catches every exception and returns a mock vector,
+  the dimension check then skips every candidate, and a deployment with no model reports
+  each run as entirely new with nothing saying so. Invariant 21 makes that state
+  unwriteable. Carried-over entries also require a `procedure` that resolves against the
+  corpus — the citability constraint the roadmap item was written with, which is the
+  other neighbouring failure mode: a store that can say a defect was fixed and not say
+  what found it.
+
+  Eleven negative fixtures, one per invariant, each measured to fail for exactly one
+  reason, plus a sixteen-case battery for the gate. Backlog item 15, shipped out of
+  order; `docs/competitive-analysis.md` §5 says why.
+
+- **`web-api` §12: encoding, charset and normalisation.** `WEB-29` a response whose
+  character encoding the server never declares, `WEB-30` normalisation or case folding
+  applied after the check, `WEB-31` two layers reading the same bytes as different
+  characters. The class had zero appearances across nineteen reference files, and it is
+  the one where a filter and the thing it protects disagree about what a string *is*.
+
+  `WEB-30`'s worked table is measured by codepoint on CPython 3.9 rather than by rendered
+  glyph, because U+212A and `K` render identically and a probe comparing rendered strings
+  agrees with whatever it was told: NFKC collapses the fullwidth metacharacters and leaves
+  `ẞ`, case folding does the reverse, both collapse U+017F and U+212A, and neither touches
+  U+0131 — which an `upper()`→`lower()` round trip turns into `i`. A filter tested only
+  against fullwidth input misses a folding path. The UTF-7 XSS every write-up of this class
+  still reaches for is recorded as **historical**: the encoding is absent from the WHATWG
+  Encoding Standard's table, and that standard requires user agents to support no other
+  labels.
+
+- **Severity calibration: ten caps that rule a finding down.** Severity was the one
+  dimension of `vocabulary.md` with no discipline behind it — `report.md` said it was a
+  judgement about *this* system rather than a copied scanner label, and then gave the model
+  no rule to apply. `references/triage.md` now carries `SEV-01`..`SEV-10` beside the
+  false-positive rules: absolute caps under the marginal-capability principle, each
+  answered the same four ways `FP-*` is, each a **ceiling** rather than a score.
+
+  Three things make it more than a list. **`UNKNOWN` binds exactly as `HOLDS` does** — not
+  knowing whether a cap applies is not permission to sit above it, which is the doctrine of
+  exit code `2` applied to a label, and the deliberate inverse of CVSS v4.0 resolving an
+  undefined Exploit Maturity to *Attacked*. **The ceiling is never written into the
+  finding**: it is read from the catalogue, so a finding cannot restate the cap it is about
+  to exceed. And **`DOES_NOT_HOLD` costs a reason on `critical` and `high`** — the one place
+  this family does not copy `FP-*`, because there the expensive claim is the exculpation and
+  here it is the dismissal that buys the label.
+
+  Why caps and not a score: CVSS, EPSS, SSVC and the Exploitability Index agree at Cohen's
+  kappa near zero over 600 real vulnerabilities (arXiv:2508.13644, CCS 2025), so there is no
+  external oracle to import; 68% of trained CVSS users re-rated the same vulnerabilities
+  differently on a second pass (arXiv:2308.15259, IEEE S&P 2024); and four LLMs judged
+  against SSVC's decision points over 384 vulnerabilities "tended to over-predict risk"
+  (arXiv:2510.18508). SSVC's own pilot shows where agreement survives — Fleiss' kappa 0.807
+  on Exploitation against 0.122 on Safety Impact — and that split is why this is a list of
+  observable caps rather than a decision tree.
+
+  `findings.schema.json` gains `findings[].severity_calibration`, mirroring `triage`.
+  `gate-findings-artifact.sh` gains invariants 12-19 and nine negative fixtures, one per
+  invariant. `gate-severity-calibration.sh` owns the catalogue itself: contiguous ids, every
+  ceiling a term `vocabulary.md` declares, no ceiling at the top of the order, and — this is
+  the part that makes it more than a documentation gate — **it refuses to pass when its own
+  arithmetic did not run**. Answer every cap `NOT_APPLICABLE`, or drop every fixture to
+  `medium`, and the counter reaches zero through a state someone can actually create; that is
+  the silent retirement of a control, and it exits `2`.
+
+  Measured on this tree: 51 of 53 expensive findings calibrated, 51 ceilings compared, 16 of
+  16 self-test cases behaving. Two defects surfaced in that battery and were fixed before the
+  change shipped — `no-critical-or-high-finding-anywhere` returned the right `2` for the
+  wrong reason (the missing arithmetic is the symptom; no expensive finding is the cause, so
+  the checks were reordered), and `core-missing` could never have failed, because the harness
+  ran the source tree's gate against a copied root and only the copy's core was deleted.
+  Backlog item 8 of `docs/competitive-analysis.md` is `shipped`.
+
 ### Fixed
+
+- **The stale-reason gate read one line at a time, and prose wraps.** `gate-competitive-backlog.sh`
+  shipped looking for a word of absence on the same physical line as the citation.
+  Twenty-five minutes later, one line of context either way turned up
+  `references/vocabulary.md:322-324` — "we do not yet emit one in a machine-readable form.
+  That arrives with the findings artifact of backlog item 7" <!-- backlog:quoted --> — the `yet` on one line, the
+  citation on the next, wrapped at eighty columns. It was a second instance of the exact
+  class the gate exists to catch, and the gate had printed a clean verdict over it. The
+  window is now ±1 line and the width is **measured**, not chosen: on this tree ±0 finds
+  nothing, ±1 finds two, ±2 reaches into self-test fixtures. The exemption widens with it,
+  so a `backlog:quoted` marker written on the line above a quotation keeps working. The
+  sentence itself was rewritten: the machine-readable form ships, and what this repository
+  lacks is a report of its own, since it audits other trees.
+
+- **Eleven gates reported a crash as a measured failure.** The exit contract has three
+  values on purpose — `0` measured and clean, `1` measured and FAILS, `2` COULD NOT MEASURE
+  and never a pass — and python exits `1` on an unhandled exception. Every python-backed
+  wrapper ended in `case "$rc" in ... 1) : ;;`, so a core that could not run at all printed a
+  confident red about a tree it never opened. No self-test reached the arm: a self-test breaks
+  the *document* a gate reads, not the gate's own core. Measured by prepending
+  `raise RuntimeError` to each core and reading the verdict — eleven said "measured, FAILS";
+  the two survivors, `gate-governance-contract.sh` and `gate-bench-index.sh`, got there by
+  running a fixture battery first, whose failure is already could-not-measure.
+  `gate_fail` now counts what it prints, and `gate_core_rc` in `lib/common.sh` tells the two
+  apart by the only thing that separates them: **a real failure names its findings**. Verified
+  both ways — a crashing core returns `2` in all thirteen, and a planted unresolvable id and a
+  planted stale reason still return `1`. **The first probe reported eight**: two gates bailed
+  on a missing input before reaching python, so their mapping was *not measured* rather than
+  correct, and `gate-bench-integrity.sh` was missed because its core is a heredoc rather than a
+  file under `lib/`. Three of the eleven were found by distrusting the first count.
+
+- **Two gates blamed a backlog item that had already shipped.**
+  `gate-negative-evidence.sh` and `gate-verdict-vocabulary.sh` each declared, in their
+  out-of-scope sections and on every run, that no machine-readable finding was emitted
+  and pointed at backlog #7 as the reason — while #7's schema, validator and fixtures were
+  in the tree. The caveat still holds (this repository audits other trees and holds no report
+  of its own) so the lines stay; what changed is the reason attached to them, which now says
+  the artifact ships and there is simply no report here to read. `gate-competitive-backlog.sh`
+  is what keeps a reason from going stale unnoticed again.
 
 - **A pointer in `references/team.md` sent the reader to the file they were already reading.**
   Its *"Fallback path: no plugin agents available"* section said *"`references/team.md` holds the
@@ -46,6 +214,43 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`gate-crash-is-not-a-red.sh`.** Every gate in the inventory that runs a python core behind
+  a `case "$rc"` mapping must route the `1` arm through `gate_core_rc`; the two ways to get it
+  wrong are named apart. It inspects itself and **obeys the rule rather than excusing itself**,
+  and its self-test fixtures are assembled from pieces — written literally they would contain
+  the strings the gate searches for, and it would have passed on the presence of its own test
+  data. Three throwaway gate directories assert red, green and could-not-measure.
+
+- **`gate-competitive-backlog.sh` — the roadmap, measured against the gate directory.**
+  `docs/competitive-analysis.md` §5 lists fifteen items, each naming the gate that would keep
+  it, and carried no status at all: the only way to learn what had shipped was to grep and
+  infer. Nobody did, and two gates went on printing, <!-- backlog:quoted -->
+  *"no machine-readable finding is emitted yet (backlog #7)"*, on every run while item 7's
+  schema, validator and fixtures were shipping.
+  The caveat was true; the reason had gone stale, and a stale reason reads like a live one.
+  The table now carries a **Status** column — measured, not asserted: **7 shipped, 1 partial,
+  7 open** — and four checks keep it honest. **B1** the status is one of three declared values.
+  **B2** a `shipped` or `partial` row names a gate the runner has, from `run-all.sh --list`
+  rather than a glob, so this gate and the runner cannot disagree about what a gate is.
+  **B3** no `open` row is quietly kept by a gate that already exists — an item built and never
+  crossed off sends the next reader to build it twice. **B4** no line in the repository cites
+  `backlog #N` beside a word of absence when row N ships; every run prints how many citations
+  it resolved and across how many files, so the figure cannot go stale in this entry.
+  B4's word list is present-tense on purpose: the first draft flagged the sentence that
+  *narrates why item 7 was written*, which is how every gate header here opens. Quoting a
+  retired reason is exempted by the token `backlog:quoted` on the line or the one above, and
+  **every exemption is counted and printed** — one line today. 17 self-test cases, four of them
+  negative controls.
+
+- **`gate-competitive-backlog.selftest.sh`.** It went red on its first run, and every red was
+  real: all four could-not-measure arms were dead code (the core called `unmeasured(...)`, the
+  name of the *list*, so each arm raised `TypeError` instead of firing); two cases then passed
+  on the wrong signal, because a traceback prints the offending source line and a needle matched
+  the text of a message that was never emitted; and the `scanned == 0` guard could not fire at
+  all, since it counted files containing the word "backlog" and this gate's own wrapper, core
+  and self-test all contain it — **the same unfireable shape already fixed once in A4 of
+  `gate-corpus-identifiers.sh`, and the first time a self-test caught it instead of a mutant.**
 
 - **`gate-corpus-identifiers.sh` gained A4: every id the corpus cites from its own packs has to
   resolve to one it declares.** The gate exists because of a line in the corpus's citation policy —

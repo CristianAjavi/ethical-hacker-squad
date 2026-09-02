@@ -509,7 +509,9 @@ printf '  checked: %d check(s) — the rule in %s against %d declared term(s),\n
   "$N_CHECKED" "$RULE_REL" "$N_DECL"
 printf '           plus %d markdown file(s) read by the detector\n' "$N_FILES"
 printf '  NOT checked (out of scope by design, not by omission):\n'
-printf '    - delivered audit reports: no machine-readable finding is emitted yet (backlog #7).\n'
+printf '    - delivered audit reports: this repository audits other trees and holds none of\n'
+printf '      its own. The findings artifact of backlog #7 ships - schema, validator and\n'
+printf '      fixtures - so a real report CAN be validated; there is simply no report here.\n'
 printf '      This gate proves the rule exists and that nothing contradicts it; it cannot prove\n'
 printf '      that a reach proof written in a real report is true, or even present;\n'
 printf '    - non-markdown files: scripts, workflows and issue templates;\n'
