@@ -138,6 +138,19 @@ self_test() {
     if [ "${rule_found:-0}" -lt 1 ]; then
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should trigger '$expect' and it did not"
       ok=0
+      continue
+    fi
+    # A rule name is not a message. Where one rule has more than one thing to say,
+    # `<fixture>.expected` pins WHICH of them this case must produce - otherwise a
+    # fixture passes on the right verdict with the wrong explanation, and a gate can
+    # go mute one branch at a time without a single check turning red.
+    if [ -f "${f%.yml}.expected" ]; then
+      while IFS= read -r needle; do
+        [ -n "$needle" ] || continue
+        grep -qF "$needle" "$out" || {
+          gate_warn "NEGATIVE self-test: $(basename "$f") gave the right verdict but never says: $needle"
+          ok=0; }
+      done < "${f%.yml}.expected"
     fi
   done
 
@@ -172,7 +185,7 @@ self_test() {
 # ---------------------------------------------------------------------------
 main() {
   gate_header "workflow-hardening (awk, no external dependencies)"
-  gate_scope   "allowed triggers; permissions {} at the root and minimum (not in bulk) per job; pin to a 40-char SHA + version comment; reads of the secrets context (forms .X, ['X'] and toJSON) in workflows reachable from forks"
+  gate_scope   "allowed triggers; permissions {} at the root and minimum (not in bulk) per job; pin to a 40-char SHA + version comment; reads of the secrets context (forms .X, ['X'] and toJSON) in workflows reachable from forks; \`pull_request\` filtered by BASE branch"
   gate_out_of_scope "template injection in \`run:\`, shellcheck, YAML/cron syntax, impersonated or known-vulnerable actions - gate-actions-lint.sh (zizmor + actionlint) takes care of that"
 
   if [ ! -f "$AWK_PROG" ]; then

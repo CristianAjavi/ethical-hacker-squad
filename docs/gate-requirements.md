@@ -650,6 +650,27 @@ Editing the JSON changes what is *declared*. Nothing changes on GitHub until `sc
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
 
+## A workflow that filters `pull_request` by base branch
+
+`on.pull_request.branches` matches the **base** branch of the pull request, never the head. That is documented behaviour and it reads like the opposite of what it does, which is why it survived a month in this repository's own CI.
+
+**Measured 2026-09-01**, on two live pull requests read in the same call, with `branches: [main, stable]` in `ci.yml`:
+
+| pull request | base branch | checks shown |
+|---|---|---|
+| #84 | `main` | 7 |
+| #85 | `loop/g7-prefijo-loop` | 4 |
+
+The three missing ones were `gates`, `meter` and `workflow-hardening`. Not skipped, not reported as deferred — **absent**, so the checks screen looked conforming. `run-all.sh` is careful to print `NOT RUN HERE (declared, not silenced)` when it defers a gate; this filter silenced three whole jobs, the first of which runs every gate in the repository. Stacked pull requests are a pattern this repository already uses, and code reaches `main` through them.
+
+Rule 5 of `gate-workflow-hardening.sh` fails on `branches:` or `branches-ignore:` under `pull_request`. `branches:` under `push:` is a different thing — it matches the branch that was pushed — and the rule distinguishes them by which trigger's body it is reading; `good/05-push-filtered-pull-request-not.yml` is the negative control that proves it, because a rule that confused the two would fire on most of this repository.
+
+**The escape hatch is loud.** `# hardening-allow: base-filter <reason>` on the filtered line itself exempts it. A bare marker with no reason does **not** — an exemption nobody has to justify is the filter again with extra steps — and `bad/16-*.expected` pins that the refusal says so, rather than falling back to the generic message. `grep -rn 'hardening-allow: base-filter' .github/workflows` lists every workflow that took the hatch and why. No workflow takes it today.
+
+Proved in the negative by four fixtures, two positives and five mutants: removing rule 5, forgetting `branches-ignore`, letting a bare marker exempt, keeping the refusal but making it say the generic thing, and dropping the guard that separates `push` from `pull_request`. All five turn the gate red.
+
+The fix to `ci.yml` shipped in a separate change (#86) **without** this rule, and said so, rather than leaving the class open and undeclared.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.
