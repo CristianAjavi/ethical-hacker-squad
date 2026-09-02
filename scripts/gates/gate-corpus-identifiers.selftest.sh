@@ -50,7 +50,7 @@ case_run() {
 
 echo "=== self-test: gate-corpus-identifiers.sh (source: $SRC) ==="
 
-case_run control-untouched-repo 0 "every bounded identifier" ""
+case_run control-untouched-repo 0 "every citation of its own ids resolves" ""
 
 # --- A1: one id, two procedures
 case_run duplicate-procedure-id 1 "is declared 2 times" '
@@ -134,6 +134,60 @@ s=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
 s.write_text(re.sub(r"^### ","#### ",s.read_text(),flags=re.M))
 for f in (pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references").glob("*.md"):
     f.write_text(re.sub(r"^### ","#### ",f.read_text(),flags=re.M))'
+
+# --- A4: the corpus's own ids, cited against declared
+#
+# The first case is the everyday one: a citation edited to an id nobody wrote.
+case_run citation-to-an-id-that-does-not-exist 1 "\`VER-11\` is cited" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
+p.write_text(p.read_text().replace("VER-09","VER-11"))'
+
+# A rule declared in a table, not a heading. A4 that knew only headings would
+# call all 38 citations of `FP-08` dangling on an untouched repo; here the row
+# really is gone, and the finding has to name who was left pointing at it.
+case_run rule-declaration-removed-citations-left-behind 1 "\`FP-08\` is cited 38 time" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
+p.write_text(re.sub(r"^\| `FP-08` \|.*\n","",p.read_text(),flags=re.M))'
+
+# The case A2 cannot see. Removing a procedure from the MIDDLE of a pack leaves
+# a hole and A2 catches it; removing the LAST one leaves the numbering perfect,
+# and until A4 the citations pointing at it were nobody s business.
+case_run last-procedure-of-a-pack-deleted-leaves-no-hole 1 "\`REM-07\` is cited" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$K"'/remediation.md"
+t=p.read_text(); i=t.index("### REM-07")
+j=t.find("\n## ",i)
+p.write_text(t[:i] if j<0 else t[:i]+t[j+1:])'
+
+# The negative control. `SEC`, `INPV` and `STORAGE` belong to standards, not to
+# a pack here, so A4 must stay silent on them - that is A3 s work, and a check
+# that claimed them would report the whole bibliography as fabricated.
+case_run external-standard-ids-are-not-the-corpus-ids 0 "every citation of its own ids resolves" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
+p.write_text(p.read_text()+"\nProbe: `CICD-SEC-04`, `WSTG-INPV-05`, `MASVS-STORAGE-1`, `A08:2025`.\n")'
+
+# Both could-not-measure arms. The corpus owns how it declares and how it cites;
+# when either shape changes, A4 says so instead of checking half the evidence.
+case_run rule-tables-no-longer-declare-ids 2 "half its declarations" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
+p.write_text(re.sub(r"^\| `((?:FP|DUP)-\d\d)` \|",r"| \1 |",p.read_text(),flags=re.M))'
+
+case_run corpus-stopped-citing-its-own-ids 2 "stopped cross-referencing itself" '
+import os,re,pathlib,glob
+root=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad"
+rx=re.compile(r"\b(AI|DUP|FP|INF|LOC|MOB|PRV|REM|SUP|VER|WEB)-(\d{2,3})\b")
+for f in list(root.glob("*.md"))+list((root/"references").glob("*.md"))+list((root/"references/knowledge").glob("*.md")):
+    t=f.read_text()
+    out=[]
+    for line in t.split("\n"):
+        d=re.match(r"^###\s+[A-Z]{2,5}-\d{2,3}\b",line) or re.match(r"^\|\s*`[A-Z]{2,5}-\d{2,3}`\s*\|",line)
+        k=d.end() if d else 0
+        out.append(line[:k]+rx.sub("REDACTED",line[k:]))
+    f.write_text("\n".join(out))'
 
 echo "--- $pass passed, $fail failed ---"
 [ "$fail" -eq 0 ] || exit 1

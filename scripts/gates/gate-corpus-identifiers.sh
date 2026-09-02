@@ -21,6 +21,10 @@
 #   A3  every cited identifier of a bounded standard falls inside the scheme
 #       references/traceability.md declares, and the gate's bounds are checked
 #       against that document on every run rather than trusted
+#   A4  every identifier the corpus cites from its OWN packs resolves to one it
+#       declares - the cross-references to `FP-08`, `REM-05`, `VER-09` and their
+#       kind that A1, A2 and A3 all walked past. Every run prints how many it
+#       checked, so the figure never has to be trusted from this comment.
 #
 # WHAT IT DOES NOT MEASURE
 #   Whether a valid identifier is the RIGHT one for the procedure that cites it:
@@ -44,7 +48,7 @@ ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 CORE="$HERE/lib/corpus_identifiers.py"
 
 gate_header "corpus-identifiers (the ids it declares, and the ids it cites)"
-gate_scope "duplicate procedure ids, holes in a pack's numbering, and every cited identifier of a standard whose scheme traceability.md bounds"
+gate_scope "duplicate procedure ids, holes in a pack's numbering, every cited identifier of a standard whose scheme traceability.md bounds, and every citation of the corpus's own ids"
 gate_out_of_scope "whether a valid identifier is the right one for the procedure citing it, and families with no enumerable bound (CWE, CAPEC, ATT&CK, ATLAS, MASTG numbers)"
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -66,7 +70,7 @@ while IFS= read -r line; do
 done <<< "$out"
 
 case "$rc" in
-  0) gate_ok "no id is declared twice, no pack skips a number, and every bounded identifier the corpus cites exists" ;;
+  0) gate_ok "no id is declared twice, no pack skips a number, every bounded standards identifier the corpus cites exists, and every citation of its own ids resolves" ;;
   1) : ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
