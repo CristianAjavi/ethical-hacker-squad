@@ -371,11 +371,39 @@ check, not that sentence. **A signal that can go missing by omission produces a 
 like a pass**, and the only reason it was caught is that a claim in the pull-request body predicted
 red and the check said green.
 
-`automation_branch_prefixes` holds only `bot/`. The `loop/` branches this repository's own
-continuous-improvement work runs on are not covered, so the trailer is the *only* signal on them,
-and it is the one a harness can drop. Closing that is tracked separately; it is recorded here
-because the gap is in this gate's inputs and a reader of this section should not have to find it
-in a pull request.
+**Closed on 2026-09-01.** `automation_branch_prefixes` now holds `bot/` and `loop/`. Until then it
+held only `bot/`, so on the `loop/` branches this repository's own continuous-improvement work runs
+on, the trailer was the *only* signal — the one a harness can drop. The cost of the hardening was
+measured before it was paid: over the twelve most recently merged pull requests (#69–#80), **16 of
+17 branch commits already carried the trailer**, so the gate was already firing on those branches.
+Adding the prefix produces **no new red**; it only stops the red going out when nobody signs.
+
+Do not re-measure that ratio on `main`. The squash merge rewrites the message with `--body-file`
+and drops the trailer, so `main` reads 10 of 40 — a number about the merge, not about what this
+gate sees. The figure that matters is the one on the **branch** commits.
+
+Two things had to move with it. The self-test case `agent-trailer-on-a-branch-named-anything` ran
+on `loop/inference-endpoint`; once `loop/` incriminates on its own, that case would have gone red
+with or without the trailer and stopped proving the only thing it claims, so its branch moved to
+`feature/`. And a new case, `loop-branch-is-an-admission-without-a-trailer`, holds the scenario the
+old one used to cover — a `loop/` branch touching a protected path with a commit range that looks
+entirely human. **It was written red before the fix**: rc 0 against a wanted 1.
+
+**The battery itself grew two guards on the same day**, after it filled a 228 GB disk. The script
+was copied out of the repository to mutate one case; `HERE` then pointed at a scratch directory,
+`git rev-parse` failed there, and the last fallback — two levels up from wherever the file happens
+to sit — resolved to a temp tree. Every case tars a fresh copy of that tree, so it was copied
+thirty-three times until the machine could no longer run anything.
+
+The second guard is the one that matters. With no gate to run, every case returned `rc=127` and the
+battery printed `FAILED … (wanted 1)` — **a case verdict for a harness that never measured**. This
+file's own contract reserves exit 2 for that and nothing enforced it. A run that could not measure
+must never be able to look like a case that did. Both guards are proven from outside the repository:
+rc 2, no copy made.
+
+The blind fallback is not unique to this battery — **18 of the 23 self-tests resolve their source
+tree the same way, and 11 of those tar-copy it**. Lifting the guard into a shared helper is tracked
+separately; it is recorded here because the measurement was taken here.
 
 
 ### The rule that could never be satisfied, 2026-09-01

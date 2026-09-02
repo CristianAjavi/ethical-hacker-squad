@@ -42,7 +42,7 @@ Two properties make our version worse than the average case. The blast radius is
 
 **Protected paths fail closed.** A bot pull request whose diff touches any protected path fails CI. The authoritative list is G7 in `docs/gate-requirements.md` and is deliberately not duplicated here: a security list maintained in two places diverges, and the copy is always the one someone trusts. Those files define the system's limits, and the loop cannot move its own fence.
 
-**Asymmetric review by branch prefix.** `bot/` branches face strictly harsher checks than human branches: protected-path enforcement, mandatory provenance on every changed item, and a diff-size cap. The prefix is a trust label, not decoration.
+**Asymmetric review by branch prefix.** `bot/` branches face strictly harsher checks than human branches: protected-path enforcement, mandatory provenance on every changed item, and a diff-size cap. The prefix is a trust label, not decoration. Since 2026-09-01 `loop/` carries the same label, because that is where this repository's own improvement runs work; the reserved prefixes are listed in `scripts/gates/data/protected-paths.json` and not copied here, for the reason given two paragraphs above.
 
 **Visible bot identity.** Loop pull requests are authored by a distinct bot identity, never by the maintainer. Provenance is the whole point: reviewers must be able to tell agent-written from human-written at a glance. For the same reason, the `Co-Authored-By` trailer on agent-assisted commits stays. In a repository whose threat model depends on distinguishing the two, deleting that signal to make the history look tidier would be removing evidence.
 

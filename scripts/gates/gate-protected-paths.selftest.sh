@@ -12,6 +12,35 @@ elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
 else SRC="$(cd "$HERE/../.." && pwd)"; fi
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 
+# ---------------------------------------------------------------------------
+# Two guards, both written on 2026-09-01 after this battery filled a 228 GB disk.
+#
+# The script was copied OUT of the repository to mutate one case. `HERE` then
+# pointed at a scratch directory, `git rev-parse` failed there, and the last
+# fallback - two levels up from wherever the file happens to sit - resolved to a
+# temp tree holding another session's `node_modules`. Every case tars a fresh
+# copy of `SRC`, so that tree was copied THIRTY-THREE times until the disk was
+# full and the machine stopped being able to run anything at all.
+#
+# The second guard matters more than the first. With no gate to run, every case
+# came back `rc=127` and the battery printed `FAILED ... (wanted 1)` - a CASE
+# verdict for a HARNESS that was never able to measure. This file's own header
+# reserves exit 2 for exactly that and nothing enforced it. A run that cannot
+# measure must never be able to look like a case that did.
+# ---------------------------------------------------------------------------
+for needed in scripts/gates/gate-protected-paths.sh scripts/gates/data/protected-paths.json; do
+  if [ ! -f "$SRC/$needed" ]; then
+    echo "UNMEASURABLE the tree to copy does not look like this repository:"
+    echo "              SRC=$SRC"
+    echo "              missing $needed"
+    echo "              Every case tars a full copy of SRC. Pointed at the wrong tree"
+    echo "              this fills the disk. Set EHS_REPO_ROOT, or run the script from"
+    echo "              inside the repository instead of from a copy of it."
+    exit 2
+  fi
+done
+[ -r "$GATE" ] || { echo "UNMEASURABLE the gate under test is not at $GATE"; exit 2; }
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-protected-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
@@ -88,9 +117,29 @@ case_run unattributed-may-touch-them-and-is-listed feat/whatever \
 # PR #72 raised MAX_TREE_BYTES inside scripts/gates/** on a branch the agent had
 # named `loop/...`, and the gate passed it green. Case one is that exact diff.
 # --------------------------------------------------------------------------
-case_run agent-trailer-on-a-branch-named-anything loop/inference-endpoint \
+# The branch here was `loop/inference-endpoint` until 2026-09-01, when `loop/` became
+# an automation prefix. It had to move: with the prefix in place the name alone
+# incriminates, so the case would have gone red whether or not the trailer was there
+# and stopped proving the one thing it claims - that the TRAILER carries the verdict
+# on its own. The `loop/` scenario it used to cover is now the case above, which needs
+# no trailer at all. A case that passes for a reason it does not name measures nothing.
+case_run agent-trailer-on-a-branch-named-anything feature/inference-endpoint \
   'scripts/gates/gate-plugin-integrity.sh' 1 "carries a \`Claude-Session:\` trailer" "" \
   'cafe123\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\tClaude-Session: https://claude.ai/code/session_x'
+
+# --------------------------------------------------------------------------
+# T-ehs-27. `loop/` is where every improvement run of this repository works, and
+# until 2026-09-01 it was not in `automation_branch_prefixes` - so on a `loop/`
+# branch the ONLY signal left was the commit trailer, which is exactly the signal
+# a harness can forget to write. Measured over the 12 most recent merged PRs
+# (#69-#80): 16 of 17 branch commits carried the trailer, so adding the prefix
+# adds ZERO new reds. It only stops the red going out when nobody signs.
+# This case is that omission: a `loop/` branch, a protected path, and a commit
+# range that looks entirely human. Before the prefix it passed GREEN.
+# --------------------------------------------------------------------------
+case_run loop-branch-is-an-admission-without-a-trailer loop/mejora-continua \
+  'scripts/gates/gate-secret-scan.sh' 1 "starts with \`loop/\`" "" \
+  'deadbee\tAna Ruiz <ana@example.org>\tAna Ruiz <ana@example.org>\t'
 
 case_run bot-identity-on-a-branch-named-anything feature/deps-bump \
   '.github/workflows/ci.yml' 1 "names \`\[bot\]\` as an author or committer" "" \
