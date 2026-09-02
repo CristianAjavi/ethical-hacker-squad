@@ -401,9 +401,60 @@ file's own contract reserves exit 2 for that and nothing enforced it. A run that
 must never be able to look like a case that did. Both guards are proven from outside the repository:
 rc 2, no copy made.
 
-The blind fallback is not unique to this battery — **18 of the 23 self-tests resolve their source
-tree the same way, and 11 of those tar-copy it**. Lifting the guard into a shared helper is tracked
-separately; it is recorded here because the measurement was taken here.
+The blind fallback was not unique to this battery — **18 of the 23 self-tests resolved their source
+tree the same way, and 11 of those copy that tree once per case**. The two guards written here were
+therefore the case, not the class, and they were lifted the same week into
+`scripts/gates/lib/selftest-root.sh`; the local copies were removed rather than left beside it, so
+there is one implementation and not two of differing hardness. Both checks travel on the call —
+`ehs_selftest_root --here "$HERE" --gate "$GATE"` — so nothing was dropped in the move.
+
+### The shared root guard, 2026-09-01
+
+`scripts/gates/lib/selftest-root.sh` answers one question — *what tree may this battery copy from?* —
+and refuses with **exit 2** when it cannot tell. It resolves `$EHS_REPO_ROOT`, then `git rev-parse`,
+then the two-levels-up fallback, and then **checks the answer** against two marker files this
+repository always has (`scripts/gates/run-all.sh`, `skills/ethical-hacker-squad/SKILL.md`). The
+fallback was never the bug on its own; trusting it was.
+
+It carries two modes, because three batteries resolve their root differently **on purpose** and a
+helper that quietly normalised them would break what they measure. `gate-negative-evidence.selftest.sh` exists
+to prove the gate returns one verdict whether the checkout is reached physically or through a
+symlink, and feeds `$ROOT` to that comparison as the physical arm — so it calls `--physical`
+(`pwd -P`) and `--no-env`. That second flag is not caution: a first version of that battery varied
+only `EHS_REPO_ROOT` and passed *with the fix and without it*. Normalising it into the default would
+have restored exactly the defect it was written to catch.
+
+`scripts/gates/selftest-root.selftest.sh` measures the class. It discovers every battery that sources
+the guard — never a hardcoded list, which is a literal tracking a file set that changes on its own —
+copies each one into a small impostor tree, and asserts **three** things per case: exit 2, a stated
+could-not-measure reason, and **nothing created inside the impostor**. It runs each battery twice,
+with the helper present and absent, and closes with a mutant that restores the blind fallback and
+requires that the loose run then does *not* stop. Measured: **40 cases, 0 failures, 19 batteries**,
+mutant rc 1.
+
+One battery, `gate-agent-tools.selftest.sh`, refuses on its own executable check before the shared guard is
+reached. That is a correct refusal and counts as a pass, but it is counted separately and **capped at
+two**: what must never grow is the number of batteries whose loose run is stopped by something this
+file is not measuring. A silent stop is a failure from anybody — rc 2 with no could-not-measure
+wording fails whichever guard produced it.
+
+**`gate-contract-inventory.sh` caught this section while it was being written.** The two paragraphs
+above first named those two batteries without their `.selftest.sh` suffix, where they meant
+the *batteries*,
+and that gate reads every `` `gate-…` `` in this document as a control the contract promises. Both
+resolved to gates the runner discovers under a different name, so it reported *a control the
+document promises and nobody runs* — correctly. Measured on the base commit first (rc 0), so the
+red was the new prose and not a pre-existing condition. The names now carry `.selftest.sh`.
+
+It then fired a **second** time, on the paragraph written to record the first — the same defect, one
+turn later, which is the case fixed instead of the class. That is what earned the gate its hint: a
+phantom here is almost never a control that vanished, it is a suffix that was dropped, so when the
+neighbour exists the finding now names it. Fixture `bad/3-the-suffix-was-dropped` proves the wording
+through a `.expected` sidecar, whose lines must appear in the finding. Before it, the battery
+asserted exit codes only — a gate could go mute and no case would notice. The sidecar carries the
+name the repository already uses rather than a new one: `gate-negative-proof-census.sh` counts
+`.expected` files as *assertions*, so a differently-named file would have worked and stayed outside
+the census that exists to stop negative proof shrinking in silence. That census is what caught it.
 
 
 ### The rule that could never be satisfied, 2026-09-01

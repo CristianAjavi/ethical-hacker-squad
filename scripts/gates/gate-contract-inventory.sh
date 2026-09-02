@@ -113,7 +113,19 @@ compare() {  # <doc> <inventory-or-empty> <out>  -> 0 fine | 1 disagreement | 2 
   fi
 
   comm -23 "$inv" "$docd" | sed 's/^/UNDOCUMENTED|/' >> "$out"
-  comm -13 "$inv" "$docd" | sed 's/^/PHANTOM|/' >> "$out"
+  # A phantom is usually a suffix that was dropped, not a control that vanished:
+  # the document says `gate-x` where the runner lists `gate-x.sh`, or where the
+  # thing being discussed is `gate-x.selftest.sh` - which is excluded on purpose
+  # and so reads as a promise of a gate. When the neighbour exists, say so: this
+  # gate reported the bare finding twice in one sitting to the person writing the
+  # prose, who had to work out the cause both times.
+  comm -13 "$inv" "$docd" | while IFS= read -r g; do
+    if grep -qxF "$g.sh" "$inv"; then
+      printf 'PHANTOM|%s|the runner discovers `%s.sh`: add `.sh` for the gate itself, or `.selftest.sh` if you meant its battery\n' "$g" "$g"
+    else
+      printf 'PHANTOM|%s|\n' "$g"
+    fi
+  done >> "$out"
   printf 'STAT|inventory|%s\n'  "$(wc -l < "$inv"  | tr -d ' ')" >> "$out"
   printf 'STAT|documented|%s\n' "$(wc -l < "$docd" | tr -d ' ')" >> "$out"
 
@@ -126,7 +138,7 @@ compare() {  # <doc> <inventory-or-empty> <out>  -> 0 fine | 1 disagreement | 2 
 # group it lives in is the verdict it must produce.
 # ---------------------------------------------------------------------------
 self_test() {
-  local ok=1 d out rc want
+  local ok=1 d out rc want expected
 
   [ -d "$FIXTURES" ] || { gate_warn "self-test: I cannot find the fixtures in $FIXTURES"; return "$GATE_UNMEASURABLE"; }
   out="$TMPDIR_GATE/selftest.out"
@@ -143,6 +155,23 @@ self_test() {
         good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; } ;;
         unmeasurable) [ "$rc" -eq 2 ] || { gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (2) and gave $rc"; ok=0; } ;;
       esac
+      # An optional `.expected` sidecar asserts the WORDING, not just the verdict.
+      # A gate that names the defect and stops there costs the reader the fix;
+      # this one reported the same thing twice in one sitting to the person
+      # writing the prose, who had to work out both times that a suffix was
+      # missing. The name is the repository's existing sidecar convention on
+      # purpose - `fixtures/findings` has 29 of them, and
+      # gate-negative-proof-census.sh counts `.expected` files as ASSERTIONS. A
+      # differently-named file would have worked and stayed outside the census
+      # that exists to stop negative proof shrinking in silence.
+      expected="${d%/}.expected"
+      if [ -f "$expected" ]; then
+        while IFS= read -r needle; do
+          [ -n "$needle" ] || continue
+          grep -qF "$needle" "$out" || {
+            gate_warn "self-test: $(basename "$d") gave the right verdict but never says: $needle"; ok=0; }
+        done < "$expected"
+      fi
     done
     [ "$found" -eq 1 ] || { gate_warn "self-test: there are no '$want' fixtures"; ok=0; }
   done
@@ -191,8 +220,9 @@ main() {
       grep '^UNDOCUMENTED|' "$out" | while IFS='|' read -r _k g; do
         gate_fail "$g is discovered by the runner and is named nowhere in the contract: a control nobody can find from the document"
       done
-      grep '^PHANTOM|' "$out" | while IFS='|' read -r _k g; do
-        gate_fail "the contract names $g and the runner does not discover it: a control the document promises and nobody runs"
+      grep '^PHANTOM|' "$out" | while IFS='|' read -r _k g hint; do
+        [ -n "$hint" ] && hint=" - $hint"
+        gate_fail "the contract names $g and the runner does not discover it: a control the document promises and nobody runs$hint"
       done
       gate_verdict 1; return "$GATE_FAIL" ;;
   esac

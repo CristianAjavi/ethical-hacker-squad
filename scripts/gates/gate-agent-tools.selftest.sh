@@ -29,13 +29,9 @@ FIX="$HERE/fixtures/agent-tools"
 [ -x "$GATE" ] || { printf 'COULD NOT MEASURE: %s is not executable.\n' "$GATE" >&2; exit 2; }
 [ -d "$FIX" ]  || { printf 'COULD NOT MEASURE: fixtures missing at %s.\n' "$FIX" >&2; exit 2; }
 
-if [ -n "${EHS_REPO_ROOT:-}" ]; then
-  SRC="$EHS_REPO_ROOT"
-elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then
-  :
-else
-  SRC="$(cd "$HERE/../.." && pwd)"
-fi
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+SRC="$(ehs_selftest_root --here "$HERE")" || exit 2
 for need in agents docs/gate-requirements.md README.md CHANGELOG.md CONTRIBUTING.md; do
   [ -e "$SRC/$need" ] || { printf 'COULD NOT MEASURE: %s has no %s.\n' "$SRC" "$need" >&2; exit 2; }
 done

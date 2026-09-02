@@ -23,7 +23,9 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
 GATE="$HERE/gate-negative-evidence.sh"
-ROOT="$(cd "$HERE/../.." && pwd -P)"
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+ROOT="$(ehs_selftest_root --here "$HERE" --physical --no-env)" || exit 2
 [ -f "$GATE" ] || { echo "UNMEASURABLE $GATE is missing"; exit 2; }
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-negev-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT

@@ -15,7 +15,9 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+ROOT="$(ehs_selftest_root --here "$HERE")" || exit 2
 GATE_REL="scripts/gates/gate-labels-taxonomy.sh"
 [ -f "$ROOT/$GATE_REL" ] || { echo "UNMEASURABLE $GATE_REL is missing"; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
