@@ -8,6 +8,47 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The API double modelled a GitHub that returns two of five keys, so eighteen cases went
+  UNMEASURABLE.** `scripts/gh/tests/test-governance-rc0.sh` and `test-governance-drift.sh` built
+  `security_and_analysis` with `secret_scanning` and `secret_scanning_push_protection`; the live API
+  returns five. Sections 6b and 6c of `apply-governance.sh` read that object, could not find their
+  key, and returned **2** — correct behaviour, and it outranks both suites' expected 0 and 1. Not one
+  of the eighteen reds was the thing it tests. The double now serves the key set
+  `security_and_analysis_declared` names, overlaid by the three blocks that carry a rationale so an
+  override still moves the wire. That repair also made 6b and 6c pass **by construction**, which this
+  file's own first comment calls dead code, so each is driven red: the setting switched on behind us,
+  a key returned and undeclared, a key declared and not returned, and the whole object gone — the
+  last asserted at 2, because three sections read it now and COULD NOT MEASURE has to keep
+  outranking the drift the census would report from the same absence.
+
+- **`docs/gate-requirements.md` told readers that one of the two runners was everything.** "Run
+  everything locally with `bash scripts/gates/run-all.sh`" — while CI's `gates` job runs *two*
+  runners, `run-all.sh` over the gates and `run-batteries.sh` over every `*.selftest.sh` in the tree.
+  That is not a documentation nit: it made a pull request body claiming "full suite: 34 run, 34
+  green" **unverifiable**, because no local command's green would have disagreed with it, and CI
+  went red in that same job on the runner the sentence did not mention. The workflow file already
+  records this exact shape being fixed one level down — the battery *rule* used to live inline in
+  the YAML, "unreproducible on a laptop", and moved into a file both callers share. The **set of
+  runners** did not, and stayed knowable only by reading the workflow.
+
+### Added
+
+- **`scripts/verify.sh` — one command that runs what CI's `gates` job runs**, in its order, under
+  the same exit-code doctrine (2 outranks 1 outranks 0). `--list` prints the commands and runs
+  nothing.
+
+- **`gate-verify-mirror.sh` — the check that keeps it a mirror.** Compares `verify.sh --list` against
+  the job's `run:` steps in **both directions**: a step CI runs and `verify.sh` omits makes a local
+  green worthless again; a step `verify.sh` runs alone is a local red nobody is obliged to fix.
+  Order counts, and the comparison is textual, because a paraphrase — the same runner without its
+  `--skip` — is exactly how a mirror stops mirroring while still looking like one. One-directional
+  registries are this repository's recurring defect: the report contract had it, `governance.json`
+  had it, and the subject changes while the shape does not. Proved in the negative over **15 cases**,
+  each building a throwaway workflow and mirror and driving the gate end to end, including the one
+  that matters most: **two empty lists, which agree perfectly and mean nothing.** Its own first draft
+  capped a *measured failure* at 2 rather than only a would-be pass, hiding a real finding behind a
+  caveat about the instrument; the self-test caught it.
+
 - **A repository setting was governing this project and nothing here knew it existed.**
   `dependabot_security_updates` is disabled on the live repository. That is the right value —
   security updates are **not** scoped by the `updates:` blocks in `.github/dependabot.yml`, so no
