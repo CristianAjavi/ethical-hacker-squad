@@ -46,7 +46,7 @@ Each carries its own safety contract and loads its own pack, so your prompt supp
 
 ### Fallback path: no plugin agents available
 
-Copied into `~/.claude/skills/` rather than installed as a plugin, those subagents do not exist. `references/team.md` holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
+Copied into `~/.claude/skills/` rather than installed as a plugin, those subagents do not exist. **§ Dispatching without the plugin subagents**, below, holds the fallback: what to copy into a `general-purpose` prompt, and why every constraint has to travel with it.
 
 Never let the same agent both fix and verify.
 
