@@ -133,10 +133,43 @@ run_case reference-over-budget       1 "split the file"            m_fat_referen
 run_case tree-over-byte-budget       1 "blast-radius"              m_none EHS_MAX_TREE_BYTES=10
 run_case tree-over-file-budget       1 "files >"                   m_none EHS_MAX_TREE_FILES=1
 # The cap fails only once it is too late; the notice is what a contributor can
-# act on. Both halves proved: it speaks under one reference file of headroom,
-# and it says nothing when there is room. Neither changes the verdict.
-run_case tree-headroom-notice        0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000 EHS_MAX_REF_BYTES=999999
-run_case_absent tree-headroom-quiet  0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000
+# act on. Every budget gets both halves: it speaks when the room runs out, and it
+# says nothing when there is room. Neither changes the verdict.
+#
+# The needles are per-budget on purpose. "of headroom left" is shared by all four
+# notices now, so a test using it would pass on ANY of them speaking - including
+# the wrong one. Until 2026-09-01 only the tree budget had a notice at all and
+# the shared needle was exact; it is not any more, and a test that stops being
+# exact without turning red is how a check goes quietly wrong.
+run_case tree-headroom-notice        0 "a single reference file"    m_none EHS_MAX_TREE_BYTES=1000000 EHS_MAX_REF_BYTES=999999
+run_case_absent tree-headroom-quiet  0 "a single reference file"    m_none EHS_MAX_TREE_BYTES=1000000
+
+# SKILL.md: the tightest budget in the ledger and, until this change, silent.
+# Measured 2026-09-01 it stood at 12278 B of 12288 - ten bytes - and printed a
+# bare [OK]. Eight commits in a row lived between 7 and 21 bytes of that cap.
+run_case skill-headroom-notice       0 "the smallest section in the file"  m_none EHS_NEAR_SKILL_MD_BYTES=999999
+run_case_absent skill-headroom-quiet 0 "the smallest section in the file"  m_none
+
+# A reference file: 95.8% used in the real corpus, with 1373 B left against a
+# median procedure of 1787 B - so the next procedure in that pack more likely
+# than not trips the cap.
+run_case ref-headroom-notice         0 "a median procedure"        m_none EHS_NEAR_REF_BYTES=999999
+run_case_absent ref-headroom-quiet   0 "a median procedure"        m_none
+
+# The file count, the one axis measured in files rather than bytes: proves the
+# helper does not assume its unit is always B.
+run_case files-headroom-notice       0 "a pack split"              m_none EHS_NEAR_TREE_FILES=999
+run_case_absent files-headroom-quiet 0 "a pack split"              m_none
+
+# A pass that reports no number cannot show a budget being consumed. The
+# reference check used to say only "no reference file exceeds N B", which is true
+# at 1% and at 99%; it now names the tightest file and what it costs.
+run_case ref-names-the-tightest      0 "tightest is"               m_none
+# The needle is anchored to SKILL.md's own line. "% used" alone survived a
+# mutant that deleted it from exactly this line: three other budgets print the
+# same two words, so the case passed on one of them. Written two lines under a
+# comment warning about shared needles, and caught by the mutant, not by review.
+run_case skill-reports-utilisation   0 "SKILL.md:.*% used"        m_none
 
 echo "-- could not measure (never a pass)"
 run_case no-skill-md-anywhere        2 "nothing to validate"       m_no_skill_md

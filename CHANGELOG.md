@@ -38,6 +38,36 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **Every size budget now says how much room is left, not just whether it fits.**
+  `gate-plugin-integrity.sh` enforces four; three reported only pass or fail, so their warning
+  arrived *after* the cap was tripped. Measured in one run of the real repository: `SKILL.md` at
+  **12,278 B of 12,288 — ten bytes, 99.92% used**; `references/knowledge/ai-safety.md` at
+  **31,395 B of 32,768 — 1,373 B, 95.81%**; the served tree at 86.44%; the file count at 64.06%.
+  **The only budget that warned was the one furthest from its limit.** The mechanism already
+  existed, with its reason written beside it — *"say it while there is still room to act… the
+  contributor who trips it is never the one who spent the budget"* — and it was wired to the wrong
+  budget. Neither silent case is theoretical: `SKILL.md` has sat between 7 and 21 bytes of its cap
+  across the eight commits that touched it since 25 August, every one green, and 1,373 B is **less
+  than the median procedure in this corpus** (1,787 B over 171 of them), so the next procedure added
+  to that pack more likely than not trips the per-file cap. All four now share one `headroom_note`
+  helper, report utilisation, and name the tightest reference file — `no reference file exceeds
+  32768 B` is equally true at 1% and at 99%. Trip points are the size of *one more of whatever grows
+  that budget*, measured rather than round, declared in `scripts/gates/data/budget-ledger.json` as
+  `not_a_budget` because crossing one fails nothing: `EHS_NEAR_SKILL_MD_BYTES` 512 (smallest section
+  in the file: 488 B), `EHS_NEAR_REF_BYTES` 2048 (median procedure 1,787 B, p75 2,349 B),
+  `EHS_NEAR_TREE_FILES` 4 (a pack split adds one or two). Eight self-test cases, each notice proved
+  both to speak and to stay quiet, and six mutants, all six red.
+  See `docs/gate-requirements.md` § *A budget at 99.9% passes green*.
+
+### Fixed
+
+- **A budget's stated figure had gone stale in the one place people trust it.** The `measured` field
+  of `EHS_MAX_SKILL_MD_BYTES` read *"~12,268 B today — 20 bytes"* while the file was 12,278: half the
+  declared headroom had been spent and the record had not moved. A live number in prose decays with
+  every edit and nothing turns red when it does. The field now states the eight-commit range, which
+  does not decay, and points at the gate for the current figure.
+
+
 - **`gate-workflow-hardening.sh` rule 5: `pull_request` may not be filtered by base branch.**
   The check for the defect above. `on.pull_request.branches` matches the **base** branch, never the
   head, so restricting it silently unhooks the workflow from every pull request opened against

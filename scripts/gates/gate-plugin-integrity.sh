@@ -113,6 +113,29 @@ MAX_REF_BYTES="${EHS_MAX_REF_BYTES:-32768}"
 MAX_TREE_BYTES="${EHS_MAX_TREE_BYTES:-786432}"
 MAX_TREE_FILES="${EHS_MAX_TREE_FILES:-64}"
 
+# A budget that reports only pass/fail gives its warning AFTER the fact, and the
+# contributor who trips a cap is never the one who spent the room. The served
+# tree has said so in a comment since it was written and acts on it; the three
+# budgets beside it did not - and measured 2026-09-01, the two TIGHTEST in the
+# whole ledger were among the silent ones:
+#
+#   SKILL.md                 12278 B / 12288 B  ->    10 B  (99.92% used)
+#   knowledge/ai-safety.md   31395 B / 32768 B  ->  1373 B  (95.81% used)
+#   served tree             679793 B /786432 B  ->106639 B  (86.44%, and the
+#                                                            only one that warns)
+#
+# SKILL.md has been between 7 and 21 bytes of its cap for eight commits, every
+# one of them green. 1373 B is less than the MEDIAN procedure in this corpus
+# (1787 B over 171 of them), so the next procedure added to that pack more likely
+# than not trips the per-file cap, with nothing said in advance.
+#
+# The trip point of each budget is "one more of whatever grows it", measured
+# rather than round:
+NEAR_SKILL_MD_BYTES="${EHS_NEAR_SKILL_MD_BYTES:-512}"   # smallest `## ` section in SKILL.md today: 488 B
+NEAR_REF_BYTES="${EHS_NEAR_REF_BYTES:-2048}"            # 171 procedures: median 1787 B, p75 2349 B
+NEAR_TREE_FILES="${EHS_NEAR_TREE_FILES:-4}"             # a pack split turns one file into two or three
+# The served tree's own trip point stays MAX_REF_BYTES: one whole reference file.
+
 # Keys tolerated in the SKILL.md frontmatter. Everything else is rejected: an
 # unknown key in a file distributed to third parties is unaudited material with
 # potentially executable semantics.
@@ -144,6 +167,18 @@ unmeasurable() {
 }
 
 fsize() { wc -c <"$1" | tr -d ' '; }
+
+# headroom_note <used> <limit> <trip> <unit-word> <what one more of it is>
+# Says it while there is still room to act. Silent when the headroom is wide, so
+# it stays a signal rather than a line people learn to scroll past.
+headroom_note() {
+  local used="$1" limit="$2" trip="$3" unit="$4" what="$5" left
+  left=$(( limit - used ))
+  (( left < trip )) || return 0
+  info "NOTE: only $left $unit of headroom left, under the $trip $unit of $what."
+  info "      The next one trips this cap, and whoever trips it is not who spent the room."
+  info "      Move content out, or re-baseline the bound deliberately with the measurement written down."
+}
 
 # --- 0. tools --------------------------------------------------------------
 section "tools"
@@ -449,39 +484,49 @@ for sf in "${SKILL_FILES[@]}"; do
   if (( sz > MAX_SKILL_MD_BYTES )); then
     fail "$rel weighs $sz B > $MAX_SKILL_MD_BYTES B (it is loaded whole on every trigger; move text to references/)"
   else
-    ok "$rel: $sz B / $MAX_SKILL_MD_BYTES B"
+    ok "$rel: $sz B / $MAX_SKILL_MD_BYTES B ($(( sz * 100 / MAX_SKILL_MD_BYTES ))% used)"
+    headroom_note "$sz" "$MAX_SKILL_MD_BYTES" "$NEAR_SKILL_MD_BYTES" B "the smallest section in the file"
   fi
 done
 
 REF_OVER=0
+REF_TIGHT_SZ=0
+REF_TIGHT=""
 for f in "${TREE_FILES[@]}"; do
   [[ "$(basename "$f")" == "SKILL.md" ]] && continue
   sz=$(fsize "$f")
+  if (( sz > REF_TIGHT_SZ )); then REF_TIGHT_SZ=$sz; REF_TIGHT="${f#"$ROOT"/}"; fi
   if (( sz > MAX_REF_BYTES )); then
     fail "${f#"$ROOT"/} weighs $sz B > $MAX_REF_BYTES B (split the file)"
     REF_OVER=$((REF_OVER + 1))
   fi
 done
-(( REF_OVER == 0 )) && ok "no reference file exceeds $MAX_REF_BYTES B"
+if (( REF_OVER == 0 )); then
+  # Naming the tightest file, not just "none exceeds". A pass that reports no
+  # number cannot show a budget being consumed, and this one was at 95.8%.
+  if [[ -n "$REF_TIGHT" ]]; then
+    ok "no reference file exceeds $MAX_REF_BYTES B; tightest is $REF_TIGHT at $REF_TIGHT_SZ B ($(( REF_TIGHT_SZ * 100 / MAX_REF_BYTES ))% used)"
+    headroom_note "$REF_TIGHT_SZ" "$MAX_REF_BYTES" "$NEAR_REF_BYTES" B "a median procedure in this corpus"
+  else
+    ok "no reference file exceeds $MAX_REF_BYTES B"
+  fi
+fi
 
 TREE_BYTES=0
 for f in "${TREE_FILES[@]}"; do TREE_BYTES=$((TREE_BYTES + $(fsize "$f"))); done
 if (( TREE_BYTES > MAX_TREE_BYTES )); then
   fail "the served tree (${SERVED_PRESENT[*]}) weighs $TREE_BYTES B > $MAX_TREE_BYTES B (blast-radius limit of the corpus)"
 else
-  ok "the served tree (${SERVED_PRESENT[*]}) weighs $TREE_BYTES B / $MAX_TREE_BYTES B"
-  # Say it while there is still room to act. Below one reference file of
-  # headroom the next procedure trips the cap, and the contributor who trips it
-  # is never the one who spent the budget.
-  if (( MAX_TREE_BYTES - TREE_BYTES < MAX_REF_BYTES )); then
-    info "NOTE: only $((MAX_TREE_BYTES - TREE_BYTES)) B of headroom left, under the $MAX_REF_BYTES B a single reference file may weigh."
-    info "      The next procedure will fail this cap. Re-baseline it deliberately, with the measurement written down, before that happens."
-  fi
+  ok "the served tree (${SERVED_PRESENT[*]}) weighs $TREE_BYTES B / $MAX_TREE_BYTES B ($(( TREE_BYTES * 100 / MAX_TREE_BYTES ))% used)"
+  # This budget has warned since it was written; the wording now comes from the
+  # shared helper so the other three say it too.
+  headroom_note "$TREE_BYTES" "$MAX_TREE_BYTES" "$MAX_REF_BYTES" B "a single reference file"
 fi
 if (( ${#TREE_FILES[@]} > MAX_TREE_FILES )); then
   fail "the served tree has ${#TREE_FILES[@]} files > $MAX_TREE_FILES"
 else
-  ok "the served tree has ${#TREE_FILES[@]} file(s) / $MAX_TREE_FILES"
+  ok "the served tree has ${#TREE_FILES[@]} file(s) / $MAX_TREE_FILES ($(( ${#TREE_FILES[@]} * 100 / MAX_TREE_FILES ))% used)"
+  headroom_note "${#TREE_FILES[@]}" "$MAX_TREE_FILES" "$NEAR_TREE_FILES" "file(s)" "a pack split"
 fi
 
 # --- summary ---------------------------------------------------------------

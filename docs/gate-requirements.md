@@ -671,6 +671,38 @@ Proved in the negative by four fixtures, two positives and five mutants: removin
 
 The fix to `ci.yml` shipped in a separate change (#86) **without** this rule, and said so, rather than leaving the class open and undeclared.
 
+## A budget at 99.9% passes green
+
+`gate-plugin-integrity.sh` enforces four size budgets. Three of them reported only pass or fail, which means their warning arrives **after** the cap is tripped — and whoever trips a cap is never who spent the room.
+
+**Measured 2026-09-01**, all four in one run of the real repository:
+
+| budget | used | limit | headroom | used | warned? |
+|---|---|---|---|---|---|
+| `SKILL.md` bytes | 12,278 | 12,288 | **10 B** | **99.92%** | no |
+| tightest reference file (`knowledge/ai-safety.md`) | 31,395 | 32,768 | **1,373 B** | **95.81%** | no |
+| served tree bytes | 679,793 | 786,432 | 106,639 B | 86.44% | **yes** |
+| served tree files | 41 | 64 | 23 | 64.06% | no |
+
+The one budget that warned was the one furthest from its limit. The mechanism was already written, with the right reason in a comment beside it — *"say it while there is still room to act… the contributor who trips it is never the one who spent the budget"* — and it was wired to the wrong budget.
+
+Two of the silent ones are not theoretical. `SKILL.md` has sat between **7 and 21 bytes** of its cap across the eight commits that touched it since 25 August, every one green. And 1,373 B is **less than the median procedure in this corpus** — 1,787 B over 171 of them — so the next procedure added to the AI-safety pack more likely than not trips the per-file cap, with nothing said in advance.
+
+All four now report utilisation and share one `headroom_note` helper. Each trip point is the size of *one more of whatever grows that budget*, measured rather than round, and each is declared in `scripts/gates/data/budget-ledger.json` as `not_a_budget` — crossing one fails nothing, it only speaks:
+
+| knob | value | measured against |
+|---|---|---|
+| `EHS_NEAR_SKILL_MD_BYTES` | 512 | the smallest `## ` section in `SKILL.md` today is 488 B |
+| `EHS_NEAR_REF_BYTES` | 2,048 | 171 procedures: median 1,787 B, p75 2,349 B |
+| `EHS_NEAR_TREE_FILES` | 4 | a pack split turns one file into two or three |
+| (served tree bytes) | `EHS_MAX_REF_BYTES` | one whole reference file — unchanged, this is the one that already worked |
+
+The pass line also names the **tightest** reference file and what it costs. `no reference file exceeds 32768 B` is equally true at 1% and at 99%, and a pass that reports no number cannot show a budget being consumed.
+
+**A figure in prose goes stale where people trust it.** The ledger's `measured` field for `EHS_MAX_SKILL_MD_BYTES` read *"~12,268 B today — 20 bytes"* while the file was 12,278 — half the stated headroom had been spent and the record of it had not moved. That field no longer quotes a live number: it states the eight-commit range, which does not decay, and points at the gate for the current one.
+
+Proved by eight self-test cases — each notice with both halves, that it speaks and that it stays quiet — and six mutants, all six red. The needles are per-budget, because `of headroom left` is now shared by four notices and a test using it would pass on the wrong one speaking. That is not hypothetical: the first version of the utilisation case grepped for `% used`, survived a mutant that deleted it from `SKILL.md`'s line, and passed on one of the other three. The mutant caught it; review had not.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.
