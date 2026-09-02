@@ -9,9 +9,9 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-bench-blinding.sh"
-if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
-elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
-else SRC="$(cd "$HERE/../.." && pwd)"; fi
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+SRC="$(ehs_selftest_root --here "$HERE")" || exit 2
 
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-blind-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT

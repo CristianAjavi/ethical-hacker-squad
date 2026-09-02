@@ -13,9 +13,9 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-actions-lint.sh"
-if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
-elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
-else SRC="$(cd "$HERE/../.." && pwd)"; fi
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+SRC="$(ehs_selftest_root --here "$HERE")" || exit 2
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-actions-lint-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0

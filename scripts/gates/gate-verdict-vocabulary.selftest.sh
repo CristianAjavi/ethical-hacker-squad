@@ -19,7 +19,9 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-verdict-vocabulary.sh"
-ROOT="$(cd "$HERE/../.." && pwd)"
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+ROOT="$(ehs_selftest_root --here "$HERE")" || exit 2
 REFS="skills/ethical-hacker-squad/references"
 [ -f "$GATE" ] || { echo "UNMEASURABLE $GATE is missing"; exit 2; }
 [ -f "$ROOT/$REFS/vocabulary.md" ] || { echo "UNMEASURABLE the real vocabulary.md is missing"; exit 2; }

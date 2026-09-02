@@ -22,13 +22,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-benign-control.sh"
 
-if [ -n "${EHS_REPO_ROOT:-}" ]; then
-  SRC="$EHS_REPO_ROOT"
-elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then
-  :
-else
-  SRC="$(cd "$HERE/../.." && pwd)"
-fi
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+SRC="$(ehs_selftest_root --here "$HERE")" || exit 2
 
 # The verifier's pack was split out of remediation.md when that file hit its
 # 32 KiB ceiling; the benign-control rule went with the VER procedures that

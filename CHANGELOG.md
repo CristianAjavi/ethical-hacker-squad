@@ -8,6 +8,33 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **Eighteen self-tests would copy whatever tree they landed next to.** Every battery that mutates
+  a case works on a throwaway copy of the repository, and each resolved the tree to copy on its own,
+  ending in the same blind fallback: two levels up from wherever the file happens to sit. On
+  2026-09-01 `gate-protected-paths.selftest.sh` was copied out of the repository to mutate one case;
+  `git rev-parse` failed in the scratch directory, the fallback landed on a temp tree holding another
+  session's `node_modules`, and all 33 cases tarred it until a 228 GB disk was full and the machine
+  could no longer run anything. **18 of the 23 batteries carried that fallback and 11 of them copy
+  the tree once per case** — so the two guards written into that one file were the case, not the
+  class. They are now `scripts/gates/lib/selftest-root.sh`, called by all 18, and the local copies
+  were **removed** rather than left beside it: one implementation, not two of differing hardness.
+  The helper resolves as before and then *checks* the answer against two marker files; trusting the
+  fallback was the bug, not having one. It carries `--physical` and `--no-env` because three
+  batteries resolve their root differently on purpose — `gate-negative-evidence.selftest.sh` feeds `$ROOT` to a
+  physical-vs-symlink comparison, and a first version of it varied only `EHS_REPO_ROOT` and passed
+  *with the fix and without it*, so normalising them into the default would have restored the exact
+  defect it was written to catch. **The second half of the incident is what the new battery mostly
+  measures**: with no gate to run, the loose copy printed `FAILED control-untouched-repo rc=127
+  (wanted 0)` and returned 1 — a *case* verdict for a harness that never measured anything. So
+  `scripts/gates/selftest-root.selftest.sh` asserts three things per case, not one: exit 2, a stated
+  could-not-measure reason, and **nothing created inside the impostor tree**. It discovers the
+  batteries instead of listing them, runs each twice (helper present and absent), and ends with a
+  mutant that restores the blind fallback and requires the loose run *not* to stop — measured 40
+  cases, 0 failures, 19 batteries, mutant rc 1. `gate-agent-tools.selftest.sh` refuses on its own check before
+  the shared guard is reached; that counts as a pass but is counted separately and **capped at two**,
+  so batteries stopping for unmeasured reasons cannot quietly grow. See
+  `docs/gate-requirements.md` § *The shared root guard*.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;

@@ -7,39 +7,18 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/gate-protected-paths.sh"
-if [ -n "${EHS_REPO_ROOT:-}" ]; then SRC="$EHS_REPO_ROOT"
-elif SRC=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then :
-else SRC="$(cd "$HERE/../.." && pwd)"; fi
+. "$HERE/lib/selftest-root.sh" 2>/dev/null || {
+  echo "UNMEASURABLE the root guard is missing at $HERE/lib/selftest-root.sh"; exit 2; }
+SRC="$(ehs_selftest_root --here "$HERE" --gate "$GATE")" || exit 2
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 
-# ---------------------------------------------------------------------------
-# Two guards, both written on 2026-09-01 after this battery filled a 228 GB disk.
-#
-# The script was copied OUT of the repository to mutate one case. `HERE` then
-# pointed at a scratch directory, `git rev-parse` failed there, and the last
-# fallback - two levels up from wherever the file happens to sit - resolved to a
-# temp tree holding another session's `node_modules`. Every case tars a fresh
-# copy of `SRC`, so that tree was copied THIRTY-THREE times until the disk was
-# full and the machine stopped being able to run anything at all.
-#
-# The second guard matters more than the first. With no gate to run, every case
-# came back `rc=127` and the battery printed `FAILED ... (wanted 1)` - a CASE
-# verdict for a HARNESS that was never able to measure. This file's own header
-# reserves exit 2 for exactly that and nothing enforced it. A run that cannot
-# measure must never be able to look like a case that did.
-# ---------------------------------------------------------------------------
-for needed in scripts/gates/gate-protected-paths.sh scripts/gates/data/protected-paths.json; do
-  if [ ! -f "$SRC/$needed" ]; then
-    echo "UNMEASURABLE the tree to copy does not look like this repository:"
-    echo "              SRC=$SRC"
-    echo "              missing $needed"
-    echo "              Every case tars a full copy of SRC. Pointed at the wrong tree"
-    echo "              this fills the disk. Set EHS_REPO_ROOT, or run the script from"
-    echo "              inside the repository instead of from a copy of it."
-    exit 2
-  fi
-done
-[ -r "$GATE" ] || { echo "UNMEASURABLE the gate under test is not at $GATE"; exit 2; }
+# The root guard above is not decoration: on 2026-09-01 this battery was copied
+# OUT of the repository to mutate one case, resolved its root to a scratch tree
+# holding another session's node_modules, and tarred it once per case until a
+# 228 GB disk was full. scripts/gates/lib/selftest-root.sh holds the full account
+# and now carries it for all eighteen batteries that had the same blind fallback.
+# The two checks that lived here - the marker files and the readable gate - moved
+# into that helper and are passed on the call above; nothing was dropped.
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-protected-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
