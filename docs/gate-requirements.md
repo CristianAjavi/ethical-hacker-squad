@@ -703,6 +703,32 @@ The pass line also names the **tightest** reference file and what it costs. `no 
 
 Proved by eight self-test cases — each notice with both halves, that it speaks and that it stays quiet — and six mutants, all six red. The needles are per-budget, because `of headroom left` is now shared by four notices and a test using it would pass on the wrong one speaking. That is not hypothetical: the first version of the utilisation case grepped for `% used`, survived a mutant that deleted it from `SKILL.md`'s line, and passed on one of the other three. The mutant caught it; review had not.
 
+## The corpus cites its own ids 960 times and nothing checked one of them
+
+`gate-corpus-identifiers.sh` was built around a sentence from the corpus's own citation policy: *"Inventing a plausible-looking ID is a fabrication, and a fabricated identifier is worse than no identifier because it survives review by looking correct."* Its A3 applies that to the ids the corpus **borrows** — `A08:2025`, `CICD-SEC-04`, `WSTG-INPV-05`, `MASVS-STORAGE-1`. It never applied it to the ids the corpus **owns**.
+
+**Measured 2026-09-01**, on the real corpus:
+
+| | count |
+|---|---|
+| ids the corpus declares (`### XXX-NN` headings + triage rule rows) | 187 |
+| standards citations A3 already guarded | 523 |
+| **cross-references to the corpus's own ids, guarded by nobody** | **960** |
+| of those, dangling today | 0 |
+
+Green today, unguarded since the corpus was written. The three existing checks each stop one step short of it: A1 sees two procedures wearing one id, A2 sees the hole a lost procedure leaves in its pack, A3 sees a fabricated standards id. None of them looks at the sentences pointing **at** a procedure.
+
+The gap has a shape A2 provably cannot cover. Delete a procedure from the *middle* of a pack and A2 catches the hole; delete the **last** one and the numbering it leaves behind has no gap for A2 to find, while every citation of the id that went away still reads as real. That is a self-test case, not a hypothesis.
+
+A4 checks that every internal cross-reference resolves to a declared id. Three things make it safe rather than noisy:
+
+- **A prefix is internal because the corpus declares it**, never because the gate remembers it. That is what keeps `CICD-SEC-14` and `WSTG-INPV-05` out of A4's jurisdiction: `SEC` and `INPV` are nobody's pack here. Hardcoding the eleven prefixes would have turned every future pack into a false negative.
+- **Two declaration shapes, because the corpus has two.** Procedures declare themselves as headings; the triage rules declare themselves as the first cell of a table row. A check that knew only headings would have called all 38 citations of `FP-08` fabricated on an untouched repository — the gate accusing the corpus of the gate's own blind spot.
+- **The declaring occurrence is skipped, not the declaring line.** A rule row names its own id in cell one and cross-references three more further along; dropping the whole line hid 63 real cross-references behind the declaration that happened to share it. That was a defect in the first version of this check, caught by its own could-not-measure guard refusing to fire.
+
+Two arms return **2 — could not measure**, on the same doctrine as A3's probes: the corpus is the authority on how it declares and how it cites. If the rule tables stop declaring ids in a first cell, A4 would be matching 960 cross-references against half the declarations, so it says so instead. If not one cross-reference is left, it says that too — a green over nothing measured is the failure this repository names most often.
+
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.

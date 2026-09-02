@@ -8,6 +8,15 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A pointer in `references/team.md` sent the reader to the file they were already reading.**
+  Its *"Fallback path: no plugin agents available"* section said *"`references/team.md` holds the
+  fallback: what to copy into a `general-purpose` prompt"* — and the content is really in
+  **§ Dispatching without the plugin subagents**, 72 lines below. The pointer resolved, so no
+  link check could see it. Found while measuring the class: 4 self-references exist in the corpus
+  and 3 are legitimate — `SKILL.md` calling itself the router is a definition, and the two in the
+  dispatch instruction are naming the file for a subagent that has not read it. One defect in four
+  candidates is not a class that earns a gate; it is a line that earns a fix and a note.
+
 - **A stacked pull request never ran the gate suite, and its checks screen looked conforming.**
   `.github/workflows/ci.yml` declared `on: pull_request: branches: [main, stable]`. That filter
   matches the **base** branch, so a pull request opened against any other branch did not fire the
@@ -37,6 +46,23 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`gate-corpus-identifiers.sh` gained A4: every id the corpus cites from its own packs has to
+  resolve to one it declares.** The gate exists because of a line in the corpus's citation policy —
+  *"a fabricated identifier is worse than no identifier because it survives review by looking
+  correct"* — and applied it only to the ids the corpus **borrows**. Measured on the real corpus:
+  **187 declared ids, 523 standards citations already guarded by A3, and 960 cross-references to
+  its own ids guarded by nobody.** Zero of the 960 dangle today; none of them was checked. The
+  shape A2 provably cannot cover is a self-test case: delete a procedure from the *middle* of a
+  pack and A2 catches the hole, delete the **last** one and the numbering it leaves behind has
+  no gap at all, so A2 stays silent while every citation of the id that went away still reads
+  as real. A prefix counts as internal
+  because the corpus declares it, never because the gate remembers it — that is what keeps
+  `CICD-SEC-14` and `WSTG-INPV-05` in A3's jurisdiction and out of A4's. Two arms return **2 —
+  could not measure**: when the triage rules stop declaring ids in a table's first cell, and when
+  no cross-reference is left to check. Proved red on the real corpus before it was written, not
+  only on fixtures: a real `VER-09` citation edited to `VER-11`, and the `FP-08` row deleted with
+  its 38 citers left behind. 20 self-test cases, 0 failures.
 
 - **Every size budget now says how much room is left, not just whether it fits.**
   `gate-plugin-integrity.sh` enforces four; three reported only pass or fail, so their warning

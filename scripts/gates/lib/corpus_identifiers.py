@@ -8,6 +8,17 @@
 #   A2  no hole in a pack's numbering (a jump is a procedure lost in a merge)
 #   A3  every standards identifier the corpus cites falls inside the scheme
 #       that references/traceability.md declares for that standard
+#   A4  every INTERNAL identifier the corpus cites resolves to one it declares
+#
+# A4 is A3 turned on the corpus's own ids, and it was the larger hole. A1 notices
+# two procedures sharing an id; A2 notices the hole a lost procedure leaves in
+# its pack; A3 guards the ids the corpus borrows from standards. None of the
+# three ever looked at the sentences pointing AT a procedure - the run that
+# added this check found 960 of them, every one unguarded since the corpus was
+# written. Renumber a pack, merge two procedures, delete the last one (which
+# leaves no hole for A2 to see), and every citation of what went away still
+# reads as real: the failure the citation policy describes for a fabricated
+# standards id, sourced from inside instead of from a bibliography.
 #
 # A3 exists because of a sentence in the citation policy itself: "Inventing a
 # plausible-looking ID is a fabrication, and a fabricated identifier is worse
@@ -177,6 +188,68 @@ def main(root):
                     "merge leaves behind" % (pref, ", ".join("%s-%02d" % (pref, h) for h in holes), pref, lo, pref, hi))
     info.append("A1/A2: %d procedures across %d prefixes, %d files"
                 % (len(seen), len(by_prefix), len(texts)))
+
+    # --- A4: the corpus's own ids, cited against declared
+    #
+    # Two declaration shapes, because the corpus has two. Procedures declare
+    # themselves as `### XXX-NN Title` (A1/A2 above collected those). The triage
+    # rules declare themselves as the first cell of a table row, `| `FP-01` | ...`,
+    # and a check that knew only the first shape would call all 394 citations of
+    # `FP-*` dangling - the gate accusing the corpus of its own blind spot.
+    rule_row = re.compile(r"^\|\s*`([A-Z]{2,5})-(\d{2,3})`\s*\|", re.M)
+    declared = {"%s-%02d" % (pref, num) for pref, num in seen}
+    rules = 0
+    for p, t in texts.items():
+        for m in rule_row.finditer(t):
+            declared.add("%s-%02d" % (m.group(1), int(m.group(2))))
+            rules += 1
+    if rules == 0:
+        # Same doctrine as the A3 probes: the corpus is the authority on how it
+        # declares things. If the rule tables stop having this shape, A4 would
+        # keep matching citations against headings alone and report the triage
+        # rules as fabricated. That green-turned-red would be this file's fault.
+        unmeasurable("no triage rule is declared as a table row any more, so A4 would measure the corpus's "
+                     "citations against half its declarations; the shape changed and this gate did not")
+        return 2
+
+    # A prefix is internal because the corpus declares it, never because this
+    # file remembers it. That is what keeps `CICD-SEC-14` and `WSTG-INPV-05` out:
+    # `SEC` and `INPV` are nobody's pack here, so their ids are A3's business.
+    internal = {d.split("-")[0] for d in declared}
+    cited = re.compile(r"\b([A-Z]{2,5})-(\d{2,3})\b")
+    dangling = collections.defaultdict(list)
+    checked = 0
+    # A declaration is not a cross-reference. `### REM-07` and `| `FP-08` |` name
+    # an id in the act of creating it, so counting them would make the guard
+    # below unfireable: a corpus that declared 187 ids and cross-referenced none
+    # would still report 187 citations checked and pass as if it had measured
+    # something. What A4 is for is the OTHER mentions.
+    #
+    # Skip the declaring OCCURRENCE, not the line. A rule row declares one id in
+    # its first cell and cross-references three more further along; dropping the
+    # whole line hid 63 of them behind the declaration that shared it.
+    heading_line = re.compile(r"^###\s+[A-Z]{2,5}-\d{2,3}\b")
+    for p, t in texts.items():
+        for i, line in enumerate(t.split("\n"), 1):
+            d = heading_line.match(line) or rule_row.match(line)
+            for m in cited.finditer(line, d.end() if d else 0):
+                if m.group(1) not in internal:
+                    continue
+                checked += 1
+                key = "%s-%02d" % (m.group(1), int(m.group(2)))
+                if key not in declared:
+                    dangling[key].append("%s:%d" % (rel(p), i))
+    for key, where in sorted(dangling.items()):
+        shown = ", ".join(where[:3]) + (" and %d more" % (len(where) - 3) if len(where) > 3 else "")
+        finding("A4 `%s` is cited %d time(s) (%s) and declared nowhere in the corpus: a reader who follows it "
+                "finds nothing, and a citation that resolves to nothing survives review by looking correct"
+                % (key, len(where), shown))
+    info.append("A4: %d cross-references checked against %d declared ids across %d prefixes (%s)"
+                % (checked, len(declared), len(internal), ", ".join(sorted(internal))))
+    if checked == 0:
+        unmeasurable("not one internal id is cross-referenced anywhere in the corpus: either the corpus stopped "
+                     "cross-referencing itself or this gate stopped recognising how it does")
+        return 2
 
     # --- A3: cited standards identifiers, against the scheme traceability.md declares
     reached = collections.OrderedDict()
