@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -263,6 +264,39 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _link_target(target: Path, source: Path, force: bool) -> str | None:
+    """Point `target` at `source`, without ever deleting what we did not create.
+
+    Returns None when the target was refused; the caller reports that as a
+    non-zero exit. A symlink is ours to replace. A real directory is not: the
+    marketplace leaves this plugin at ~/.claude/plugins/ethical-hacker-squad as
+    a real directory, and rmtree there destroyed it in silence.
+    """
+    parent = target.parent
+    if parent.is_symlink():
+        # mkdir(parents=True, exist_ok=True) follows a symlinked parent, so
+        # every write below would land wherever it points instead.
+        print(f"Refusing: {parent} is a symlink; writing through it would land "
+              f"somewhere else on disk.", file=sys.stderr)
+        return None
+    parent.mkdir(parents=True, exist_ok=True)
+
+    if target.is_symlink():
+        target.unlink()
+    elif target.exists():
+        if not force:
+            print(f"Refusing: {target} exists and was not created by this "
+                  f"installer. Re-run with --force to move it aside.",
+                  file=sys.stderr)
+            return None
+        backup = target.with_name(f"{target.name}.bak-{int(time.time())}")
+        target.rename(backup)  # moved, never removed
+        print(f"  moved {target} -> {backup}")
+
+    target.symlink_to(source, target_is_directory=True)
+    return str(target)
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Install/link skill to Antigravity and/or Claude Code."""
     home = Path.home()
@@ -273,42 +307,44 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 2
 
     installed = []
+    refused = 0
 
     if args.antigravity or args.all or not (args.claude or args.antigravity):
         agy_target = home / ".gemini" / "antigravity-cli" / "skills" / "ethical-hacker-squad"
         try:
-            agy_target.parent.mkdir(parents=True, exist_ok=True)
-            if agy_target.is_symlink():
-                agy_target.unlink()
-            elif agy_target.exists():
-                shutil.rmtree(agy_target)
-            agy_target.symlink_to(source_skill, target_is_directory=True)
-            installed.append(f"Antigravity CLI -> {agy_target}")
+            if _link_target(agy_target, source_skill, args.force):
+                installed.append(f"Antigravity CLI -> {agy_target}")
+            else:
+                refused += 1
         except Exception as e:
             print(f"Warning: Could not link to Antigravity ({e})", file=sys.stderr)
+            refused += 1
 
     if args.claude or args.all:
         claude_target = home / ".claude" / "plugins" / "ethical-hacker-squad"
         try:
-            claude_target.parent.mkdir(parents=True, exist_ok=True)
-            if claude_target.is_symlink():
-                claude_target.unlink()
-            elif claude_target.exists():
-                shutil.rmtree(claude_target)
-            claude_target.symlink_to(ROOT, target_is_directory=True)
-            installed.append(f"Claude Code -> {claude_target}")
+            if _link_target(claude_target, ROOT, args.force):
+                installed.append(f"Claude Code -> {claude_target}")
+            else:
+                refused += 1
         except Exception as e:
             print(f"Warning: Could not link to Claude Code ({e})", file=sys.stderr)
+            refused += 1
 
     if installed:
         print("\nSuccessfully installed/linked Ethical Hacker Squad:")
         for item in installed:
             print(f"  ✓ {item}")
         print()
-        return 0
-    else:
+    elif not refused:
         print("No installation targets selected.")
         return 1
+
+    if refused:
+        print(f"\n{refused} target(s) refused; nothing there was deleted.",
+              file=sys.stderr)
+        return 1
+    return 0
 
 
 def main() -> int:
@@ -341,6 +377,8 @@ def main() -> int:
     p_install.add_argument("--antigravity", action="store_true", help="Install to Antigravity CLI")
     p_install.add_argument("--claude", action="store_true", help="Install to Claude Code")
     p_install.add_argument("--all", action="store_true", help="Install to all supported environments")
+    p_install.add_argument("--force", action="store_true",
+                           help="Move an existing non-symlink target aside to <name>.bak-<epoch> instead of refusing")
 
     args = parser.parse_args()
 

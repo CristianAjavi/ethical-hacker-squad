@@ -58,7 +58,7 @@ Also note that roughly 65% of open-source CVEs carry no NVD CVSS score at all, w
 | Tool | Licence trap | Invocation |
 |---|---|---|
 | semgrep | Engine LGPL-2.1, **rules under a proprietary licence that forbids redistribution**. Run it; never vendor its ruleset. | `semgrep scan --config ./rules/ --metrics=off --disable-version-check --json -o out.json .` |
-| CodeQL | Queries MIT, **CLI terms permit open-source codebases only**; analyzing a private or commercial repository without GitHub Advanced Security violates them. | `codeql database create db --language=X --source-root=.` then `codeql database analyze` |
+| CodeQL | Queries MIT, **CLI terms permit open-source codebases only**; analyzing a private or commercial repository without GitHub Advanced Security violates them. **For a compiled language `database create` runs the project's own build (autobuild): that executes the audited code on your machine, which `AI-22` rule 4 forbids without a mandate. REQUIRES AUTHORIZATION.** | `codeql database create db --language=X --source-root=. --command=true` (interpreted languages build nothing and need no `--command`) then `codeql database analyze` |
 | brakeman | **Not OSI**; commercial use requires a paid licence. | `brakeman --no-pager -f json -o out.json --no-exit-on-warn .` |
 | bandit | Apache-2.0 | `bandit -r . -f json -o out.json -ll` |
 | gosec | Apache-2.0 | `GOFLAGS=-mod=vendor GOPROXY=off gosec -fmt=sarif -out=o.sarif -no-fail ./...` |
