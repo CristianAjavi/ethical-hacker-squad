@@ -8,6 +8,82 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The API double modelled a GitHub that returns two of five keys, so eighteen cases went
+  UNMEASURABLE.** `scripts/gh/tests/test-governance-rc0.sh` and `test-governance-drift.sh` built
+  `security_and_analysis` with `secret_scanning` and `secret_scanning_push_protection`; the live API
+  returns five. Sections 6b and 6c of `apply-governance.sh` read that object, could not find their
+  key, and returned **2** — correct behaviour, and it outranks both suites' expected 0 and 1. Not one
+  of the eighteen reds was the thing it tests. The double now serves the key set
+  `security_and_analysis_declared` names, overlaid by the three blocks that carry a rationale so an
+  override still moves the wire. That repair also made 6b and 6c pass **by construction**, which this
+  file's own first comment calls dead code, so each is driven red: the setting switched on behind us,
+  a key returned and undeclared, a key declared and not returned, and the whole object gone — the
+  last asserted at 2, because three sections read it now and COULD NOT MEASURE has to keep
+  outranking the drift the census would report from the same absence.
+
+- **`docs/gate-requirements.md` told readers that one of the two runners was everything.** "Run
+  everything locally with `bash scripts/gates/run-all.sh`" — while CI's `gates` job runs *two*
+  runners, `run-all.sh` over the gates and `run-batteries.sh` over every `*.selftest.sh` in the tree.
+  That is not a documentation nit: it made a pull request body claiming "full suite: 34 run, 34
+  green" **unverifiable**, because no local command's green would have disagreed with it, and CI
+  went red in that same job on the runner the sentence did not mention. The workflow file already
+  records this exact shape being fixed one level down — the battery *rule* used to live inline in
+  the YAML, "unreproducible on a laptop", and moved into a file both callers share. The **set of
+  runners** did not, and stayed knowable only by reading the workflow.
+
+### Added
+
+- **`scripts/verify.sh` — one command that runs what CI's `gates` job runs**, in its order, under
+  the same exit-code doctrine (2 outranks 1 outranks 0). `--list` prints the commands and runs
+  nothing.
+
+- **`gate-verify-mirror.sh` — the check that keeps it a mirror.** Compares `verify.sh --list` against
+  the job's `run:` steps in **both directions**: a step CI runs and `verify.sh` omits makes a local
+  green worthless again; a step `verify.sh` runs alone is a local red nobody is obliged to fix.
+  Order counts, and the comparison is textual, because a paraphrase — the same runner without its
+  `--skip` — is exactly how a mirror stops mirroring while still looking like one. One-directional
+  registries are this repository's recurring defect: the report contract had it, `governance.json`
+  had it, and the subject changes while the shape does not. Proved in the negative over **15 cases**,
+  each building a throwaway workflow and mirror and driving the gate end to end, including the one
+  that matters most: **two empty lists, which agree perfectly and mean nothing.** Its own first draft
+  capped a *measured failure* at 2 rather than only a would-be pass, hiding a real finding behind a
+  caveat about the instrument; the self-test caught it.
+
+- **A repository setting was governing this project and nothing here knew it existed.**
+  `dependabot_security_updates` is disabled on the live repository. That is the right value —
+  security updates are **not** scoped by the `updates:` blocks in `.github/dependabot.yml`, so no
+  directory allowlist keeps them off `bench/cases/**`, and a bot bumping a pin there edits an
+  answer key underneath a published measurement. But it was right by luck: no file declared it, so
+  the next person to look would have read `false` as drift and fixed it. Found while measuring the
+  GitHub state, from a line the push output printed and the alerts API had been refusing with 403.
+  Now declared in `scripts/gh/governance.json` with the reasoning, compared by
+  `apply-governance.sh` §6b, and transcribed into the two files a triager actually opens —
+  `.github/dependabot.yml` and `scripts/gates/data/alert-surface.json`, which promised that a real
+  alert "must be handled" without saying no fix pull request would ever arrive to start with.
+
+- **The comparators could only find fields they had been told about.** Sections 5, 6 and 6b each go
+  looking for one named field, which is structurally incapable of noticing a setting nobody named —
+  the defect above. §6c enumerates the keys `security_and_analysis` actually returns and compares
+  **both directions**: a key the API returns and nothing declares, a key declared that the API does
+  not return, and a status that differs. Run against the live repository the moment it was written,
+  it found two more in the same position as the first: `secret_scanning_non_provider_patterns` and
+  `secret_scanning_validity_checks`, now decisions with reasons rather than defaults nobody read
+  (the second sends candidate secrets to providers to test them, and this repository's fixtures are
+  fake secrets). Proven in negative against the live API three ways — dropped key, phantom key,
+  wrong status — each firing with its own message. No `--apply` path: an undeclared key is a
+  decision to take, not a value to push.
+
+- **`governance.json` could declare a field that nothing compared, in green.** Measured before
+  fixing: a fabricated `web_commit_signoff_required` — a real GitHub setting, the shape of thing
+  added in good faith — sat in the live file through all **38** gates without one of them noticing.
+  Same shape as the finding this gate was built for, a required context enforced only in prose, one
+  level up. `gate-governance-contract.sh` now fails on a top-level field `apply-governance.sh` never
+  reads, and on a disagreement between `security_and_analysis_declared` and the block carrying the
+  same decision's reasoning. Its limit is written rather than implied: the evidence is that the
+  field's `jq` path appears in the comparator, which catches a comparator nobody wrote and not one
+  written badly. Two negative fixtures, each measured outside `bad/` to fail for exactly one reason;
+  governance family of the negative-proof census 5 → 7 inputs.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
