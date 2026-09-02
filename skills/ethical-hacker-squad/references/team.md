@@ -13,15 +13,15 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
 | Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` + `knowledge/infra-cloud-cicd-platforms.md` | `INF-01`..`INF-24` |
 | Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-26` |
-| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-29` |
+| AI, agents and chatbots | `ehs-ai-safety` | `knowledge/ai-safety.md` + `knowledge/ai-safety-data-output.md` + `knowledge/ai-safety-agent-runtime.md` | `AI-01`..`AI-30` |
 | Privacy and abuse | `ehs-privacy-abuse` | `knowledge/privacy-abuse.md` | `PRV-01`..`PRV-13` |
-| Local applications | `ehs-local-app` | `knowledge/local-app.md` | `LOC-01`..`LOC-15` |
+| Local applications | `ehs-local-app` | `knowledge/local-app.md` + `knowledge/local-app-desktop-ipc.md` | `LOC-01`..`LOC-16` |
 | Remediator | `ehs-remediator` | `knowledge/remediation.md` | `REM-01`..`REM-07` |
 | Verifier | `ehs-verifier` | `knowledge/remediation-verification.md` | `VER-01`..`VER-09` |
 
 ## Dispatching through Claude Code
 
-- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate, and decide priorities. You do not delegate integration or judgement.
+- **You are the leader** (the main thread). You inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
 - **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in a single message so they run in parallel.
 
 ### Preferred path: the plugin's own subagents
@@ -62,7 +62,7 @@ The measurement behind this rule is in `bench/`: against the same model working 
 
 ## Leader / security-lead
 
-Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
+Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results under `DUP-01`..`DUP-06` of `triage.md` — a merge is a claim, and an undecided pair is `possible_duplicate_of` rather than a merge — and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
 
 ## Web and API AppSec / web-api
 

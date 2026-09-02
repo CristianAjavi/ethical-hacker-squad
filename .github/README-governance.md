@@ -99,8 +99,14 @@ green `.sh` produced `rc=0`. On top of that:
 scripts/gates/run-all.sh              # the gates that do not need a PR
 scripts/gates/run-all.sh --pr-context # plus the ones that do
 scripts/gates/run-all.sh --list       # inventory
-scripts/gates/run-all.sh --selftests  # the gates' selftests
+scripts/gates/run-all.sh --selftests  # the batteries under scripts/gates/ only
+scripts/run-batteries.sh              # EVERY battery in the tree - what CI runs
+scripts/run-batteries.sh --list       # name them without running them
 ```
+
+`scripts/run-batteries.sh` is the one that matches CI. `--selftests` walks
+`scripts/gates/` and stops there, so it reports green without ever executing the
+batteries that live anywhere else.
 
 ---
 

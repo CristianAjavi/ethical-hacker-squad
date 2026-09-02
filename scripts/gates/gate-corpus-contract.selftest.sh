@@ -157,6 +157,33 @@ import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/coverage.md"
 p.write_text(re.sub(r"`mobile\.md` §0-§6","`mobile.md` §0-§66",p.read_text(),count=1))'
 
+case_run pack-file-nobody-routes-to 1 "no row routes to" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/coverage.md"
+p.write_text("".join(l for l in p.read_text().splitlines(True)
+                     if "ai-safety-agent-runtime.md" not in l))'
+
+case_run pack-section-nobody-routes-to 1 "but no row names" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/coverage.md"
+p.write_text(p.read_text().replace("`ai-safety-agent-runtime.md` \u00a713","`ai-safety-agent-runtime.md` \u00a711",1))'
+
+case_run routing-exemption-with-no-reason 1 "no row routes to" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json"
+d=json.loads(p.read_text())
+for x in d["packs"]:
+    x.pop("unrouted_reason",None)
+p.write_text(json.dumps(d,indent=2,ensure_ascii=False)+chr(10))'
+
+case_run routing-exemption-that-is-also-routed 1 "claims no route reaches it" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json"
+d=json.loads(p.read_text())
+for x in d["packs"]:
+    if x["pack"]=="privacy-abuse": x["unrouted_reason"]="nobody routes here, honest"
+p.write_text(json.dumps(d,indent=2,ensure_ascii=False)+chr(10))'
+
 case_run procedure-loses-a-field 1 "missing mandatory field" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$K"'/web-api.md"

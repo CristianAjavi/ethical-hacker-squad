@@ -383,9 +383,42 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install the Claude Code CLI (pinned version)
-        # zizmor: ignore[adhoc-packages] pinned to an exact version in CLAUDE_CODE_VERSION; there is no package.json in this repo to lock against, and this is a first-party tool used only to run `plugin validate`/`plugin tag`
-        run: npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Install the Claude Code CLI (from the lock file)
+        working-directory: tools/tooling/claude-cli
+        run: |
+          set -euo pipefail
+          # `npm install -g <pkg>@<version>` resolves a TAG: whatever the
+          # registry serves under it that day. `npm ci` resolves the recorded
+          # integrity hash in tooling/claude-cli/package-lock.json instead --
+          # the same reason every action in this repository is pinned by SHA
+          # and not by tag. OpenSSF Scorecard scores it the same way, and this
+          # step is two of the four findings that held Pinned-Dependencies at 6.
+          #
+          # The lock file comes from tools/, which is the tip of main: the tree
+          # being judged never supplies the tool that judges it.
+          locked=$(node -e 'process.stdout.write(require("./package-lock.json").packages["node_modules/@anthropic-ai/claude-code"].version)')
+          if [ "$locked" != "$CLAUDE_CODE_VERSION" ]; then
+            echo "::error title=Two sources of truth::the lock file says $locked and CLAUDE_CODE_VERSION says $CLAUDE_CODE_VERSION. Update tooling/claude-cli/package.json and regenerate the lock."
+            exit 1
+          fi
+          npm ci --ignore-scripts
+          # --ignore-scripts is not negotiable: `postinstall` is third-party
+          # code and this job holds a token. That postinstall is also what
+          # copies the platform binary into bin/claude.exe, so with it skipped
+          # the wrapper answers "claude native binary not installed" -- which
+          # is exactly what `npm install -g --ignore-scripts` shipped before,
+          # unnoticed, because release has never reached the step that runs it.
+          # The binary itself ships inside the per-platform optional package,
+          # which the lock file pins too. Link that, and fail if it moved.
+          bin="$PWD/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          if [ ! -x "$bin" ]; then
+            echo "::error title=No CLI binary::the lock file did not put an executable at $bin"
+            exit 1
+          fi
+          mkdir -p "$PWD/.bin"
+          ln -sf "$bin" "$PWD/.bin/claude"
+          "$PWD/.bin/claude" --version
+          echo "$PWD/.bin" >> "$GITHUB_PATH"
 
       # Naming two gates by hand meant exactly two gates ran against the tree
       # about to be published, and nobody noticed the other four. Adding a gate
@@ -460,9 +493,42 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install the Claude Code CLI (pinned version)
-        # zizmor: ignore[adhoc-packages] pinned to an exact version in CLAUDE_CODE_VERSION; there is no package.json in this repo to lock against, and this is a first-party tool used only to run `plugin validate`/`plugin tag`
-        run: npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Install the Claude Code CLI (from the lock file)
+        working-directory: tools/tooling/claude-cli
+        run: |
+          set -euo pipefail
+          # `npm install -g <pkg>@<version>` resolves a TAG: whatever the
+          # registry serves under it that day. `npm ci` resolves the recorded
+          # integrity hash in tooling/claude-cli/package-lock.json instead --
+          # the same reason every action in this repository is pinned by SHA
+          # and not by tag. OpenSSF Scorecard scores it the same way, and this
+          # step is two of the four findings that held Pinned-Dependencies at 6.
+          #
+          # The lock file comes from tools/, which is the tip of main: the tree
+          # being judged never supplies the tool that judges it.
+          locked=$(node -e 'process.stdout.write(require("./package-lock.json").packages["node_modules/@anthropic-ai/claude-code"].version)')
+          if [ "$locked" != "$CLAUDE_CODE_VERSION" ]; then
+            echo "::error title=Two sources of truth::the lock file says $locked and CLAUDE_CODE_VERSION says $CLAUDE_CODE_VERSION. Update tooling/claude-cli/package.json and regenerate the lock."
+            exit 1
+          fi
+          npm ci --ignore-scripts
+          # --ignore-scripts is not negotiable: `postinstall` is third-party
+          # code and this job holds a token. That postinstall is also what
+          # copies the platform binary into bin/claude.exe, so with it skipped
+          # the wrapper answers "claude native binary not installed" -- which
+          # is exactly what `npm install -g --ignore-scripts` shipped before,
+          # unnoticed, because release has never reached the step that runs it.
+          # The binary itself ships inside the per-platform optional package,
+          # which the lock file pins too. Link that, and fail if it moved.
+          bin="$PWD/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          if [ ! -x "$bin" ]; then
+            echo "::error title=No CLI binary::the lock file did not put an executable at $bin"
+            exit 1
+          fi
+          mkdir -p "$PWD/.bin"
+          ln -sf "$bin" "$PWD/.bin/claude"
+          "$PWD/.bin/claude" --version
+          echo "$PWD/.bin" >> "$GITHUB_PATH"
 
       # This checkout comes AFTER the npm install on purpose: it is the only one
       # in the workflow that leaves the contents:write token written into

@@ -608,8 +608,11 @@ remediation — it does not lead on real code, and the rounds say so in their ow
 ### What did not enter this document
 
 Recall on `intake-portal` came out 0.83 for this corpus against 0.48 and 0.20, and the
-enumeration step took class-level detection from 1 of 4 runs to 4 of 4. **Neither number is
-claimed anywhere.** The first is a comparison on a case this project planted; the second was
+enumeration step appeared to take class-level detection from 1 of 4 runs to 4 of 4. **Neither
+number is claimed anywhere** — and the second one was checked on 2026-08-26 and did not
+survive: under a stricter reading of what counts as a finding of the class it is 3 of 4, and
+on Django, the same variant detects the class in 1 of 4. The number moved because an
+unregistered metric has no fixed definition, which is the whole reason it was never claimed. The first is a comparison on a case this project planted; the second was
 never pre-registered and reading it after the fact is the fitting these pages refuse. They are
 on their own round pages with those sentences attached.
 
@@ -701,3 +704,360 @@ So the two moves, in the order the evidence supports:
 Neither is started. Recording what they shipped is not the same as matching it, and this
 section is the first half only.
 
+## Second reading, 2026-09-01 — and the first thing taken from a competitor's diff
+
+`competitive-freshness.sh` reported the same two products moved again. This reading differs
+from the one above in one respect: it produced a change in this repository rather than a note.
+
+### `Tencent/AI-Infra-Guard` — `4908db1` → `bb15526`
+
+32 commits, 32 files. Eight of them are translated READMEs and most of the rest are their own
+product. One file is not: `mcp-scan/pytests/test_surrogate_sanitization.py`, new, with a
+`strip_surrogates` helper behind it. The docstring states the failure plainly — `os.walk`
+decodes a non-UTF-8 filename with `surrogateescape`, the lone surrogates that produces cannot
+be serialised, and the scan dies with `UnicodeEncodeError` the moment the scanned tree
+contains such a name.
+
+**This corpus had no procedure for that class.** **The absence was measured with the instrument proved first.** `scripts/ehs.py` searches the title and all six fields of every one of the 170 procedures; run against a class the corpus does hold it returns it (`path traversal` → `WEB-12`, `LOC-01`; `zero-width` → `AI-20`), so it fires when a procedure exists. Run against this class on the committed corpus it returned nothing for `surrogate`, `non-utf-8` and `UnicodeDecodeError`, and the single hit for `errors=` was a recipe *using* `errors="ignore"`, not a procedure warning about it. The same query now returns exactly `LOC-16` — the before-and-after on one instrument is the reach proof, and the seven pre-existing hits for `encoding` all belonged to other classes (`AI-20` smuggles characters into a model's context; `WEB-26` takes a length off the wire). The class is now `LOC-16`,
+and it is broader than the crash: whoever can name a file in a scanned tree can abort a
+scanner, a decode error swallowed silently turns a filter bypass into a clean report, and a
+file skipped without being counted publishes `not measured` as `OK` — a defect this procedure names, never a verdict anyone may write — the same doctrine this
+project already applies to its own gates, arriving from outside.
+
+**It found a defect here on the way in.** `WEB-28`'s enumeration recipe — the one whose own
+prose says it exists because reading a large repository by judgement misses the file holding
+the defect — swallowed every `SyntaxError` and moved on. Measured on a two-file fixture: one
+file with an attacker-controlled log call, one this interpreter cannot parse; the recipe
+printed `plain.py:3`, exited `0`, and never mentioned the second. It now names what it did
+not read, on stderr. That is the honest shape of this section: a competitor's bug-fix commit
+was worth more to this repository than their feature list.
+
+### `google/mantis` — `5f76be0` → `27467b3`
+
+5 commits, 66 files, and it deepens the same two axes named above rather than opening a third:
+`reference/evals/` gains `run_eval.py`, `stage_agents.py`, a `deduplicator_agent/` and a ninth
+dataset (`synthetic_dataset.json`); the sandbox layer is refactored into
+`reference/core/environments/` with four backends; `embeddings.py` is new; two more skills ship
+(`mantis-configure`, `mantis-launch`).
+
+The per-stage gap is therefore not closing on its own, and it is now the oldest open item in
+this document. It stays where the previous section left it: **their granularity, this
+project's blinding and pre-registration**, and the answer never inside the question.
+
+### The per-stage gap, worked — their granularity, measured against a floor they cannot clear
+
+The item above stopped being a note on 2026-09-01 and became `gate-stage-eval-floor.sh`. What
+follows is what reading their datasets produced, including the part that went against the first
+reading.
+
+**What they built.** `reference/evals/` at `27467b3` holds nine datasets, one per pipeline stage,
+plus `run_eval.py` and `stage_agents.py`. Two are directly comparable to this project's triage
+stage: `review_dataset.json` (six findings routed to `confirmed` or `false_positive` under
+thirteen rejection rules) and `critic_dataset.json` (four routed to `viable` or `non_viable`).
+The granularity is real and this bench has one stage against their nine. **That half of the gap
+did not close and is wider than it was.**
+
+**What reading them showed.** Their case whose expected answer is `false_positive` under the rule
+`sample_test_or_mock_code` is titled *"...in mock auth provider"*, described as *"test credentials
+in mock authentication fixture used exclusively during offline unit tests"*, and filed at
+`tests/mocks/mock_auth.py`. The rule's own name is in the question three times. The pattern
+repeats: *"legacy deprecated logging branch"* → `unreachable_dead_code`; *"Client-side username
+length validation"* at `static/js/` → `client_side_only_enforcement`; *"only accessible when
+executed by root"* → `missing_attacker_vector`; *"Theoretical SSRF"* →
+`framework_level_sanitization`. **A stub of seven substrings and no model scores 10 of 10 across
+both files.**
+
+**And then the instrument disagreed with the stub, which is the part worth keeping.** Those seven
+substrings were chosen after reading the inputs, so the stub demonstrates the leak is there and a
+person can find it — it cannot be the measurement. The measurement is
+`scripts/gates/lib/stage_eval_floor.py`: leave-one-out nearest centroid over word overlap,
+nothing tuned, the same code on any dataset, reading only the text the stage is handed. Run blind
+on those two files it returns **83% of 6** and **25% of 4**, both under their own ceilings. On
+four cases there is almost nothing to learn from, so a low number there is noise with a percent
+sign rather than a clean bill of health. **The floor therefore reports `2` — could not measure —
+below ten cases, and a `0` is refused at that size**, because an instrument that signs off on
+four cases would be lying upward. Their two comparable datasets cannot be cleared by any blind
+separability probe at the size they ship, and that is a statement about what is measurable, not a
+score against them.
+
+**What it measured here.** Run on this project's own stage dataset, before the gate existed to
+protect it: **the wording alone sorts 14% of 14 cases against a 43% majority class** — the words
+are less use than always answering the commonest label. That property is why the cases carry real
+source files rather than a paraphrase of the verdict, and until this run it had been asserted and
+never measured. The one `NOT_APPLICABLE` case is dropped from the denominator and named in the
+output: held out, its class centroid is empty, so the probe can never emit it and counting it
+would move the score without measuring anything.
+
+**What this does not claim.** It does not measure their reviewer or their critic. Their agents
+were not run — that needs API budget nobody authorized — and a stage could be excellent behind a
+dataset that cannot show it. The claim is bounded to the two files as published at `27467b3`:
+**those datasets can be answered from their own wording, and they are too small for a blind
+instrument to say otherwise.** The ceiling, `max(majority + 0.20, 0.50)`, and the ten-case floor
+were both written into the probe before any dataset was run through it.
+
+### The second stage, and why one floor was not enough
+
+The reading above ended with the count that is unfavourable here: nine per-stage
+datasets there, one here. `bench/stages/routing` makes it two, and building it
+produced a result about the instrument rather than about them.
+
+`gate-stage-eval-floor.sh` was written for the triage stage: pool every other
+case by answer, see which pool the held-out case shares vocabulary with, fail
+when the wording sorts the cases by itself. Pointed at the routing dataset it
+returns **18% of 22 — exactly the majority-class rate**, which reads as a clean
+bill of health. It is not one. Two `web-api` routing cases are an upload handler
+and a link preview and share almost no vocabulary, so the probe learns nothing
+and reports so; meanwhile the shortcut a routing set actually offers is
+**matching the table it was drawn from**, which the probe never looks at.
+
+So the routing gate carries a second instrument built for its own stage: a router
+made of `coverage.md`'s own words — backticked tokens from each `Signal` cell,
+plus the content words the table does not spread over more than three rows. It
+scores **13/22 on the role and 11/22 on role and sections together**, and it
+names the nine cases it misses, which are the nine the pre-registration makes the
+primary metric.
+
+The lesson generalises past this repository, and it is the argument against
+adopting a competitor's granularity by copying it: **a per-stage eval needs a
+floor built for that stage.** A single blind probe applied to nine stages would
+clear the ones whose shortcut it cannot see. `mantis` ships nine datasets and no
+floor of either kind; this bench now ships two datasets and two floors, one of
+which exists because the other was inapplicable and said so.
+
+The count still favours them, and the honest form of it is: **two stages against
+nine, with a control on each of ours and none published on theirs.** Neither
+number is a claim about which product routes or triages better, and no such claim
+appears anywhere in this repository.
+
+### Their paid probe, and the free half of the same question
+
+`bb15526` also carries `services/api_checker/`: eight black-box probes aimed at an **LLM API
+relay** — a middleman that resells access to a model provider. They check whether the model
+list is consistent with what the endpoint will actually serve, whether an exact-echo prompt
+comes back exact, what family the endpoint claims to be, a glitch-token fingerprint, a token
+delta that betrays a hidden prompt injected into every request, an echo-rewrite probe that
+catches a `pip install` turned into a different index or a `curl`, SSE stream integrity, and a
+context canary for silent truncation. Beside it, single-token distribution fingerprinting
+scored against a 167-model reference.
+
+It is a good instrument and it was **not run**. It is dynamic, it needs a working key, and it
+spends the key owner's credits against a third party — safety-contract rule 9 forbids that
+without an explicit cap and the user's approval, and the rule does not bend because the
+target is a competitor's feature. So what follows is read from their published description,
+not measured.
+
+**What they cannot ask is the question that comes first.** Every one of those probes needs
+traffic already flowing through an endpoint somebody already chose. None of them asks how that
+endpoint got chosen, who can change it tomorrow, or what the application will do with the
+answer. That question is answerable from configuration alone, at zero cost, before a single
+token is spent — and it is the one an auditor with a repository in front of them and no
+credentials can actually run.
+
+`AI-30` is that half. Three findings in one procedure: the endpoint is externally controlled
+(an environment variable, a ConfigMap, a settings row that moves it with no deploy, so the
+authority to change it is not the authority to read every prompt); the relay is trusted to be
+who it says (no pinning, or verification switched off); and the answer is trusted as content
+(a rewritten tool command executed because a model returned it, or a system prompt nobody in
+the project wrote, prepended in transit). The third is `AI-03` with the trust boundary moved —
+same sink, different untrusted author — which is why a review that cleared the retrieval path
+can still be reading a compromised answer.
+
+**Stated in the unfavourable direction too.** Their probe finds a relay that is lying *right
+now*, which no amount of static reading can do; ours finds the door the relay came through,
+which no probe can do. Neither subsumes the other, and this repository holds only one of the
+two. The dynamic half is written into `AI-30` as `REQUIRES AUTHORIZATION` with a cap rather
+than left out, so an auditor who has the authorization knows to ask for it — and knows the
+static half decides whether it is worth asking.
+
+**And it found something here on the way in, as the last reading did.** `AI-30` needed a
+routing row, and `references/coverage.md` had never named `ai-safety-agent-runtime.md` at all:
+four procedures, `AI-25`..`AI-28`, present in the corpus, counted by every meter, listed in
+`team.md` and in `README.md`, and absent from the one table a leader routes through. The
+routing check that existed faced outward — every route lands on a real section — which by
+construction cannot see a file no route mentions. Turned around, it measured **14 unrouted
+sections** on the first run: ten in the `remediation` pack, which is staffed by mode and now
+carries a written exemption, and four real ones — `AI-21`, `PRV-13`, `LOC-15`, `LOC-16`. The
+pattern is the same one this document keeps recording in both directions: the check that
+passes is rarely the check that was needed, and the direction it does not face is where the
+silence lives.
+
+### What this reading did not do
+
+It did not re-run either product. The scores in §4 are still the ones taken on 2026-08-22
+against `4908db1`, `5f76be0` and `e5d7aa0`, and a diff read is not a measurement. Nothing in
+this section changes a number.
+
+
+### Their deduplication ladder, and the question it does not ask — 2026-09-01
+
+`27467b3` ships `mantis-dedupe/SKILL.md`, 371 lines, read in full. It is the most complete
+treatment of finding-level deduplication published in this field, and it is worth saying so
+plainly before the disagreement.
+
+Three tiers. **Tier 1** is exact: `sha256(canonical_fingerprint | canonical_cwe | target_symbol)`,
+plus a `canonical_filepath + CWE + target_symbol` anchor and a three-line proximity window.
+**Tier 2** normalises each candidate to five lines — Component, Vulnerability Class, Root Cause
+Mechanism, Failure Condition, Taint Dataflow — and compares those instead of the prose.
+**Tier 3** embeds the normalisation with `vertex_ai/gemini-embedding-001` and merges at cosine
+`>= 0.90`, declares distinct below `0.70`, with a structural guard that refuses to merge across
+CWE families.
+
+Three things in it are right, and this corpus now reasons the same way without having copied a
+line:
+
+- **A signature promotes, it does not decide.** An exact hash match makes a pair a *candidate*
+  for merging and nothing more. This is the same one-direction reading `gate-protected-paths.sh`
+  applies to a branch prefix, arrived at independently and for the same reason.
+- **Same file, different line, is DISTINCT.** They wrote the rationale in. It is `DUP-03` here.
+- **`possible_duplicate_of` is a soft, non-terminal state.** They have it; nothing in this
+  repository did until now.
+
+Three holes:
+
+1. **The `0.70`–`0.90` band has no written rule.** Twenty points of cosine, the exact region
+   where the hard cases live, and the file does not say what happens in it. That is not a
+   detail: it is where every pair that is worth arguing about lands.
+2. **Tier 3 spends a third party's API credits on every pair compared.** Under safety-contract
+   rule 9 that needs an explicit cap and the user's approval, so it cannot be the default path
+   of a deduplicator that runs on every engagement.
+3. **The decision is a similarity score.** It never asks the question the reader of the report
+   actually has: *does one fix close both?* Two findings can be near-identical in every
+   normalised field and still need two separate edits — a shared pattern at two call sites is
+   the ordinary case — and two findings can read quite differently and be closed by the same
+   line.
+
+So the increment is not a better score. It is a different question, asked deterministically at
+zero credits: **`DUP-01`..`DUP-06` in `references/triage.md`**, six separating conditions, any
+one of which holding means the two findings are two. `DUP-05` — caller and callee, where the
+callee has other callers — is the one worth noting, because it is the case their ladder merges
+unconditionally and it is decided by *counting callers*, mechanically, rather than by comparing
+text.
+
+And the asymmetry, which neither product states: **a wrong merge deletes a finding, a missed
+merge lengthens the report.** So `UNKNOWN` resolves to `possible_duplicate_of`, never to a
+merge. Their band with no rule becomes, here, the written default.
+
+The half of this that is ours to be embarrassed about: the leader has been ordered to
+deduplicate in three places of `references/team.md` since the corpus existed, with no criterion,
+no gate and no trace in the artifact. `merged_into` covered only a candidate absorbed inside one
+specialist's own unaided pass. A leader's merge across specialists left nothing behind at all —
+the substitution invariant 4 exists to prevent, happening one level up where nothing was looking.
+Reading their file is what made that visible.
+
+This section, like the ones above it, re-ran neither product. No number in §4 moves.
+
+### The list was not the field — 2026-09-01
+
+Everything above this line re-reads products that were already on a list of three, fixed on
+2026-08-22. `scripts/gh/competitive-freshness.sh` asks, well, whether each pin is still the tip.
+It cannot ask whether the list is still the field, and for ten days nothing did.
+
+Five searches of this project's own lane, run on 2026-09-01, returned **36 candidates**. Fifteen
+carried a skill or agent marker. **Six of them are comparable products this analysis had never
+heard of.** Nothing was wrong; nothing was looking — which is the shape of every other hole this
+repository has closed, arriving this time in the document that judges the competition.
+
+The one that matters is **`maxgfr/ultrasec`**: MIT, created 2026-06-16, pushed 2026-08-31, and
+its stated purpose is this project's stated purpose. A deterministic zero-dependency engine
+builds a cross-file link-graph and enumerates candidate source→sink taint paths; it correlates
+several external scanners into one issue rather than three; it ranks by composite EPSS · CISA
+KEV · CVSS; and the model does the judging plus an adversarial verification pass in which **an
+uncertain high-severity stays `needs-human` rather than being auto-dismissed** — which is this
+corpus's exit-code-2 doctrine, arrived at independently, in a product we did not know existed.
+
+**It has zero stars.** That is the finding about our method, not about them. Had the discovery
+check used a popularity floor — the obvious design, and the one a reasonable person writes
+first — it would have hidden the most comparable product in the field exactly as thoroughly as
+the closed list did. So the bar is a skill or agent marker at the top of the default branch,
+answerable in one API call, and it is written down as *is this the same kind of thing* rather
+than *is this important*.
+
+The other five are pinned with `benchmarked: false`: `prasannasalunkhe18/ThreatLens` (Semgrep and
+CodeQL discovery plus LLM verification — the same two-stage shape as tooling-then-`VER-09`),
+`kalpmodi/akira` and `braydos-h/BreachPilot` (autonomous offensive agents: same class of product,
+opposite posture, since this corpus is defensive by contract and does not chain exploits),
+`wrsmith108/claude-skill-security-auditor` (32 stars, the most direct name-level competitor, last
+pushed 2026-02-10), and `dungnotnull/web-app-security-audit-agent-skill` (a prose skill suite
+carrying its own scoring engine and quality reviewer).
+
+Three are declined in writing, with the reason recorded: a smart-contract auditor (different
+target class), a guide to *securing the skills you install* and a pre-install skill scanner (both
+face the other way — they are adjacent to `AI-22`, not competitors to it). A sixth group of six
+repositories is declined by a written pattern: `rNN-<somebody>-claude-skills-security`, every one
+"derived from" another person's list, all pushed on 2026-04-28 under unrelated owner names, with
+**38 to 51 stars each**. They are republications, and their star counts are the second half of
+the argument against a popularity bar.
+
+**What this section does not claim.** Not one of the six has been benchmarked. A pin says where
+to look; it does not say what was found, and `competitive-freshness.sh` now prints the
+unbenchmarked ones by name so that a reader cannot mistake a pin for a measurement. Running them
+costs harness and model time and that is a decision about spend, not a thing to slip into a
+documentation change. The claim in `README.md` was corrected to say six comparable products are
+known and three have been run — the previous sentence, "all three have now been run", was true
+about the list and had stopped being true about the field.
+
+## Their coverage matrix, and the denominator it does not have — 2026-09-01
+
+`maxgfr/ultrasec` was found by `scripts/gh/competitive-discovery.sh` the day before this entry
+and had never been read. It is the closest product in the field: MIT, a cross-file taint engine,
+18 supply-chain scanners, adversarial verification, and — the reason it is worth an entry —
+`src/coverage.ts`, 577 lines whose opening comment is the doctrine this repository runs on,
+arrived at independently:
+
+> A short report reads as "nothing there". It actually means "nothing there, in what I looked at".
+> Those are very different statements to hand a maintainer, and nothing in the audit distinguishes
+> them: a repo with no findings and a repo nobody checked produce the same SUMMARY.md.
+
+**What they have and we did not.** Their coverage table is scored *from the findings*. Every
+category of a pluggable standard (ASVS, OWASP Top 10, API Top 10, MASVS, CWE Top 25) lands in
+exactly one of three states — `examined`, `engine`, `unexamined` — and a category nothing touched
+is rendered `⬜ **not examined**` with the sentence "not a clean bill of health — it is a gap in
+the audit". Categories no deterministic signal can settle are flagged `judgment` and the auditor
+must answer them in writing, because *"not applicable" without a reason is how coverage silently
+shrinks between audits*. They also render scanners that **failed** as coverage loss rather than as
+a footnote, after a run where three of nine scanners died, one of them the only IaC scanner, and
+the report's short IaC section read exactly like a clean one. Every part of that is right, and our
+report had no equivalent: coverage was declared in prose by the leader and joined to nothing.
+
+**Where it stops, and it is one line.** The state is computed as
+
+```
+const engineCovers = (c.kinds ?? []).some((k) => enumerated.has(k));
+const state = hits > 0 ? "examined" : engineCovers ? "engine" : "unexamined";
+```
+
+`enumerated` is `enumeratedKindsOf(findings)` — the kinds carried by the findings **of this same
+run**. So a category is credited as covered because some *other* finding, anywhere in the run,
+happened to carry one of its kinds. Nothing in the computation refers to what was read. The
+docstring says so plainly: "a class the engine covers but this repo never exercised still counts
+as looked-at — the walk ran, it just found nothing." That is capability, not execution. If the
+walker skipped four hundred of five hundred files — unparseable, gitignored, too large, a symlink
+it would not follow — the hundred it did read produce findings across many kinds, every category
+they touch goes green, and **the four hundred unread files appear in the coverage table nowhere at
+all.** They fixed this for tools (`failedToolLines`) and not for files. There is no denominator in
+the matrix.
+
+**What we did instead of copying it.** `engagement.coverage` has held the denominator since before
+this entry — `inventoried`, `read`, `not_read`, with invariant 3 forcing every inventoried surface
+into exactly one of the last two. What we lacked was their join. So we added the join and measured
+it before deciding what it should cost:
+
+- **Invariant 11 enforces the half that is a flat contradiction.** A finding whose path lies inside
+  a `not_read` surface fails, matched at a path segment boundary. A finding is proof someone
+  looked; the declaration says nobody did; one of the two is false and the reader cannot tell
+  which. Measured before shipping: over the 60 real artifacts in `bench/runs`, 277 findings carry
+  a path and **zero** contradict a `not_read` entry — the rule convicts no past work.
+- **The rest is printed, not judged, and the measurement is why.** 273 of those same 277 findings
+  (98.6%) lie under no inventoried surface at all, because the inventory names surfaces a reader
+  would recognise and the findings name files. A gate that failed on that would accuse almost
+  every good report this repository has written — the shape of check that ends up arguing with
+  everyone who complied. So the validator prints the join on every run and the gap is written
+  down as a known coverage gap in `references/traceability.md`, where a claim of absence has to
+  anchor to it.
+
+A second rule was designed, measured, and **withdrawn before it shipped**: every `not_read` surface
+must be named in `coverage_declaration`. It is their `judgment` requirement, and it is right in
+spirit. Run against the real artifacts, it accused four of the best runs in the bench, whose
+`not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
+absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
+first is the only reason it is not in this repository.

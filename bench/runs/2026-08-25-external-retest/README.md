@@ -1,5 +1,13 @@
 # 2026-08-25 — the same advisory, after the procedure changed
 
+
+> **Scoring note, added 2026-08-26.** The reports in this directory were transcribed by the
+> orchestrator from what each arm returned, not written by the arms themselves, so they carry
+> no provenance block. `scripts/bench/score_blind.py` now refuses to score an untraced report
+> by default; reproducing this round's numbers needs `--allow-untraced`. That flag is not a
+> convenience — it is the record that these particular artefacts passed through a person's
+> hands, and the reason it exists is on the scorer's own page.
+
 **The prediction is refuted.** One of three valid runs recovered the advisory, and the band
 committed beforehand was at least two of four.
 

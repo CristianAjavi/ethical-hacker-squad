@@ -21,6 +21,9 @@
 #                      identifier is written outside backticks
 #   6. roster          team.md, agents/ and packs.json name the same things
 #   7. routing         every `pack.md §N` in coverage.md exists
+#   8. reachability    every pack file, and every section of a routed file, is
+#                      named by some row of coverage.md - or its pack declares
+#                      in writing why no route reaches it
 #
 # WHAT IT DOES NOT MEASURE
 #   Whether a procedure is CORRECT, whether an identifier maps to what the
@@ -40,7 +43,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 CORE="$HERE/lib/corpus_contract.py"
 
-gate_header "corpus-contract (numbering, counts, identifiers, roster, routing)"
+gate_header "corpus-contract (numbering, counts, identifiers, roster, routing, reachability)"
 gate_scope "the corpus against every number and every name the repository states about it"
 gate_out_of_scope "whether a procedure is correct, and whether the traceability matrix is complete"
 

@@ -1,5 +1,13 @@
 # 2026-08-25 — the same advisory, with the step where the agent starts
 
+
+> **Scoring note, added 2026-08-26.** The reports in this directory were transcribed by the
+> orchestrator from what each arm returned, not written by the arms themselves, so they carry
+> no provenance block. `scripts/bench/score_blind.py` now refuses to score an untraced report
+> by default; reproducing this round's numbers needs `--allow-untraced`. That flag is not a
+> convenience — it is the record that these particular artefacts passed through a person's
+> hands, and the reason it exists is on the scorer's own page.
+
 **Refuted. 0 of 4, against a band of 3 of 4.** Three rounds have now failed to move this,
 and per the multiplicity commitment made before the run, **this target is retired for this
 intervention.** The position published in
@@ -33,8 +41,26 @@ class, in real code, surfaced by the step.
 
 **It is not this round's result and it does not go in the README.** Class-level detection was
 never pre-registered — the advisory was — and reading a favourable unregistered number after
-seeing it is the fitting these pages exist to refuse. It is written down here so the next
-round can pre-register it. Until then it is an observation.
+seeing it is the fitting these pages exist to refuse.
+
+### Retired on 2026-08-26, and it took two corrections to get there
+
+The observation was checked rather than carried, and it did not survive either check.
+
+**The `4 of 4` was not 4 of 4.** It came from a pattern that counted any title containing
+`Forwarded`. Under a stricter reading — a finding that names log injection, forging,
+unsanitised or unneutralised output, or lands in a logging module — the same four runs give
+**3 of 4**. The number moved because *an unregistered metric has no fixed definition*, so it
+can be read favourably without anyone deciding to. That is not a hypothetical failure mode:
+it happened here, in this repository, to the person writing this page.
+
+**And it does not replicate.** The same variant, on Django, detects the class in **1 of 4**
+runs — see [`../2026-08-26-ranking-hypothesis/`](../2026-08-26-ranking-hypothesis/). Whatever
+the enumeration step does on a 569-file tree, it does not do it at 2,839 files.
+
+So the observation is retired here rather than left as a promising lead for a round to
+rediscover. Its only durable value is the lesson: **a number you did not pre-register is a
+number whose definition you get to choose after seeing it.**
 
 ## What the three rounds together diagnose
 

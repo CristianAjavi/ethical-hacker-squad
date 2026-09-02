@@ -78,6 +78,16 @@ done < <(jq -r '.products[] | select(.comparable and .pinned != null) | "\(.repo
 
 printf '\n  still the tip %d · moved %d · could not measure %d\n' "$same" "$moved" "$unmeas"
 
+# A pin is not a measurement. competitive-discovery.sh added six comparable
+# products on 2026-09-01 that have never been run, and a freshness report that
+# lists them beside the benchmarked three would read as though it had.
+never="$(jq -r '[.products[] | select(.comparable and (.benchmarked == false))] | length' "$BASELINE" 2>/dev/null || echo 0)"
+if [ "${never:-0}" -gt 0 ]; then
+  printf '  %s comparable product(s) are PINNED BUT NEVER BENCHMARKED - a pin says where to look,\n' "$never"
+  printf '  not what was found. They are named in the baseline with `benchmarked: false`:\n'
+  jq -r '.products[] | select(.comparable and (.benchmarked == false)) | "    " + .repo' "$BASELINE"
+fi
+
 if [ "$unmeas" -gt 0 ] && [ "$moved" -eq 0 ]; then
   printf '  VERDICT: 2 (COULD NOT MEASURE every product - this is not a pass)\n'; exit 2
 fi

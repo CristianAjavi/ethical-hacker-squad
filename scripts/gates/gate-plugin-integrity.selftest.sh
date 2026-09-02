@@ -135,6 +135,24 @@ run_case() {
   fi
 }
 
+# A notice that always fires is noise, so it needs both proofs: that it speaks,
+# and that it stays quiet. run_case can only assert a string is PRESENT, so this
+# sibling asserts it is absent. Same harness, inverted grep.
+run_case_absent() {
+  local name="$1" want="$2" needle="$3" mutate="$4"; shift 4
+  local d="$TMP/$name"; rm -rf "$d"; mkdir -p "$d"
+  build_tree "$d"
+  "$mutate" "$d"
+  local out rc=0
+  out="$(env EHS_REPO_ROOT="$d" EHS_SERVED_ROOTS="skills agents" "$@" bash "$GATE" 2>&1)" || rc=$?
+  if [ "$rc" -eq "$want" ] && ! printf '%s' "$out" | grep -qi -- "$needle"; then
+    printf 'ok       %-36s rc=%s (no "%s")\n' "$name" "$rc" "$needle"; pass=$((pass+1))
+  else
+    printf 'FAILED   %-36s rc=%s (wanted %s and no "%s")\n' "$name" "$rc" "$want" "$needle"
+    fail=$((fail+1))
+  fi
+}
+
 m_none()          { :; }
 m_empty_skill()   { : > "$1/skills/mypack/SKILL.md"; }
 m_no_frontmatter(){ printf '# mypack\n' > "$1/skills/mypack/SKILL.md"; }
@@ -187,6 +205,11 @@ run_case skill-md-over-budget        1 "loaded whole"              m_fat_skill
 run_case reference-over-budget       1 "split the file"            m_fat_reference
 run_case tree-over-byte-budget       1 "blast-radius"              m_none EHS_MAX_TREE_BYTES=10
 run_case tree-over-file-budget       1 "files >"                   m_none EHS_MAX_TREE_FILES=1
+# The cap fails only once it is too late; the notice is what a contributor can
+# act on. Both halves proved: it speaks under one reference file of headroom,
+# and it says nothing when there is room. Neither changes the verdict.
+run_case tree-headroom-notice        0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000 EHS_MAX_REF_BYTES=999999
+run_case_absent tree-headroom-quiet  0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000
 
 echo "-- shipped tools: the extension is permitted, the capability is not"
 run_case tool-inert-ships            0 "read and inert"            m_tool_inert

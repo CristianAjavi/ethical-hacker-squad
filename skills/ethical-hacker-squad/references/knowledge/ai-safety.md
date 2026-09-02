@@ -3,7 +3,7 @@
 > **When to load this file:** when the inventory contains calls to a language model, an agent with tools, an MCP client or server, a RAG pipeline, persistent memory, or a chatbot exposed to users.
 > **Do not load it if:** the project only uses a model for offline classification, with no tools, no retrieval and no output reaching an executable sink; the web/API coverage is enough there.
 > **Cost:** ~337 lines. Load by section using the index; §0 is mandatory whenever an agent with tools exists.
-> **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§12 and `AI-25`..`AI-28` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, and attribution of what the agent did. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three. `AI-29` sits in §1 of this file and is the one procedure here whose subject is the auditor's own machine as well as the target's.
+> **This pack ships in three files, and this one is the entry point.** `ai-safety-data-output.md` holds §4-§10 and `AI-12`..`AI-22` plus `AI-24` — RAG, the vector store deployment, memory poisoning, model output reaching an executable sink, context and secret leakage, unbounded consumption, payload obfuscation, adversarial evaluation, and the squad's own self-protection. `ai-safety-agent-runtime.md` holds §11-§13 and `AI-25`..`AI-28` plus `AI-30` — installable skills and plugins, the agent's writable scope and inherited credentials, inter-agent handoff, attribution of what the agent did, and the base URL that decides which model provider the traffic actually reaches. `AI-22` applies to every engagement without exception; the identifier compatibility notes at the end of this file govern all three. `AI-29` sits in §1 of this file and is the one procedure here whose subject is the auditor's own machine as well as the target's.
 
 ## Selective loading index
 
@@ -14,7 +14,7 @@
 | §2 Tool authorization | the model decides which function runs | AI-05, AI-06, AI-07 |
 | §3 MCP and tool chain | `.mcp.json`, `mcp_servers`, MCP SDK, first- or third-party servers | AI-08, AI-09, AI-10, AI-11 |
 
-Sections §4 to §10 (`AI-12`..`AI-22`, `AI-24`) are in `ai-safety-data-output.md`. Sections §11 and §12 (`AI-25`..`AI-28`) are in `ai-safety-agent-runtime.md`: load it when the target installs or ships agent packages, hands an agent a shell or write tool, or runs more than one agent.
+Sections §4 to §10 (`AI-12`..`AI-22`, `AI-24`) are in `ai-safety-data-output.md`. Sections §11 to §13 (`AI-25`..`AI-28`, `AI-30`) are in `ai-safety-agent-runtime.md`: load it when the target installs or ships agent packages, hands an agent a shell or write tool, runs more than one agent, or lets configuration decide the provider endpoint.
 
 ## How to use a procedure
 

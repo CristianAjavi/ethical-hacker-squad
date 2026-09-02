@@ -91,6 +91,7 @@ status/blocked|d4c5f9|Depends on something external
 channel/latest|bfd4f2|Affects the latest channel (main branch)
 channel/stable|bfd4f2|Affects the stable channel (stable branch)
 channel/stable-blocked|b60205|Freezes automatic promotion to stable while it stays open
+override/g7-reviewed|d4c5f9|G7: a maintainer sanctions this marked change moving a protected path
 '
 
 # ---------------------------------------------------------------------------

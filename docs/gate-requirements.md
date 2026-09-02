@@ -12,7 +12,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 |---|---|---|
 | `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test, `gate-plugin-version.sh` + self-test |
 | `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
-| `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections) |
+| `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
@@ -26,6 +26,10 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
+| agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
+| stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
+| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
+| coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
@@ -37,6 +41,10 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
+| negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
+| budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
+| the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -74,6 +82,8 @@ Two of those 57 cases are worth naming. `gate-plugin-integrity.sh` states in a c
 ### And the check that keeps it that way
 
 The batteries above are the fix. `gate-negative-proof.sh` is the other half this repository's closure rule always asks for: it fails when a gate carries no negative proof at all.
+
+**And a second half to that half.** `gate-negative-proof.sh` asks whether proof EXISTS. It cannot see proof that is gone, and its own docstring is honest that counting files cannot judge a battery. Measured on 2026-09-01 against `9ccd3ab`: moving one negative fixture and its `.expected` sidecar out of the tree took `gate-findings-artifact.sh` from 30 artifacts to 29 and it signed **`VERDICT: 0`**. Every gate in the repository stayed green while a negative proof was retired, and nothing recorded that the case had ever existed. Weakening a fixture in place IS caught — gut the defect and leave the file and the gate says *"a fixture under bad/ validated cleanly, so it proves nothing"* — so the shape that survived is precisely **deletion**, the one edit that removes the evidence along with the thing it proved. `gate-negative-proof-census.sh` compares the count on disk against `scripts/gates/data/negative-proof-census.json`, in both directions: fewer means a proof was retired, more means the baseline went stale and stopped being one. The file sits under `scripts/gates/**`, so lowering the number is an edit G7 puts in front of a reviewer.
 
 A gate proves itself in exactly one of two shapes, and the gate accepts only those two:
 
@@ -168,12 +178,13 @@ What it enforces:
 5. **Anatomy and identifiers.** Every procedure carries the six mandatory fields from `scripts/meter/packs.json`; its `Traceability` line names at least one identifier or declares explicitly that none applies; every backticked token matches a family in `scripts/gates/data/identifier-families.json`; and no identifier appears outside backticks.
 6. **The roster.** `references/team.md`, `agents/` and `packs.json` name the same roles, agents and files. A pack no role owns is never loaded; an agent absent from the roster is never dispatched.
 7. **Routing.** Every `` `pack.md` §N `` in `coverage.md` names a section that exists.
+8. **Reachability, which is check 7 turned around.** Every pack file is routed to by at least one row of `coverage.md`, and every section of a routed file is named by some row. Check 7 walks the routes outward and cannot see what no route mentions, and that silence reads exactly like coverage: `ai-safety-agent-runtime.md` held `AI-25`..`AI-28` while the one table the leader consults to decide what to open never named the file, and four more procedures — `AI-21`, `PRV-13`, `LOC-15`, `LOC-16` — sat in sections no row reached. A pack may be unrouted **on purpose** — `remediation` is staffed by mode, not by an inventory signal — and that is a third state written down as `unrouted_reason` in `packs.json`, never an absence. Declaring the exemption *and* routing to the file is itself a finding, so the two cannot silently disagree.
 
 **Two declared exemptions, both visible in the output.** A `Traceability` line may state that no external identifier applies (`internal process`, `no external identifier`, `the one from the original finding`) — five procedures in `remediation.md` do. And text that quotes a superseded figure on purpose — a changelog entry saying what a file *used to* declare — is exempt only inside a `<!-- counts:historical -->` region, in the same idiom `gate-verdict-vocabulary.sh` uses. Both are counted and printed on every run rather than silently swallowed.
 
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
-Proved in the negative by `gate-corpus-contract.selftest.sh`: 20 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 26 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## The triage rules
 
@@ -309,7 +320,7 @@ No credential in the working tree or in history. Detection uses distinctive-form
 
 ## G7 — Protected paths
 
-A pull request from a `bot/` branch **fails** if its diff touches any of:
+A pull request **fails** if its diff carries any mark of automation and touches any of:
 
 ```
 skills/ethical-hacker-squad/SKILL.md
@@ -324,13 +335,196 @@ LICENSE
 NOTICE.md
 ```
 
-These define what the system may do and what it may read. An automation that can edit its own limits has none. Human branches may touch them; the maintainer reviews.
+These define what the system may do and what it may read. An automation that can edit its own limits has none.
+
+**The classifier no longer asks the editor.** Until 2026-09-01 the single question *is this an automation?* was answered by the branch prefix — and the branch is named by whoever is editing. In PR #72 an agent raised `MAX_TREE_BYTES` from 655,360 to 786,432 B inside `scripts/gates/**`, which is this rule's own example of the thing it forbids, and the gate signed it green because the branch was called `loop/…` and the reserved prefix is `bot/`. A longer prefix list does not fix that; every list of chosen names has the same hole.
+
+What fixes it is reading a self-declaration in one direction only:
+
+> **an admission incriminates, a denial exculpates nothing.**
+
+So the prefix stays, demoted from *the* classifier to one signal among several, and it is joined by the marks an agent's harness writes into the commit range rather than into a name: a `Claude-Session:` trailer, an `@anthropic.com` or `[bot]` identity. `scripts/gates/data/protected-paths.json` holds both lists. Measured on the four commits merged as PR #72: all four carry the trailer, and replaying that exact diff turns the gate from `0` to `1`.
+
+**Nothing is called a human change any more.** There is no signal available when this gate runs that proves a person made a change: a pull-request approval does not exist yet when CI fires, and every other signal is written by the editor. A change with no mark is reported as `UNATTRIBUTED` — allowed, listed, and never described as something it was not. And in a single-maintainer repository the separation stops there on purpose, because the maintainer and the maintainer's agent commit with the same account and the same email. The property this gate guarantees is not *an automation cannot move a limit*; it is **an automation cannot move a limit unnoticed**, which is the one that was actually missing.
+
+**If the commit range cannot be read and a protected path was touched, the verdict is `2`.** Half the classifier did not run and the diff is in the half that matters; reporting that as the old *human branch, allowed* would repeat the original mistake one level down. Where no limit was touched the range is moot and the run stays `0`, because a gate that goes amber on every ordinary pull request is a gate people learn to skip.
+
+**The way out is a label, `override/g7-reviewed`.** A label is not in the diff, not in the branch and not in a commit, so granting one is a separate act on GitHub and shows up in the pull-request timeline rather than in the change it waves through; the workflow resolves its presence to one of two literals before anything reaches a shell, and `labeled`/`unlabeled` are trigger types so applying it re-runs the gate. When it is used the run prints every path that moved, in capitals, with consent — an override that reads like a pass is a pass. It does not silence the drift check: no label makes the rule disagreeing with its own documentation acceptable, and a label standing on a change that carries no mark is called out as worth removing.
+**Two limits of the override, measured rather than assumed.** The label is out of reach of the branch, of the diff and of the workflow's own token, which has `contents: read` and cannot write anything. It is **not** out of reach of an agent running with the maintainer's `gh` credentials on the maintainer's machine — to GitHub, that agent *is* the maintainer, and no control living inside this repository can change that. The honest boundary of G7 is the CI surface, and it is stated here rather than left to be discovered. Second: as of 2026-09-01 the protected-paths job is **not** among `main`'s required status checks (`gates` and `workflow-hardening` are), so a red G7 is visible and does not block a merge. That is a deliberate open question, not an oversight — making it required turns the override from a loud annotation into a gate key, and a gate key an agent can turn is not a key.
 
 **Implemented 2026-08-21** as `gate-protected-paths.sh`, and the list above is no longer prose: it is checked, line for line and in order, against `scripts/gates/data/protected-paths.json`, so the rule and the sentence documenting it cannot drift apart. Two self-test cases exist for exactly that drift, one in each direction.
 
 **A human branch touching a protected path is printed, never silently allowed.** The maintainer reviews it, and can only review what the run tells them is there — so the gate lists every protected path in the diff and says which pattern caught it. What it does not judge is whether the change is a good one: it asks who is changing the limits.
 
-It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 10 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, a human branch touching one, the documented list and the enforced list drifting in each direction, and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
+**And that list was burying the lines that mattered.** Measured on 2026-09-01 across the 28 merged changes that tripped G7: of the 150 paths it named, **38 were fixture inputs** — the `bad/` and `unmeasurable/` files a gate is supposed to fail on — and on the worst change **2 genuine limits sat under 19 lines of them**. A reviewer asked to find two lines in twenty-one finds neither. So the `UNATTRIBUTED` listing now folds that material into one counted line, grouped by family, naming what watches it. Folding is a display decision and the battery is what keeps it one: when G7 **fails**, and when a maintainer waves a marked change through with the label, every path is named in full. A `.expected` assertion never folds, because the input is the proof and the assertion is what says the proof proved anything, and nothing else watches an assertion being weakened.
+
+**The exemption this replaced was measured and refused.** A task stood open to take those fixture inputs *out* of `scripts/gates/**` altogether, on the argument that they are negative proof rather than limits. Half of that argument holds — the three ways such a fixture can be weakened are all watched: deletion by `gate-negative-proof-census.sh`, neutering in place by the family's own self-test, which names the rule the fixture stopped tripping and caps the verdict at `2`. The other half does not. In **0 of those 28 changes** did G7 fire on fixtures alone, so the exemption would have cost 38 paths their protection and prevented not one firing. And the gates that do watch them answer a different question: the census asks whether the proof is still *there*, the self-test whether it still *trips*, and neither asks **who moved it**, which is the only question G7 asks. *Covered by another gate* is not *covered*. The refusal is recorded in `protected-paths.json` next to the list it declined to shorten, because the next reader will ask.
+
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 25 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
+
+**The control went green because its input went missing, 2026-09-01.** The first push of the
+`alert-surface` branch had G7 **passing** on a diff that moved three protected paths. Nothing was
+overridden and nothing was narrowed: the commit had simply been written without its
+`Claude-Session:` trailer, which is one of the two signals this gate reads. G7 behaved exactly as
+specified — it prints *an absent mark is not a human* on every run — but a reader sees a green
+check, not that sentence. **A signal that can go missing by omission produces a silence that looks
+like a pass**, and the only reason it was caught is that a claim in the pull-request body predicted
+red and the check said green.
+
+`automation_branch_prefixes` holds only `bot/`. The `loop/` branches this repository's own
+continuous-improvement work runs on are not covered, so the trailer is the *only* signal on them,
+and it is the one a harness can drop. Closing that is tracked separately; it is recorded here
+because the gap is in this gate's inputs and a reader of this section should not have to find it
+in a pull request.
+
+
+### The rule that could never be satisfied, 2026-09-01
+
+G7 failed on **every** Dependabot pull request in the `github_actions` ecosystem, and could never
+have passed one. Two changes, each right on its own, cross:
+
+| Piece | When | What it did |
+|---|---|---|
+| `23c240f` | 2026-08-21 | protects `.github/workflows/**` |
+| `9e17a07` (PR #73) | 2026-09-01 | adds `dependabot`, `[bot]`, `github-actions` to `identity_substrings` |
+
+Their intersection is unsatisfiable, because **editing workflow files is the work of that
+ecosystem**. It is a regression rather than a design decision, and the runs prove it: the same
+branch `dependabot/github_actions/github-actions-0856f00088` went green on 31 August and red four
+times on 1 September. Over the last 100 `PR-context gates` runs, 86 passed and 14 failed; four of
+the fourteen were that one branch. G7 is not a required check, so nothing was blocked — which is
+worse, not better: a control that shouts on every change and blocks nothing is a control people
+stop reading, and PR #63, a **one-line bump of `github/codeql-action/upload-sarif`, a security
+action**, sat red from 31 August.
+
+**The fix is not an exemption for Dependabot.** Exempting the bot would open a real hole — a bot
+pull request that widens `permissions:`, injects a `run:` step or adds a job is a supply-chain
+vector, and a bot identity is exactly what an attacker would forge. So `content_exemptions` in
+`scripts/gates/data/protected-paths.json` asks **what changed**, never who changed it: for a file
+under `.github/workflows/**`, every added and removed line must be a `uses:` pinned to a 40-hex
+commit SHA. One line that is not — anywhere in that file — and the file stays protected.
+
+Three properties are worth stating because each has a case in the battery:
+
+- **It can only make a pinned repository more pinned.** A bump to `@v4` or `@main` is a mutable
+  reference and is not exempt. Pinning is the reason this repository holds SHAs at all.
+- **It clears a file, not a pull request.** A clean bump travelling beside another protected path
+  does not carry that path through.
+- **It fails closed.** The exemption needs the *diff*, not the file list, and the gate prints
+  `NOT MEASURED: no diff was supplied` when it has none. Without a diff nothing is exempt. A rule
+  that turns into a pass when its input goes missing is the false green recorded in G7b and G7d,
+  and it would have been trivial to build it that way here.
+
+Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
+allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+work: with no diff there is no exemption, so every verdict written before exemptions existed still
+holds.
+
+## G7b — A bound may not move without the figure that moved it
+
+G7 asks **who** moved a limit. It does not ask whether the number that moved still agrees with the sentence that states it — and on 2026-09-01, one of them did not.
+
+Measured over the whole history: **15 budget constants moved, 13 of them tighter.** Exactly two loosened, and both were the same knob — `EHS_MAX_TREE_BYTES`, raised `524288 → 655360 → 786432`. The discipline around those raises is genuinely good; the third is written up in `gate-plugin-integrity.sh` with the figure that forced it (653,513 B served against a 655,360 B cap — **1,847 bytes of headroom**, less than a tenth of one procedure). This gate does not exist because the discipline is missing. It exists because **nothing enforced it**, and the practice already had one measured failure: the same file's environment table still read `default 524288` while `786432` was enforced — stale since the second of the three re-baselines, and the number a contributor gets from the usage block rather than the rationale. **One knob of eleven had drifted, and it was the only one that had ever been raised.** The fix that raises a number makes the note that states it false, and no test saw that.
+
+`scripts/gates/data/budget-ledger.json` is the single home. Four checks:
+
+1. **classification** — every `${EHS_*:-<number>}` any gate reads is named in the ledger, as a `budget` or explicitly as `not_a_budget`. A knob nobody classified **fails**: a ledger listing only what someone remembered cannot see what nothing points at, and 3 of the 11 knobs really are mode switches, which is a decision someone writes down rather than a gap.
+2. **agreement** — the ledger's `value` equals the value the source enforces, in both directions, so raising a budget is an edit to a file under `scripts/gates/**` that G7 puts in front of a reviewer, with the justification on the next line. A declaration that outlives its knob fails too.
+3. **no drift** — every comment stating `default <N>` for that knob names the same number. This is the check that was already red.
+4. **justification** — every `budget` carries a non-empty `why` and `measured`.
+
+**What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Both are printed on every run.
+
+Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
+
+## G7c — The file that tells you how to read an alert has to be right
+
+`.github/dependabot.yml` carries the comment a triager reads before deciding whether a red
+alert matters. Its whole purpose was one sentence: *do not let a real alert hide behind the
+assumption that every npm finding here is a fixture.*
+
+**Measured 2026-09-01, against the five open alerts on the default branch: every factual claim
+in that comment was false.** It said there was no `requirements.txt` — one had been added under
+`bench/cases/intake-portal` and produces three of the five alerts. It said enabling alerts would
+report *those two — one high, one low* — the figure is five: one high, two medium, two low. It
+said *the express pin is deliberately old* — `express` appears in no planted entry and no decoy
+in `bench/ground-truth.json`, so that alert is incidental, not ground truth. And it said there
+was no `Dockerfile` — `bench/cases/intake-portal/Dockerfile` exists. **One alert of five is a
+plant.** The document written to stop a real alert hiding behind a fixture had become the hiding
+place, and nothing read it.
+
+This is `G7b` one level up: not a number that moved behind the sentence that states it, an
+**inventory** that did. A claim of absence never ages; the tree does.
+
+`gate-alert-surface.sh` enumerates the **manifests on disk** — the source, not the declaration —
+and checks six things against `scripts/gates/data/alert-surface.json`: every manifest found is
+declared and its ecosystem matches its filename; every declared path still exists; `managed: true`
+holds **iff** an `updates` block covers it, in both directions, so a bot pointed at a bench fixture
+is a finding; every unmanaged manifest states why; every absence the config's prose asserts is
+genuinely absent; and the `planted`/`decoys` symbols declared for a fixture are **exactly** what
+the answer key plants there, in both directions.
+
+**It found three more defects on its first two runs, all of them mine**: the undeclared
+`Dockerfile`, my own transcription of the false `Dockerfile` absence claim, and a `planted` list
+written from a grep that held `lodahs` and missed `preinstall` (P-19) and the decoy `left-pad`
+(D-20). A list built from memory cannot see what nothing points at.
+
+Two things it deliberately does not measure. **The alert count**, because that number moves when
+an upstream advisory is published and no change here caused it — a gate that cries at the world
+gets ignored the same way this alert channel did. And the **prose** of `dependabot.yml`: a gate
+cannot read English, only the absence claims transcribed into the data file, so a claim added to
+the comment and not copied across stays invisible. That hole is named in the data file rather
+than left for someone to find.
+
+Fixed in the same change: `tooling/claude-cli` — the one manifest in this repository where an
+alert would be **real**, installed with `npm ci` by `release.yml` — had no `updates` block. The
+argument this config already makes for keeping action SHAs current applies to it, and nobody had
+made it.
+
+Self-test: 13 cases, each proved in the negative against a synthetic tree, plus one that runs the
+gate against this repository as it stands.
+
+
+## G7d — The report was written and nothing said where it landed
+
+`references/report.md` specifies the deliverable in 180 lines: which sections are mandatory,
+which vocabulary each verdict must use, which rule kills which claim. Every line is about the
+**file**. Not one of them said the leader must tell the user where the file is once the run is
+over, and `SKILL.md` step 9 — three sentences, the smallest step in the workflow — did not
+either.
+
+**Measured 2026-09-01, from a user who had run the squad several times:** *"nunca entiendo como
+entrega los resultados o pareciera que nunca los da"*. The artifact was being produced. The
+handover was not, because nothing in the corpus asked for one.
+
+Why no existing control could see it is the part worth keeping. Two gates already guard the
+deliverable — `gate-report-contract.sh --deliverable` and `gate-findings-artifact.sh
+--deliverable` — and both correctly answer `2` when the directory is missing or empty; that was
+verified before this gate was written, and it is the reason no third deliverable-scanner was
+built. But **both are invoked with an explicit path.** A run that produced nothing never reaches
+either of them. A gate that fires only once someone remembered to point it at a directory
+protects the case that already went right.
+
+So `gate-handover-contract.sh` looks at no deliverable at all. It checks that the *instruction*
+is wired: present in step 9, naming both files and the word **absolute**, pointing at a
+specification, and that specification complete in both directions against
+`scripts/gates/data/handover-contract.json`. Its sixth check runs each named validator against
+an absent deliverable and requires the answer `2` — because the handover block tells the leader
+to print those exit codes, and a named script that answered `0` on nothing would make the
+printed number mean the opposite of what the block says it means.
+
+**Step 9 grew by moving something out, not by raising a cap.** `SKILL.md` was 12,281 B against
+a 12,288 B ceiling — seven bytes — and that is the real reason delivery was the shortest step in
+the file: it was the section that lost. `EHS_MAX_SKILL_MD_BYTES` was not touched; its own
+justification in the ledger forbids it (*"The answer to needing more is references/, not a
+higher number"*). The room came from deleting `## Example invocations`, whose four lines are in
+`README.md:143-146` verbatim — documentation about how to invoke the skill, paid for on every
+fire, by a reader who has already invoked it.
+
+What this gate does **not** measure, and says so on every run: whether the leader actually prints
+the block. No static check makes a model obey an instruction. That is a `bench/` question, and
+calling this gate's `0` "the handover works" would be exactly the substitution the block itself
+forbids.
 
 ## G8 — Regression guard on quality issues
 
@@ -354,15 +548,30 @@ Track OpenSSF Scorecard, but **do not gate on the aggregate score.** The aggrega
 
 Gate on the subset that reflects real risk here:
 
+<!-- g9:gated -->
+
 | Check | Threshold | Why it matters here |
 |---|---|---|
 | `Dangerous-Workflow` | must be `10` | A single `pull_request_target` with untrusted checkout is the exact CSA-documented chain. |
 | `Token-Permissions` | `>= 9` | An over-permissioned `GITHUB_TOKEN` is what turns an injection into a compromise. |
 | `Pinned-Dependencies` | `>= 8` | Tags are mutable and have been repointed at malicious commits in the wild. |
-| `Branch-Protection` | `>= 8` | The whole promotion model assumes nobody pushes directly. |
 | `Binary-Artifacts` | must be `10` | A knowledge repository has no reason to contain binaries. |
 | `License` | must be `10` | |
 | `Security-Policy` | must be `10` | A security tool without a disclosure policy is a contradiction. |
+
+<!-- /g9:gated -->
+
+### Measured, published, and deliberately not gated on this number
+
+A check leaves the table above by being written into the one below, never by being deleted. `gate-scorecard-threshold.sh` reads both, refuses to run if a check appears in neither or in both, prints the live score of every check in this table on every run, and fails if the file named as the real check does not exist. A control that is retired in silence is the failure this whole document is written against; a control that is *relocated in writing*, with its live number still on screen, is a different thing.
+
+<!-- g9:not-gated -->
+
+| Check | Really checked by | Why not this number |
+|---|---|---|
+| `Branch-Protection` | `scripts/gh/governance.json`, `scripts/gh/protection-check.sh`, `scripts/gh/apply-governance.sh` | Scorecard reads the protection block through an API call needing administration scope. The workflow token does not have it, and `.github/workflows/protection-drift.yml` already refused the alternative — a personal access token as a secret in a public security repository — as a larger surface than the problem it solves. So from CI the check is `-1` on every run, and `-1` is COULD NOT MEASURE, which is how G9 exited `2` on every push from the day it started gating. Measured once with a maintainer token it is `3`, not the `8` that was declared: the threshold was never reachable either, so resolving the `-1` would have turned a permanent `2` into a permanent `1`. The property the threshold was written for — *nobody pushes directly to `main`* — holds and is enforced: force pushes and deletions disabled, linear history required, pull requests required, two required status checks. |
+
+<!-- /g9:not-gated -->
 
 The aggregate is recorded as informational with a **no-regression** rule: it may not drop more than 0.5 below the previous recorded value without failing. Exit `2` if Scorecard could not run.
 

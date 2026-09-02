@@ -61,6 +61,35 @@ s=p.read_text()
 i=s.index("| `FP-07` |"); j=s.index("\n",i)
 p.write_text(s[:i]+"| `FP-07` | it depends | ask |"+s[j:])'
 
+# The merge family. It arrived after the FP one and with the same failure modes,
+# and a family nobody tests is a family that can be invented in prose.
+case_run merge-citation-of-a-rule-that-does-not-exist 1 "does not declare" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"
+p.write_text(p.read_text()+"\nSee `DUP-42` for the rest.\n")'
+
+case_run merge-rule-ids-not-contiguous 1 "not contiguous from DUP-01" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"
+p.write_text(p.read_text().replace("| `DUP-04` |","| `DUP-44` |",1))'
+
+case_run merge-rule-gutted-to-a-stub 1 "a rule in name only" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"
+s=p.read_text()
+s=re.sub(r"\| `DUP-06` \|[^\n]*", "| `DUP-06` | Different. | Say so. |", s, count=1)
+p.write_text(s)'
+
+case_run merge-unknown-has-nowhere-to-go 1 "nowhere to go" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"
+p.write_text(p.read_text().replace("possible_duplicate_of","possible_dup_of"))'
+
+case_run merge-region-gone 2 "" '
+import os,re,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"
+p.write_text(p.read_text().replace("<!-- triage:merge-rules -->",""))'
+
 case_run answer-vocabulary-broken 1 "is not declared" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'"

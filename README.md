@@ -37,7 +37,7 @@ Two targets, **four arms**, six runs each, every claim judged blind by two indep
 
 **This comparison is a photograph taken on 2026-08-22**, at the commits named in [`docs/competitive-baseline.json`](docs/competitive-baseline.json). Subjects move: on 2026-08-24 two of the three were already past the commit measured here, both pushed that day. That does not make a number above wrong — it dates it. [`scripts/gh/competitive-freshness.sh`](scripts/gh/competitive-freshness.sh) is what notices, and it says only that the photograph is old, never that a product which moved got better.
 
-**Of the six products surveyed, three are comparable and all three have now been run.** `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
+**Of the six products surveyed on 2026-08-22, three are comparable and all three have been run.** That survey was a closed list, and on 2026-09-01 [`scripts/gh/competitive-discovery.sh`](scripts/gh/competitive-discovery.sh) — which asks the question the freshness check cannot, *is the list still the field* — found **six more comparable products, none of them benchmarked**. The one that matters, `maxgfr/ultrasec`, has this project's exact purpose, was pushed two days earlier, and has **zero stars**: a popularity floor would have hidden it as thoroughly as the closed list did. They are pinned in the baseline with `benchmarked: false`, which is a note saying where to look and not a result. `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
 
 **Read every recall figure as a band, never a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped**. That is the instrument's resolution, measured rather than assumed.
 
@@ -49,7 +49,7 @@ The second dimension is not capability at all.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,450 lines of corpus across eight role packs, with 169 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,556 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -92,8 +92,9 @@ Eight packs, one per role. Five of them are stored as **more than one file** (`m
 | | `supply-chain-source-lifecycle.md` | `SUP-21`..`SUP-26` | release and tag integrity, signature verification that verifies nothing, binaries in the tree, end-of-life runtimes, suppression and VEX files |
 | ai-safety | `ai-safety.md` | `AI-01`..`AI-11`, `AI-29` | the lethal-trifecta check, instruction/data boundary, tool authorization, MCP and tool poisoning |
 | | `ai-safety-data-output.md` | `AI-12`..`AI-24` | RAG and memory poisoning, model output as a dangerous sink, context exposure, unbounded consumption, Unicode obfuscation, adversarial evaluation, and the squad's own self-protection |
-| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
-| local-app | `local-app.md` | `LOC-01`..`LOC-15` | command-line tools, desktop and WebView shells, published libraries, installers and updaters, local daemons and loopback listeners |
+| | `ai-safety-agent-runtime.md` | `AI-25`..`AI-28`, `AI-30` | an installable agent package, an agent that can write its own configuration, agent-to-agent delegation, attribution of an action |
+| local-app | `local-app.md` | `LOC-01`..`LOC-10`, `LOC-15`..`LOC-16` | who the second principal is, path traversal and archive extraction, temporary files and races, argument injection and search paths, permissions and privileged helpers, insecure library defaults, secrets left on the machine, and undecodable bytes that abort or silently narrow the analysis |
+| | `local-app-desktop-ipc.md` | `LOC-11`..`LOC-14` | Electron and WebView renderer isolation, protocol handlers and deep links, local IPC and loopback listeners, code that arrives at runtime |
 | privacy-abuse | `privacy-abuse.md` | `PRV-01`..`PRV-13` | personal data mapping, minimization and retention, multitenancy, third-party SDKs, user data reaching models, export and deletion, log leakage, product abuse paths |
 | remediation | `remediation.md` | `REM-01`..`REM-07` | minimum root-cause patching, regression tests that must fail without the patch, authorization limits, ordering |
 | verification | `remediation-verification.md` | `VER-01`..`VER-09` | adversarial posture, negative checks, honest classification |
