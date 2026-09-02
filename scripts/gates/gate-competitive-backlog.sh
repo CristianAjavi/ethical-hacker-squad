@@ -77,10 +77,9 @@ if ! bash "$HERE/run-all.sh" --list > "$inv" 2>/dev/null; then
 fi
 
 out="$(python3 "$CORE" "$ROOT" "$DOC" "$inv" 2>&1)"; rc=$?
-emitted=0
 while IFS= read -r line; do
   case "$line" in
-    FINDING\ *)    gate_fail "${line#FINDING }"; emitted=$((emitted+1)) ;;
+    FINDING\ *)    gate_fail "${line#FINDING }" ;;
     UNMEASURED\ *) gate_warn "${line#UNMEASURED }" ;;
     *)             [ -n "$line" ] && gate_info "$line" ;;
   esac
@@ -88,16 +87,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "every backlog row's status matches the gate directory, and nothing in the repository calls a shipped item missing" ;;
-  # python exits 1 on an unhandled exception, and 1 is also this contract's
-  # "measured, FAILS". They are told apart by the only thing that distinguishes
-  # them: a real failure names its findings. Silence at rc=1 is a crash, and a
-  # crash measured nothing. This was not hypothetical - the core called a list
-  # as a function in every could-not-measure arm, and each of those arms
-  # arrived here as a confident red.
-  1) if [ "$emitted" -eq 0 ]; then
-       gate_warn "the measurement core exited 1 and named no finding, so it crashed rather than measured"
-       rc="$GATE_UNMEASURABLE"
-     fi ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

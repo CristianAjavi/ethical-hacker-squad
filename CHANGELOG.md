@@ -8,6 +8,23 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **Eleven gates reported a crash as a measured failure.** The exit contract has three
+  values on purpose — `0` measured and clean, `1` measured and FAILS, `2` COULD NOT MEASURE
+  and never a pass — and python exits `1` on an unhandled exception. Every python-backed
+  wrapper ended in `case "$rc" in ... 1) : ;;`, so a core that could not run at all printed a
+  confident red about a tree it never opened. No self-test reached the arm: a self-test breaks
+  the *document* a gate reads, not the gate's own core. Measured by prepending
+  `raise RuntimeError` to each core and reading the verdict — eleven said "measured, FAILS";
+  the two survivors, `gate-governance-contract.sh` and `gate-bench-index.sh`, got there by
+  running a fixture battery first, whose failure is already could-not-measure.
+  `gate_fail` now counts what it prints, and `gate_core_rc` in `lib/common.sh` tells the two
+  apart by the only thing that separates them: **a real failure names its findings**. Verified
+  both ways — a crashing core returns `2` in all thirteen, and a planted unresolvable id and a
+  planted stale reason still return `1`. **The first probe reported eight**: two gates bailed
+  on a missing input before reaching python, so their mapping was *not measured* rather than
+  correct, and `gate-bench-integrity.sh` was missed because its core is a heredoc rather than a
+  file under `lib/`. Three of the eleven were found by distrusting the first count.
+
 - **Two gates blamed a backlog item that had already shipped.**
   `gate-negative-evidence.sh` and `gate-verdict-vocabulary.sh` each declared, in their
   out-of-scope sections and on every run, that no machine-readable finding was emitted
@@ -56,6 +73,13 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`gate-crash-is-not-a-red.sh`.** Every gate in the inventory that runs a python core behind
+  a `case "$rc"` mapping must route the `1` arm through `gate_core_rc`; the two ways to get it
+  wrong are named apart. It inspects itself and **obeys the rule rather than excusing itself**,
+  and its self-test fixtures are assembled from pieces — written literally they would contain
+  the strings the gate searches for, and it would have passed on the presence of its own test
+  data. Three throwaway gate directories assert red, green and could-not-measure.
+
 - **`gate-competitive-backlog.sh` — the roadmap, measured against the gate directory.**
   `docs/competitive-analysis.md` §5 lists fifteen items, each naming the gate that would keep
   it, and carried no status at all: the only way to learn what had shipped was to grep and
@@ -69,7 +93,8 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   rather than a glob, so this gate and the runner cannot disagree about what a gate is.
   **B3** no `open` row is quietly kept by a gate that already exists — an item built and never
   crossed off sends the next reader to build it twice. **B4** no line in the repository cites
-  `backlog #N` beside a word of absence when row N ships; 13 citations checked across 10 files.
+  `backlog #N` beside a word of absence when row N ships; every run prints how many citations
+  it resolved and across how many files, so the figure cannot go stale in this entry.
   B4's word list is present-tense on purpose: the first draft flagged the sentence that
   *narrates why item 7 was written*, which is how every gate header here opens. Quoting a
   retired reason is exempted by the token `backlog:quoted` on the line or the one above, and

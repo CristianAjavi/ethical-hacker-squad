@@ -59,7 +59,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "no credential in the tree, and every secret-shaped string in the bench is a declared defect" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

@@ -77,7 +77,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "the artifact conforms, and every fixture failed for the reason it stands for" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 gate_verdict "$rc"

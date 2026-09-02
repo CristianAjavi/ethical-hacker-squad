@@ -798,7 +798,8 @@ The battery went red on its first execution, and every red was real:
    exception, and 1 is this contract's "measured, FAILS". The wrapper now tells
    them apart by the only thing that separates them — *a real failure names its
    findings* — and silence at rc 1 is could-not-measure. This turned out to be a
-   repository-wide defect; see the section below.
+   repository-wide defect: eleven gates had it, and **§ Eleven gates reported a
+   crash as a measured failure**, below, is the measurement and the fix.
 3. **Two cases passed on the wrong signal.** A traceback prints the offending
    source line, so a needle matched the text of a message that was never
    emitted. The harness now refuses any case whose output contains a traceback,
@@ -814,6 +815,85 @@ The battery went red on its first execution, and every red was real:
    fixtures assemble their citations from pieces; excluding self-tests from the
    walk would have been the easy fix and the wrong one, because a stale reason
    parked in a self-test is still a stale reason.
+
+## Eleven gates reported a crash as a measured failure
+
+The exit contract has three values on purpose: `0` measured and clean, `1`
+measured and **FAILS**, `2` **COULD NOT MEASURE** and never a pass. Python exits
+`1` on an unhandled exception. Every python-backed wrapper in this repository
+ended with some version of
+
+```bash
+case "$rc" in
+  0) gate_ok "..." ;;
+  1) : ;;                      # <- a crash lands here
+  *) rc="$GATE_UNMEASURABLE" ;;
+esac
+```
+
+so a core that could not run at all printed a confident red about a tree it never
+opened. The two states the contract exists to separate were merged by the one arm
+nobody looked at, and no self-test reached it, because a self-test breaks the
+*document* a gate reads, not the gate's own core.
+
+**Measured 2026-09-01**, by prepending `raise RuntimeError("broken")` to each
+python core one at a time and reading the verdict:
+
+| Gates with a python core | Verdict on a crashing core |
+|---|---|
+| 11 | `1 (measured, FAILS)` |
+| 2 | `2 (COULD NOT MEASURE)` |
+
+The two survivors — `gate-governance-contract.sh` and `gate-bench-index.sh` — got
+there by a different route: both run a fixture battery before the audit, and a
+crash fails the battery, which is already could-not-measure.
+
+The first probe reported *eight*, not eleven. `gate-protected-paths.sh` and
+`gate-scorecard-threshold.sh` bailed on a missing input before ever reaching
+python, so their mapping was **not measured** rather than correct; supplying
+`--changed-files` and `--results` reached it, and both were broken.
+`gate-bench-integrity.sh` was missed entirely because its core is a heredoc, not
+a file under `lib/`, so a grep for `lib/*.py` did not see it. **Three of the
+eleven were found by distrusting the first count, not by the first count.**
+
+### The fix, and what keeps it
+
+`gate_fail` now increments `_GATE_FAILS`, and `lib/common.sh` carries:
+
+```bash
+gate_core_rc() {                    # result in GATE_RC
+  GATE_RC="$1"
+  if [ "$1" -eq 1 ] && [ "${_GATE_FAILS:-0}" -eq 0 ]; then
+    gate_warn "the measurement core exited 1 and named no finding, so it crashed rather than measured; nothing in this gate's scope was checked"
+    GATE_RC="$GATE_UNMEASURABLE"
+  fi
+}
+```
+
+A crash and a red are told apart by the only thing that separates them: **a real
+failure names its findings.** Silence at `rc 1` is a crash. Each wrapper's arm
+became `1) gate_core_rc 1; rc="$GATE_RC" ;;`.
+
+Verified in both directions. A crashing core in all thirteen python-backed gates
+now returns `2`. A *real* failure still returns `1`: an unresolvable id planted in
+`references/triage.md` keeps `gate-corpus-identifiers.sh` red, and a shipped item
+called missing keeps `gate-competitive-backlog.sh` red. A third negative control
+on `gate-secret-scan.sh` did not trip — the planted credential was not matched, so
+that gate's red path is **not measured** here rather than proven.
+
+`gate-crash-is-not-a-red.sh` is what stops the fourteenth wrapper from
+reintroducing the arm: every gate in the inventory that runs python behind a
+`case "$rc"` mapping must route the `1` arm through `gate_core_rc`, and the two
+ways to get it wrong are named apart. Its own self-test builds three throwaway
+gate directories and asserts red, green and could-not-measure.
+
+**It also inspects itself, and it obeys the rule rather than excusing itself.**
+Written the obvious way, its fixture bodies would have contained the literal
+strings it searches for, and it would have passed on the presence of its own test
+data — so the fixtures are assembled from pieces. Its own `1` arm goes through
+`gate_core_rc` too: `audit` returns `1` only after writing findings, and if it
+ever returned `1` having emitted none, that is exactly the bug this gate is named
+after.
 
 ## Branch naming
 

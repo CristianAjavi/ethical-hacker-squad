@@ -71,7 +71,7 @@ done <<< "$out"
 
 case "$rc" in
   0) gate_ok "every declared number, name and route matches the corpus on disk" ;;
-  1) : ;;
+  1) gate_core_rc 1; rc="$GATE_RC" ;;
   *) rc="$GATE_UNMEASURABLE" ;;
 esac
 
