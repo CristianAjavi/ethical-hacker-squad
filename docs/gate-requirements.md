@@ -49,6 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| one place says which CLI version we install | running | `gate-lockfile-coherence.sh` + self-test (16 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -631,6 +632,66 @@ Three things are deliberately **not** checked, because all three are a person's 
 `*.selftest.sh` is excluded. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
 
 Proved in the negative by 6 fixtures — 2 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation.
+## One place says which CLI version we install
+
+`.github/workflows/release.yml` carried `CLAUDE_CODE_VERSION`, a third copy of a
+version already pinned twice — in `tooling/claude-cli/package.json` and in its
+lock. It installed nothing. The install is `npm ci --ignore-scripts` out of that
+lock, and the env var existed only so a step could compare the two and fail on a
+mismatch.
+
+The comparison lived in `release.yml`, which runs on `schedule` and
+`workflow_dispatch` and **never on a pull request**. So the copy could drift for
+as long as nobody cut a release, and the check that would catch it could not run
+on the change that caused it.
+
+Measured on 2026-09-02: Dependabot PR #81 was open, `MERGEABLE`, and **23 of 23
+checks green**, with the lock already moved to `2.1.246` and the env var still
+saying `2.1.221`. Every gate this repository owns said yes to a pull request that
+broke the invariant a workflow step was written to protect.
+
+The fix is deletion, not a fourth control. `npm ci` already refuses a
+`package.json` that has moved ahead of its lock — measured here, rc=1 on a
+desynchronised pair and rc=0 on a synchronised one — so removing the env var
+removes the drift surface and loses no coverage. Removing a check and writing
+down what replaces it are the same edit; this section is that half.
+
+`gate-lockfile-coherence.sh` is what stops the copy coming back, and it runs
+where the old step could not: on every pull request. Three directions:
+
+| # | What it measures | Why |
+|---|---|---|
+| 1 | `package.json` and the lock's own copy of the manifest agree, **both ways** | a declared-and-unlocked dependency means the lock was not regenerated; a locked-and-undeclared one installs on every machine and nobody asked for it |
+| 2 | behind an exact pin, the version the lock resolves is that version | `packages["node_modules/<name>"].version` is what `npm ci` actually installs |
+| 3 | no workflow declares a `*_VERSION` env var naming a package the lock already pins | a second place to say a version is a second place for it to be wrong |
+
+Direction 3 matches by name and, failing that, by value. Neither half is
+decoration: `CLAUDE_CODE_VERSION` normalises to `claude-code`, which *is* inside
+`@anthropic-ai/claude-code`, but a rename to `ANTHROPIC_AI_CLAUDE_CODE_VERSION`
+yields a stem the package name does not contain — one-way matching would have
+gone green on a rename. So the package's bare name is looked for inside the stem
+as well. A name that gives nothing away at all (`CLI_VERSION`) is caught by
+value instead, and the message says so rather than pretending the name resolved.
+
+**What it does not measure**: whether the pinned version is a *good* one, and any
+dependency pinned by range rather than exactly — deciding whether `2.1.246`
+satisfies `^2.1.0` needs a semver resolver this gate does not have, so a range
+returns `2` and says why.
+
+Proved in the negative by 16 self-test cases: nine that must exit `1`, six that
+must exit `2`, and one control that must exit `0`. Each builds a **minimal** root
+— two json files and one workflow — instead of copying the repository, because
+the tree carries a gitignored 258 MB `node_modules` that CI never sees, and a
+self-test that copied it would be measuring a tree nobody ships.
+
+Two of those cases were checked for the *reason* they passed, sixteen-of-sixteen
+on a first run being the shape this repository distrusts. The rename case
+originally used the value the lock carries, and it went red under a deliberately
+naive one-way matcher too — the value path was catching it, so the case measured
+one thing and claimed another. Its value is now `9.9.9`, which the lock does not
+carry: the naive matcher returns `0` on it and the real gate returns `1`. That
+difference is the only evidence the two-way match does anything.
+
 ## The contract inside governance.json
 
 `scripts/gh/governance.json` carries two lists that describe the same thing from two sides:
