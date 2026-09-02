@@ -191,9 +191,26 @@ a scope-guard block in every Bash-carrying agent **and greps for it in CI**. AgS
 the target a portable artifact: a raw HTTP template with `<<PROMPT>>` placeholders,
 versionable and reviewable.
 
-Three rivals turned scope into a file. Ours is prose in `SKILL.md` rules 1-9, excellent
-prose, but "authorised audit, not attack" is our entire market position and it currently
-exists as paragraphs rather than as a signed, versioned, checkable artifact.
+Three rivals turned scope into a file, and all three stop at the same place: the file is
+**pre-action**. It describes what may be touched, and then the engagement runs and nothing
+compares the two. PentAGI's eight steps are performed by the operator; PT-Agents' CI grep proves
+the paragraph is *present*, not that the run obeyed it; AgSec's artifact describes the target and
+never binds the findings to it.
+
+**Shipped 2026-09-02** — `references/scope.md`, `$defs.scope_declaration` in
+`findings.schema.json`, and `gate-scope-contract.sh` with a 21-case self-test. Ours is pre-action
+too, through the five-question check in step 1 of the workflow, but it does not stop there: the
+declaration is reconciled against the run's own `findings.json` **in both directions**. Nothing
+touched may sit outside `authorized` or inside `out_of_scope`; and every entry of `authorized`
+must appear in `examined`, as examined or as not-examined **with a reason**. The second direction
+is the one none of them has, and it is the expensive one — an audit that quietly skipped half of
+what it was pointed at reads exactly like an audit that looked and found nothing.
+
+A scope still written in the legacy free-text form returns `2`, could not measure. It is not
+wrong; it is unreconcilable, and calling it "in scope" would be inventing a measurement.
+And what the gate cannot check, it says: `authorization.reference` is a string a person verifies,
+and `host`, `service`, `account` and `artifact` targets are reported as **not mechanically
+checked** rather than counted as verified.
 
 ### 2.8 Severity calibration against marginal capability — convergence 1/5
 
@@ -491,7 +508,7 @@ idea, in our own words, every time.
 | 6 | **Named FP triage checklist (~10 rules) shared across all 7 packs**, answerable PASS/FAIL/UNKNOWN/NOT_APPLICABLE with a mandatory reason when not PASS. Each procedure's `What rules it out` cites the rule ids it invokes. | 2/5 | **M** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate fails on a procedure whose FP field cites no rule id, and on a finding marked confirmed with any rule at FAIL | `triage.rule_coverage`, `triage.rules_declared` |
 | 7 | **Findings artifact.** `findings.json` beside the markdown: procedure id, location, status, severity, confidence, verification outcome, traceability ids, redaction applied. One schema, one validator. | 4/5 | **M** | PT-Agents MIT · AgSec Apache-2.0 · Mantis Apache-2.0 · AIG Apache-2.0 | Schema validator as a gate; `2` when the file is unreadable, `1` when it violates the schema | `findings.schema_conformance` — and it finally makes our own output measurable |
 | 8 | **Severity calibration catalogue**, 8-10 caps under the marginal-capability principle, written by us. | 1/5 | **M** | Mantis Apache-2.0 | Gate fails a `critical`/`high` finding that cites no calibration rule | `severity.calibration_rules`, `severity.findings_calibrated` |
-| 9 | **Close the G1 hole, then the scope artifact.** First: a gate that actually fails when an auditor agent lists `Edit`/`Write`/`NotebookEdit` — specified in `gate-requirements.md` G1, implemented nowhere (§3.5). Then a versioned `scope.md`/`scope.json`: authorised targets, out-of-scope, stop conditions, evidence expectations, authorisation reference, plus a pre-action check the leader must pass. | 3/5 | **S** then **M** | PT-Agents MIT (CI-grep pattern) · PentAGI MIT · AgSec Apache-2.0 | Gate: no auditor lists a write tool, **and** every agent carrying `Bash` embeds the scope block; negative fixture for both | `agents.tool_restriction_conformance` (N/7 auditors), `agents.scope_block_conformance` (N/8) |
+| 9 | ✅ **Both halves shipped.** S half 2026-09-01 (`gate-agent-tools.sh`, 26 checks, 8/8 agents carry the block); M half 2026-09-02 (`references/scope.md`, `$defs.scope_declaration`, `gate-scope-contract.sh` + 21-case self-test, reconciled in both directions — §2.7). **Close the G1 hole, then the scope artifact.** First: a gate that actually fails when an auditor agent lists `Edit`/`Write`/`NotebookEdit` — specified in `gate-requirements.md` G1, implemented nowhere (§3.5). Then a versioned `scope.md`/`scope.json`: authorised targets, out-of-scope, stop conditions, evidence expectations, authorisation reference, plus a pre-action check the leader must pass. | 3/5 | **S** then **M** | PT-Agents MIT (CI-grep pattern) · PentAGI MIT · AgSec Apache-2.0 | Gate: no auditor lists a write tool, **and** every agent carrying `Bash` embeds the scope block; negative fixture for both | `agents.tool_restriction_conformance` (N/7 auditors), `agents.scope_block_conformance` (N/8) |
 | 10 | **Onboarding surface.** An inventory view of all 122 procedures (id, pack, traceability, whether the minimal test is local or requires authorisation) plus a routing command and one worked example engagement with a sample report. | 3/5 | **M** | AgSec Apache-2.0 · PT-Agents MIT | Gate: inventory regenerated from the corpus, fails if stale | `corpus.inventory_freshness`, `procedure.authorization_class` |
 | 11 | **Executable minimal tests.** Raise the 52/122 with an inline command; where a procedure genuinely cannot have one, say so in the field instead of writing prose. | — | **M** | Ours (measurement is new) | Gate: a *new* procedure must carry an executable test or an explicit declaration of why not | `procedure.executable_minimal_test` |
 | 12 | **Two-wave auditing and distributed writes.** Wave 1 returns `{suspect, reason}` cheaply, wave 2 goes deep only on hits; specialists write findings to disk and return ids. Plus a per-pack scope flag for CI. | 4/5 | **M** | Mantis Apache-2.0 · PT-Agents MIT · AgSec Apache-2.0 | — (protocol change in `SKILL.md` and `team.md`) | `orchestration.wave_protocol_declared` |
@@ -506,6 +523,12 @@ item 9 forward to sit with them, because a specified-but-unimplemented safety ga
 worse defect than any of the capabilities we are missing. Items 6-8 and the **M** half
 of 9 are the real project: they turn free-text discipline into enforced structure.
 Items 10-15 wait.
+
+**Where that stands, 2026-09-02.** Item 9 is closed at both halves. What the M half turned out to
+be worth was not the artifact — three rivals already ship one — but the reconciliation against the
+run, which none of them does, and which only became affordable because item 7 had already put
+machine-readable locations in `findings.json`. That is the sequencing argument holding: the
+capability items are cheap once the structure items are done, and expensive before.
 
 ---
 

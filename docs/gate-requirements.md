@@ -24,6 +24,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
+| scope of work, reconciled | running | `gate-scope-contract.sh` + self-test (21 cases) |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
@@ -257,6 +258,52 @@ blinded measurements"* is **not** checked here, and the gate prints that limit o
 It found two on the run it was written for. One was a superseded pre-registration reachable
 only from its own banner; the other had been added to this repository an hour earlier by
 the person writing the gate.
+
+## The scope of work, reconciled against the run
+
+`engagement.scope` was one free-text sentence, and nothing ever compared it to anything. That made
+two different failures invisible in the same way: a finding located outside the authorised tree,
+and an authorised target the squad never opened. The second is the expensive one. An audit that
+quietly skipped half of what it was pointed at reads exactly like an audit that looked and found
+nothing, and a client reads that silence as a clean result.
+
+It is also the shape this repository keeps finding in itself — a list checked in one direction.
+`gate-report-contract.sh` had it, `governance.json` had it, the CI mirror had it. Here the missing
+direction is the one that costs a deliverable its credibility.
+
+Three neighbouring products turned scope into a file. **PentAGI** ships a scope-of-work template
+with an eight-step per-action check; **PT-Agents** embeds a scope-guard block in every
+`Bash`-carrying agent and greps for it in CI — which this repository already enforces, in
+`gate-agent-tools.sh`, across 8 of 8 agents; **AgSec** makes the target a portable, versionable
+artifact. All three are **pre-action**. None of them reconciles the declaration against the
+engagement that actually ran, and that reconciliation is the whole of what
+`gate-scope-contract.sh` adds. It is affordable only because `findings.json` already exists: the
+run publishes machine-readable locations, so the comparison is arithmetic rather than judgement.
+
+`engagement.scope` now accepts an object as well as the legacy string —
+`references/scope.md` is the contract, `$defs.scope_declaration` in `findings.schema.json` is its
+single definition — and the gate checks **both directions**:
+
+1. Every path the run touched — each `findings[].location.path` and every entry of
+   `engagement.coverage` — falls inside `authorized` and inside none of `out_of_scope`. An
+   exclusion wins over an inclusion on an overlap, always, and the overlap itself is reported: a
+   rule that has to fight another rule is a scope somebody should rewrite.
+2. Every entry of `authorized` appears in `examined`, as `examined` or as `not-examined` **with a
+   reason**. `not-examined` is a first-class outcome; what fails is leaving the entry out. This
+   direction still has work to do on a run that reported nothing at all, which is precisely the
+   run where a silent gap hides best.
+
+**A legacy string scope is `2`, never `0`.** It is not wrong — it is unreconcilable, and reporting
+it as "in scope" would be inventing a measurement. The same `2` covers a missing `scope.md`, a
+schema with no `$defs.scope_declaration`, an unreadable artifact, and a core that exits 1 without
+naming a finding, because a crash is not a measured failure.
+
+What it does **not** measure is said out loud rather than implied: `authorization.reference` is a
+string a person checks, and a gate claiming to verify it would be lying about the field that
+matters most. `host`, `service`, `account` and `artifact` targets are declared, carried into the
+report and **reported as not mechanically checked** — never counted as verified. And depth is
+`traceability.md`'s question: a target marked `examined` by a specialist that read one line is
+`examined` here, and conflating the two would let a coverage number stand in for coverage.
 
 ## The findings artifact
 

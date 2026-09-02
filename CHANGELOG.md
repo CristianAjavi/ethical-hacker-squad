@@ -6,7 +6,46 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Added
+
+- **The scope of work stopped being a sentence and became something the run is measured against.**
+  `engagement.scope` was free text and nothing ever compared it to anything, so two different
+  failures were invisible in the same way: a finding located outside the authorised tree, and an
+  authorised target the squad never opened. The second is the expensive one — an audit that
+  quietly skipped half of what it was pointed at reads exactly like an audit that looked and found
+  nothing, and a client reads that silence as a clean result. Three neighbouring products ship a
+  scope file (PentAGI a template with an eight-step operator check, PT-Agents a guard block
+  grepped for in CI — which `gate-agent-tools.sh` already enforces across 8 of 8 agents — AgSec a
+  portable artifact), and **all three stop before the run starts**. New:
+  `skills/ethical-hacker-squad/references/scope.md`, one definition of the shape in
+  `$defs.scope_declaration` (no second copy to drift), and `gate-scope-contract.sh` reconciling
+  **both directions** — nothing touched sits outside `authorized` or inside `out_of_scope`, and
+  every entry of `authorized` appears in `examined` as examined or as not-examined *with a
+  reason*. A legacy string scope returns **2, could not measure**: it is not wrong, it is
+  unreconcilable, and calling it "in scope" would be inventing a measurement. 21-case self-test,
+  10 negative fixtures each with the `.expected` sidecar naming the defect it stands for, declared
+  in `negative-proof-census.json` so its deletion would be noticed. See
+  `docs/gate-requirements.md` and §2.7 of `docs/competitive-analysis.md`.
+
 ### Fixed
+
+- **A `oneOf` in the schema silently switched a field off.** Rewriting `engagement.scope` to
+  accept an object as well as the legacy string left `check_shape` reading `schema.get("type")`,
+  finding `None`, matching no branch and returning **having checked nothing**. Measured before the
+  repair: five values that must be rejected — a number, a null, an empty object, an undeclared
+  `covers`, an empty `authorized` — were all accepted in silence. `check_shape` now understands
+  `$ref`, `oneOf`, a bare `enum` and `uniqueItems`, and a schema node it does *not* understand now
+  fails instead of passing, so the next silent hole is a red the first time somebody writes one.
+  The probe that proved it also had to be repaired: its first version passed the schema *fragment*
+  as the resolution root, so every branch failed alike and the rejections were right for a reason
+  that had nothing to do with the values. The valid object is the case that carries the weight.
+
+- **`routes/**` did not cover `routes/`.** The first glob translation left the separator before a
+  `**` mandatory, and `engagement.coverage` is written as directories with a trailing slash — so
+  every correctly scoped run would have been reported as a scope breach. Caught by the fixtures
+  before it shipped; 20 matcher cases now pin the semantics, including that a single `*` may not
+  cross a separator, which is how an exclusion quietly covers more than it says.
+
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became

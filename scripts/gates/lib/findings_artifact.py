@@ -91,9 +91,66 @@ def vocabulary(root: Path) -> dict[str, set[str]]:
     return out
 
 
-def check_shape(node, schema, path, fail) -> None:
+def resolve_ref(ref: str, root: dict, path: str, fail):
+    """Local `#/a/b` pointers only. An unresolvable one is loud, never skipped."""
+    if not ref.startswith("#/"):
+        fail(f"{path}: `{ref}` is not a local reference this validator can follow")
+        return None
+    node = root
+    for part in ref[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or part not in node:
+            fail(f"{path}: `{ref}` points at nothing in this schema")
+            return None
+        node = node[part]
+    return node
+
+
+def check_shape(node, schema, path, fail, root=None) -> None:
     """Enough of JSON Schema for this contract, with no dependency to install."""
+    if root is None:
+        root = schema
+    if not schema:
+        return  # `{}` really does mean "anything"; it is the items default below.
+
+    if "$ref" in schema:
+        target = resolve_ref(schema["$ref"], root, path, fail)
+        if target is not None:
+            check_shape(node, target, path, fail, root)
+        return
+
+    if "oneOf" in schema:
+        # Exactly one branch, the way JSON Schema defines it. Zero is the value
+        # being wrong; more than one means the union itself is ambiguous, and a
+        # validator that shrugged at that would be reporting on a schema nobody
+        # can predict.
+        matched, complaints = [], []
+        for i, branch in enumerate(schema["oneOf"]):
+            errs = []
+            check_shape(node, branch, path, errs.append, root)
+            if errs:
+                complaints.append(f"branch {i}: {errs[0]}")
+            else:
+                matched.append(i)
+        if len(matched) == 1:
+            return
+        if not matched:
+            fail(f"{path}: matches none of the accepted forms ({'; '.join(complaints)})")
+        else:
+            fail(f"{path}: ambiguous - matches {len(matched)} accepted forms at once")
+        return
+
     t = schema.get("type")
+    if t is None:
+        # A node carrying only `enum`/`const` is a perfectly good schema.
+        if "enum" in schema and node not in schema["enum"]:
+            fail(f"{path}: `{node}` is not one of {schema['enum']}")
+        elif "const" in schema and node != schema["const"]:
+            fail(f"{path}: must be `{schema['const']}`, found `{node}`")
+        elif "enum" not in schema and "const" not in schema:
+            fail(f"{path}: this validator does not understand {sorted(schema)}")
+        return
+
     if t == "object":
         if not isinstance(node, dict):
             fail(f"{path}: expected an object"); return
@@ -106,14 +163,16 @@ def check_shape(node, schema, path, fail) -> None:
                 if schema.get("additionalProperties") is False:
                     fail(f"{path}: unknown field `{key}`")
                 continue
-            check_shape(value, props[key], f"{path}.{key}" if path else key, fail)
+            check_shape(value, props[key], f"{path}.{key}" if path else key, fail, root)
     elif t == "array":
         if not isinstance(node, list):
             fail(f"{path}: expected an array"); return
         if len(node) < schema.get("minItems", 0):
             fail(f"{path}: needs at least {schema['minItems']} item(s)")
+        if schema.get("uniqueItems") and len(node) != len({json.dumps(x, sort_keys=True) for x in node}):
+            fail(f"{path}: repeats an entry")
         for i, item in enumerate(node):
-            check_shape(item, schema.get("items", {}), f"{path}[{i}]", fail)
+            check_shape(item, schema.get("items", {}), f"{path}[{i}]", fail, root)
     elif t == "string":
         if not isinstance(node, str):
             fail(f"{path}: expected a string"); return

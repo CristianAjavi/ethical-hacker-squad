@@ -42,6 +42,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
 | [references/triage.md](references/triage.md) | Before a finding is written, and before two are merged. Ten answerable rules that rule a **report** out; six that rule a **merge** out. |
+| [references/scope.md](references/scope.md) | Before the first action, and again when writing the deliverable. The scope of work, reconciled against the run in both directions. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
 | [references/findings-artifact.md](references/findings-artifact.md) | When writing the deliverable. `findings.json` beside the report: the fields, and the invariants a validator enforces on them. |
@@ -54,8 +55,6 @@ Do not load a pack for a role you did not staff. The corpus is 4,556 lines acros
 
 - **You are the leader** (the main thread): you inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
 - **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in one message so they run in parallel. Never let the same agent both fix and verify.
-
-`references/team.md` holds the nine plugin subagents, the write access each gets, what to do when the skill was copied rather than installed as a plugin, and why every constraint must travel into the prompt.
 
 ## Leader workflow
 
