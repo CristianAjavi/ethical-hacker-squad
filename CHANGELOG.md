@@ -8,6 +8,21 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A stacked pull request never ran the gate suite, and its checks screen looked conforming.**
+  `.github/workflows/ci.yml` declared `on: pull_request: branches: [main, stable]`. That filter
+  matches the **base** branch, so a pull request opened against any other branch did not fire the
+  workflow that runs `scripts/gates/run-all.sh`. Measured on two live pull requests of this
+  repository in the same call: **#84 (base `main`) showed seven checks; #85 (base
+  `loop/g7-prefijo-loop`) showed four** — `gates`, `meter` and `workflow-hardening` were **absent**,
+  not skipped and not reported as deferred, so nothing on the page said a control had gone missing.
+  `run-all.sh` takes care to print *NOT RUN HERE (declared, not silenced)*; this filter silenced three
+  jobs for real, the first of which runs every gate in the repository. Stacked pull requests are a
+  pattern this repository already uses, and code reaches `main` through them. The filter is gone; the
+  three other `pull_request` workflows never had one. **This is the case, not the class**: nothing yet
+  stops a future workflow from re-introducing a base filter, and the check that would — a rule in
+  `gate-workflow-hardening.sh`, which is where the trigger parser already lives — is tracked and not
+  written. The fix ships without its tooth on purpose, and this sentence is the record of that.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
