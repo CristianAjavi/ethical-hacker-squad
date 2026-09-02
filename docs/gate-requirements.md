@@ -23,6 +23,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | severity calibration | running | `gate-severity-calibration.sh` + self-test |
+| engagement memory | running | `gate-engagement-memory.sh` + self-test |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
@@ -687,14 +688,14 @@ The fix to `ci.yml` shipped in a separate change (#86) **without** this rule, an
 
 The one budget that warned was the one furthest from its limit. The mechanism was already written, with the right reason in a comment beside it — *"say it while there is still room to act… the contributor who trips it is never the one who spent the budget"* — and it was wired to the wrong budget.
 
-Two of the silent ones are not theoretical. `SKILL.md` has sat between **7 and 21 bytes** of its cap across the eight commits that touched it since 25 August, every one green. And 1,373 B is **less than the median procedure in this corpus** — 1,787 B over 171 of them — so the next procedure added to the AI-safety pack more likely than not trips the per-file cap, with nothing said in advance.
+Two of the silent ones are not theoretical. `SKILL.md` has sat between **7 and 21 bytes** of its cap across the eight commits that touched it since 25 August, every one green. And 1,373 B is **less than the median procedure in this corpus** — 1,808 B over 174 of them — so the next procedure added to the AI-safety pack more likely than not trips the per-file cap, with nothing said in advance.
 
 All four now report utilisation and share one `headroom_note` helper. Each trip point is the size of *one more of whatever grows that budget*, measured rather than round, and each is declared in `scripts/gates/data/budget-ledger.json` as `not_a_budget` — crossing one fails nothing, it only speaks:
 
 | knob | value | measured against |
 |---|---|---|
 | `EHS_NEAR_SKILL_MD_BYTES` | 512 | the smallest `## ` section in `SKILL.md` today is 488 B |
-| `EHS_NEAR_REF_BYTES` | 2,048 | 171 procedures: median 1,787 B, p75 2,349 B |
+| `EHS_NEAR_REF_BYTES` | 2,048 | 174 procedures: median 1,808 B, p75 2,361 B |
 | `EHS_NEAR_TREE_FILES` | 4 | a pack split turns one file into two or three |
 | (served tree bytes) | `EHS_MAX_REF_BYTES` | one whole reference file — unchanged, this is the one that already worked |
 

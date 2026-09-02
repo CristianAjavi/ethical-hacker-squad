@@ -22,6 +22,7 @@ EXIT: 0 measured fine · 1 measured, findings listed · 2 could not measure
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -88,7 +89,8 @@ def load_json(root: Path, rel: str):
 def vocabulary(root: Path) -> dict[str, set[str]]:
     text = read(root, VOCAB)
     out = {}
-    for name in ("status", "severity", "confidence", "verification"):
+    for name in ("status", "severity", "confidence", "verification",
+                 "baseline_state", "disposition"):
         m = re.search(VOCAB_REGION.format(name=name), text, re.S)
         if not m:
             raise Unmeasured(f"{VOCAB} declares no region for `{name}`")
@@ -119,6 +121,28 @@ def severity_order(vocab_text: str) -> list[str]:
             "this validator enforces would be this validator's memory"
         )
     return SEV_ORDER_TERMS.findall(m.group(0))
+
+
+def ehs_fp_v1(finding: dict, inputs) -> str | None:
+    """The fingerprint algorithm, executable.
+
+    sha256 over the named fields in the order `inputs` lists them, each list-valued
+    field sorted and joined by U+001E, the whole joined by U+001F. Returns None when
+    a named field is absent - invariant 25 reports that separately, and a digest over
+    a hole would be a second, quieter complaint about the same defect.
+    """
+    parts = []
+    for name in inputs:
+        head, _, tail = str(name).partition(".")
+        node = finding.get(head)
+        if tail:
+            node = node.get(tail) if isinstance(node, dict) else None
+        if node in (None, "", [], {}):
+            return None
+        if isinstance(node, list):
+            node = "\x1e".join(sorted(str(x) for x in node))
+        parts.append(str(node))
+    return "sha256:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
 def check_shape(node, schema, path, fail) -> None:
@@ -251,6 +275,10 @@ def main() -> int:
     #  inside no inventoried surface at all]. Printed, never a verdict: see
     #  the summary line for why the third number cannot be one.
     paths_seen = [0, 0, 0]
+    # [artifacts declaring a baseline, baseline findings accounted for,
+    #  findings carrying a fingerprint]. Printed so a reader can see whether
+    #  the memory invariants had anything to bite on in this run.
+    memory_seen = [0, 0, 0]
     for target in targets:
         expected_bad = target.parent.name == "bad"
         try:
@@ -387,8 +415,16 @@ def main() -> int:
                     fail(f"{where}: reported `confirmed` with a triage rule left UNKNOWN; the ceiling is `probable`")
                 if "HOLDS" in answers:
                     fail(f"{where}: reported `confirmed` while a triage rule HOLDS, which rules the finding out")
-                if f.get("confidence") == "low":
-                    fail(f"{where}: `confirmed` with confidence `low` - nobody followed the path")
+                # 31. `confirmed` means demonstrated. Anything short of `high`
+                #     confidence is an inference, and vocabulary.md spells the
+                #     status for an inference `probable`. The check refused only
+                #     `low` until now, so the middle term - the one an author
+                #     reaches for when they are almost sure - went through. Three
+                #     of the blinded bench runs took that door.
+                if f.get("confidence") and f["confidence"] != "high":
+                    fail(f"{where}: `confirmed` with confidence `{f['confidence']}` - confirmed "
+                         "means demonstrated, and anything less than `high` is an inference, "
+                         "whose status is `probable`")
             if status == "probable" and not f.get("inference"):
                 fail(f"{where}: `probable` must name the link that was inferred, in `inference`")
             # A gap named with no way to close it sends the reader nowhere. Across a
@@ -401,6 +437,15 @@ def main() -> int:
                      "symbol that turns the inference into an observation")
             if status == "withdrawn" and not f.get("withdrawn_reason"):
                 fail(f"{where}: `withdrawn` must say why the claim did not survive")
+            # 32. A refutation is a verdict about the claim, not a note about the
+            #     test. `refuted` says a second look established there was no
+            #     defect; a finding that survives its own refutation as
+            #     `confirmed` or `probable` is a claim the reader has already
+            #     acted on and nothing retracts. Nothing else implies `withdrawn`,
+            #     which is why the implication runs one way only.
+            if f.get("verification") == "refuted" and status != "withdrawn":
+                fail(f"{where}: `refuted` with status `{status}` - a refutation establishes there "
+                     "was no defect, and the only status that says so is `withdrawn`")
 
             proc = f.get("procedure")
             if proc and proc != "ad-hoc" and proc not in procedures:
@@ -580,6 +625,195 @@ def main() -> int:
             elif not any(_under(path, s) for s in cov_inv):
                 paths_seen[2] += 1
 
+        # --- 20-29: the engagement memory -----------------------------------
+        # Mantis ships the closest thing to this in the field, and its Tier 1 key
+        # is sound - a digest over fingerprint, CWE and target symbol, invariant to
+        # line shifts and to paraphrased titles. What it does not survive is its own
+        # fallback: the embedding tier catches every exception and returns a mock
+        # vector, the dimension check then skips every candidate, and a deployment
+        # with no model silently reports each run as all-new. Nothing in the
+        # artifact says so. That is the defect these ten rules exist to make
+        # unwriteable: `new` is a measurement, and its absence has its own word.
+        eng = data.get("engagement") if isinstance(data.get("engagement"), dict) else {}
+        base = eng.get("baseline") if isinstance(eng.get("baseline"), dict) else None
+        carried = data.get("carried_over")
+        carried = carried if isinstance(carried, list) else None
+        findings = [f for f in (data.get("findings") or []) if isinstance(f, dict)]
+        is_v2 = data.get("schema_version") == "ehs.findings/v2"
+        memory_used = bool(
+            base or carried is not None or eng.get("target_digest")
+            or any(f.get("fingerprint") or f.get("baseline_state") for f in findings)
+        )
+
+        # 20. v2 requires the memory. Below v2 the block is optional, but every
+        #     rule under it applies the moment any part of it is present: an
+        #     artifact does not get to opt into the field and out of the arithmetic.
+        if is_v2:
+            if not eng.get("target_digest"):
+                fail("`ehs.findings/v2` without `engagement.target_digest`: nothing "
+                     "identifies the bytes this run compared")
+            if not base and not eng.get("baseline_absent_reason"):
+                fail("`ehs.findings/v2` with neither `engagement.baseline` nor "
+                     "`engagement.baseline_absent_reason`: the same silence would cover "
+                     "`no previous audit exists` and `nobody looked for one`")
+            if base and carried is None:
+                fail("`ehs.findings/v2` declares a baseline and omits `carried_over`: a "
+                     "baseline finding that stops appearing reads exactly like one that "
+                     "was fixed")
+            for f in findings:
+                if not f.get("baseline_state"):
+                    fail(f"{f.get('id')}: `ehs.findings/v2` finding with no "
+                         "`baseline_state`")
+
+        if base and base.get("target_digest") and eng.get("target_digest") == base["target_digest"]:
+            same = [f.get("id") for f in findings if f.get("baseline_state") == "new"]
+            if same:
+                fail(f"the baseline digest equals this run's, so the same bytes were read "
+                     f"twice, yet {', '.join(str(i) for i in same)} is `new`")
+
+        if memory_used:
+            if base:
+                memory_seen[0] += 1
+            values: dict[str, list] = {}
+            lineage_refs: set[str] = set()
+            for f in findings:
+                fid = f.get("id")
+                fp = f.get("fingerprint") if isinstance(f.get("fingerprint"), dict) else None
+                state = f.get("baseline_state")
+                lineage = f.get("lineage") if isinstance(f.get("lineage"), list) else None
+                changed = f.get("changed_fields") if isinstance(f.get("changed_fields"), list) else None
+                reg = f.get("regression") if isinstance(f.get("regression"), dict) else None
+
+                if state and state not in vocab["baseline_state"]:
+                    fail(f"{fid}: `{state}` is not a declared `baseline_state`")
+
+                # 21. a state that claims a comparison needs something to compare with
+                if state in ("new", "unchanged", "updated") and not base:
+                    fail(f"{fid}: `{state}` claims a comparison against a baseline this "
+                         "artifact does not declare - the honest term is `unmeasured`")
+                # 22. and a key to compare on
+                if state in ("new", "unchanged", "updated") and not fp:
+                    fail(f"{fid}: `{state}` with no `fingerprint`: there was no key to "
+                         "match on, so no comparison happened")
+                # 23. what a continuation continues, and what a discovery does not
+                if state in ("unchanged", "updated") and not lineage:
+                    fail(f"{fid}: `{state}` names no `lineage`, so nothing says what it "
+                         "continues")
+                if state in ("new", "unmeasured") and lineage:
+                    fail(f"{fid}: `{state}` carries a `lineage`: a finding that continues "
+                         "a baseline entry is not new and was not unmeasured")
+                # 24. `updated` is a diff or it is a mood
+                if state == "updated" and not changed:
+                    fail(f"{fid}: `updated` names no `changed_fields`")
+                if state == "unchanged" and changed:
+                    fail(f"{fid}: `unchanged` names `changed_fields`, which is the "
+                         "definition of `updated`")
+
+                if fp:
+                    memory_seen[2] += 1
+                    # 25. a key declares the fields it was computed over, and it
+                    #     cannot have been computed over a field that is not there.
+                    for name in (fp.get("inputs") or []):
+                        head, _, tail = str(name).partition(".")
+                        node = f.get(head)
+                        if tail:
+                            node = node.get(tail) if isinstance(node, dict) else None
+                        if node in (None, "", [], {}):
+                            fail(f"{fid}: `fingerprint.inputs` names `{name}`, which this "
+                                 "finding does not carry - the key was computed over nothing")
+                    val = fp.get("value")
+                    if isinstance(val, str):
+                        values.setdefault(val, []).append(f)
+                    # ...and the value is that computation. An algorithm nothing
+                    # recomputes is prose wearing a field name: `value` would be
+                    # whatever the writer put there and `inputs` a decoration.
+                    if fp.get("algorithm") == "ehs.fp/v1" and isinstance(val, str):
+                        recomputed = ehs_fp_v1(f, fp.get("inputs") or [])
+                        if recomputed and recomputed != val:
+                            fail(f"{fid}: `fingerprint.value` does not reproduce from the "
+                                 f"fields `inputs` names - `ehs.fp/v1` over "
+                                 f"{list(fp.get('inputs') or [])} gives {recomputed[:19]}..., "
+                                 f"the artifact says {val[:19]}...")
+                if lineage:
+                    lineage_refs.update(x for x in lineage if isinstance(x, str))
+
+                # 27. a regression is a claim about somebody's conclusion
+                if reg:
+                    if not lineage:
+                        fail(f"{fid}: `regression` with no `lineage`: there is nothing "
+                             "recorded for it to have regressed from")
+                    prev = reg.get("previous_disposition")
+                    if prev and prev not in vocab["disposition"]:
+                        fail(f"{fid}: `regression.previous_disposition` `{prev}` is not a "
+                             "declared `disposition`")
+                    elif prev in ("not measured", "out of scope"):
+                        fail(f"{fid}: `regression` against a previous disposition of "
+                             f"`{prev}`, which concluded nothing - a defect can only come "
+                             "back from having been declared gone")
+
+            # 26. the ordinal exists for collisions and for nothing else
+            for val, group in values.items():
+                ords = [g["fingerprint"].get("ordinal") for g in group]
+                if len(group) == 1:
+                    if ords[0] != 0:
+                        fail(f"{group[0].get('id')}: its `fingerprint.value` is unique in "
+                             f"this artifact and its ordinal is {ords[0]}, not 0 - an "
+                             "ordinal is a tiebreak, not a second identifier")
+                elif len(set(ords)) != len(ords):
+                    fail(f"{len(group)} findings share the fingerprint {val[:19]}... and "
+                         f"do not have distinct ordinals: {ords}")
+
+            # 29. a carried-over entry pays for what it claims
+            for i, c in enumerate(carried or []):
+                if not isinstance(c, dict):
+                    continue
+                disp = c.get("disposition")
+                where = c.get("fingerprint", f"carried_over[{i}]")
+                if disp and disp not in vocab["disposition"]:
+                    fail(f"carried_over[{i}]: `{disp}` is not a declared `disposition`")
+                # 30. The schema requires the field; what it cannot check is that
+                #     the id RESOLVES. `WEB-99` satisfies every schema rule and
+                #     still leaves the next engagement unable to look up what
+                #     found the defect, which is the whole point of the rule.
+                cproc = c.get("procedure")
+                if cproc and cproc != "ad-hoc" and cproc not in procedures:
+                    fail(f"carried_over[{i}]: procedure `{cproc}` does not exist in the "
+                         "corpus - a citation that resolves to nothing is the same dead "
+                         "end as no citation, one step further along")
+                if disp == "fixed" and not c.get("evidence"):
+                    fail(f"carried_over[{i}]: `fixed` with no `evidence` - the one "
+                         "disposition that lowers a reader's guard is the one that has to "
+                         "pay for it")
+                if disp == "out of scope":
+                    surface = c.get("surface")
+                    if not surface:
+                        fail(f"carried_over[{i}]: `out of scope` names no `surface`")
+                    elif surface not in cov_skip:
+                        fail(f"carried_over[{i}]: `out of scope` names the surface "
+                             f"{surface!r}, which `engagement.coverage.not_read` does not "
+                             "exclude - the claim is unchecked")
+                if isinstance(where, str) and where in lineage_refs:
+                    fail(f"carried_over[{i}]: {where[:19]}... is also continued by a "
+                         "finding in this run: it cannot both have come back and not")
+
+            # 28. the baseline is accounted for, the same way the inventory and the
+            #     unaided pass are. This is the rule Mantis's fallback would trip:
+            #     a matcher that silently stopped matching reports every finding
+            #     `new`, and then nothing balances.
+            if base:
+                declared = base.get("findings_count")
+                if isinstance(declared, int):
+                    accounted = len(lineage_refs) + len([c for c in (carried or [])
+                                                         if isinstance(c, dict)])
+                    if accounted == declared:
+                        memory_seen[1] += declared
+                    else:
+                        fail(f"the baseline declares {declared} finding(s); this artifact "
+                             f"accounts for {accounted} ({len(lineage_refs)} continued, "
+                             f"{len(carried or [])} carried over). A baseline entry that is "
+                             "neither continued nor answered is a defect this run lost in "
+                             "silence")
+
         blob = json.dumps(data)
         if SECRETS.search(blob):
             fail(f"{target.name}: an unredacted secret format appears in the artifact")
@@ -613,6 +847,13 @@ def main() -> int:
     # surfaces a reader would recognise, the findings name files - and the gap
     # between them is recorded as a known coverage gap in
     # `references/traceability.md` rather than pretended away here.
+    if memory_seen[2] or memory_seen[0]:
+        print(f"engagement memory: {memory_seen[0]} artifact(s) declare a baseline, "
+              f"{memory_seen[1]} baseline finding(s) accounted for, {memory_seen[2]} "
+              f"finding(s) carry a fingerprint")
+    else:
+        print("engagement memory: no artifact in this run carries a baseline or a "
+              "fingerprint, so invariants 20-29 were NOT MEASURED")
     if paths_seen[0]:
         print(f"coverage join: {paths_seen[0]} finding(s) carry a path, {paths_seen[1]} of them "
               f"inside a surface declared `read`, {paths_seen[2]} inside no inventoried surface "

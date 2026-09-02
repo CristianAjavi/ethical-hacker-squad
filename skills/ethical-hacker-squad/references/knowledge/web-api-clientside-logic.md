@@ -2,7 +2,7 @@
 
 > **When to load this file:** second file of the `web-api` pack. Load it when the inventory has browser-rendered output or client-side sinks, cross-origin or caching configuration, business flows moving money, state or quotas, cryptography or secret handling, GraphQL or persistent channels, or any control whose presence is being taken as proof that it works.
 > **Do not load it if:** the work is confined to authentication, authorization, injection, SSRF, deserialization or file handling — those are `web-api.md` §0-§5 — or to errors and logs, which are §11 in `web-api-logging.md`.
-> **Cost:** ~306 lines. Load by section using the index. The entry point of the pack, `web-api.md`, holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; its §0 lists the classes tooling systematically misses and is worth reading first. The third file, `web-api-logging.md`, holds §11 with `WEB-22` and `WEB-28`.
+> **Cost:** ~306 lines. Load by section using the index. The entry point of the pack, `web-api.md`, holds §0-§5 with `WEB-01`..`WEB-12`, `WEB-24` and `WEB-25`; its §0 lists the classes tooling systematically misses and is worth reading first. The third file, `web-api-logging.md`, holds §11 with `WEB-22` and `WEB-28`, and §12 with `WEB-29`..`WEB-31` — encoding, charset and normalisation, which is where a filter and the thing it protects read the same bytes as different characters.
 
 ## Selective loading index
 

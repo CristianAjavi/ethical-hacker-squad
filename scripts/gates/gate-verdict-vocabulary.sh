@@ -132,7 +132,7 @@ EXCLUDED="$REFS/traceability.md
 $REFS/bibliography.md
 $REFS/tooling.md"
 
-DIMENSIONS="status severity confidence verification"
+DIMENSIONS="status severity confidence verification baseline_state disposition"
 
 printf '\n'
 printf 'SCOPE     : verdict terms in agents/*.md and in the skill corpus, against %s\n' "$VOCAB_REL"

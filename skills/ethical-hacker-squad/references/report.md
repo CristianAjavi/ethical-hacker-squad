@@ -102,6 +102,51 @@ Do not pad with generic recommendations. Keep `discarded` candidates only as a s
 Severity is a judgement about **this** system, not a copy of a scanner label. A dependency advisory rated critical whose vulnerable symbol is never reached is not a critical finding here; say so and explain why, rather than inheriting the number.
 <!-- /report:section -->
 
+<!-- report:section id=engagement-memory class=mandatory -->
+## What changed since the last engagement
+
+Mandatory, and mandatory on a first run too. `findings.json` carries the comparison; a client
+does not read JSON, so a memory that lives only in the artifact has not been delivered to the
+person the report is for. This section is where it arrives.
+
+<!-- report:rule memory.state-per-finding -->
+**Every finding says what it is against the previous run.** One term per finding, taken verbatim
+from `vocabulary.md`, printed beside its status:
+
+<!-- vocabulary:use baseline_state -->
+- `new`, `unchanged`, `updated`, or `unmeasured`.
+<!-- /vocabulary:use -->
+
+The fourth is the one that makes the other three worth reading. A comparison that did not happen
+must not be printed as one that found nothing, and the reader has no way to tell the difference
+unless we write it down. When there is no baseline — a first engagement, a target whose digest
+does not match, an artifact from a version that had no memory — say that in one sentence and mark
+every finding with the fourth term. That sentence is the section; do not omit the section
+because there was nothing to compare against.
+
+An `updated` finding names what moved. "Still open" is not a diff, and a reader who is told the
+severity rose and the location did not can decide whether it matters.
+
+<!-- report:rule memory.carried-over -->
+**Every finding the previous run reported and this one did not, with what happened to it.** One
+line each, with the term from `vocabulary.md`:
+
+<!-- vocabulary:use disposition -->
+- `fixed`, `refuted`, `out of scope`, or `not measured`.
+<!-- /vocabulary:use -->
+
+This list is the reason the section is mandatory. A defect that was reported once and simply
+stops appearing reads, to anyone holding both reports, exactly like a defect that was fixed —
+and that reading is free, silent and wrong. `not measured` is free to write on purpose: the
+moment honesty costs more than the comfortable answer, the report starts buying the comfortable
+answer. Only `fixed` carries evidence, because it is the only one that lowers the reader's guard.
+
+Name the procedure that found each carried-over entry, the same way a finding names its own. The
+list is where a defect leaves the report, so it is the only place the audit trail can end
+without anything saying so — and a next engagement handed a list it cannot re-derive is handed a
+list it has to rebuild from scratch.
+<!-- /report:section -->
+
 <!-- report:section id=ruled-out class=mandatory -->
 **The deliverable has a machine-readable half.** `findings.json`, beside the markdown, conforming to `references/findings-artifact.md`. It is not a substitute for the report — a JSON file is not something a client reads — and it is not optional either: it is what lets a second engagement diff against this one, what lets a pipeline check that a `confirmed` finding really carries a complete triage, and what finally makes this squad's own output measurable. Validate it before delivery with `scripts/gates/gate-findings-artifact.sh --deliverable <path>`; an unmeasured artifact is `2`, and `2` is not a pass.
 
@@ -201,10 +246,13 @@ other one worthless, because a reader who cannot open the artifact is left with 
 they were told not to trust.
 
 <!-- handover:field id=counts -->
-**Confirmed findings by severity, then the `probable` count, then the `ruled_out` count.** Three
-numbers, taken from `findings.json` rather than retyped from memory. The ruled-out count belongs
-here for the same reason it has a section in the report: a bare "4 findings" reads as the whole
-result, and "4 confirmed, 2 probable, 11 ruled out" reads as an audit.
+**Confirmed findings by severity, then the `probable` count, then the `ruled_out` count, then
+the carried-over count.** Four numbers, taken from `findings.json` rather than retyped from
+memory. The ruled-out count belongs here for the same reason it has a section in the report: a
+bare "4 findings" reads as the whole result, and "4 confirmed, 2 probable, 11 ruled out" reads
+as an audit. The carried-over count is the one a returning client asks for first — how many of
+last time's are gone — and on a first engagement it is not omitted but said: no baseline, so
+nothing to carry. Omitting it there is how the reader learns that a missing number means zero.
 
 <!-- handover:field id=validators -->
 **The exit code of each validator that ran**, named: `gate-report-contract.sh --deliverable` and

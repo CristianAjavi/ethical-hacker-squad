@@ -192,25 +192,91 @@ merge is the dangerous one — it is the case where a build failure, an `exit 12
 missing fixture gets filed as "no bug found". Splitting it out is what makes the negative
 verification gate of backlog item 2 expressible at all.
 
+## Dimension 5 — `baseline_state`
+
+What this finding is **against the previous engagement on the same target**. Emitted only
+when the artifact declares a baseline; without one there is nothing to be new against.
+
+The four terms answer one question — *did we see this before?* — and the fourth answers it
+with the only honest answer available when nobody looked. It is the term this dimension
+exists for. A memory that cannot tell "we compared and found nothing like it" from "we did
+not compare" reports every run as a fresh discovery and calls that a diff.
+
+<!-- vocabulary:declare baseline_state -->
+| Term | Operational meaning | What separates it from its neighbour |
+|---|---|---|
+| `new` | The matcher ran against a declared baseline, the baseline was readable, and no entry in it corresponds to this finding. | Against `unmeasured`: a comparison actually happened. This term is a claim about the baseline, not about this run's enthusiasm. |
+| `unchanged` | The matcher tied this finding to one or more baseline entries, and nothing the artifact records about it moved: same severity, same status, same verification, same location. | Against `updated`: nothing moved. Against `new`: `lineage` names what it continues. |
+| `updated` | The matcher tied this finding to one or more baseline entries and something the artifact records about it moved. What moved is named. | Against `unchanged`: something moved, and a reader who is told which field can decide whether it matters. |
+| `unmeasured` | No comparison was made. There is no baseline, or this finding carries no fingerprint to compare with, or the matcher did not run. Nothing may be concluded from it — least of all that the finding is new. | Against `new`: `new` is a measurement and this is its absence. This is the term for the matcher that failed open, and recording that as `new` is the failure this dimension exists to prevent. |
+<!-- /vocabulary:declare -->
+
+**Why there is no `absent` term, when SARIF v2.1.0 has one.** SARIF resolves a baseline
+entry that did not come back by synthesising it into the current run's result list with
+`baselineState: absent`. It can afford that because a SARIF result is a neutral record. A
+finding here is not neutral: it is the assertion that a defect exists, and every other rule
+in this contract reads it that way — a severity is owed, a triage answer is owed, and
+invariant 11 treats a finding's location as proof that somebody looked there. Filing a
+defect that is gone under the same array would make each of those either false or a special
+case. It goes in `carried_over` instead, which is a different sentence about a different
+thing, and dimension 6 is its vocabulary.
+
+---
+
+## Dimension 6 — `disposition`
+
+What happened to a **baseline finding that this run did not report again**. One per entry in
+`carried_over`.
+
+The list exists because silence is the cheapest way to lose a defect. A finding that was
+reported once and simply stops appearing reads, to anyone diffing two artifacts, exactly
+like a finding that was fixed. This is the same substitution invariant 4 refuses inside a
+single specialist's unaided pass, one level up and across engagements.
+
+<!-- vocabulary:declare disposition -->
+| Term | Operational meaning | What separates it from its neighbour |
+|---|---|---|
+| `fixed` | This run established that the defect is gone: the original case was reproduced against the baseline commit and does not reproduce now, and the entry names the change that closed it. | Against `not measured`: somebody checked. Against `refuted`: there was a real defect and it was removed. |
+| `refuted` | A second look established the finding was never a defect — the source was not attacker-controllable, the sink was unreachable, a control was already in place. The same conclusion the `verification` dimension spells the same way. | Against `fixed`: nothing was changed, because there was nothing to change. |
+| `out of scope` | Where it lived is not inside this engagement's scope. The entry names the surface, and that surface has to be one the coverage declaration actually excludes. | Against `not measured`: the reason is structural and checkable, not a gap in effort. |
+| `not measured` | Nobody established anything about it in this run. The honest term, and the one a reader must be able to count. | Against every other term: those are conclusions, this is their absence. A carried-over finding with no entry at all is this term told silently, which is why every baseline entry has to appear here or be continued by a finding. |
+<!-- /vocabulary:declare -->
+
+**`fixed` is the only disposition that costs evidence**, and it is the only one that lowers
+a reader's guard. `not measured` is free on purpose: the moment honesty costs more than the
+comfortable answer, the contract starts buying the comfortable answer.
+
+---
+
 ---
 
 ## Cross-dimension invariants
 
-These are rules between dimensions. They are **doctrine, not yet gated**: no automation
-reads a finding today, because we do not emit a machine-readable finding yet (backlog item
-7). Stated here so that the schema, when it lands, has something to encode.
+These are rules between dimensions, and the schema landed: `references/findings.schema.json`
+and `scripts/gates/lib/findings_artifact.py` read a finding today, so most of these are
+**enforced** rather than stated. Each is marked with what holds it up. The two marked
+*enforced since* were doctrine until this file was re-read against the validator that was
+supposed to implement it — a note written when a thing was true and left alone when it stopped
+being true, which is the drift this repository keeps finding in its own documentation after a
+fix lands.
 
 - `status: confirmed` requires `confidence: high`. Confirmed means demonstrated; if
-  something is inferred, the status is `probable` and the inference is named.
-- `status: confirmed` may not be paired with `verification: inconclusive` when the reason
-  for the inconclusiveness is that the reproduction never worked. That combination means
-  the finding was never demonstrated, so it was not `confirmed`.
-- `verification: refuted` implies `status: withdrawn`. Nothing else does.
+  something is inferred, the status is `probable` and the inference is named. **Enforced
+  since** invariant 31; before it the validator refused only `low`, so the middle term went
+  through and three real bench runs used it.
+- `verification: refuted` implies `status: withdrawn`. Nothing else does. **Enforced**
+  by invariant 32.
 - `status: hardening` and `severity: critical` are contradictory: a hardening item asserts
-  no exploit path, and severity measures the impact of one.
+  no exploit path, and severity measures the impact of one. **Enforced** by invariant 19.
 - `status: candidate` may not appear in a deliverable, at any severity or confidence.
+  **Enforced** by the validator, which refuses the term outright.
+- `status: confirmed` may not be paired with `verification: inconclusive` when the reason
+  for the inconclusiveness is that the reproduction never worked. **Doctrine.** The artifact
+  records the verdict and not why it came out that way, so no gate can tell this case from an
+  inconclusive run that was inconclusive for a reason that does not undermine the finding.
 - Severity and confidence are never merged into a single word. "Critical" alone is a
-  severity; the confidence must still be written.
+  severity; the confidence must still be written. **Doctrine**, and not gateable here: the
+  artifact has two fields, so the merge can only happen in prose.
 
 ---
 

@@ -508,7 +508,7 @@ repository call a shipped item missing — the failure that made this column nec
 | 12 | open | **Two-wave auditing and distributed writes.** Wave 1 returns `{suspect, reason}` cheaply, wave 2 goes deep only on hits; specialists write findings to disk and return ids. Plus a per-pack scope flag for CI. | 4/5 | **M** | Mantis Apache-2.0 · PT-Agents MIT · AgSec Apache-2.0 | — (protocol change in `SKILL.md` and `team.md`) | `orchestration.wave_protocol_declared` |
 | 13 | open | **`infra-cloud` gap closure by reference.** Point `Tooling` fields at external fingerprint/CVE corpora instead of embedding any; target the 9 high gaps that make it our worst pack. | 1/5 | **M** | AIG Apache-2.0 — **NOTICE mandates visible attribution; reference only, never embed** | Existing tooling-documentation gate | moves `PCC(infra-cloud)` — but only after `baseline.json` is re-scored (see §6.3) |
 | 14 | open | **Signed evidence manifest.** SHA-256 of every finding and every tool output shipped beside the report; Ed25519 later if a client asks. | 1/5 | **L** | PentAGI MIT (their version is an unimplemented RFC) | Gate verifies the manifest covers every file in the deliverable | `deliverable.manifest_coverage` |
-| 15 | open | **Engagement memory.** Persistent findings state across runs, so a second audit of the same repository does not restart from zero. **Constraint: it must not cost citability** — the PentAGI failure mode is a store that cannot tell you which procedure produced a finding. | 3/5 | **L** | PentAGI MIT · PT-Agents MIT · Mantis Apache-2.0 | Gate: every stored finding retains its procedure id | `memory.findings_with_procedure_id` |
+| 15 | **shipped** | **Engagement memory.** `ehs.findings/v2`: a target digest, a baseline, a `baseline_state` on every finding, a structural fingerprint that the validator RECOMPUTES, and a `carried_over` array that accounts for every baseline finding the run did not report again. The state `unmeasured` is a declared term rather than a missing field, so a comparison that did not happen cannot be read as one that found nothing — which is the measured failure mode of the closest thing in the field: Mantis's matcher falls back to embeddings, `compute_embedding` catches every exception and returns a mock vector, the dimension check then skips every candidate, and a deployment with no model reports each run as entirely new with nothing saying so. **The citability constraint is met and enforced**: `procedure` is required on every carried-over entry and the id has to resolve against the corpus. | 3/5 | **L** | PentAGI MIT · PT-Agents MIT · Mantis Apache-2.0 | Invariants 20–32 — `gate-findings-artifact.sh`; the contract around them, and whether the corpus still exercises a comparison at all — `gate-engagement-memory.sh`; and whether the comparison reaches the human reader rather than living in JSON alone — the `engagement-memory` section on the mandatory floor of `gate-report-contract.sh` | `memory.findings_with_procedure_id`, `memory.baselines_declared`, `memory.fingerprints_reproduced` |
 
 **Sequencing, and where it actually got to.** The plan was: items 1-5 first (all **S**,
 all inside machinery we already had), with the **S** half of item 9 pulled forward, because
@@ -522,8 +522,13 @@ Items 1-8 all ship with a gate that runs; the **S** half of 9 ships as
 10-15 have no gate. This paragraph said none of that for two weeks, and two gates were
 still printing *"no machine-readable finding is emitted yet (backlog #7)"* in their
 out-of-scope declarations while item 7's schema, validator and fixtures shipped — the
-reason had gone stale, the caveat behind it had not. **The next item is the scope artifact**, the **M** half of
-9.
+reason had gone stale, the caveat behind it had not. **Item 15 then shipped out of order**, ahead of 10–14 and ahead of the scope
+artifact, because it was the item where the neighbouring products had moved and
+we had not: four of the five keep findings across runs, and the one with the
+soundest key for it fails open. Taking it early cost the sequencing argument and
+bought the axis where the gap was live. **The next item is still the scope
+artifact**, the **M** half of 9, and it is now the oldest thing on this list that
+was specified before anything below it and built after.
 
 ---
 

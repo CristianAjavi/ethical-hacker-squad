@@ -8,6 +8,91 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **The engagement memory reaches the human reader.** A new mandatory report section,
+  `engagement-memory`, with two rules on the floor of `gate-report-contract.sh`: every
+  finding prints what it is against the previous run, and every finding the previous run
+  reported and this one did not is listed with what happened to it. As shipped an hour
+  earlier the comparison lived only in `findings.json`, which a client does not read —
+  `baseline_state` and `disposition` were declared in `vocabulary.md`, encoded in the
+  schema, and named nowhere in the document the engagement actually delivers. Mandatory
+  and not conditional on purpose: a section that disappears on a first run brings back the
+  substitution invariant 28 refuses, because a reader who sees nothing cannot tell "first
+  engagement" from "nobody compared". The on-screen handover gained the fourth number for
+  the same reason, and on a first engagement it is said rather than omitted — omitting it
+  is how a reader learns that a missing number means zero.
+
+- **The report floor is checked in both directions.** `gate-report-contract.sh` asked the
+  specification about every section the gate lists and never asked which sections the
+  specification declares, so a section could be added, be read by every leader, govern
+  what a client receives, and be registered nowhere. The comment beside the conditional
+  list already asserted the property; a comment is not a check. The reverse pass found one
+  on its first run: `handover`, declared mandatory in `report.md` since the handover work
+  and on neither list — deleting it would not have failed this gate. Now registered, with
+  a self-test case that adds an unregistered section and expects red.
+
+- **Invariants 31 and 32, and the note that said they were not enforced.** `vocabulary.md`
+  still described its cross-dimension invariants as "doctrine, not yet gated" because "we
+  do not emit a machine-readable finding yet" — both halves untrue since the schema
+  landed. Each is now marked with what holds it up, and marking them honestly exposed two
+  that nothing did: `confirmed` required only that confidence not be `low`, so the middle
+  term went through unchallenged (measured across 153 artifacts and 807 findings: three
+  real blinded bench runs took that door), and `verification: refuted` did not require
+  `status: withdrawn`, so a finding could survive its own refutation as a live claim the
+  reader may already have acted on. Zero violations of the second in those 807, which is
+  the cheapest moment to gate it. Two negative fixtures, each measured to fail for exactly
+  one reason.
+
+- **Engagement memory: what this run is against the last one.** An audit that cannot
+  remember the previous audit reports the same list every time, and the reader cannot
+  tell a defect that came back from one that never left. `ehs.findings/v2` adds a target
+  digest, a baseline, a `baseline_state` on every finding, a structural fingerprint and a
+  `carried_over` array; invariants 20–30 are the arithmetic over them, and
+  `gate-engagement-memory.sh` guards the contract they rest on.
+
+  Three decisions carry the design. **The fingerprint is executable**: `ehs.fp/v1` is
+  specified precisely enough that the validator RECOMPUTES it and refuses a value that
+  does not reproduce, because an algorithm nothing recomputes is prose wearing a field
+  name. Its inputs deliberately exclude line numbers — measured over 117 real artifacts
+  and 587 findings, a line-based key re-identified 55 findings where the structural key
+  re-identified 18, and it looks better precisely because it is counting matches a rebase
+  would have destroyed. No key over these fields is unique (`path+line+procedure`
+  collides on 24 of 587), so the fingerprint is a candidate key with a declared `ordinal`
+  and never an identity. **`unmeasured` is a declared term, not a missing field**, so a
+  comparison that did not happen cannot be read as one that found nothing. And **the
+  baseline balances**: every baseline finding is either continued by a finding here or
+  answered in `carried_over`, counts checked against `engagement.baseline.findings_count`,
+  because a finding that simply stops appearing reads exactly like a finding that was
+  fixed.
+
+  The failure mode this is built against is measured, not hypothetical. Mantis's Tier 1
+  key is sound; its embedding fallback catches every exception and returns a mock vector,
+  the dimension check then skips every candidate, and a deployment with no model reports
+  each run as entirely new with nothing saying so. Invariant 21 makes that state
+  unwriteable. Carried-over entries also require a `procedure` that resolves against the
+  corpus — the citability constraint the roadmap item was written with, which is the
+  other neighbouring failure mode: a store that can say a defect was fixed and not say
+  what found it.
+
+  Eleven negative fixtures, one per invariant, each measured to fail for exactly one
+  reason, plus a sixteen-case battery for the gate. Backlog item 15, shipped out of
+  order; `docs/competitive-analysis.md` §5 says why.
+
+- **`web-api` §12: encoding, charset and normalisation.** `WEB-29` a response whose
+  character encoding the server never declares, `WEB-30` normalisation or case folding
+  applied after the check, `WEB-31` two layers reading the same bytes as different
+  characters. The class had zero appearances across nineteen reference files, and it is
+  the one where a filter and the thing it protects disagree about what a string *is*.
+
+  `WEB-30`'s worked table is measured by codepoint on CPython 3.9 rather than by rendered
+  glyph, because U+212A and `K` render identically and a probe comparing rendered strings
+  agrees with whatever it was told: NFKC collapses the fullwidth metacharacters and leaves
+  `ẞ`, case folding does the reverse, both collapse U+017F and U+212A, and neither touches
+  U+0131 — which an `upper()`→`lower()` round trip turns into `i`. A filter tested only
+  against fullwidth input misses a folding path. The UTF-7 XSS every write-up of this class
+  still reaches for is recorded as **historical**: the encoding is absent from the WHATWG
+  Encoding Standard's table, and that standard requires user agents to support no other
+  labels.
+
 - **Severity calibration: ten caps that rule a finding down.** Severity was the one
   dimension of `vocabulary.md` with no discipline behind it — `report.md` said it was a
   judgement about *this* system rather than a copied scanner label, and then gave the model

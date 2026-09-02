@@ -97,6 +97,39 @@ Listed only where they altered what a pack tells the agent to look for.
 - **Jacobs et al., 2023** — EPSS threshold 0.088 delivers the same coverage as CVSS ≥ 7 at an eighth of the effort. The triage order in `SUP-14`.
 - **Endor Labs, State of Dependency Management** — under 9.5% of dependency vulnerabilities are reachable. Why an SCA hit without a call path is informational.
 
+## Designs read at the source, and where this repository diverged
+
+Not papers, and neither of them changed a pack. They shaped the *contract* — the
+findings artifact and the memory rules around it — and each is listed with the part
+that was adopted beside the part that was refused, because a design copied without
+its failure mode is a design nobody read.
+
+- **SARIF v2.1.0**, OASIS Standard — the `result.baselineState` property. Verified in
+  the normative JSON Schema (`schemas/sarif-schema-2.1.0.json`), whose enum is exactly
+  `new`, `unchanged`, `updated`, `absent`. **Adopted:** the first three terms and the
+  idea that a result carries its state relative to a baseline rather than the reader
+  inferring it from a diff. **Refused:** `absent`. SARIF can afford it because a SARIF
+  result is a neutral record; a finding in this contract is the assertion that a defect
+  exists, so an absent one filed beside the live ones makes severity, triage and
+  invariant 11 each either false or a special case. The absent case lives in
+  `carried_over` instead, and the fourth term is `unmeasured` — the state SARIF has no
+  word for, and the one that separates a comparison that found nothing from a
+  comparison that did not happen. Asked for the enum in prose rather than from the
+  schema, the same source came back with a fifth value, `reintroduced`, which is in
+  neither: a fabricated enum member survives review by looking exactly like a real one,
+  which is why the machine-readable form is the one cited here.
+- **Mantis** (Apache-2.0; licence verified 2026-08-16) — cross-run finding
+  reconciliation. **Adopted:** the tiered key. Its first tier digests a canonical
+  fingerprint, a canonical CWE and the target symbol, which survives line shifts and
+  paraphrased titles — the reason `ehs.fp/v1` excludes line numbers rather than
+  including them for precision. **Refused:** the fallback. The embedding tier catches
+  every exception and returns a mock vector, the dimension check then skips every
+  candidate, and a deployment with no model reports each run as entirely new with
+  nothing in the output saying so. That single behaviour is why `unmeasured` is a
+  declared term rather than a missing field, why invariant 21 refuses a comparative
+  state without a baseline, and why invariant 28 makes the baseline balance instead of
+  trusting the matcher.
+
 ## Annual reports used for prioritization
 
 Verizon DBIR 2026; Sonatype State of the Software Supply Chain 2026; ReversingLabs 2026; Veracode State of Software Security 2026; Checkmarx Future of Application Security 2026; Wiz State of AI in the Cloud 2026; Orca State of Application Security 2025-2026; Datadog State of Cloud Security 2025 and State of DevSecOps 2026; Google Cloud Threat Horizons H1 2026; HiddenLayer AI Threat Landscape 2026; GitGuardian State of Secrets Sprawl 2026. Figures drawn from these appear in the packs with the report named.

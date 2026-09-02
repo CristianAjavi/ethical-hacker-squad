@@ -9,7 +9,7 @@ Each role owns exactly one knowledge pack. The pack is the role's procedural mem
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|
 | Leader | — (main thread) | `traceability.md`, `tooling.md` | — |
-| Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` + `knowledge/web-api-logging.md` | `WEB-01`..`WEB-28` |
+| Web and API AppSec | `ehs-web-api` | `knowledge/web-api.md` + `knowledge/web-api-clientside-logic.md` + `knowledge/web-api-logging.md` | `WEB-01`..`WEB-31` |
 | Mobile and APK | `ehs-mobile` | `knowledge/mobile.md` + `knowledge/mobile-runtime-trust.md` + `knowledge/mobile-ios.md` | `MOB-01`..`MOB-18` |
 | Infrastructure and cloud | `ehs-infra-cloud` | `knowledge/infra-cloud.md` + `knowledge/infra-cloud-cicd-exposure.md` + `knowledge/infra-cloud-cicd-platforms.md` | `INF-01`..`INF-24` |
 | Supply chain and secrets | `ehs-supply-chain` | `knowledge/supply-chain.md` + `knowledge/supply-chain-secrets-malware.md` + `knowledge/supply-chain-source-lifecycle.md` | `SUP-01`..`SUP-26` |

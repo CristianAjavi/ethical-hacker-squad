@@ -173,10 +173,12 @@ REQUIRED_SECTIONS='redaction-pass
 executive-summary
 scope-and-method
 findings
+engagement-memory
 ruled-out
 coverage-declaration
 verification
-residual-risk'
+residual-risk
+handover'
 
 # Declared sections whose class is NOT mandatory. Listed one by one so that a
 # section cannot be quietly demoted into "conditional" and disappear from the
@@ -192,7 +194,9 @@ ruled-out.tested-and-absent@ruled-out
 ruled-out.depth@ruled-out
 ruled-out.resisted@ruled-out
 ruled-out.regression-test@ruled-out
-coverage.gaps@coverage-declaration'
+coverage.gaps@coverage-declaration
+memory.state-per-finding@engagement-memory
+memory.carried-over@engagement-memory'
 
 # The closed set of placeholder classes. Item 4 of the backlog names exactly
 # these four surfaces: secrets, PII, internal hosts and weaponised payload
@@ -498,6 +502,23 @@ check_spec() {
         else OK("section \"" s "\" is present and conditional, as declared here")
       }
 
+      # The reverse direction. Everything above asks the document about a
+      # section this gate already knows; nothing asked the document what ELSE
+      # it declares. A section added to the specification and registered
+      # nowhere governs a real deliverable with no floor underneath it, and it
+      # ships green. An omission from a policy table is an approval nobody
+      # wrote down.
+      for (s in SEEN) {
+        known = 0
+        n = split(REQ, A, " ");  for (i = 1; i <= n; i++) if (A[i] == s) known = 1
+        n = split(COND, A, " "); for (i = 1; i <= n; i++) if (A[i] == s) known = 1
+        if (!known)
+          FAILM(SPEC " declares the section \"" s "\", which this gate lists neither as mandatory nor as conditional: a section nothing registers is a rule with no floor under it")
+        else UNREG_OK++
+      }
+      if (UNREG_OK > 0)
+        OK("every section " SPEC " declares is registered in this gate, both directions checked")
+
       n = split(RULES, A, " ")
       for (i = 1; i <= n; i++) {
         r = A[i]; if (r == "") continue
@@ -669,6 +690,16 @@ self_test() {
   t="$TMPD/st3"; mk_fake_root "$t"
   sed '/report:rule ruled-out.regression-test/d' "$SPEC" >"$t/$SPEC_REL"
   rc="$(run_child "$t")"; expect "required rule removed" 1 "$rc"
+
+  # 3b. a section added to the spec that this gate registers nowhere. The
+  #     one-way check above would have passed it, and did, until an
+  #     `engagement-memory` section was added and the gap was noticed by hand.
+  t="$TMPD/st3b"; mk_fake_root "$t"
+  { cat "$SPEC"
+    printf '\n<!-- report:section id=unregistered-invention class=mandatory -->\n'
+    printf '## An invention\n\nText.\n<!-- /report:section -->\n'
+  } >"$t/$SPEC_REL"
+  rc="$(run_child "$t")"; expect "section declared but registered nowhere" 1 "$rc"
 
   # 4. a placeholder class deleted.
   t="$TMPD/st4"; mk_fake_root "$t"
