@@ -53,6 +53,10 @@ So the priority order is: reachable, then in the KEV catalog, then EPSS above th
 
 Also note that roughly 65% of open-source CVEs carry no NVD CVSS score at all, with a 41-day median to score the rest. "No CVSS" is not "no risk".
 
+Verify the EPSS model version from the leading `#` comment of the daily CSV, not from a documentation page: `https://www.first.org/epss/model` answers **404** (checked 2026-09-02) and neither the home page nor the FAQ states a version number.
+
+**And read an empty answer correctly.** The API replies **HTTP 200 with `{"status":"OK","total":0,"data":[]}`** for any identifier it cannot key on — it fails silently, not loudly. Measured 2026-09-02 with its own positive control: an invented `CVE-9999-99999` returned `total:0`, while `CVE-2021-44228` returned `total:1` with a score, so the empty answer is the API's answer and not a dead endpoint. Most findings in a private codebase carry no CVE at all. An empty response is NOT-MEASURED; a consumer that reads it as "no exploitation risk" has invented a measurement, and `SEV-03` caps any severity that rests on one.
+
 ## Static analysis
 
 | Tool | Licence trap | Invocation |

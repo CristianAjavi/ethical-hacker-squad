@@ -108,12 +108,24 @@ here.
 | `informational` | An exploit path exists or a fact is worth recording, and it grants the attacker nothing. Written because the reader needs it, not because it is a risk. | Against status `hardening`: here there is a path and it is worthless. `hardening` means there is no path. |
 <!-- /vocabulary:declare -->
 
-The severity floor is deliberate and it is the direction the model gets wrong: **inflation,
-not deflation.** The rule that fixes most of it is marginal capability — if the exploit
-grants the attacker nothing beyond what they already held, it is `low` or `informational`,
-whatever the class of bug is called. A calibration catalogue with explicit caps is backlog
-item 8 of `docs/competitive-analysis.md` §5; when it lands it will cite these five terms
-and add caps, not new terms.
+The error this dimension produces is **inflation, not deflation**, and the rule that fixes
+most of it is marginal capability: if the exploit grants the attacker nothing beyond what
+they already held, it is `low` or `informational`, whatever the class of bug is called.
+
+<!-- vocabulary:use severity -->
+**The five terms are ordered, and the order is part of this vocabulary:**
+`critical` > `high` > `medium` > `low` > `informational`. A cap names a ceiling in that
+order. Nothing may read the order from the row sequence of the table above — a table
+sorted by a different key would silently invert every cap.
+<!-- /vocabulary:use -->
+
+The caps themselves are `SEV-01`..`SEV-10` in `references/triage.md`, beside the
+false-positive rules and answered the same four ways, because a cap that is not answered is
+a cap nobody applied. They add no term to this dimension. They are ceilings and never
+floors: severity may always be argued downwards citing nothing, and only the argument
+upwards is priced. And no cap is keyed on `confidence` — Dimension 3 is about us, this one
+is about the system, and a `low` confidence `critical` remains a legitimate and urgent
+thing to report.
 
 ---
 

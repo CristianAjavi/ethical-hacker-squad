@@ -39,6 +39,14 @@ VOCAB_REGION = r"<!--\s*vocabulary:declare {name}\s*-->(.*?)<!--\s*/vocabulary:d
 TERM = re.compile(r"^\|\s*`([a-z ]+)`\s*\|", re.M)
 RULE_ID = re.compile(r"`(FP-\d{2})`")
 MERGE_RULE_ID = re.compile(r"`(DUP-\d{2})`")
+# The caps region of triage.md: id, tier, ceiling. The ceiling is READ, never
+# stored on a finding, so a finding cannot restate the cap it is about to exceed.
+SEV_REGION = re.compile(r"<!--\s*severity:caps\s*-->(.*?)<!--\s*/severity:caps\s*-->", re.S)
+SEV_ROW = re.compile(r"^\|\s*`(SEV-\d{2})`\s*\|\s*([a-z ]+?)\s*\|\s*`([a-z]+)`\s*\|", re.M)
+# The order lives in vocabulary.md and nowhere else. Reading it from the row
+# sequence of the term table would let a re-sorted table invert every cap.
+SEV_ORDER = re.compile(r"^`(critical)`(?:\s*>\s*`([a-z]+)`)+", re.M)
+SEV_ORDER_TERMS = re.compile(r"`([a-z]+)`")
 # High-precision formats, the same ones the report contract refuses.
 SECRETS = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,}|sk-ant-[A-Za-z0-9_-]{16,}|"
@@ -89,6 +97,28 @@ def vocabulary(root: Path) -> dict[str, set[str]]:
             raise Unmeasured(f"{VOCAB}: the `{name}` region declares no terms")
         out[name] = terms
     return out
+
+
+def severity_caps(triage_text: str) -> dict[str, tuple[str, str]]:
+    """id -> (tier, ceiling), read out of the caps region of triage.md."""
+    m = SEV_REGION.search(triage_text)
+    if not m:
+        raise Unmeasured(f"{TRIAGE} has no <!-- severity:caps --> region to read")
+    caps = {r[0]: (r[1], r[2]) for r in SEV_ROW.findall(m.group(1))}
+    if not caps:
+        raise Unmeasured(f"{TRIAGE} declares a caps region with no rows in it")
+    return caps
+
+
+def severity_order(vocab_text: str) -> list[str]:
+    """The severity terms, highest first, as vocabulary.md states them."""
+    m = SEV_ORDER.search(vocab_text)
+    if not m:
+        raise Unmeasured(
+            f"{VOCAB} no longer states the order of the severity terms, so the ceiling "
+            "this validator enforces would be this validator's memory"
+        )
+    return SEV_ORDER_TERMS.findall(m.group(0))
 
 
 def check_shape(node, schema, path, fail) -> None:
@@ -148,6 +178,21 @@ def main() -> int:
     rules = set(RULE_ID.findall(triage_text))
     if not rules:
         raise Unmeasured(f"{TRIAGE} declares no rules")
+    caps = severity_caps(triage_text)
+    always_caps = sorted(k for k, (tier, _) in caps.items() if tier == "always")
+    if not always_caps:
+        raise Unmeasured(
+            f"{TRIAGE} declares no cap in the `always` tier: nothing would then be "
+            "required of a `critical`, and invariant 12 could never fire"
+        )
+    order = severity_order(read(root, VOCAB))
+    unknown_ceilings = sorted({c for _, c in caps.values()} - set(order))
+    if unknown_ceilings:
+        raise Unmeasured(
+            f"{TRIAGE} names the ceiling(s) {', '.join(unknown_ceilings)}, which "
+            f"{VOCAB} does not order"
+        )
+    rank = {term: i for i, term in enumerate(order)}  # 0 is the top of the order
     merge_rules = set(MERGE_RULE_ID.findall(triage_text))
     if not merge_rules:
         raise Unmeasured(f"{TRIAGE} declares no merge rules")
@@ -370,6 +415,67 @@ def main() -> int:
                     fail(f"{where}: triage cites `{t['rule']}`, which triage.md does not declare")
                 if t.get("answer") in ("HOLDS", "UNKNOWN", "NOT_APPLICABLE") and not t.get("reason"):
                     fail(f"{where}: triage `{t.get('rule')}` answered `{t['answer']}` with no reason naming the artifact")
+
+            # Invariants 12-19. The caps of triage.md, answered. `FP-*` asks whether
+            # the finding survives; `SEV-*` asks how high it may be written once it
+            # has. The ceiling is read from triage.md and the order from
+            # vocabulary.md, so neither is this file's to own.
+            sev = f.get("severity")
+            expensive = sev in ("critical", "high")
+            calib = f.get("severity_calibration")
+            calib = calib if isinstance(calib, list) else []
+            seen: dict[str, int] = {}
+            for c in calib:
+                if not isinstance(c, dict):
+                    continue
+                rule, answer = c.get("rule"), c.get("answer")
+                if not isinstance(rule, str):
+                    continue
+                seen[rule] = seen.get(rule, 0) + 1
+                if seen[rule] == 2:
+                    # 18.
+                    fail(f"{where}: severity_calibration answers `{rule}` twice; a rule has "
+                         "one answer, and two let a reader pick the convenient one")
+                if rule not in caps:
+                    # 17.
+                    fail(f"{where}: severity_calibration cites `{rule}`, which triage.md does not declare")
+                    continue
+                tier, ceiling = caps[rule]
+                if tier == "derived":
+                    # 19, second message.
+                    fail(f"{where}: `{rule}` is derived from `status` and answering it can only "
+                         "disagree with the artifact; remove the entry")
+                    continue
+                if answer in ("HOLDS", "UNKNOWN", "NOT_APPLICABLE") and not c.get("reason"):
+                    # 15.
+                    fail(f"{where}: `{rule}` answered `{answer}` with no reason naming the artifact")
+                if answer == "DOES_NOT_HOLD" and expensive and not c.get("reason"):
+                    # 16.
+                    fail(f"{where}: `{rule}` answered `DOES_NOT_HOLD` on a `{sev}` finding with no "
+                         "reason; that is the answer that buys the label, and it pays what the label costs")
+                if answer in ("HOLDS", "UNKNOWN") and sev in rank and ceiling in rank:
+                    if rank[sev] < rank[ceiling]:
+                        if answer == "HOLDS":
+                            # 13.
+                            fail(f"{where}: severity `{sev}` sits above the `{ceiling}` ceiling that "
+                                 f"`{rule}` imposes while answered `HOLDS`; the ceiling is "
+                                 "triage.md's, not the finding's to overrule")
+                        else:
+                            # 14.
+                            fail(f"{where}: severity `{sev}` sits above the `{ceiling}` ceiling of "
+                                 f"`{rule}`, answered `UNKNOWN`; an unestablished cap binds, exactly "
+                                 "as exit code `2` is not a green gate")
+            if expensive:
+                for rule in always_caps:
+                    if rule not in seen:
+                        # 12.
+                        fail(f"{where}: severity `{sev}` and the always-answered cap `{rule}` is not "
+                             "answered; a cap nobody answered is a cap nobody applied")
+                if status == "hardening":
+                    # 19, first message.
+                    fail(f"{where}: status `hardening` claims there is nothing to exploit and severity "
+                         f"`{sev}` claims how much the exploit matters; `SEV-10` derives this and the "
+                         "finding is on both sides of it")
 
         # Invariant 10. `merged_into` above closes this for a candidate absorbed
         # inside one specialist's unaided pass. The leader's merge ACROSS

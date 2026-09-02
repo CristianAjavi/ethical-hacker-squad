@@ -6,6 +6,50 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Added
+
+- **Severity calibration: ten caps that rule a finding down.** Severity was the one
+  dimension of `vocabulary.md` with no discipline behind it — `report.md` said it was a
+  judgement about *this* system rather than a copied scanner label, and then gave the model
+  no rule to apply. `references/triage.md` now carries `SEV-01`..`SEV-10` beside the
+  false-positive rules: absolute caps under the marginal-capability principle, each
+  answered the same four ways `FP-*` is, each a **ceiling** rather than a score.
+
+  Three things make it more than a list. **`UNKNOWN` binds exactly as `HOLDS` does** — not
+  knowing whether a cap applies is not permission to sit above it, which is the doctrine of
+  exit code `2` applied to a label, and the deliberate inverse of CVSS v4.0 resolving an
+  undefined Exploit Maturity to *Attacked*. **The ceiling is never written into the
+  finding**: it is read from the catalogue, so a finding cannot restate the cap it is about
+  to exceed. And **`DOES_NOT_HOLD` costs a reason on `critical` and `high`** — the one place
+  this family does not copy `FP-*`, because there the expensive claim is the exculpation and
+  here it is the dismissal that buys the label.
+
+  Why caps and not a score: CVSS, EPSS, SSVC and the Exploitability Index agree at Cohen's
+  kappa near zero over 600 real vulnerabilities (arXiv:2508.13644, CCS 2025), so there is no
+  external oracle to import; 68% of trained CVSS users re-rated the same vulnerabilities
+  differently on a second pass (arXiv:2308.15259, IEEE S&P 2024); and four LLMs judged
+  against SSVC's decision points over 384 vulnerabilities "tended to over-predict risk"
+  (arXiv:2510.18508). SSVC's own pilot shows where agreement survives — Fleiss' kappa 0.807
+  on Exploitation against 0.122 on Safety Impact — and that split is why this is a list of
+  observable caps rather than a decision tree.
+
+  `findings.schema.json` gains `findings[].severity_calibration`, mirroring `triage`.
+  `gate-findings-artifact.sh` gains invariants 12-19 and nine negative fixtures, one per
+  invariant. `gate-severity-calibration.sh` owns the catalogue itself: contiguous ids, every
+  ceiling a term `vocabulary.md` declares, no ceiling at the top of the order, and — this is
+  the part that makes it more than a documentation gate — **it refuses to pass when its own
+  arithmetic did not run**. Answer every cap `NOT_APPLICABLE`, or drop every fixture to
+  `medium`, and the counter reaches zero through a state someone can actually create; that is
+  the silent retirement of a control, and it exits `2`.
+
+  Measured on this tree: 51 of 53 expensive findings calibrated, 51 ceilings compared, 16 of
+  16 self-test cases behaving. Two defects surfaced in that battery and were fixed before the
+  change shipped — `no-critical-or-high-finding-anywhere` returned the right `2` for the
+  wrong reason (the missing arithmetic is the symptom; no expensive finding is the cause, so
+  the checks were reordered), and `core-missing` could never have failed, because the harness
+  ran the source tree's gate against a copied root and only the copy's core was deleted.
+  Backlog item 8 of `docs/competitive-analysis.md` is `shipped`.
+
 ### Fixed
 
 - **The stale-reason gate read one line at a time, and prose wraps.** `gate-competitive-backlog.sh`

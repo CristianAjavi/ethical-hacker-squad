@@ -148,6 +148,7 @@ For each finding. The three verdict fields are closed lists from [vocabulary.md]
 - `proposed verification`
 - `traceability`: standard identifiers, verbatim and untranslated
 - `triage`: every rule from `references/triage.md` that the procedure invokes, with its answer — `HOLDS`, `DOES_NOT_HOLD`, `UNKNOWN` or `NOT_APPLICABLE` — and a reason naming the artifact whenever the answer is not `DOES_NOT_HOLD`. A finding returned as `confirmed` has every invoked rule answered, none `HOLDS` and none `UNKNOWN`; an unanswered rule is not a silent pass, exactly as exit code `2` is not a green gate.
+- `severity_calibration`: on every finding you write `critical` or `high`, the `always` caps of `references/triage.md` — `SEV-01` and `SEV-02` — answered the same four ways, plus any `on trigger` cap whose class is in play. The ceiling each cap imposes lives in `triage.md` and is never repeated here, so a finding cannot restate the cap it is about to exceed. `HOLDS` and `UNKNOWN` both bind that ceiling: not knowing whether a cap applies is not permission to sit above it. `DOES_NOT_HOLD` is free below `high` and carries a reason at or above it, because there it is the answer that buys the label.
 - `limits or open questions`
 
 The leader assembles these returns into `findings.json` as specified in `references/findings-artifact.md`, and validates it before anything is delivered. A specialist returns prose; the artifact is the leader's job, because only the leader has deduplicated across specialists.

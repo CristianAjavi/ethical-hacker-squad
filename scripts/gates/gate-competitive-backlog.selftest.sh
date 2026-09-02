@@ -67,14 +67,14 @@ echo "=== self-test: gate-competitive-backlog.sh (source: $SRC) ==="
 case_run control-untouched-repo 0 "nothing in the repository calls a shipped item missing" ""
 
 # --- B1: a status nobody defined
-case_run status-nobody-defined 1 "is not one of shipped/partial/open" "$(py_doc "t=t.replace('| 8 | open |','| 8 | pending |',1)")"
+case_run status-nobody-defined 1 "is not one of shipped/partial/open" "$(py_doc "t=t.replace('| 10 | open |','| 10 | pending |',1)")"
 
 # --- B2: the claim and the directory disagree
 case_run shipped-row-names-no-gate 1 "names no gate file" "$(py_doc "t=t.replace('\`gate-triage-rules.sh\`','the triage gate',1)")"
 case_run shipped-row-names-a-gate-that-is-gone 1 "which the runner does not have" "$(py_doc "t=t.replace('\`gate-triage-rules.sh\`','\`gate-triage-rules-v2.sh\`',1)")"
 
 # --- B3: built and never crossed off
-case_run open-row-already-kept-by-a-gate 1 "sends the next reader to build it twice" "$(py_doc "t=t.replace('Gate fails a \`critical\`/\`high\` finding that cites no calibration rule','Gate fails a \`critical\`/\`high\` finding that cites no calibration rule — \`gate-agent-tools.sh\`',1)")"
+case_run open-row-already-kept-by-a-gate 1 "sends the next reader to build it twice" "$(py_doc "t=t.replace('Gate: inventory regenerated from the corpus, fails if stale','Gate: inventory regenerated from the corpus, fails if stale — \`gate-agent-tools.sh\`',1)")"
 
 # --- B4: the tooth.
 # The two fixtures below assemble their citation from pieces instead of spelling
@@ -105,8 +105,8 @@ p.write_text(p.read_text()+"\n# The schema this reads is specified by backlog #7
 case_run an-open-item-called-missing-is-correct 0 "nothing in the repository calls a shipped item missing" '
 import os,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/gate-secret-scan.sh"
-tag="back"+"log #8"
-p.write_text(p.read_text()+"\n# The severity catalogue of "+tag+" is not implemented.\n")'
+tag="back"+"log #10"
+p.write_text(p.read_text()+"\n# The onboarding surface of "+tag+" is not implemented.\n")'
 
 # The exemption, both ways round. A case that only proves the marked line stays
 # silent proves nothing on its own: the line might be silent for some other

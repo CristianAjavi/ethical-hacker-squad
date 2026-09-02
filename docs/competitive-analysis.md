@@ -202,9 +202,14 @@ nothing beyond the position they already held, cap or downgrade it. Requires a s
 you already had; blast radius confined to the attacker's own tenant; needs non-default
 configuration; XSS defaults to medium unless stored and admin-facing.
 
-We have nothing. `report.md` correctly says severity is a judgement about *this* system
-rather than a copied scanner label — and then gives the model no rule to apply. Severity
-inflation is the signature failure of every LLM auditor, and we are unprotected.
+For two months we had nothing: `report.md` correctly said severity is a judgement about
+*this* system rather than a copied scanner label, and then gave the model no rule to
+apply. `SEV-01`..`SEV-10` in `references/triage.md` closes that, and it is not a copy of
+Mantis's list. Theirs is 27 caps read as guidance; ours is ten, answered the four ways
+`FP-*` is answered, with `UNKNOWN` binding the ceiling exactly as `HOLDS` does — so not
+knowing whether a cap applies is not permission to sit above it. And no cap stores its
+own ceiling on the finding: the ceiling is read from the catalogue, so a finding cannot
+restate the cap it is about to exceed.
 
 ### 2.9 A redaction pass before the report is written — convergence 2/5
 
@@ -496,7 +501,7 @@ repository call a shipped item missing — the failure that made this column nec
 | 5 | **shipped** | **Ruled-out section required in the report.** "We tested X, Y and Z and did not find them", plus what actively resisted and how to turn it into a regression test. | 3/5 | **S** | PentAGI MIT · AIG Apache-2.0 · Mantis Apache-2.0 | `report.md` marks it mandatory; gate checks the spec still requires it — `gate-report-contract.sh` | `report.mandatory_sections` |
 | 6 | **shipped** | **Named FP triage checklist (~10 rules) shared across all 7 packs**, answerable PASS/FAIL/UNKNOWN/NOT_APPLICABLE with a mandatory reason when not PASS. Each procedure's `What rules it out` cites the rule ids it invokes. | 2/5 | **M** | Mantis Apache-2.0 · AIG Apache-2.0 | Gate fails on a procedure whose FP field cites no rule id, and on a finding marked confirmed with any rule at FAIL — `gate-triage-rules.sh` | `triage.rule_coverage`, `triage.rules_declared` |
 | 7 | **shipped** | **Findings artifact.** `findings.json` beside the markdown: procedure id, location, status, severity, confidence, verification outcome, traceability ids, redaction applied. One schema, one validator. | 4/5 | **M** | PT-Agents MIT · AgSec Apache-2.0 · Mantis Apache-2.0 · AIG Apache-2.0 | Schema validator as a gate; `2` when the file is unreadable, `1` when it violates the schema — `gate-findings-artifact.sh` | `findings.schema_conformance` — and it finally makes our own output measurable |
-| 8 | open | **Severity calibration catalogue**, 8-10 caps under the marginal-capability principle, written by us. | 1/5 | **M** | Mantis Apache-2.0 | Gate fails a `critical`/`high` finding that cites no calibration rule | `severity.calibration_rules`, `severity.findings_calibrated` |
+| 8 | **shipped** | **Severity calibration catalogue.** `SEV-01`..`SEV-10` in `references/triage.md`: absolute caps under the marginal-capability principle, each answerable, each a ceiling rather than a score. `UNKNOWN` binds exactly as `HOLDS` does. | 1/5 | **M** | Mantis Apache-2.0 | Invariants 12-19 fail a `critical`/`high` finding that leaves an `always` cap unanswered or sits above a cap that binds — `gate-findings-artifact.sh`; the catalogue itself — `gate-severity-calibration.sh` | `severity.calibration_rules`, `severity.findings_calibrated`, `severity.caps_compared` |
 | 9 | partial | **Close the G1 hole, then the scope artifact.** First: a gate that actually fails when an auditor agent lists `Edit`/`Write`/`NotebookEdit` — specified in `gate-requirements.md` G1, implemented nowhere (§3.5). Then a versioned `scope.md`/`scope.json`: authorised targets, out-of-scope, stop conditions, evidence expectations, authorisation reference, plus a pre-action check the leader must pass. | 3/5 | **S** then **M** | PT-Agents MIT (CI-grep pattern) · PentAGI MIT · AgSec Apache-2.0 | Gate: no auditor lists a write tool, **and** every agent carrying `Bash` embeds the scope block; negative fixture for both — `gate-agent-tools.sh` | `agents.tool_restriction_conformance` (N/7 auditors), `agents.scope_block_conformance` (N/8) |
 | 10 | open | **Onboarding surface.** An inventory view of all 122 procedures (id, pack, traceability, whether the minimal test is local or requires authorisation) plus a routing command and one worked example engagement with a sample report. | 3/5 | **M** | AgSec Apache-2.0 · PT-Agents MIT | Gate: inventory regenerated from the corpus, fails if stale | `corpus.inventory_freshness`, `procedure.authorization_class` |
 | 11 | open | **Executable minimal tests.** Raise the 52/122 with an inline command; where a procedure genuinely cannot have one, say so in the field instead of writing prose. | — | **M** | Ours (measurement is new) | Gate: a *new* procedure must carry an executable test or an explicit declaration of why not | `procedure.executable_minimal_test` |
@@ -512,13 +517,13 @@ Then 6-8 and the **M** half of 9 as the real project, turning free-text discipli
 enforced structure. Items 10-15 wait.
 
 **Measured 2026-09-01: that plan is done as far as item 7, and item 8 is where it stopped.**
-Items 1-7 all ship with a gate that runs; the **S** half of 9 ships as
-`gate-agent-tools.sh` and its **M** half — the scope artifact — does not. Items 8 and
+Items 1-8 all ship with a gate that runs; the **S** half of 9 ships as
+`gate-agent-tools.sh` and its **M** half — the scope artifact — does not. Items
 10-15 have no gate. This paragraph said none of that for two weeks, and two gates were
 still printing *"no machine-readable finding is emitted yet (backlog #7)"* in their
 out-of-scope declarations while item 7's schema, validator and fixtures shipped — the
-reason had gone stale, the caveat behind it had not. **The next item is 8**, severity
-calibration, and after it the scope artifact.
+reason had gone stale, the caveat behind it had not. **The next item is the scope artifact**, the **M** half of
+9.
 
 ---
 

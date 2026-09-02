@@ -74,7 +74,7 @@ Record:
 <!-- report:section id=findings class=mandatory -->
 ## Findings
 
-Order by severity, then by confidence. For each finding:
+Order by severity, then by confidence. A severity written `critical` or `high` has answered the caps of `references/triage.md` — the ordering is only as honest as the labels it sorts. For each finding:
 
 1. ID and title.
 2. Status, severity and confidence, each taken verbatim from `vocabulary.md`:

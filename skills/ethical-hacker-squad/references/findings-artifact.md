@@ -55,6 +55,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | `findings[].withdrawn_reason` | **Required for `withdrawn`**: a claim already made that did not survive. It stays visible; that is the difference from `discarded`. |
 | `findings[].traceability` | The standard identifiers, verbatim. |
 | `findings[].triage` | Every rule the procedure invokes, its answer, and a reason whenever the answer is not `DOES_NOT_HOLD`. |
+| `findings[].severity_calibration` | **Required on `critical` and `high`**: the `SEV-01`..`SEV-10` caps of `triage.md`, answered, same shape as `triage`. The ceiling each rule imposes lives in `triage.md`, never here, so a finding cannot restate the cap it exceeds. `HOLDS` and `UNKNOWN` both bind; `DOES_NOT_HOLD` is free below `high` and costs a reason at or above it, because there it is the answer that buys the label. |
 | `findings[].limits` | What this finding does not establish. |
 | `ruled_out` | **Top-level, once per artifact** — a sibling of `findings` and `engagement`, not a field inside a finding. What was tested and did not appear, with the bound of how far the test reached. |
 
@@ -75,6 +76,23 @@ These are not shape checks. They are the reasons the file is worth having:
 
 11. **A finding may not live where the report says it did not look.** No finding's `location.path` may lie inside a surface listed in `engagement.coverage.not_read`, matched at a path segment boundary. Invariant 3 makes the inventory account for itself; this one makes it account to the findings beside it, because until now they were two documents sharing a file. Measured: the fixture that models a *conforming* artifact could declare `not_read: ["migrations/"]`, report a defect at `migrations/003_add_invoices.sql:12`, and sign verdict 0. A finding is proof that someone looked, so one of the two sentences is false, and the reader cannot tell which. The segment boundary is what keeps this from accusing the compliant — `migrations-legacy/` is not inside `migrations/`, and the conforming fixture carries exactly that case as its control. Across the 60 real artifacts in `bench/runs`, 277 findings carry a path and **none** contradicts a `not_read` entry: the rule forbids a class that has not happened yet rather than convicting past work.
 
+12. **A `critical` or a `high` answers the `always` caps.** An expensive label is paid for with the two questions `triage.md` marks obligatory. A cap nobody answered is a cap nobody applied, and that silence is exactly what an unexamined label buys.
+
+13. **A cap that holds, holds.** The entry says the condition is true and the label sits above the ceiling that condition imposes. This is the one invariant here that is purely mechanical: the ceiling is `triage.md`'s, not the finding's to overrule.
+
+14. **`UNKNOWN` binds exactly as `HOLDS` does.** Not knowing whether a cap applies is not permission to sit above it — the doctrine of exit code `2` applied to a label, and the deliberate inverse of CVSS v4.0 resolving an undefined Exploit Maturity to *Attacked*.
+
+15. **Any answer that is not `DOES_NOT_HOLD` names its artifact**, the same price the `FP-*` family charges.
+
+16. **A dismissal pays when it buys the expensive label.** The one place this family does not copy `FP-*`: there the costly claim is the exculpation, here it is the dismissal, because `DOES_NOT_HOLD` is the answer that raises the severity. On `critical` and `high` it carries a reason; below them it is free.
+
+17. **Every `severity_calibration.rule` exists** in `triage.md` — the mirror of invariant 8 for the new family.
+
+18. **A rule has one answer.** Two let a reader pick the convenient one.
+
+19. **Derived caps are derived.** `SEV-10` is computed from `status` and is never asked: a `hardening` finding claims there is nothing to exploit while a `critical` or `high` severity claims how much the exploit matters, and answering the rule by hand can only agree with the artifact or contradict it.
+
+
 ## What it does not do
 
-It does not make a wrong finding right, and it does not judge severity — a well-formed file can carry a confident mistake. What it removes is the class of defect where the prose says one thing and the structure says another, and it gives a scorer something to count.
+It does not make a wrong finding right, and it does not decide **what** severity a finding deserves — a well-formed file can carry a confident mistake. Invariants 12–19 check the label against the ceilings the finding itself answered, which is arithmetic on the artifact and not a judgement about the system. What it removes is the class of defect where the prose says one thing and the structure says another, and it gives a scorer something to count.

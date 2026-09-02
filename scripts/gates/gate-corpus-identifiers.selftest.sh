@@ -146,7 +146,7 @@ p.write_text(p.read_text().replace("VER-09","VER-11"))'
 # A rule declared in a table, not a heading. A4 that knew only headings would
 # call all 38 citations of `FP-08` dangling on an untouched repo; here the row
 # really is gone, and the finding has to name who was left pointing at it.
-case_run rule-declaration-removed-citations-left-behind 1 "\`FP-08\` is cited 38 time" '
+case_run rule-declaration-removed-citations-left-behind 1 "\`FP-08\` is cited 39 time" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
 p.write_text(re.sub(r"^\| `FP-08` \|.*\n","",p.read_text(),flags=re.M))'
@@ -174,12 +174,12 @@ p.write_text(p.read_text()+"\nProbe: `CICD-SEC-04`, `WSTG-INPV-05`, `MASVS-STORA
 case_run rule-tables-no-longer-declare-ids 2 "half its declarations" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
-p.write_text(re.sub(r"^\| `((?:FP|DUP)-\d\d)` \|",r"| \1 |",p.read_text(),flags=re.M))'
+p.write_text(re.sub(r"^\| `((?:FP|DUP|SEV)-\d\d)` \|",r"| \1 |",p.read_text(),flags=re.M))'
 
 case_run corpus-stopped-citing-its-own-ids 2 "stopped cross-referencing itself" '
 import os,re,pathlib,glob
 root=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad"
-rx=re.compile(r"\b(AI|DUP|FP|INF|LOC|MOB|PRV|REM|SUP|VER|WEB)-(\d{2,3})\b")
+rx=re.compile(r"\b(AI|DUP|FP|INF|LOC|MOB|PRV|REM|SEV|SUP|VER|WEB)-(\d{2,3})\b")
 for f in list(root.glob("*.md"))+list((root/"references").glob("*.md"))+list((root/"references/knowledge").glob("*.md")):
     t=f.read_text()
     out=[]
