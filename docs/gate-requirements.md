@@ -49,8 +49,89 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| one platform's shell spelling, with no fallback | running | `gate-portable-shell.sh` + self-test (22 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
+
+## One platform's shell spelling, with no fallback written down
+
+`scripts/gates/gate-portable-shell.sh`. No shell script under `scripts/` may
+depend on a BSD-only or GNU-only invocation unless it offers the other
+platform's spelling as a fallback, or says in writing why it does not.
+
+**What it measures.** Every `*.sh` and `*.bash` file under `scripts/`, against
+the catalogue written in `scripts/gates/data/portable-shell-catalogue.json` —
+eighteen rules at the time of writing, each naming the divergence, the platform
+it breaks on, and the portable spelling. The catalogue is a data file and not a
+table inside the checker because what a gate enforces has to be readable by
+someone who is not reading its code.
+
+**Why it exists.** Measured on CI on 2026-09-02:
+`gate-lockfile-coherence.selftest.sh` reported *16 passed, 0 failed* on the
+author's Mac and *11 passed, 5 failed* on the Linux runner — same file, same
+commit. All five broken cases used `sed -i ''`, which is BSD syntax; GNU sed
+reads the empty string as the script and the edit never happens. Nothing about
+the logic was wrong. The green Mac simply could not see it, and there is no
+Linux on the development machine — `docker` is not installed — so CI was the
+only instrument that could answer, and it answers after the push.
+
+That day, `grep -rln "sed -i ''" scripts/` returned exactly one file: the one
+just written. The repository was portable by habit, not by control.
+
+**The two things that make this harder than a grep.**
+
+1. *A logical line is not a physical line.* The one real `date` fallback in this
+   repository is split across two lines by a trailing backslash, the BSD half on
+   the first and the GNU half on the second. Read physically, each half is a lone
+   platform-specific call and both get flagged. Continuations are therefore
+   joined before anything is matched, and a finding carries the line where the
+   logical line started.
+
+2. *The deliberate fallback must not be a finding.* `A 2>/dev/null || B` is how
+   portable shell is actually written. Measured before the gate existed: over 104
+   shell files, a catalogue with no exoneration flagged **18 lines, every one of
+   them correct** — sixteen `mktemp` fallbacks and one `date` pair. A gate whose
+   first red accuses the compliant gets switched off, so a candidate is exonerated
+   when its logical line also carries the counterpart spelling *and* an `||`.
+
+**The written exemption.** A line opts out with a trailing
+`# portable-shell: allow <rule-id> - <reason>`. An exemption that names no reason
+is **itself a finding**: removing a check and writing down what replaces it are
+the same edit, and this is the half that otherwise never happens. Honoured
+exemptions are printed on every run, including clean ones — an escape hatch
+nobody ever sees is one nobody ever revisits.
+
+**What it does not decide.** Whether the divergent line is *reachable*. This is a
+lexical check over source text, so a BSD-only invocation on a branch that never
+runs on Linux is still reported; deciding otherwise means interpreting the shell.
+It also does not invent the catalogue's limits: the `out_of_scope` block of the
+data file names the divergences that are **not** checked — `awk` dialects, `ls`
+output parsing, locale-driven `sort` collation, and bash-vs-dash built-ins — and
+the gate prints that block on every run, because what is not in the table passes
+in silence and an unstated limit reads like coverage.
+
+The exoneration carries a false negative of its own, and it is declared rather
+than discovered: the counterpart test is lexical — the other spelling present on
+the same logical line, plus an `||` — so an unrelated `grep -E` sitting beside a
+genuinely lone `grep -P` will exonerate it. Telling those apart means parsing the
+shell. The gate is a floor, not a proof of portability; CI on Linux remains the
+only instrument that answers the question directly.
+
+**Negative proof.** `scripts/gates/gate-portable-shell.selftest.sh`, 22 cases.
+Seven seed a lone divergence and require rc=1 naming its rule. Four seed the
+fallback idiom — including the backslash-split `date` pair — and require rc=0;
+without the continuation joiner or the `||` test those four go red and nothing
+else does. Three exercise the written exemption and its teeth: one honoured, one
+refused for carrying no reason, one refused for naming a different rule. Six
+require rc=2: no `scripts/` directory, a `scripts/` with no shell file (a zero
+there is a blind zero), a file that does not decode as UTF-8, and three broken
+catalogues. The first case is the control — the whole repository, unmutated, which
+must come back rc=0.
+
+The fixtures are seeded, not copied: a case here is a directory with one script
+in it. The battery also carries its own divergent spellings as fixture text, each
+under the written exemption the gate offers, so the production run exercises the
+exemption path rather than leaving it untested.
 
 ## Exit-code semantics — applies to every gate
 

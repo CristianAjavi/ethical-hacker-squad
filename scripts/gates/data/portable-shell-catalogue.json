@@ -1,0 +1,174 @@
+{
+  "$comment": [
+    "The written catalogue of BSD/GNU-divergent shell invocations this repository refuses.",
+    "",
+    "It is a DATA file and not a table inside the checker on purpose: what a gate",
+    "enforces has to be readable by someone who is not reading its code, and this",
+    "repository has already been bitten once by a limit that existed only inside an",
+    "implementation. What does not appear in this file passes in silence, so the",
+    "out_of_scope block below says out loud which divergences are NOT checked.",
+    "",
+    "WHY THIS EXISTS. Measured on CI 2026-09-02: gate-lockfile-coherence.selftest.sh",
+    "was 16/16 on macOS and 11/16 on Linux. The five broken cases all used `sed -i ''`,",
+    "which is BSD syntax; GNU sed reads the empty string as the script and the mutation",
+    "never applies. The logic was right, the spelling was not portable, and the author's",
+    "green Mac said nothing about it.",
+    "",
+    "FIELDS.",
+    "  id          stable name, used in findings and in the written exemption comment",
+    "  why         the divergence in one sentence: what breaks, on which platform",
+    "  portable    the spelling that works on both, when one exists",
+    "  pattern     Python regex; a match on a logical line is a candidate",
+    "  counterpart Python regex for the OTHER platform's spelling of the same command.",
+    "              A candidate is exonerated when the same logical line ALSO matches",
+    "              this and contains `||` - the deliberate fallback idiom",
+    "              `A 2>/dev/null || B`. null means no such pair exists and the only",
+    "              way out is the written exemption.",
+    "",
+    "Measured before writing: over 104 shell files under scripts/, a catalogue with no",
+    "counterpart logic flagged 18 CORRECT lines - 16 mktemp fallbacks and one date",
+    "fallback pair. A gate whose first red is its own defect gets switched off, so the",
+    "fallback idiom is recognised rather than punished."
+  ],
+  "version": 1,
+  "exemption_marker": "portable-shell: allow",
+  "out_of_scope": [
+    "Shell built-ins whose behaviour differs between bash and dash (`local`, `echo`);",
+    "this repository pins `#!/usr/bin/env bash`, and a shebang gate is a different check.",
+    "Anything outside scripts/ - .github/workflows/ is covered by gate-actions-lint.sh.",
+    "awk dialects (mawk/gawk/BSD awk) and their `--posix` divergences: real, but the",
+    "repository carries no awk invocation that depends on one, so a rule for it would",
+    "be a rule nobody can test in the negative here.",
+    "`ls` output parsing, `head -c`/`tail -c` on non-seekable input, and locale-driven",
+    "`sort` collation: not lexically decidable from a single line.",
+    "Whether the counterpart spelling that exonerates a line is really its fallback. The test is lexical: counterpart present on the same logical line, plus an `||`. An unrelated `grep -E` beside a genuinely lone `grep -P` therefore exonerates it. Telling those apart means parsing the shell, so this is a known false negative and not an oversight."
+  ],
+  "rules": [
+    {
+      "id": "sed-i-empty",
+      "why": "`sed -i ''` is BSD/macOS; GNU sed reads the empty string as the script and edits nothing.",
+      "portable": "edit with python3, or write to a temp file and mv it into place",
+      "pattern": "\\bsed\\s+(?:-[a-zA-Z]+\\s+)*-i\\s+(?:''|\"\")",
+      "counterpart": "\\bsed\\s+(?:-[a-zA-Z]+\\s+)*-i\\s+(?!''|\"\")[-'\"a-zA-Z0-9]"
+    },
+    {
+      "id": "sed-i-bare",
+      "why": "`sed -i` with no suffix is GNU; BSD sed consumes the next argument as the backup suffix.",
+      "portable": "edit with python3, or write to a temp file and mv it into place",
+      "pattern": "\\bsed\\s+(?:-[a-zA-Z]+\\s+)*-i\\s+(?!''|\"\")[-'\"a-zA-Z0-9]",
+      "counterpart": "\\bsed\\s+(?:-[a-zA-Z]+\\s+)*-i\\s+(?:''|\"\")"
+    },
+    {
+      "id": "sed-r",
+      "why": "`sed -r` is GNU-only for extended regexes.",
+      "portable": "sed -E, understood by both since macOS 10.7",
+      "pattern": "\\bsed\\s+(?:-[a-zA-Z]*\\s+)*-r\\b",
+      "counterpart": null
+    },
+    {
+      "id": "stat-f",
+      "why": "`stat -f FMT` is BSD; on GNU `-f` selects a file system, not a format.",
+      "portable": "read the field with python3 os.stat, or wc -c for a size",
+      "pattern": "\\bstat\\s+(?:-[a-zA-Z]+\\s+)*-f\\b",
+      "counterpart": "\\bstat\\s+(?:-[a-zA-Z]+\\s+)*-c\\b"
+    },
+    {
+      "id": "stat-c",
+      "why": "`stat -c FMT` is GNU; BSD spells the same thing `-f`.",
+      "portable": "read the field with python3 os.stat, or wc -c for a size",
+      "pattern": "\\bstat\\s+(?:-[a-zA-Z]+\\s+)*-c\\b",
+      "counterpart": "\\bstat\\s+(?:-[a-zA-Z]+\\s+)*-f\\b"
+    },
+    {
+      "id": "date-bsd",
+      "why": "`date -j` and `date -v` are BSD-only date arithmetic.",
+      "portable": "compute the instant in python3 and format it there",
+      "pattern": "\\bdate\\s+(?:-[a-zA-Z]+\\s+)*-[jv]",
+      "counterpart": "\\bdate\\s+(?:-[a-zA-Z]+\\s+)*-d\\b"
+    },
+    {
+      "id": "date-gnu",
+      "why": "`date -d` is GNU-only date arithmetic.",
+      "portable": "compute the instant in python3 and format it there",
+      "pattern": "\\bdate\\s+(?:-[a-zA-Z]+\\s+)*-d\\b",
+      "counterpart": "\\bdate\\s+(?:-[a-zA-Z]+\\s+)*-[jv]"
+    },
+    {
+      "id": "readlink-f",
+      "why": "`readlink -f` is absent on macOS before 12.3 and on older BSD.",
+      "portable": "cd \"$(dirname \"$p\")\" && pwd -P",
+      "pattern": "\\breadlink\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*f\\b",
+      "counterpart": "\\bpwd\\s+-P\\b"
+    },
+    {
+      "id": "mktemp-t",
+      "why": "`mktemp -t X` takes a PREFIX on BSD and a TEMPLATE on GNU; the resulting names differ.",
+      "portable": "mktemp -d, with the -t form only as an explicit `||` fallback",
+      "pattern": "\\bmktemp\\s+(?:-[a-zA-Z]+\\s+)*-t\\b",
+      "counterpart": "\\bmktemp\\s+-d\\s*(?:2>|\\|\\|)"
+    },
+    {
+      "id": "grep-P",
+      "why": "`grep -P` needs PCRE, which BSD grep does not carry.",
+      "portable": "grep -E, or match with python3 re",
+      "pattern": "\\bgrep\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*P\\b",
+      "counterpart": "\\bgrep\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*E\\b"
+    },
+    {
+      "id": "xargs-r",
+      "why": "`xargs -r` is GNU; BSD xargs already skips an empty input and rejects the flag.",
+      "portable": "guard the pipeline with `[ -s file ]` instead",
+      "pattern": "\\bxargs\\s+(?:-[a-zA-Z]+\\s+)*-r\\b",
+      "counterpart": null
+    },
+    {
+      "id": "xargs-J",
+      "why": "`xargs -J` is BSD-only argument placement.",
+      "portable": "xargs -I, understood by both",
+      "pattern": "\\bxargs\\s+(?:-[a-zA-Z]+\\s+)*-J\\b",
+      "counterpart": "\\bxargs\\s+(?:-[a-zA-Z]+\\s+)*-I\\b"
+    },
+    {
+      "id": "find-perm-plus",
+      "why": "`find -perm +NNN` is BSD; GNU removed it in favour of `/NNN` and errors out.",
+      "portable": "find -perm /NNN",
+      "pattern": "-perm\\s+\\+[0-7]",
+      "counterpart": "-perm\\s+/[0-7]"
+    },
+    {
+      "id": "base64-w",
+      "why": "`base64 -w` is GNU line wrapping; BSD spells it `-b` and errors on `-w`.",
+      "portable": "base64 | tr -d '\\n'",
+      "pattern": "\\bbase64\\s+(?:-[a-zA-Z]+\\s+)*-w\\b",
+      "counterpart": "\\bbase64\\s+(?:-[a-zA-Z]+\\s+)*-b\\b"
+    },
+    {
+      "id": "cp-parents",
+      "why": "`cp --parents` is GNU-only.",
+      "portable": "mkdir -p on the destination directory, then cp",
+      "pattern": "\\bcp\\s+[^\\n|;&]*--parents\\b",
+      "counterpart": null
+    },
+    {
+      "id": "tar-wildcards",
+      "why": "`tar --wildcards` is GNU tar; bsdtar matches patterns without it and rejects the flag.",
+      "portable": "extract everything and filter afterwards, or pass explicit member names",
+      "pattern": "\\btar\\s+[^\\n|;&]*--wildcards\\b",
+      "counterpart": null
+    },
+    {
+      "id": "sort-V",
+      "why": "`sort -V` is GNU version sort; BSD sort gained it late and older macOS lacks it.",
+      "portable": "sort the versions in python3",
+      "pattern": "\\bsort\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*V\\b",
+      "counterpart": null
+    },
+    {
+      "id": "echo-e",
+      "why": "`echo -e` is not POSIX; whether it interprets escapes or prints `-e` depends on the shell.",
+      "portable": "printf",
+      "pattern": "\\becho\\s+-e\\b",
+      "counterpart": null
+    }
+  ]
+}
