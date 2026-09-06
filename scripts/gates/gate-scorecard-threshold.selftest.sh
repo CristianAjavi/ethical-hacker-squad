@@ -27,6 +27,10 @@ case_run() {
   local out rc results="$work/$F"
   [ -f "$results" ] || results="$work/.absent.json"
   out="$(env -u SCORECARD_RESULTS EHS_REPO_ROOT="$work" bash "$GATE" --results "$results" 2>&1)"; rc=$?
+  # The gate has run and its output is in `$out`; the copy is dead weight
+  # from here. Freeing it per case is what keeps the peak at one tree
+  # instead of one per case - 32 of them took this laptop to 0.26 GB free.
+  rm -rf "$work"
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
