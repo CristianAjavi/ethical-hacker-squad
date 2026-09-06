@@ -21,7 +21,11 @@ B="bench/runs/2026-08-22-third-competitor/verify/claims.json"
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
   rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  # `node_modules` is excluded because it is UNTRACKED build output: `git ls-files
+  # tooling/` returns two files, so a CI checkout never has it and a fixture that
+  # carries it measures a tree the runner will not see. Measured here: 259 MB of the
+  # 271 MB this line copies, per case.
+  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
   local before after
   before="$(cd "$work" && find bench -type f -exec shasum {} + | shasum)"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
