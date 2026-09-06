@@ -204,6 +204,54 @@ case_run packs-json-unreadable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json").write_text("{ not json")'
 
+# --------------------------------------------------------------------------
+# Five rules a sweep found no case for: each one fires when the corpus NAMES
+# something that is not there. Silencing any of them left every battery green.
+# Only `pack-file-no-role-reads` is a detection gap - the other four leave the
+# gate red through a neighbouring rule and lose only the diagnosis, which is why
+# each asserts the words rather than the exit code.
+# --------------------------------------------------------------------------
+
+case_run declared-file-not-on-disk 1 "which is not on disk" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json"
+d=json.loads(p.read_text())
+d["packs"][0]["files"].append("never-written.md")
+p.write_text(json.dumps(d,indent=2)+"\n")'
+
+case_run map-points-at-a-file-that-is-not-declared 1 "which is not a declared pack file" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/knowledge/README.md"
+t=p.read_text()
+row=re.compile(r"^(\|\s*`)([a-z0-9-]+\.md)(`\s*\|[^|]*\|\s*~?[\d,]+\s*\|)",re.M)
+m=row.search(t)
+assert m, "no map row that MAP_ROW recognises"
+p.write_text(t[:m.start()]+m.group(1)+"no-such-pack.md"+m.group(3)+t[m.end():])'
+
+case_run roster-names-an-agent-that-does-not-exist 1 "which has no definition under" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/team.md"
+t=p.read_text()
+m=re.search(r"`(ehs-[a-z-]+)`",t)
+p.write_text(t.replace(m.group(1),"ehs-nobody",1))'
+
+# The one detection gap of the five: silence this rule and the gate goes GREEN
+# with a pack file nobody is dispatched to read.
+case_run pack-file-no-role-reads 1 "and no role in the roster reads it" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/team.md"
+t=p.read_text()
+ns=re.findall(r"`(knowledge/[a-z0-9-]+\.md)`",t) or re.findall(r"`([a-z0-9-]+\.md)`",t)
+a=ns[0]; b=next(x for x in ns if x!=a)
+p.write_text(t.replace(a,b))'
+
+case_run coverage-routes-to-a-file-that-is-not-a-pack 1 "which is not a pack file" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/coverage.md"
+t=p.read_text()
+m=re.search(r"`([a-z0-9-]+\.md)`",t)
+p.write_text(t.replace(m.group(1),"not-a-pack.md",1))'
+
 echo
 echo "Summary: $pass ok, $fail failures"
 if [ "$fail" -gt 0 ]; then

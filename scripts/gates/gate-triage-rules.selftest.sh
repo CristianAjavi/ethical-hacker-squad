@@ -120,6 +120,25 @@ case_run conformance-data-unreadable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.json").write_text("{ not json")'
 
+# Two rules a sweep found no case for. Both assert the MESSAGE on purpose: a
+# duplicated id is also a hole in the numbering, so the gate stays red without
+# them and only the diagnosis is lost. Measured, not assumed - the exit code is 1
+# either way, and a case written against the exit code would have passed with the
+# rule deleted.
+case_run duplicate-rule-id 1 "duplicate rule ids" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
+t=p.read_text()
+f=re.findall(r"^\|\s*`(FP-\d{2})`\s*\|",t,re.M)
+p.write_text(re.sub(r"^(\|\s*`)"+f[1]+r"(`\s*\|)",r"\g<1>"+f[0]+r"\g<2>",t,count=1,flags=re.M))'
+
+case_run duplicate-merge-rule-id 1 "duplicate merge rule ids" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/triage.md"
+t=p.read_text()
+f=re.findall(r"^\|\s*`(DUP-\d{2})`\s*\|",t,re.M)
+p.write_text(re.sub(r"^(\|\s*`)"+f[1]+r"(`\s*\|)",r"\g<1>"+f[0]+r"\g<2>",t,count=1,flags=re.M))'
+
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
