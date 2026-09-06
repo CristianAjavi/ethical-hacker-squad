@@ -768,8 +768,21 @@ In CI it is **one job per library**. The work divides perfectly, a library's
 mutants only ever run that library's battery, and the table says the total is
 dominated by one library — so sharding makes the critical path
 `corpus_contract.py` alone rather than the sum, on a runner it does not share.
-No speed-up figure is claimed here: the first run of the workflow is what
-measures it, and 2695 s is the number to beat.
+Measured on the first clean run, and the two causes are separable, because
+attributing all of it to sharding would be false:
+
+| | wall clock |
+|---|---:|
+| this Mac, 10 cores, one job, 4 workers | 2695 s |
+| one `ubuntu-latest` runner, 4 workers (sum of the 13 shard sweeps) | 284 s |
+| sharded across 13 runners, end to end, plan and verdict included | **111 s** |
+
+Sharding, machine held constant: **2.6x**, and the critical path is
+`corpus_contract.py`'s 82 s exactly as the cost table predicted. The remaining
+**9.5x is the machine** — a 4-vCPU cloud runner against a 10-core Mac, same work,
+same topology. That gap is not this gate's to fix, but it is why the local figure
+must never be quoted as if it measured the sweep rather than the box it ran on.
+The counts are identical on both: 125 sites, 27 survive, 98 die.
 
 Sharding opens exactly one hole, and it is the same hole as before: a library
 nobody put in the matrix would be skipped in silence. Two things close it. The
