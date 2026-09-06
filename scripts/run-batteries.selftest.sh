@@ -29,7 +29,15 @@ battery() {
   chmod +x "$1/$2.selftest.sh"
 }
 
-run() { bash "$SUBJECT" "$1" >"$TMP/out" 2>&1; }
+# run <root>  - the runner as it ships: parallel wherever the machine allows it.
+# runs <root> - the same runner pinned to its serial path.
+#
+# `env -u` rather than merely not setting the variable. If the caller exported
+# EHS_BATTERY_JOBS=1 - and anything A/B-ing this change does exactly that - an
+# inherited value would send every "parallel" case down the serial path, and
+# they would all pass having tested nothing.
+run()  { env -u EHS_BATTERY_JOBS bash "$SUBJECT" "$1" >"$TMP/out" 2>&1; }
+runs() { EHS_BATTERY_JOBS=1 bash "$SUBJECT" "$1" >"$TMP/out" 2>&1; }
 
 echo "== the ordinary verdicts =="
 
@@ -88,19 +96,31 @@ grep -q 'batteries run: 3' "$TMP/out" \
   && ok "all three ran — the greedy one did not eat the list" \
   || bad "the list was truncated: $(grep -o 'batteries run: [0-9]*' "$TMP/out")"
 
+runs "$TMP/greedy"; rc=$?
+[ "$rc" -eq 0 ] && grep -q 'batteries run: 3' "$TMP/out" \
+  && ok "the serial path does not let it eat the list either" \
+  || bad "serial path truncated: rc $rc, $(grep -o 'batteries run: [0-9]*' "$TMP/out")"
+
 echo "== mutant: prove the protection is doing the work =="
 
 # Take away FD 3 and </dev/null, leaving the loop reading its list from stdin -
 # the shape the rule had when it lived inline in a CI step. The greedy battery
 # must now eat the rest of the list and the count must drop. If it does not, the
 # case above is decoration and proves nothing.
+#
+# Pinned to the serial path, because that is the path this protection belongs
+# to: a battery launched with `&` gets its stdin from /dev/null whether or not
+# anyone asks, so the same mutant applied to the parallel path would kill
+# nothing and would say the protection is not load-bearing when the truth is
+# that it is load-bearing exactly here. The parallel path is covered above by
+# its own greedy case.
 sed -e 's#while IFS= read -r t <&3; do#while IFS= read -r t; do#' \
     -e 's#done 3< "$LIST"#done < "$LIST"#' \
     -e 's# </dev/null##' "$SUBJECT" > "$TMP/mutant.sh"
 if cmp -s "$SUBJECT" "$TMP/mutant.sh"; then
   bad "the mutant did not apply: this battery would pass without measuring anything"
 else
-  bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/mout" 2>&1
+  EHS_BATTERY_JOBS=1 bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/mout" 2>&1
   if grep -q 'batteries run: 3' "$TMP/mout"; then
     bad "the mutant ALSO runs all three: the FD-3 and </dev/null are not what protects"
   else
@@ -115,6 +135,82 @@ bash "$SUBJECT" --list "$TMP/listing" >"$TMP/out" 2>&1; rc=$?
 [ "$rc" -eq 0 ] && grep -q 'only.selftest.sh' "$TMP/out" \
   && ok "--list prints the battery and does not run it" \
   || bad "--list misbehaved: rc $rc"
+
+echo "== the parallel path says exactly what the serial path says =="
+
+# One tree holding all three outcomes at once, so the comparison covers the
+# vocabulary and the ordering and not just the exit code. The report is built by
+# the parent in list order on both paths, so byte-equality is the right bar
+# here: the only thing that legitimately differs is which worker finished first,
+# and that must never reach the output.
+battery "$TMP/mixed"     a-green 0
+battery "$TMP/mixed"     b-red   1
+battery "$TMP/mixed/sub" c-unmeas 2
+battery "$TMP/mixed/sub" d-green 0
+
+runs "$TMP/mixed"; ser_rc=$?; cp "$TMP/out" "$TMP/out.serial"
+run  "$TMP/mixed"; par_rc=$?; cp "$TMP/out" "$TMP/out.parallel"
+
+[ "$ser_rc" -eq "$par_rc" ] \
+  && ok "both paths exit with the same code ($ser_rc)" \
+  || bad "serial exited $ser_rc, parallel exited $par_rc"
+
+if cmp -s "$TMP/out.serial" "$TMP/out.parallel"; then
+  # A comparison that cannot fail has measured nothing. Change one battery's
+  # verdict and require the very same comparison to see it, so a day when both
+  # files come back empty does not read as agreement.
+  battery "$TMP/mixed" b-red 0
+  runs "$TMP/mixed" >/dev/null 2>&1; cp "$TMP/out" "$TMP/out.control"
+  battery "$TMP/mixed" b-red 1
+  if cmp -s "$TMP/out.serial" "$TMP/out.control"; then
+    bad "the comparison does not see a flipped verdict: it proves nothing"
+  else
+    ok "the two paths print the same report, with a working control"
+  fi
+else
+  bad "the reports differ: $(diff "$TMP/out.serial" "$TMP/out.parallel" | head -4 | tr '\n' ' ')"
+fi
+
+echo "== the parallel path really overlaps =="
+
+# Without this, a JOBS that quietly resolved to 1 would leave every case above
+# passing while the change did nothing at all. Six batteries of one second: the
+# serial path cannot finish in under six, three workers should take about two,
+# and the bar is set at a saving too large for scheduling noise to fake.
+mkdir -p "$TMP/slow"
+i=0
+while [ "$i" -lt 6 ]; do
+  i=$((i + 1))
+  printf '#!/usr/bin/env bash\nsleep 1\nexit 0\n' > "$TMP/slow/s$i.selftest.sh"
+done
+chmod +x "$TMP/slow"/*.selftest.sh
+
+SECONDS=0; runs "$TMP/slow"; ser_rc=$?; ser_s=$SECONDS
+SECONDS=0; EHS_BATTERY_JOBS=3 bash "$SUBJECT" "$TMP/slow" >"$TMP/out" 2>&1; par_rc=$?; par_s=$SECONDS
+
+if [ "$ser_rc" -ne 0 ] || [ "$par_rc" -ne 0 ]; then
+  bad "UNMEASURED: the timing fixture did not come back green (serial $ser_rc, parallel $par_rc)"
+elif [ "$ser_s" -lt 5 ]; then
+  bad "UNMEASURED: the serial arm took ${ser_s}s, so the fixture is not doing the work"
+elif [ "$par_s" -le $((ser_s - 2)) ]; then
+  ok "three workers took ${par_s}s where one took ${ser_s}s"
+else
+  bad "no overlap: ${par_s}s with three workers against ${ser_s}s with one"
+fi
+
+echo "== a worker that dies without an exit code is COULD NOT MEASURE =="
+
+# The slot file is how a worker reports back, so the interesting failure is the
+# worker that never writes one: killed, out of memory, the machine gave out.
+# Read as a zero that pads the green with a battery that never finished; read
+# correctly it is the one outcome that must never be a pass.
+mkdir -p "$TMP/dies"
+printf '#!/usr/bin/env bash\nkill -9 $PPID\nsleep 5\n' > "$TMP/dies/gone.selftest.sh"
+chmod +x "$TMP/dies/gone.selftest.sh"
+EHS_BATTERY_JOBS=2 bash "$SUBJECT" "$TMP/dies" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && grep -q 'could not measure' "$TMP/out" \
+  && ok "a worker that dies without recording an exit code is rc 2" \
+  || bad "expected rc 2 and a COULD NOT MEASURE, got rc $rc"
 
 echo
 echo "$pass PASS / $fail FAIL"

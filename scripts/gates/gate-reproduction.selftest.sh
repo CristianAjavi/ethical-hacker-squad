@@ -327,6 +327,78 @@ check "a submission line that encodes" 1 "$D" --case intake-portal
 D="$TMP/intake-control"; build "$D" || exit 2
 check "intake-portal untouched is consistent" 0 "$D" --case intake-portal
 
+# --- the parallel run must say what the serial run says ----------------------
+# `reproduce.py` runs its cases side by side. That is a speed change to a
+# MEASUREMENT INSTRUMENT, which is the kind that is only safe while something
+# keeps checking the verdict did not move with it. `EHS_REPRODUCE_WORKERS=1`
+# restores the old serial path exactly, so the two can be compared here.
+#
+# The evidence strings legitimately carry the run's own temporary directory and
+# a PID the packer case predicts, so byte-equality is not achievable and a
+# comparison that demanded it would fail on serial-against-serial. Those two are
+# normalised; everything that carries a verdict is compared as it comes.
+D="$TMP/parallel-equivalence"; build "$D" || { echo "UNMEASURED cannot copy the corpus"; exit 2; }
+eq_out="$(EHS_REPRODUCE_WORKERS=1 python3 "$HARNESS" --root "$D" --json 2>/dev/null)"; eq_rc_serial=$?
+# The parallel arm has to UNSET the variable, not merely omit it. If the caller
+# exported EHS_REPRODUCE_WORKERS=1 -- and the A/B that measured this change did
+# exactly that -- an inherited value would make both arms serial and this case
+# would compare serial against serial and pass having tested nothing.
+par_out="$(env -u EHS_REPRODUCE_WORKERS python3 "$HARNESS" --root "$D" --json 2>/dev/null)"; eq_rc_par=$?
+if [ "$eq_rc_serial" -ne "$eq_rc_par" ]; then
+  fail=$((fail + 1))
+  printf 'FAIL     %-46s serial rc=%s, parallel rc=%s\n' \
+    "parallel run agrees with serial" "$eq_rc_serial" "$eq_rc_par"
+else
+  eq_verdict="$(printf '%s\n%s\n' "$eq_out" "$par_out" | python3 -c '
+import json, re, sys
+
+# What legitimately differs between two runs of the same code.
+NOISE = [(re.compile(r"ehs-reproduce-([a-z-]+)-[A-Za-z0-9_]+"), r"ehs-reproduce-\1-TMP"),
+         (re.compile(r"stage-\d+-"), "stage-PID-")]
+
+def norm(text):
+    for pat, rep in NOISE:
+        text = pat.sub(rep, text)
+    return text
+
+raw = sys.stdin.read()
+try:
+    dec = json.JSONDecoder()
+    a, i = dec.raw_decode(norm(raw).lstrip())
+    b, _ = dec.raw_decode(norm(raw).lstrip()[i:].lstrip())
+except ValueError as exc:
+    print("UNMEASURED could not parse the two observations: %s" % exc); raise SystemExit(0)
+
+if a != b:
+    for k in sorted(set(a.get("cases", {})) | set(b.get("cases", {}))):
+        if a.get("cases", {}).get(k) != b.get("cases", {}).get(k):
+            print("DIFFERS %s" % k); raise SystemExit(0)
+    print("DIFFERS outside the cases"); raise SystemExit(0)
+
+# Negative control: a comparison that cannot fail has measured nothing. Flip one
+# boolean -- the one that decides a verdict -- and require it to be seen.
+try:
+    case = sorted(a["cases"])[0]
+    defect = sorted(a["cases"][case]["base"])[0]
+    seeded = json.loads(json.dumps(a))
+    was = seeded["cases"][case]["base"][defect]["reproduces"]
+    seeded["cases"][case]["base"][defect]["reproduces"] = not was
+except (KeyError, IndexError) as exc:
+    print("UNMEASURED no observation to seed a control into: %s" % exc); raise SystemExit(0)
+if seeded == b:
+    print("BLIND the comparison does not see a flipped verdict"); raise SystemExit(0)
+print("SAME with a working control on %s/%s" % (case, defect))
+')"
+  case "$eq_verdict" in
+    SAME*)
+      pass=$((pass + 1))
+      printf 'ok       %-46s rc=%s %s\n' "parallel run agrees with serial" "$eq_rc_par" "$eq_verdict" ;;
+    *)
+      fail=$((fail + 1))
+      printf 'FAIL     %-46s %s\n' "parallel run agrees with serial" "$eq_verdict" ;;
+  esac
+fi
+
 printf -- '--- %s passed, %s failed ---\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

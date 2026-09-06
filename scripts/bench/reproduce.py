@@ -45,6 +45,7 @@ Exit codes: 0 = measured and consistent | 1 = measured and inconsistent |
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import importlib.util
 import json
 import os
@@ -323,7 +324,34 @@ def main(argv=None) -> int:
     else:
         env, ruled_out = envs.strongest_available()
 
-    reports = [measure_case(tree, case, env, planted, patch_truth) for case in cases]
+    # Four cases, run side by side. `measure_case` already gives each one its
+    # own temporary tree, so the only thing that was shared is `env` - and
+    # `Seatbelt.run` writes `self.wrapper` and `self._profile` on every call, so
+    # sharing one instance across concurrent cases would race on the sandbox
+    # profile. Each case gets its own instance of the SAME class: the chosen
+    # environment and its name do not change, only the object does.
+    #
+    # Bounded on purpose. `EHS_REPRODUCE_WORKERS=1` restores the serial path
+    # exactly, which is how the battery compares the two and proves the parallel
+    # run says the same thing.
+    workers = min(len(cases), 4)
+    try:
+        asked = int(os.environ.get("EHS_REPRODUCE_WORKERS", "") or workers)
+        workers = max(1, min(asked, len(cases)))
+    except ValueError:
+        pass  # an unreadable setting is not a reason to refuse to measure
+
+    if workers == 1:
+        reports = [measure_case(tree, case, env, planted, patch_truth) for case in cases]
+    else:
+        reports = [None] * len(cases)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(measure_case, tree, case, type(env)(), planted, patch_truth): i
+                for i, case in enumerate(cases)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                reports[futures[future]] = future.result()
 
     observations = {
         "environment": env.name,

@@ -20,7 +20,28 @@ F="scripts/gates/fixtures/scorecard/good.json"
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
   rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  # ONE tar for the whole battery, then a clone per case.
+  #
+  # `node_modules` is excluded because it is UNTRACKED build output: `git ls-files
+  # tooling/` returns two files, so a CI checkout never has it and a fixture that
+  # carries it measures a tree the runner will not see. That exclusion took 259 MB
+  # of the 271 MB out of this copy; what is left is 1200 files, and the cost that
+  # remains is their metadata rather than their bytes.
+  #
+  # So the pipe runs once and each case CLONES its own tree from the result.
+  # Measured on the same tree, minimum of five: tar 0.622 s, `cp -R` 0.361 s,
+  # `cp -Rc` 0.216 s - and this line runs once per case. `-c` asks APFS for a
+  # clonefile and is BSD-only, so it is TRIED and never assumed: the `||` is the
+  # probe, not a swallowed error, and where clonefile is unavailable (Linux CI)
+  # the plain copy runs and the fixture is identical either way. The clone is a
+  # real independent tree - writing into one leaves the source untouched, which
+  # was checked before this was written, because a copy that is fast because it
+  # is not a copy would let one case see another's mutation.
+  if [ ! -d "$TMP/.pristine" ]; then
+    mkdir -p "$TMP/.pristine"
+    (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$TMP/.pristine" && tar -xf -)
+  fi
+  cp -Rc "$TMP/.pristine/." "$work" 2>/dev/null || cp -R "$TMP/.pristine/." "$work"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
     printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
   fi
