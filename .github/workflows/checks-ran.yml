@@ -1,0 +1,71 @@
+# Sweeps the open pull requests and fails when one of them has no verdict at all.
+#
+# WHY THIS IS NOT A `pull_request` JOB, which is the obvious place to put it.
+#   The pull request this gate exists to catch is precisely the one where no job
+#   runs. A pull request opened already in conflict produces no merge ref, so
+#   GitHub starts NOTHING on it - not the workflows filtered by base branch, not
+#   the unfiltered ones either. A check that only runs where checks already run
+#   cannot see the case it was written for. So the sweep is scheduled, and it
+#   looks at every open pull request from the outside.
+#
+# WHY DAILY AND NOT WEEKLY, which is the cadence of the other drift sweeps.
+#   Those watch settings that change when a human changes them. This one watches
+#   a state a pull request can enter on its own the moment its base branch moves,
+#   and until somebody notices, the pull request reads as calm. A week of that is
+#   a week of a review queue whose silence means nothing. The cost is a handful
+#   of API reads.
+name: Open pull requests have a verdict
+
+on:
+  schedule:
+    # 08:33 UTC. A non-round minute on purpose: GitHub's cron queue saturates on
+    # the :00 minutes and a delayed sweep is a sweep that reports yesterday.
+    - cron: '33 8 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/gates/gate-checks-ran.sh'
+      - 'scripts/gates/gate-checks-ran.selftest.sh'
+      - '.github/workflows/checks-ran.yml'
+
+permissions: {}
+
+jobs:
+  sweep:
+    name: every open PR has a verdict
+    runs-on: ubuntu-latest
+    # On a fork the open pull requests of the fork say nothing about this
+    # repository's review queue, and the sweep would report an empty population.
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    permissions:
+      contents: read        # checkout
+      actions: read         # counting the workflow runs of a head commit
+      pull-requests: read   # listing the open pull requests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prove the gate in the negative first
+        # An accusation from a gate whose own battery was not run is an
+        # accusation nobody has to believe. The battery needs no network: it
+        # drives the gate through a gh double.
+        run: bash scripts/gates/gate-checks-ran.selftest.sh
+
+      - name: Sweep the open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EHS_CHECKS_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          rc=0
+          bash scripts/gates/gate-checks-ran.sh || rc=$?
+          case "$rc" in
+            0) echo "::notice title=Every open PR has a verdict::No open pull request is sitting with an empty check list." ;;
+            1) echo "::error title=A pull request has no verdict::One or more open pull requests produced no workflow run at all. An empty check list is not a green one." ;;
+            2) echo "::error title=COULD NOT MEASURE::The sweep could not be taken (gh/jq missing, or the API did not answer). This is not a pass." ;;
+            *) echo "::error title=Gate broken::unexpected exit code $rc" ;;
+          esac
+          exit "$rc"

@@ -76,7 +76,13 @@ EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 # locally, against an authenticated gh. Putting them in CI needs a fine-grained
 # PAT with Administration:read, and that is the owner's decision, written down
 # here rather than left as a silent hole.
-LIVE_SCOPED='gate-governance-drift.sh'
+# gate-checks-ran.sh is deferred for a DIFFERENT reason and it is worth being
+# precise about which: it needs no administration scope, and it does run in CI -
+# .github/workflows/checks-ran.yml runs it weekly with the ordinary token. What
+# it needs is the network and an authenticated gh, which a local run in a train
+# does not have. Deferring it here keeps a plane-mode suite honest instead of
+# permanently amber.
+LIVE_SCOPED='gate-governance-drift.sh gate-checks-ran.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
