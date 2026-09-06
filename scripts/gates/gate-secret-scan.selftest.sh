@@ -50,8 +50,24 @@ import os,pathlib
 
 case_run inert-marker-is-not-a-finding 0 "no credential in the tree" '
 import os,pathlib
+# The value has to MATCH a pattern for this case to mean anything. An earlier
+# fixture used `sk_test_`, which matches none of the ten formats, so the filter
+# this case is named after was never reached and the case stayed green with the
+# filter deleted. `sk_live_` + a run of zeros matches `stripe-live-key` and is
+# suppressed by the `0{12,}` marker, which is the path being tested.
 (pathlib.Path(os.environ["EHS_WORK"])/"docs/example.md").write_text(
-  "STRIPE_KEY=sk" + "_test_" + "0" * 24 + "  # example value\n")'
+  "STRIPE_KEY=sk" + "_live_" + "0" * 24 + "  # documented placeholder\n")'
+
+case_run github-token-with-a-broken-checksum-says-so 1 "checksum invalid" '
+import os,pathlib
+# GitHub tokens carry a CRC32 of their body, so a hit can be settled offline.
+# Without this case the whole checksum routine could `return True` and every
+# battery in the repository stayed green. The body below is assembled at runtime
+# and its checksum does NOT validate - a token whose checksum DID validate is
+# what GitHub push protection blocks, and planting one in a public repository to
+# cover the other branch is refused.
+(pathlib.Path(os.environ["EHS_WORK"])/"docs/token.md").write_text(
+  "CI uses gh" + "p_" + "1a2b3c4d5e6f7g8h9i0j" + "1k2l3m4n5o6p7q8r" + "\n")'
 
 case_run inert-marker-elsewhere-on-the-line-does-not-suppress 1 "aws-access-key-id" '
 import os,pathlib
@@ -75,6 +91,7 @@ shutil.rmtree(pathlib.Path(os.environ["EHS_WORK"]))'
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
-echo "Result: OK. The gate finds published formats, ignores inert markers, refuses to let"
+echo "Result: OK. The gate finds published formats, ignores inert markers only when they"
+echo "        sit inside a real match, settles GitHub tokens by checksum, refuses to let"
 echo "        the bench exclusion hide an undeclared secret, and reports what it did not scan."
 exit 0

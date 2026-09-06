@@ -48,6 +48,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| do the batteries measure what they name | running | `gate-mutant-bank.sh` + self-test (15 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
@@ -649,6 +650,64 @@ A context enforced by the protection and **not** declared as required is reporte
 Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
+
+## Do the batteries measure what they name
+
+Every other control in this directory asks whether the repository is correct. None
+of them asks whether the batteries guarding those controls are worth anything, and
+none of them can: a battery reports on its gate, and nothing reports on the
+battery.
+
+The gap is not theoretical. A case named `the-copy-renamed-around-the-rule` sat
+green for weeks proving nothing — its fixture used a version string the lockfile
+already carried, so the value check fired first and returned the expected code,
+and the name path the case was named after was never reached. The case was green,
+the rule it claimed to cover was untested, and nothing in the repository could
+tell the difference.
+
+`gate-mutant-bank.sh` can. Each entry in `scripts/gates/data/mutant-bank.json`
+names one line of one gate, the edit that silences it, and the battery case that
+claims to cover it. The line is broken in a **throwaway clone** of the tree, the
+battery runs there, and three outcomes are distinguished where a naive runner sees
+two:
+
+| outcome | what it means |
+|---|---|
+| caught | the battery went red **and** the named case is among the failures |
+| caught elsewhere | the battery went red, but through some other case — the rule has coverage, the case does not deserve its name |
+| survived | the battery stayed green — nothing covers that rule |
+
+`expect: survives` is a first-class entry rather than an omission. One mutant makes
+`github_checksum_valid` return `True` unconditionally, and covering it would mean
+committing a checksum-valid GitHub token to a public repository, which is refused;
+the others are gaps nobody has closed yet. Both are written down with a reason,
+and the run prints how many there are — a bank whose survivors are invisible is a
+flattering number. The check runs in **both** directions: if someone adds the
+coverage a `survives` entry records as missing, this gate goes red asking for the
+bank to be updated.
+
+Ten mutants at four at a time cost about two minutes on a laptop, so the bank is
+kept small on purpose; `EHS_MUTANT_JOBS` caps the concurrency.
+
+**What it does not measure.** Every rule that is not in the bank. This is a floor
+under the batteries, not a coverage percentage, and it says so on every run.
+
+**The tree is never touched.** Mutations land in a clone under `TMPDIR` that is
+deleted when its battery returns. An earlier draft mutated the working tree in
+place behind a sentinel file, a byte-verified restore and a refusal to
+auto-recover — all of it justified by copying 268 MB per mutant being
+unaffordable. That stopped being true when the fixture trees started cloning
+through APFS `clonefile` in 0.22 s, and the whole apparatus was deleted along with
+its worst case, which was leaving a developer's checkout broken.
+
+**How the bank was seeded.** Not by hand-picking what looked plausible. Every
+statement in `scripts/gates/lib/*.py` that records a problem was silenced one at a
+time — the spans come from `ast`, so a call that closes three lines later is
+replaced whole rather than left as a syntax error — and each battery was run
+against the result. The survivors are the seed. Informational `info.append(...)`
+calls are excluded: silencing a printed count *should* leave a battery green, and
+scoring that as a gap would be the instrument reporting its own false positive as
+a finding.
 
 ## Branch naming
 
