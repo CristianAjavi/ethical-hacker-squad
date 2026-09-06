@@ -650,6 +650,54 @@ Editing the JSON changes what is *declared*. Nothing changes on GitHub until `sc
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
 
+## What a battery run costs in disk
+
+Every one of the ten `*.selftest.sh` batteries copies the whole repository once
+per case, and until 2026-09-06 none of them freed its copy: the `trap ... EXIT`
+that cleans up fires when the battery as a whole is done, so the copies piled up
+until the last case had run. `gate-protected-paths.selftest.sh` has 32 cases at
+about 285 MB each, and that is 9.16 GB of disk that has to be free at once.
+
+It was not a theoretical ceiling. A battery run went red with
+`No space left on device` inside that battery, and the first reading of it — the
+disk was full — is a story, not a measurement. Sampling free space every two
+seconds through a run is what separated the two possible causes, and the number it
+returned was unambiguous: free space fell from 9.43 GB to 0.26 GB, with a single
+`ehs-protected-*` tree alive.
+
+Each case now frees its copy as soon as the gate has run against it, which is the
+line after the output has been captured; from there the case only greps text it
+already holds.
+
+| | peak disk | verdicts |
+|---|---|---|
+| `gate-protected-paths.selftest.sh` before | 9.16 GB | 32 ok |
+| `gate-protected-paths.selftest.sh` after | 0.29 GB | 32 ok |
+| `run-batteries.sh` before | 9.1 GB | rc 0, 30 batteries |
+| `run-batteries.sh` after | 0.3 GB | rc 0, 344 cases ok, 0 failures |
+
+**Freed on both paths, including a failing case.** The first version of the change
+kept a failed case's tree, on the theory that it is the post-mortem. A negative
+control killed that theory: after deliberately breaking one case, **zero** trees
+were left in `TMPDIR`, because the battery's exit trap removes the whole scratch
+directory whatever happened. A failed case's tree survives exactly until the
+battery ends, which is when nobody can look at it. Keeping it bought nothing and
+left a red run — the run least able to afford it — unbounded.
+
+**No wall clock is quoted, because this machine cannot support one.** Three runs
+of `run-batteries.sh` within two hours came back at 541.1 s, 500.9 s and 1412.9 s,
+and the suite has previously measured 141.5 s and 1039.7 s an hour apart. Peak
+disk is stable across every run; elapsed time here is drift, and reporting it as
+before-and-after would be reporting the machine's mood as a result.
+
+The verdict counts are the regression control, and they are branch-dependent: 30
+batteries where `gate-mutant-bank.selftest.sh` exists, 29 without it. The stronger
+control is `gate-mutant-bank.sh` itself, run with both changes in place — case
+counts cannot tell a battery that still measures its rule from one that has
+stopped, and breaking each banked rule in turn can. It came back **10 of 10 caught
+by the case that claims the rule**, with the one accepted survivor still exactly
+the one the bank names.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.
