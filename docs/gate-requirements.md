@@ -756,6 +756,79 @@ stopped, and breaking each banked rule in turn can. It came back **10 of 10 caug
 by the case that claims the rule**, with the one accepted survivor still exactly
 the one the bank names.
 
+## What the gate suite costs, and where
+
+`run-all.sh` reports a cost per gate, a total, and the gates that take a tenth or
+more of the run. It did not until 2026-09-06, and the reason it does now is that
+`gate-mutant-bank.sh` arrived, took the local suite from about 27 s to **157.8 s**,
+and nothing in this repository said so. The regression was found by writing a
+profiler in a scratchpad, which is the definition of an instrument the project
+does not have. Measured, one gate at a time:
+
+```
+gate-mutant-bank.sh      131.0 s   83.0%
+gate-handover-contract.sh  4.9 s    3.1%
+gate-reproduction.sh       4.2 s    2.7%
+gate-budget-ledger.sh      3.8 s    2.4%
+the remaining 31          13.9 s    8.8%
+```
+
+The parts sum to 157.8 s and three consecutive full runs measured 154.8, 158.8 and
+157.3 s, a 2.6% spread — the runner's own bookkeeping is not a measurable share of
+it. That stability is worth stating because it does **not** hold for
+`run-batteries.sh`, whose elapsed time on this machine has ranged from 141.5 s to
+1412.9 s and cannot support a before-and-after claim at all. The two suites differ
+in kind: one reads files, the other copies the repository per case.
+
+**The obvious knob does nothing, and that was measured rather than assumed.**
+`gate-mutant-bank.sh` runs one battery per banked mutant, four at a time, and four
+was chosen before anyone knew what the gate cost. On ten cores:
+
+```
+EHS_MUTANT_JOBS=4    129.7 s     —        free disk floor 8.53 GB
+EHS_MUTANT_JOBS=6    119.4 s   -7.9%      8.31 GB
+EHS_MUTANT_JOBS=8    121.7 s   -6.2%      8.29 GB
+EHS_MUTANT_JOBS=10   124.5 s   -4.0%      8.28 GB
+```
+
+Eight and ten are *worse* than six, and the whole spread is inside the noise of a
+single battery run. The floor is not the queue, it is the slowest single battery:
+the `secret-scan` mutants take 87.2 s each and no amount of concurrency goes under
+one of them. Raising the default would have been a change that looks like a speed
+fix and buys nothing, and only the sweep says so.
+
+**What does move it is making the batteries themselves cheaper.** With the
+clone-per-case change on `loop/battery-fixture-weight` merged in, the same gate on
+the same machine:
+
+```
+jobs=4    129.7 s -> 76.3 s   -41%
+jobs=10   124.5 s -> 71.4 s   -43%
+secret-scan mutant      87.2 s -> 50.0 s
+licence-hygiene mutant  66.6 s -> 32.9 s
+```
+
+That change was opened before this gate existed. Its value has roughly doubled
+since, because the mutant bank now runs those batteries once per banked rule, and
+nothing recorded that until the profile above.
+
+### The clock declares its own resolution
+
+`EPOCHREALTIME` is a bash 5 variable and macOS ships bash 3.2, so locally the best
+clock available is the `SECONDS` builtin and it counts whole seconds. A gate that
+finished inside one of those seconds prints `<1s` and never `0.0s`: a zero would be
+the runner claiming a precision it did not have, which is the failure it exists to
+catch in the gates it runs.
+
+Proved in the negative by `scripts/gates/run-all.selftest.sh`. The cases are not
+about the clock being accurate — they are about the three ways a `|`-delimited
+report breaks while every exit code stays right: a verdict changed by the
+instrument that only meant to time it, a cost printed for a gate whose cost was
+never measured, and a `0.0s` the clock cannot support. Under the one-second clock
+one case cannot run at all and says so rather than counting itself a pass:
+telling eleven equal gates from one that dominates needs a resolution finer than
+the error of the reading.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.

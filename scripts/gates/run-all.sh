@@ -82,6 +82,37 @@ LIVE_SCOPED='gate-governance-drift.sh'
 # a gate (the gate checking itself). They run separately, with --selftests.
 SELFTEST_PATTERN='*.selftest.sh'
 
+# ---------------------------------------------------------------------------
+# WHAT EACH GATE COSTS.
+# A verdict without a cost cannot tell a suite that got slower from one that did
+# not. `gate-mutant-bank.sh` arrived and took the local suite from about 27 s to
+# 157.8 s - 83% of the whole run - and nothing here said so, because this runner
+# had never reported a cost. It does now, and it declares its own resolution
+# rather than inventing one: EPOCHREALTIME is a bash 5 variable, macOS ships bash
+# 3.2, and there the best clock available is the SECONDS builtin, which counts
+# whole seconds. A gate that finished inside one of those seconds prints `<1s`.
+# It does NOT print 0.0s - that would be this runner claiming a precision it did
+# not have, which is the exact failure it exists to catch in the gates it runs.
+if [ -n "${EPOCHREALTIME:-}" ]; then CLOCK=ms; else CLOCK=s; fi
+T_TOTAL=0
+
+now_ms() {
+  if [ "$CLOCK" = ms ]; then
+    local t="${EPOCHREALTIME}"
+    t="${t//[!0-9]/}"
+    printf '%s' "${t:0:13}"
+  else
+    printf '%s000' "$SECONDS"
+  fi
+}
+
+# Milliseconds to something a person reads. Under the fallback clock anything
+# that measured zero is reported as under a second, never as zero.
+fmt_ms() {
+  if [ "$1" -eq 0 ] && [ "$CLOCK" = s ]; then printf '<1s'; return; fi
+  printf '%d.%ds' "$(( $1 / 1000 ))" "$(( ($1 % 1000) / 100 ))"
+}
+
 ONLY=""
 SKIP=""
 LIST_ONLY=0
@@ -211,7 +242,7 @@ while IFS= read -r g <&3; do
     *)
       if [ ! -x "$g" ]; then
         gate_warn "$name is neither *.sh nor has the execute bit: I do not know how to launch it"
-        printf '2|%s|I do not know how to run it\n' "$name" >> "$RESULTS"
+        printf '2|%s|0|I do not know how to run it\n' "$name" >> "$RESULTS"
         n_unmeas=$((n_unmeas + 1)); n_run=$((n_run + 1))
         continue
       fi
@@ -219,16 +250,20 @@ while IFS= read -r g <&3; do
   esac
 
   rc=0
+  t_ini=$(now_ms)
   case "$name" in
     *.sh) bash "$g" </dev/null || rc=$? ;;
     *)    "$g" </dev/null || rc=$? ;;
   esac
+  t_ms=$(( $(now_ms) - t_ini ))
+  [ "$t_ms" -lt 0 ] && t_ms=0
+  T_TOTAL=$((T_TOTAL + t_ms))
   n_run=$((n_run + 1))
   case "$rc" in
-    0) n_ok=$((n_ok + 1));      printf '0|%s|measured, no findings\n' "$name" >> "$RESULTS" ;;
-    1) n_fail=$((n_fail + 1));  printf '1|%s|measured, FAILS\n' "$name" >> "$RESULTS" ;;
-    2) n_unmeas=$((n_unmeas + 1)); printf '2|%s|COULD NOT MEASURE\n' "$name" >> "$RESULTS" ;;
-    *) n_unmeas=$((n_unmeas + 1)); printf '2|%s|unexpected code %s, treated as COULD NOT MEASURE\n' "$name" "$rc" >> "$RESULTS" ;;
+    0) n_ok=$((n_ok + 1));      printf '0|%s|%s|measured, no findings\n' "$name" "$t_ms" >> "$RESULTS" ;;
+    1) n_fail=$((n_fail + 1));  printf '1|%s|%s|measured, FAILS\n' "$name" "$t_ms" >> "$RESULTS" ;;
+    2) n_unmeas=$((n_unmeas + 1)); printf '2|%s|%s|COULD NOT MEASURE\n' "$name" "$t_ms" >> "$RESULTS" ;;
+    *) n_unmeas=$((n_unmeas + 1)); printf '2|%s|%s|unexpected code %s, treated as COULD NOT MEASURE\n' "$name" "$t_ms" "$rc" >> "$RESULTS" ;;
   esac
 done 3< "$LIST"
 
@@ -261,13 +296,40 @@ FINAL=0
 printf '\n===== GATE SUMMARY =====\n'
 printf 'discovered: %d | run: %d | green: %d | FAIL: %d | UNMEASURABLE: %d\n' \
   "$n_found" "$n_total" "$n_ok" "$n_fail" "$n_unmeas"
-while IFS='|' read -r rc name msg; do
+while IFS='|' read -r rc name ms msg; do
   case "$rc" in
-    0) gate_ok   "$name — $msg" ;;
-    1) gate_fail "$name — $msg" ;;
-    *) gate_warn "$name — $msg" ;;
+    0) gate_ok   "$name — $msg ($(fmt_ms "$ms"))" ;;
+    1) gate_fail "$name — $msg ($(fmt_ms "$ms"))" ;;
+    *) gate_warn "$name — $msg ($(fmt_ms "$ms"))" ;;
   esac
 done < "$RESULTS"
+
+# WHERE THE TIME WENT. Only the gates worth acting on: a list of 35 costs is a
+# table nobody reads, and the question this answers is which gate to look at.
+# The threshold is a tenth of the run, so a suite with no dominant gate prints
+# the total and stops rather than manufacturing a culprit out of the largest of
+# thirty-five equals.
+# A total of zero is not a reason to say nothing. Under the one-second clock a
+# whole fast suite measures zero, and that is exactly when an instrument
+# guarded by a threshold goes quiet on the runs a person reads most. `<1s`
+# already exists to report a small number honestly; use it.
+if [ "$n_run" -gt 0 ]; then
+  printf '\ncost: %s across %d gate(s)' "$(fmt_ms "$T_TOTAL")" "$n_run"
+  DOM=""
+  while IFS='|' read -r rc name ms msg; do
+    [ "${ms:-0}" -gt 0 ] || continue
+    [ "$T_TOTAL" -gt 0 ] || continue
+    if [ $(( ms * 10 )) -ge "$T_TOTAL" ]; then
+      DOM="$DOM
+  $(printf '%6s  %2d%%  %s' "$(fmt_ms "$ms")" "$(( ms * 100 / T_TOTAL ))" "$name")"
+    fi
+  done < "$RESULTS"
+  if [ -n "$DOM" ]; then
+    printf ', and a tenth or more of it is in:%s\n' "$DOM"
+  else
+    printf ', none of them a tenth of the run on its own\n'
+  fi
+fi
 
 if [ "$n_deferred" -gt 0 ]; then
   printf '\nNOT RUN HERE (declared, not silenced):%s\n' "$DEFERRED"
@@ -281,16 +343,16 @@ fi
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     printf '## Gates\n\n'
-    printf '| Result | Gate | Detail |\n|---|---|---|\n'
-    while IFS='|' read -r rc name msg; do
+    printf '| Result | Gate | Detail | Cost |\n|---|---|---|---|\n'
+    while IFS='|' read -r rc name ms msg; do
       case "$rc" in
-        0) printf '| OK 0 measured | `%s` | %s |\n' "$name" "$msg" ;;
-        1) printf '| FAIL 1 measured | `%s` | %s |\n' "$name" "$msg" ;;
-        *) printf '| UNMEASURABLE 2 | `%s` | %s |\n' "$name" "$msg" ;;
+        0) printf '| OK 0 measured | `%s` | %s | %s |\n' "$name" "$msg" "$(fmt_ms "$ms")" ;;
+        1) printf '| FAIL 1 measured | `%s` | %s | %s |\n' "$name" "$msg" "$(fmt_ms "$ms")" ;;
+        *) printf '| UNMEASURABLE 2 | `%s` | %s | %s |\n' "$name" "$msg" "$(fmt_ms "$ms")" ;;
       esac
     done < "$RESULTS"
-    printf '\n**discovered %d · run %d · green %d · fail %d · unmeasurable %d**\n' \
-      "$n_found" "$n_total" "$n_ok" "$n_fail" "$n_unmeas"
+    printf '\n**discovered %d · run %d · green %d · fail %d · unmeasurable %d · %s**\n' \
+      "$n_found" "$n_total" "$n_ok" "$n_fail" "$n_unmeas" "$(fmt_ms "$T_TOTAL")"
     if [ "$n_deferred" -gt 0 ]; then
       printf '\nNot run here (declared):%s\n' "$DEFERRED"
     fi
