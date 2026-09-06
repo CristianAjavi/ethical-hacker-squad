@@ -778,11 +778,19 @@ attributing all of it to sharding would be false:
 | sharded across 13 runners, end to end, plan and verdict included | **111 s** |
 
 Sharding, machine held constant: **2.6x**, and the critical path is
-`corpus_contract.py`'s 82 s exactly as the cost table predicted. The remaining
-**9.5x is the machine** — a 4-vCPU cloud runner against a 10-core Mac, same work,
-same topology. That gap is not this gate's to fix, but it is why the local figure
-must never be quoted as if it measured the sweep rather than the box it ran on.
-The counts are identical on both: 125 sites, 27 survive, 98 die.
+`corpus_contract.py`'s 82 s exactly as the cost table predicted. That is the
+figure this workflow is responsible for.
+
+**The 2695 s is one run, and no ratio is drawn from it.** It was taken on a box
+that was also running actionlint and `gh`. An earlier version of this section
+divided it by the CI figure and called the remainder "9.5x, the machine"; that
+was noise wearing a decimal point. Measured the way the next section says to —
+five runs, nothing else on the machine — the same battery is **35.2 s median over
+a 30.1–36.4 s range**, an 18% spread, against the runner's 9.3 s per mutant *with
+four-way contention*. About **3.8x**, with the Mac given the easier condition.
+
+The counts are identical on both machines, which is the part that says the runner
+really did the work: 125 sites, 27 survive, 98 die.
 
 Sharding opens exactly one hole, and it is the same hole as before: a library
 nobody put in the matrix would be skipped in silence. Two things close it. The
@@ -831,6 +839,37 @@ Three further cases are refusals rather than verdicts, because an unread result
 is not a clean one: a battery already red before anything was mutated
 (`red-baseline-refuses-instead-of-reporting`), a selection matching no library,
 and a library with no report site at all. All three exit 2.
+
+## A single timing is not a measurement
+
+Every wall-clock figure this project published was one run. Then the same
+battery, three times back to back on a quiet machine with nothing changed, came
+back 30 s, 45 s, 38 s — a spread wider than most of the improvements those
+figures were used to claim. Nothing carried an error bar, so nothing could be
+told apart from noise, and one conclusion drawn that way ("the Mac is 9.5x slower
+than the runner") had to be withdrawn.
+
+```bash
+scripts/time-repeat.py --runs 5 --label "the battery" -- bash scripts/gates/gate-corpus-contract.selftest.sh
+```
+
+It prints every run, then the median **with its range and the spread as a
+percentage**, and it will not print a median alone. What it refuses matters more
+than what it prints:
+
+| | |
+|---|---|
+| `--runs 1` | refused. One sample cannot show a spread, and that is the whole point |
+| the command exits non-zero | exit 2, NOT MEASURED. A command that failed is not a slow command |
+| `--warmup` | runs are dropped only after being printed, never silently |
+| `--max-spread` | judges the **spread**, not the speed: a box too noisy to measure on says so instead of handing back a median |
+
+Quote the range whenever the spread is over 10%. A change smaller than the spread
+is not an improvement you measured; it is the box.
+
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 14 cases, and the
+battery itself swept twelve ways — every mutant caught by the case written for
+it, twelve of twelve.
 
 ## Branch naming
 
