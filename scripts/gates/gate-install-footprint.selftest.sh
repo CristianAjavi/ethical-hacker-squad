@@ -2,12 +2,13 @@
 # Self-test for gate-install-footprint.sh. Each case seeds one tiny git repository
 # carrying exactly one shape, hands the core a policy written for that shape, and
 # asserts the exit code AND the reason - plus a control on the untouched
-# repository and five cases that must report could-not-measure.
+# repository and ten cases that must report could-not-measure.
 #
 # THE FIXTURES ARE SEEDED, NEVER COPIED. Thirteen batteries in this repository tar
 # the whole tree per case and move 258 MB of node_modules to make a point about
 # one file. This gate reads the git index and a few bytes per file, so a case here
-# is `git init` in a temporary directory with two files in it.
+# is `git init` in a temporary directory with two files in it - and the one case
+# that needs 2001 of them writes them with a shell builtin in under a second.
 #
 # AND NOTHING SEEDED HERE MAY EXIST INSIDE THE REPOSITORY. The gate under test
 # reads the tracked tree; a fixture written into `docs/` or `scripts/` would be
@@ -135,6 +136,106 @@ put a-binary-where-only-text-is-declared docs/a.md '# a'
 stage a-binary-where-only-text-is-declared
 case_run a-binary-where-only-text-is-declared 1 "it contains a NUL byte" --policy "$TMP/base.json"
 
+# --- what the gate reads: the git OBJECT, never the work tree ------------------
+#
+# The mode used to be read from the index and the bytes from `<root>/<path>`, so
+# two questions were answered about two different files. Both holes below were
+# reproduced on a clone of this repository, and both passed with rc=0.
+
+# A tracked symlink is mode 120000. Its extension is declared, its execute bit is
+# not set, and the old NUL check followed the link and answered about the TARGET
+# - so the verdict on one commit depended on what sat outside the repository that
+# day. What travels here is a pointer, and it resolves on the reader's disk.
+newrepo a-tracked-symlink-inside-the-repo
+put a-tracked-symlink-inside-the-repo docs/a.md '# a'
+ln -s a.md "$TMP/a-tracked-symlink-inside-the-repo/docs/link.md"
+stage a-tracked-symlink-inside-the-repo
+case_run a-tracked-symlink-inside-the-repo 1 "docs/link.md  policy 'docs': mode 120000 is a symlink" --policy "$TMP/base.json"
+
+# The one that was measured: a link out of the repository altogether.
+newrepo a-tracked-symlink-out-of-the-repo
+put a-tracked-symlink-out-of-the-repo docs/a.md '# a'
+ln -s /etc/passwd "$TMP/a-tracked-symlink-out-of-the-repo/docs/referencia.md"
+stage a-tracked-symlink-out-of-the-repo
+case_run a-tracked-symlink-out-of-the-repo 1 "docs/referencia.md  policy 'docs': mode 120000 is a symlink" --policy "$TMP/base.json"
+
+# A dangling link has no target to open at all. The exit code IS the assertion
+# here: 1 is a verdict, and the 2 that a crash on its way to one would produce
+# fails this case.
+newrepo a-symlink-whose-target-is-not-there
+put a-symlink-whose-target-is-not-there docs/a.md '# a'
+ln -s ./nowhere.md "$TMP/a-symlink-whose-target-is-not-there/docs/dangling.md"
+stage a-symlink-whose-target-is-not-there
+case_run a-symlink-whose-target-is-not-there 1 "docs/dangling.md  policy 'docs': mode 120000 is a symlink" --policy "$TMP/base.json"
+
+# A gitlink brings an entire tree from a repository this one does not control.
+# Seeded with update-index rather than a real submodule, and AFTER staging: there
+# is no such directory on disk - which is the point - so a later `git add -A`
+# would stage its deletion instead.
+newrepo a-gitlink-that-drags-in-another-tree
+put a-gitlink-that-drags-in-another-tree docs/a.md '# a'
+stage a-gitlink-that-drags-in-another-tree
+git -C "$TMP/a-gitlink-that-drags-in-another-tree" update-index --add \
+  --cacheinfo 160000,0000000000000000000000000000000000000001,vendor/pinned >/dev/null 2>&1
+policy withvendor '{"declared":3,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":["md"],"executable":false,"binary":false,"exemptions":[]},{"id":"bin","prefix":"bin/","why":"the scripts a user is meant to run","extensions":["sh"],"executable":true,"binary":true,"exemptions":[]},{"id":"vendor","prefix":"vendor/","why":"third-party material this repository vendors in and ships exactly as it stands","extensions":["md",""],"executable":false,"binary":false,"exemptions":[]}]}'
+case_run a-gitlink-that-drags-in-another-tree 1 "vendor/pinned  policy 'vendor': mode 160000 is a gitlink" --policy "$TMP/withvendor.json"
+
+# The index carries NUL bytes and the work tree carries plain text over them,
+# uncommitted. The old reader opened the work tree and passed; the clone that
+# reaches the stranger carries the NULs, and now so does the verdict.
+newrepo a-nul-blob-under-clean-looking-text
+put a-nul-blob-under-clean-looking-text docs/a.md '# a'
+{ printf 'ELF'; head -c 4 /dev/zero; printf 'tail\n'; } > "$TMP/a-nul-blob-under-clean-looking-text/docs/blob.md"
+stage a-nul-blob-under-clean-looking-text
+printf 'nothing to see here, only text\n' > "$TMP/a-nul-blob-under-clean-looking-text/docs/blob.md"
+case_run a-nul-blob-under-clean-looking-text 1 "docs/blob.md  policy 'docs': it contains a NUL byte" --policy "$TMP/base.json"
+
+# --- which policy claims a file, and how the coverage figure is printed --------
+#
+# Three shapes that every other case in this battery is blind to. Measured with a
+# bank of 15 mutants against the 17 cases that came before: these were the three
+# that survived, and one case each is what kills them.
+
+# A prefix WITHOUT a trailing slash matches by equality, not by prefix. No other
+# case here has a policy for a loose file, so swapping that equality for a
+# `startswith` passed all seventeen - while handing `LICENSE-APACHE` to the
+# policy somebody wrote about `LICENSE`, which is the exact example named in the
+# comment on `policy_for`.
+newrepo a-loose-prefix-matches-by-equality
+put a-loose-prefix-matches-by-equality LICENSE 'MIT, the licence this repository ships under'
+put a-loose-prefix-matches-by-equality LICENSE-APACHE 'a second licence nobody wrote a policy about'
+stage a-loose-prefix-matches-by-equality
+policy loose '{"declared":1,"policies":[{"id":"root-license","prefix":"LICENSE","why":"the licence text at the root of the work tree: one loose file with no extension","extensions":[""],"executable":false,"binary":false,"exemptions":[]}]}'
+case_run a-loose-prefix-matches-by-equality 1 "FINDING  LICENSE-APACHE" --policy "$TMP/loose.json"
+
+# The LONGEST matching prefix wins, not the first one in the file. Inert today,
+# because no two shipped policies overlap, and letal the day somebody writes a
+# stricter rule for a subdirectory: a first-match reader keeps applying the loose
+# parent and the stricter child never fires once. The loose parent is listed
+# first here on purpose - that is the order in which the mutant is wrong.
+newrepo the-longest-prefix-wins-not-the-first
+put the-longest-prefix-wins-not-the-first bench/tool.py 'the loose parent declares py, and this file is fine'
+put the-longest-prefix-wins-not-the-first bench/cases/x.py 'only the stricter child has an opinion about this one'
+stage the-longest-prefix-wins-not-the-first
+policy nested '{"declared":2,"policies":[{"id":"bench","prefix":"bench/","why":"the evaluation corpus, where a Python fixture is the normal state and not a surprise","extensions":["py","md"],"executable":true,"binary":true,"exemptions":[]},{"id":"bench-cases","prefix":"bench/cases/","why":"the case material a run reads, which is prose and carries no code at all","extensions":["md"],"executable":false,"binary":false,"exemptions":[]}]}'
+case_run the-longest-prefix-wins-not-the-first 1 "FINDING  bench/cases/x.py  policy 'bench-cases'" --policy "$TMP/nested.json"
+
+# Coverage must not round a lost file up to a round 100.0. Under about 2000 files
+# `%.1f` cannot reach 100.0 with one file missing, so the guard that forces 99.9
+# is invisible to every other case here and a mutant deleting it survived all of
+# them. This case asserts the PRINTED LINE, not the exit code: the exit code is 1
+# either way, and the lie is in the figure.
+newrepo coverage-must-not-round-a-lost-file-up
+mkdir -p "$TMP/coverage-must-not-round-a-lost-file-up/docs"
+i=1
+while [ "$i" -le 2000 ]; do
+  printf '# %s\n' "$i" > "$TMP/coverage-must-not-round-a-lost-file-up/docs/f$i.md"
+  i=$((i + 1))
+done
+put coverage-must-not-round-a-lost-file-up stray.txt 'the one file nobody declared'
+stage coverage-must-not-round-a-lost-file-up
+case_run coverage-must-not-round-a-lost-file-up 1 "cobertura: 2000/2001 (99.9%)" --policy "$TMP/base.json"
+
 # --- the written exemption, and its teeth -------------------------------------
 
 GOOD_WHY='a declared fixture whose ELF magic number is the only thing that proves the detector sees it'
@@ -220,6 +321,73 @@ case_run a-policy-that-does-not-parse 2 "Expecting" --policy "$TMP/unparseable.j
 # wrong directory would report a flawless 0/0 and read as a pass.
 newrepo git-ls-files-reports-zero-files
 case_run git-ls-files-reports-zero-files 2 "blind zero" --policy "$TMP/base.json"
+
+# --- a policy key that is there, and is not what the reader assumed ------------
+#
+# PRESENT is not CORRECT, and the loader used to check only the first. Every
+# policy below passes the presence check and every one silently changes what the
+# gate measures - measured against a control of three expected findings:
+#
+#   extensions as the string "md"      -> 2 findings, because `"d" in "md"` is
+#                                         true: a string is a list of its letters
+#   extensions as the string "mdpycd"  -> 1 finding, two extensions simply lost
+#   executable as the string "false"   -> 2 findings: a non-empty string is TRUE,
+#                                         so the execute-bit rule stopped firing
+#                                         while the policy still read as if it
+#                                         forbade one
+#   why empty, or null                 -> accepted, on a gate that demands 20
+#                                         useful characters to waive one check on
+#                                         one file
+#
+# All five are could-not-measure now, naming the policy and the key.
+newrepo extensions-given-as-a-bare-string
+put extensions-given-as-a-bare-string docs/a.md '# a'
+stage extensions-given-as-a-bare-string
+policy ext-str '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":"md","executable":false,"binary":false,"exemptions":[]}]}'
+case_run extensions-given-as-a-bare-string 2 "policy 'docs' declares extensions as a value of type str ('md')" --policy "$TMP/ext-str.json"
+
+newrepo extensions-as-a-run-of-letters
+put extensions-as-a-run-of-letters docs/a.md '# a'
+stage extensions-as-a-run-of-letters
+policy ext-run '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":"mdpycd","executable":false,"binary":false,"exemptions":[]}]}'
+case_run extensions-as-a-run-of-letters 2 "policy 'docs' declares extensions as a value of type str ('mdpycd')" --policy "$TMP/ext-run.json"
+
+newrepo executable-given-as-the-string-false
+put executable-given-as-the-string-false docs/a.md '# a'
+stage executable-given-as-the-string-false
+policy exec-str '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":["md"],"executable":"false","binary":false,"exemptions":[]}]}'
+case_run executable-given-as-the-string-false 2 "policy 'docs' declares executable as a value of type str ('false')" --policy "$TMP/exec-str.json"
+
+# The sentence saying what a root IS is the whole of "claimed by a written
+# policy". A root was allowed to skip it while one file could not be waived
+# without twenty useful characters.
+newrepo a-policy-whose-why-is-empty
+put a-policy-whose-why-is-empty docs/a.md '# a'
+stage a-policy-whose-why-is-empty
+policy why-empty '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"","extensions":["md"],"executable":false,"binary":false,"exemptions":[]}]}'
+case_run a-policy-whose-why-is-empty 2 "policy 'docs' says why in 0 useful character(s)" --policy "$TMP/why-empty.json"
+
+newrepo a-policy-whose-why-is-null
+put a-policy-whose-why-is-null docs/a.md '# a'
+stage a-policy-whose-why-is-null
+policy why-null '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":null,"extensions":["md"],"executable":false,"binary":false,"exemptions":[]}]}'
+case_run a-policy-whose-why-is-null 2 "policy 'docs' declares why as a value of type NoneType" --policy "$TMP/why-null.json"
+
+# An exemption is the one place where a check is withdrawn on purpose, so its own
+# shape is checked before it is honoured. Neither of these two turned a single
+# case red when the check was first written, which is how a validation branch
+# ends up shipped and never exercised.
+newrepo an-exemption-with-no-path-at-all
+put an-exemption-with-no-path-at-all docs/a.md '# a'
+stage an-exemption-with-no-path-at-all
+policy ex-nopath '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":["md"],"executable":false,"binary":false,"exemptions":[{"why":"a reason with nothing at all attached to it"}]}]}'
+case_run an-exemption-with-no-path-at-all 2 "policy 'docs' carries an exemption (#0) with no path" --policy "$TMP/ex-nopath.json"
+
+newrepo an-exemption-whose-path-is-not-a-string
+put an-exemption-whose-path-is-not-a-string docs/a.md '# a'
+stage an-exemption-whose-path-is-not-a-string
+policy ex-numpath '{"declared":1,"policies":[{"id":"docs","prefix":"docs/","why":"prose a person reads and nothing executes","extensions":["md"],"executable":false,"binary":false,"exemptions":[{"path":7,"why":"a path that is a number matches no tracked file and protects nothing"}]}]}'
+case_run an-exemption-whose-path-is-not-a-string 2 "policy 'docs' declares exemptions[0].path as a value of type int (7)" --policy "$TMP/ex-numpath.json"
 
 echo "gate-install-footprint: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

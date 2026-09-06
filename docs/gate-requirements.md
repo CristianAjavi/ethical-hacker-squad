@@ -49,7 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| the install footprint: every file that travels is declared | running | `gate-install-footprint.sh` + self-test (17 cases) |
+| the install footprint: every file that travels is declared | running | `gate-install-footprint.sh` + self-test (32 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -88,6 +88,31 @@ therefore exempted **in writing**, with its reason in the policy file, because w
 check and saying why are the same edit — and an exemption whose reason runs under 20 useful
 characters, or that points at a path the policy does not own, or that protects a file breaking no
 rule, is itself a finding.
+
+**What it reads is the git object, never the file on disk.** The mode comes from
+`git ls-files -s` and so do the bytes, fetched back with `git cat-file --batch`. That was not
+always true: the mode was read from the index while the bytes were read from `<root>/<path>`, and
+two questions answered about two different files is two holes, both of them since reproduced on a
+clone. A tracked symlink `skills/referencia.md -> /etc/passwd` passed with exit `0` — its
+extension is declared, no execute bit is set, and the NUL check followed the link and answered
+about `/etc/passwd`, so the verdict on one commit depended on what happened to sit outside the
+repository that day. And an uncommitted local edit switched the check off: plain text laid over a
+blob that carries NUL bytes passed, while `git status` saw the change and the clone the stranger
+receives still carried the NULs. Both are now exit `1`.
+
+**A mode that is neither `100644` nor `100755` is an undeclared shape**, reported in its own right
+and not waivable by an exemption. A symlink (`120000`) carries no content — it carries a path, and
+it resolves against the disk of whoever opens it. A gitlink (`160000`) drags in an entire tree
+from a repository this one does not control and no policy here has read a file of.
+
+**And the policy file is type-checked before it is obeyed**, because a key that is present but of
+the wrong type is a check that switches itself off in silence. Measured against a control of three
+expected findings: `"extensions": "md"` is not one extension but the two letters `m` and `d`, and
+returned two findings; `"extensions": "mdpycd"` returned one, having quietly lost two extensions;
+`"executable": "false"` is a non-empty string and therefore true, so the execute-bit rule stopped
+firing while the policy still read as though it forbade one; and a `why` that was empty or null
+was accepted outright, on a gate that demands twenty useful characters before one check on one
+file may be waived. Every one of those is now exit `2`, naming the policy and the key.
 
 What it does **not** decide: whether a declared file is *safe*. A policy says `bench/` may hold
 `.py`; it says nothing about what that Python does, and the fixtures under `bench/` are hostile on

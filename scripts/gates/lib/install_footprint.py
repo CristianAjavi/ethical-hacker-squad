@@ -19,6 +19,28 @@ first one: **coverage** - how many of the tracked files any policy claims. The
 failure mode is *a file nobody declared*, not *a file on a blocklist*, because a
 blocklist only ever catches what somebody already thought of.
 
+EVERY QUESTION IS ASKED OF THE GIT OBJECT, NEVER OF THE WORK TREE.  The mode
+comes from `git ls-files -s` and so do the bytes, read back with
+`git cat-file --batch`. This file used to read the mode from the index and then
+open `<root>/<path>` for the bytes, and that split answered two different
+questions about two different files. It cost two holes, both reproduced:
+
+*   A tracked symlink passed with rc=0. `skills/referencia.md -> /etc/passwd` is
+    mode `120000`; the extension is declared, no execute bit is set, and the NUL
+    check followed the link and answered about `/etc/passwd`. The verdict on one
+    commit then depended on what happened to be outside the repository that day.
+*   An uncommitted local edit switched the check off. Plain text laid over a
+    blob that carries NUL bytes gave rc=0, while `git status` saw the change and
+    the clone - which is what the stranger receives - still carried the NULs.
+
+Reading the object closes both: what this gate judges is what travels.
+
+A MODE THAT IS NOT `100644` OR `100755` IS AN UNDECLARED SHAPE, and a finding in
+its own right, not waivable by an exemption. A symlink (`120000`) carries no
+content - it carries a path, and it resolves against the disk of whoever opens
+it. A gitlink (`160000`) drags in an entire tree from a repository this one does
+not control and this gate has never read.
+
 WHY EACH ROOT GETS ITS OWN RULE.  `skills/` is Markdown that is never executed,
 so an execute bit there is a real question. `scripts/` is 99 executables on
 purpose and `bench/` is 5 more. Applying the `skills/` rule to the whole tree
@@ -26,9 +48,21 @@ would have reported 104 executables and one ELF fixture as defects - 105 red
 lines, every one of them correct code. A gate whose first red accuses the
 compliant is a gate somebody switches off.
 
-The execute bit read here is the **index** mode from `git ls-files -s`, not the
-work tree's. A plugin cache is a clone, so the index mode is the mode that lands
-on the stranger's disk; a local `chmod` that was never committed never travels.
+THE EXTENSION MATCH IS CASE-SENSITIVE, DELIBERATELY.  A policy declaring `py`
+does not claim `.PY`, and a file called `SETUP.PY` is reported. That reads as a
+false positive and it is not one: this gate exists to name the shape nobody
+declared, and nobody declared an upper-case extension. Folding case here would
+mean this reader deciding that two spellings are the same file type - which is
+true on this laptop's case-insensitive volume and false on the Linux box that
+runs CI, so the folding itself would travel worse than the finding does.
+
+THE POLICY FILE IS TYPE-CHECKED BEFORE IT IS OBEYED.  A key present but of the
+wrong type is a check that switches itself off in silence: `"executable":
+"false"` is a non-empty string and therefore true, so the execute-bit rule stops
+firing while the policy still reads as if it forbade one; `"extensions": "md"`
+is not a list of one extension but a list of the letters `m` and `d`, so `d.md`
+passes and `a.md` does not. Both were measured. A wrong type is rc=2 naming the
+policy and the key - never a quiet pass.
 
 WHAT THIS CANNOT ANSWER.
 
@@ -57,7 +91,26 @@ import sys
 REQUIRED_KEYS = ("id", "prefix", "why", "extensions", "executable", "binary",
                  "exemptions")
 MIN_REASON = 20
-READ_CHUNK = 65536
+
+# The only two modes that travel as content a policy can have an opinion about.
+FILE_MODE = "100644"
+EXEC_MODE = "100755"
+REGULAR_MODES = (FILE_MODE, EXEC_MODE)
+
+# mode -> (what it is, why a policy cannot vouch for it)
+UNDECLARED_SHAPES = {
+    "120000": (
+        "a symlink",
+        "a symlink carries no content of its own - it carries a path, and it "
+        "resolves against the disk of whoever opens it. The bytes a stranger "
+        "ends up reading are not in this repository at all",
+    ),
+    "160000": (
+        "a gitlink (a submodule)",
+        "a gitlink drags in an entire tree from a repository this one does not "
+        "control, and no policy here has read a single file of it",
+    ),
+}
 
 
 def unmeasurable(reason: str) -> int:
@@ -94,8 +147,15 @@ def percent(part: int, whole: int) -> str:
     return text
 
 
+def _shape_rank(mode: str) -> int:
+    """How much a mode asks of this gate, for picking one stage of an unmerged path."""
+    if mode not in REGULAR_MODES:
+        return 2
+    return 1 if mode == EXEC_MODE else 0
+
+
 def list_tracked(root: pathlib.Path):
-    """[(path, is_executable)] from the git index, or raise LookupError."""
+    """[(path, mode, sha)] from the git index, or raise LookupError."""
     try:
         proc = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-s", "-z"],
@@ -121,18 +181,95 @@ def list_tracked(root: pathlib.Path):
         meta, _, rel = entry.partition("\t")
         if not rel:
             raise LookupError("git ls-files -s produced a line with no path: %r" % entry)
-        mode = meta.split(" ", 1)[0]
-        is_exec = mode.endswith("755")
+        fields = meta.split(" ")
+        if len(fields) < 2:
+            raise LookupError(
+                "git ls-files -s produced a line with no mode and sha: %r" % entry
+            )
+        mode, sha = fields[0], fields[1]
         # An unmerged index reports the same path at several stages. Keep the
-        # path once, and keep the execute bit if any stage carries it.
-        seen[rel] = seen.get(rel, False) or is_exec
+        # path once, and keep the stage that asks the most of this gate: a mode
+        # nobody declared beats an execute bit, which beats a plain file.
+        if rel not in seen or _shape_rank(mode) > _shape_rank(seen[rel][0]):
+            seen[rel] = (mode, sha)
     if not seen:
         # A zero from an instrument that did not measure is not an absence.
         raise LookupError(
             "git ls-files reported zero files in %s: that is a blind zero, not a "
             "clean tree" % root
         )
-    return sorted(seen.items())
+    return sorted((rel, mode, sha) for rel, (mode, sha) in seen.items())
+
+
+def read_blobs(root: pathlib.Path, shas):
+    """{sha: bytes} for every sha asked for, in ONE git process.
+
+    Raises LookupError if git will not hand over a blob the index just listed:
+    a file whose bytes cannot be read is not a file that passed.
+    """
+    wanted = sorted(set(shas))
+    if not wanted:
+        return {}
+    payload = "".join(sha + "\n" for sha in wanted).encode("ascii")
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "cat-file", "--batch"],
+            input=payload, capture_output=True,
+        )
+    except OSError as exc:
+        raise LookupError("git cat-file could not be run: %s" % exc)
+    if proc.returncode != 0:
+        detail = proc.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise LookupError(
+            "git cat-file failed in %s (rc=%d): %s"
+            % (root, proc.returncode, detail[0] if detail else "no message")
+        )
+
+    # `<oid> SP <type> SP <size> LF <contents> LF` per request, or `<oid> SP
+    # missing LF` for one git will not produce.
+    buf = proc.stdout
+    out = {}
+    at = 0
+    for sha in wanted:
+        end = buf.find(b"\n", at)
+        if end < 0:
+            raise LookupError(
+                "git cat-file stopped before answering for %s: the blob the index "
+                "lists could not be read, and an unreadable blob is not a clean one"
+                % sha
+            )
+        header = buf[at:end].decode("utf-8", "replace").split(" ")
+        at = end + 1
+        if len(header) < 3:
+            raise LookupError(
+                "git cat-file answered %r for %s, which the index lists as a blob: "
+                "an object that is not there cannot be judged clean"
+                % (" ".join(header), sha)
+            )
+        try:
+            size = int(header[2])
+        except ValueError:
+            raise LookupError(
+                "git cat-file gave a size that is not a number for %s: %r"
+                % (sha, header[2])
+            )
+        out[sha] = buf[at:at + size]
+        at += size + 1  # the LF git writes after the contents
+    return out
+
+
+def type_error(pid, key: str, value, want: str) -> str:
+    """rc=2 text for a policy key whose type was never what this reader assumed."""
+    shown = repr(value)
+    if len(shown) > 60:
+        shown = shown[:57] + "..."
+    # "a value of type X" rather than "a X": the type name is whatever JSON
+    # produced, and half of them take "an".
+    return (
+        "policy %r declares %s as a value of type %s (%s) and this reader needs %s: "
+        "a key checked for PRESENCE and not for type is a check that switches itself "
+        "off in silence" % (pid, key, type(value).__name__, shown, want)
+    )
 
 
 def load_policies(path: pathlib.Path):
@@ -162,20 +299,76 @@ def load_policies(path: pathlib.Path):
                 "policy #%d (%r) is missing %s: a policy with a hole in it decides "
                 "nothing" % (i, pol.get("id", "<no id>"), ", ".join(missing))
             )
+
         pid = pol["id"]
+        if not isinstance(pid, str) or not pid.strip():
+            return None, type_error(
+                pol.get("id", "<no id>"), "id", pid, "a name that is a non-empty string"
+            )
         if pid in ids:
             return None, (
                 "two policies share the id %r: the second one silently replaces the "
                 "first, and whichever rule loses never reports again" % pid
             )
         ids.add(pid)
+
         prefix = pol["prefix"]
-        if not isinstance(prefix, str) or prefix.strip() in ("", "/"):
+        if not isinstance(prefix, str):
+            return None, type_error(pid, "prefix", prefix, "a non-empty string")
+        if prefix.strip() in ("", "/"):
             return None, (
                 "policy %r declares a catch-all prefix %r: a policy that matches "
                 "everything makes the coverage number meaningless, because nothing "
                 "can ever be undeclared again" % (pid, prefix)
             )
+
+        # `why` is the whole of "claimed by a written policy that says what it
+        # is". A root allowed to skip it is a root nobody declared, and the same
+        # minimum already asked of a one-file exemption is asked of it here.
+        why = pol["why"]
+        if not isinstance(why, str):
+            return None, type_error(pid, "why", why, "a written sentence, as a string")
+        reason = " ".join(why.split())
+        if len(reason) < MIN_REASON:
+            return None, (
+                "policy %r says why in %d useful character(s) and %d are required: "
+                "the sentence saying what this root IS is the whole of the claim that "
+                "somebody declared it" % (pid, len(reason), MIN_REASON)
+            )
+
+        exts = pol["extensions"]
+        if not isinstance(exts, list) or not all(isinstance(e, str) for e in exts):
+            return None, type_error(
+                pid, "extensions", exts,
+                "a list of strings - a bare string is read letter by letter, so "
+                '"md" declares "m" and "d" and declares neither "md" nor anything else'
+            )
+
+        for key in ("executable", "binary"):
+            if not isinstance(pol[key], bool):
+                return None, type_error(
+                    pid, key, pol[key],
+                    'a true boolean - the string "false" is a non-empty string and '
+                    "therefore true, which silently withdraws this check"
+                )
+
+        exemptions = pol["exemptions"]
+        if not isinstance(exemptions, list):
+            return None, type_error(pid, "exemptions", exemptions, "a list")
+        for j, ex in enumerate(exemptions):
+            if not isinstance(ex, dict):
+                return None, type_error(pid, "exemptions[%d]" % j, ex, "an object")
+            for key in ("path", "why"):
+                if key not in ex:
+                    return None, (
+                        "policy %r carries an exemption (#%d) with no %s: an "
+                        "exemption that does not say what it protects, or why, "
+                        "protects nothing" % (pid, j, key)
+                    )
+                if not isinstance(ex[key], str):
+                    return None, type_error(
+                        pid, "exemptions[%d].%s" % (j, key), ex[key], "a string"
+                    )
     return (doc, policies), None
 
 
@@ -199,21 +392,26 @@ def policy_for(rel: str, policies):
     return best
 
 
-def has_nul(path: pathlib.Path) -> bool:
-    with open(path, "rb") as fh:
-        while True:
-            chunk = fh.read(READ_CHUNK)
-            if not chunk:
-                return False
-            if b"\0" in chunk:
-                return True
+def undeclared_shape(rel: str, mode: str, pol) -> str:
+    """The finding for a tracked entry whose mode is not a regular file."""
+    what, why = UNDECLARED_SHAPES.get(
+        mode,
+        ("a mode this gate has no rule for",
+         "only %s and %s travel as content a policy can have an opinion about"
+         % (FILE_MODE, EXEC_MODE)),
+    )
+    return (
+        "FINDING  %s  policy %r: mode %s is %s, a shape no policy declares\n"
+        "         %s. No exemption waives this, because the thing to vouch for is "
+        "not in the repository." % (rel, pol["id"], mode, what, why)
+    )
 
 
-def violations_of(root: pathlib.Path, rel: str, is_exec: bool, pol):
+def violations_of(rel: str, is_exec: bool, pol, content: bytes):
     """The rules this file breaks under its policy, ignoring any exemption.
 
-    Raises LookupError when a rule needs bytes the file will not give up: an
-    unreadable file is not a clean file.
+    `content` is the bytes of the git object, or None when the policy allows
+    binaries and nobody needed to look.
     """
     broken = []
     ext = extension_of(rel)
@@ -225,16 +423,8 @@ def violations_of(root: pathlib.Path, rel: str, is_exec: bool, pol):
         )
     if is_exec and not pol["executable"]:
         broken.append("the execute bit is set and this root declares executable:false")
-    if not pol["binary"]:
-        full = root / rel
-        try:
-            if has_nul(full):
-                broken.append("it contains a NUL byte and this root declares binary:false")
-        except OSError as exc:
-            raise LookupError(
-                "cannot read %s, and its policy %r needs the bytes to answer the "
-                "binary question: %s" % (rel, pol["id"], exc)
-            )
+    if content is not None and b"\0" in content:
+        broken.append("it contains a NUL byte and this root declares binary:false")
     return broken
 
 
@@ -246,22 +436,27 @@ def audit(root: pathlib.Path, policies):
     findings = []
     honoured = []
     assigned = 0
-    # path -> the exemption that covers it, per policy id
+    # path -> the exemption that covers it, per policy id. The shape of each
+    # exemption is already guaranteed by load_policies, which refuses a malformed
+    # one with rc=2 rather than letting it reach here as a finding.
     exempt = {}
     for pol in policies:
         for ex in pol["exemptions"]:
-            if not isinstance(ex, dict) or "path" not in ex or "why" not in ex:
-                findings.append(
-                    "FINDING  policy %r carries an exemption with no path or no why: "
-                    "an exemption that does not say what it protects protects nothing"
-                    % pol["id"]
-                )
-                continue
             exempt[(pol["id"], ex["path"])] = ex
 
+    # Which paths are claimed, resolved first so the bytes can be fetched in one
+    # git process instead of one per file. Measured on this repository: 1205
+    # separate `cat-file blob` calls take 12.2 s, one `cat-file --batch` takes
+    # 0.26 s for byte-identical content.
+    claimed = [(rel, mode, sha, policy_for(rel, policies))
+               for rel, mode, sha in tracked]
+    blobs = read_blobs(root, [
+        sha for rel, mode, sha, pol in claimed
+        if pol is not None and mode in REGULAR_MODES and not pol["binary"]
+    ])
+
     used = set()
-    for rel, is_exec in tracked:
-        pol = policy_for(rel, policies)
+    for rel, mode, sha, pol in claimed:
         if pol is None:
             findings.append(
                 "FINDING  %s\n         nobody declared what this file is, and so it "
@@ -270,7 +465,18 @@ def audit(root: pathlib.Path, policies):
             continue
         assigned += 1
         ex = exempt.get((pol["id"], rel))
-        broken = violations_of(root, rel, is_exec, pol)
+        if mode not in REGULAR_MODES:
+            # Mark it used so this does not ALSO read as a dead exemption: one
+            # entry, one finding, and the finding is the shape.
+            if ex is not None:
+                used.add((pol["id"], rel))
+            findings.append(undeclared_shape(rel, mode, pol))
+            continue
+        # Indexed, not `.get`: the set fetched above is built from this exact
+        # condition, so a miss is a bug in this function and not a file to wave
+        # through. A `.get` here would answer None and skip the check in silence.
+        content = None if pol["binary"] else blobs[sha]
+        broken = violations_of(rel, mode == EXEC_MODE, pol, content)
         if ex is not None:
             used.add((pol["id"], rel))
             reason = " ".join(str(ex["why"]).split())
