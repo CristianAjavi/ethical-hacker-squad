@@ -48,7 +48,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
-| do the batteries measure what they name | running | `gate-mutant-bank.sh` + self-test (15 cases) |
+| do the batteries measure what they name | running | `gate-mutant-bank.sh` (18 entries) + self-test (15 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
@@ -686,8 +686,30 @@ flattering number. The check runs in **both** directions: if someone adds the
 coverage a `survives` entry records as missing, this gate goes red asking for the
 bank to be updated.
 
-Ten mutants at four at a time cost about two minutes on a laptop, so the bank is
-kept small on purpose; `EHS_MUTANT_JOBS` caps the concurrency.
+Eighteen mutants at five at a time cost about four minutes on a laptop — the bank
+is kept small on purpose, and `EHS_MUTANT_JOBS` caps the concurrency. Cost is not
+evenly spread: the five `corpus-contract` entries take about 220 s each because
+that battery is 31 cases, while every `triage-stage` entry finishes in 12 s.
+
+**What the second batch of entries measured.** Eight rules a sweep found no case
+for were covered and banked together, and building them turned up a distinction
+worth writing down: **six of the eight were never detection gaps at all.** Silence
+the rule that names a declared file missing from disk, or a duplicated `FP-` id,
+and the gate stays red anyway — a declared file that is not on disk is also a file
+no map lists, a duplicated id is also a hole in the numbering. What those rules
+contribute is the *diagnosis*, not the alarm.
+
+That is still worth a case, because a maintainer sent to the wrong line by a
+vaguer message loses the same afternoon. But it changes how the case has to be
+written: it asserts the **words**, never the exit code. A case written against the
+exit code would have passed with the rule deleted, which is the exact failure this
+gate exists to catch. Each of the eight was proved in both directions before it was
+written down — with the defect planted the gate says the words, and with the rule
+silenced it stops saying them.
+
+The two that were genuine detection gaps are marked as such in the bank: a pack
+file no role is dispatched to read, and two allowlist sources answering to the same
+id where the second silently shadows the first.
 
 **What it does not measure.** Every rule that is not in the bank. This is a floor
 under the batteries, not a coverage percentage, and it says so on every run.

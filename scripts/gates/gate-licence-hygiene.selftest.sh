@@ -89,6 +89,16 @@ case_run notice-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"NOTICE.md").unlink()'
 
+# A duplicated source id was the one rule in this library no case reached, and it
+# is a real detection gap: silence it and the gate goes GREEN with two sources
+# answering to the same id, where the second silently shadows the first.
+case_run duplicate-source-id-in-the-allowlist 1 "duplicate source id" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"docs/sources-allowlist.json"
+d=json.loads(p.read_text())
+d["sources"].append(dict(d["sources"][0]))
+p.write_text(json.dumps(d,indent=2)+"\n")'
+
 echo
 echo "Summary: $pass ok, $fail failures"
 if [ "$fail" -eq 0 ]; then
