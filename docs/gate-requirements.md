@@ -30,7 +30,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
-| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
+| reproduction cross-check | running | `gate-reproduction.sh` + self-test (34 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
