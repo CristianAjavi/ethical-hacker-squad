@@ -842,12 +842,17 @@ and a library with no report site at all. All three exit 2.
 
 ## A single timing is not a measurement
 
-Every wall-clock figure this project published was one run. Then the same
-battery, three times back to back on a quiet machine with nothing changed, came
-back 30 s, 45 s, 38 s — a spread wider than most of the improvements those
-figures were used to claim. Nothing carried an error bar, so nothing could be
-told apart from noise, and one conclusion drawn that way ("the Mac is 9.5x slower
-than the runner") had to be withdrawn.
+Wall-clock figures were being published off a single run. Then the same battery,
+three times back to back on a quiet machine with nothing changed, came back
+30 s, 45 s, 38 s — a spread wider than most of the improvements those figures
+were used to claim. Nothing carried an error bar, so nothing could be told apart
+from noise, and one conclusion drawn that way ("the Mac is 9.5x slower than the
+runner") had to be withdrawn.
+
+Not every figure was blind: "the battery suite went 364.7 s to 141.5 s" was taken
+twice per arm, **alternated**, with ranges that do not overlap. That one is under
+the bar set here and above the one that matters, and the difference is the whole
+subject of this section.
 
 ```bash
 scripts/time-repeat.py --runs 5 --label "the battery" -- bash scripts/gates/gate-corpus-contract.selftest.sh
@@ -863,13 +868,65 @@ than what it prints:
 | the command exits non-zero | exit 2, NOT MEASURED. A command that failed is not a slow command |
 | `--warmup` | runs are dropped only after being printed, never silently |
 | `--max-spread` | judges the **spread**, not the speed: a box too noisy to measure on says so instead of handing back a median |
+| `--against CMD` | runs a second command **alternately** with the first and answers the only question an A/B has: do the two ranges overlap? |
+| `--contenders N` | runs N more copies of the same command alongside each timed run, so a figure taken under load can be compared with one that was |
 
 Quote the range whenever the spread is over 10%. A change smaller than the spread
 is not an improvement you measured; it is the box.
 
-Proved in the negative: `scripts/time-repeat.selftest.sh`, 14 cases, and the
-battery itself swept twelve ways — every mutant caught by the case written for
-it, twelve of twelve.
+### A block against a block is not an A/B
+
+One afternoon, the same battery, unchanged, five runs a block:
+
+| block | median | range | internal spread |
+|---|---:|---|---:|
+| A | 28.3 s | 26.2–29.3 s | 11% |
+| B, twenty minutes later | 40.4 s | 35.3–41.1 s | 14% |
+| C, twenty minutes after that | 43.6 s | 40.7–47.6 s | 16% |
+
+Each block is tight. **No two blocks overlap.** Timing the old code in one block
+and the new code in the next would have "measured" a 54% regression that was
+nothing but the afternoon — and in the other direction it would have signed a 35%
+improvement just as confidently. That is what `--against` exists for: it
+interleaves the arms run for run, so whatever drifts drifts through both, and it
+ends on the only verdict worth printing —
+
+```
+The two ranges do not overlap. That is a difference between the commands, not
+the box under them.
+```
+
+or the refusal that is the same sentence turned around, `the two ranges OVERLAP`.
+
+### The number a figure was taken under travels with it
+
+`35 s` and `140 s` of the same battery do not contradict each other; one was
+taken alone and the other with four copies running. A median without its load is
+as misleading as a median without its range, so `--contenders` prints the
+condition against the number itself and not only in the header.
+
+That flag found something the moment it was pointed at this repository:
+`gate-corpus-contract.selftest.sh` still `tar`red the whole tree **once per case**
+and freed none of them until the battery exited — the two savings of earlier work
+had never reached it. Four copies at once could not run at all: 22.9 GB of free
+disk gone and `No space left on device`, which the instrument correctly reported
+as NOT MEASURED rather than as a slow run. Measured and fixed, alternated arms:
+
+| | before | after |
+|---|---|---|
+| wall clock | 40.5 s (28.8–51.9) | **15.1 s (10.2–16.1)**, ranges disjoint |
+| disk peak, one copy | 7,083 MB | **275 MB** |
+| four copies at once | did not fit on the machine | 50.7 s (46.8–72.0), 2,238 MB |
+
+The last row is what a mutant in the local sweep actually costs, and it is the
+figure the "140.4 s per mutant" of an earlier single run should be read against.
+
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 23 cases, and
+`scripts/time-repeat.mutants.py`, which silences one rule of the instrument at a
+time and demands that the case written for it goes red — **twenty of twenty**. A
+stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
+four anchors went stale during this very refactor, and a bank that quietly shrank
+would have called that progress. It is not wired to a runner yet; T-ehs-55.
 
 ## Branch naming
 

@@ -3,8 +3,10 @@
 
 WHY THIS IS IN THE REPOSITORY.
 
-Every wall-clock figure this project has published was a single run: "the battery
-suite went 364.7 s to 141.5 s", "the sweep takes 2695 s", "140.4 s per mutant".
+Wall-clock figures were being published off a single run: "the sweep takes
+2695 s", "140.4 s per mutant". (Not all of them - "the battery suite went 364.7 s
+to 141.5 s" was taken twice per arm, alternated, with ranges that do not overlap.
+That one is under this bar but it is not blind, and the difference matters.)
 Then the same battery, run three times back to back on a quiet machine with
 nothing else changed, came back 30 s, 45 s, 38 s. A spread of 40% around the
 median, which is larger than most of the improvements those figures were used to
@@ -44,11 +46,35 @@ import time
 MEASURED, OUT_OF_LIMIT, UNMEASURABLE = 0, 1, 2
 
 
-def run_once(argv, cwd, env):
+def run_once(argv, cwd, env, contenders=0):
+    """One timed execution, optionally with N copies of the same command running
+    alongside it.
+
+    The contenders are never killed. A battery cut down with SIGKILL leaves its
+    temporary trees behind - this repository has already lost 62,510 files that
+    way - so the measured run finishes, then we WAIT for the others and check
+    that they succeeded too. A contender that died is not contention: it is a
+    box that could not do the work, and the run it shadowed measured nothing.
+
+    They are the same command on purpose. Contention against some other load
+    would measure that load; contention against itself is the condition a
+    four-worker sweep actually puts each mutant in."""
+    side = [subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for _ in range(contenders)]
     t0 = time.monotonic()
     p = subprocess.run(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    return time.monotonic() - t0, p.returncode, p.stderr.decode("utf-8", "replace")
+    dt = time.monotonic() - t0
+    rc, err = p.returncode, p.stderr.decode("utf-8", "replace")
+    for q in side:
+        q.wait()
+        if q.returncode != 0 and rc == 0:
+            rc = q.returncode
+            err = ("a contender exited %d. The box could not run %d copies of "
+                   "this command at once, so the run beside them is not a "
+                   "measurement of anything." % (q.returncode, contenders + 1))
+    return dt, rc, err
 
 
 def spread_pct(samples):
@@ -71,6 +97,14 @@ def main(argv=None):
     ap.add_argument("--label", default="",
                     help="what is being timed, for the output")
     ap.add_argument("--cwd", default=None)
+    ap.add_argument("--against", default=None,
+                    help="a second command, run ALTERNATELY with the first; the "
+                         "verdict is whether their ranges overlap")
+    ap.add_argument("--against-label", default="",
+                    help="what the second command is, for the output")
+    ap.add_argument("--contenders", type=int, default=0,
+                    help="run N extra copies of the same command alongside each "
+                         "timed run; they are waited for, never killed")
     ap.add_argument("--max-spread", type=float, default=None,
                     help="exit 1 if the range exceeds this %% of the median")
     ap.add_argument("command", nargs=argparse.REMAINDER,
@@ -90,6 +124,15 @@ def main(argv=None):
     if a.warmup < 0:
         print("COULD NOT MEASURE: --warmup cannot be negative", file=sys.stderr)
         return UNMEASURABLE
+    if a.contenders < 0:
+        print("COULD NOT MEASURE: --contenders cannot be negative", file=sys.stderr)
+        return UNMEASURABLE
+
+    other = shlex.split(a.against) if a.against else None
+    if a.against is not None and not other:
+        print("COULD NOT MEASURE: --against was given nothing to run",
+              file=sys.stderr)
+        return UNMEASURABLE
 
     cwd = a.cwd or os.getcwd()
     if not os.path.isdir(cwd):
@@ -98,12 +141,19 @@ def main(argv=None):
 
     env = dict(os.environ)
     label = a.label or " ".join(shlex.quote(c) for c in cmd)
+    load = ("" if a.contenders <= 0 else
+            " under %d-way contention" % (a.contenders + 1))
     print("=== %s ===" % label)
-    print("   %d warm-up + %d timed run(s) of: %s" %
-          (a.warmup, a.runs, " ".join(shlex.quote(c) for c in cmd)))
+    print("   %d warm-up + %d timed run(s)%s of: %s" %
+          (a.warmup, a.runs,
+           "" if not load else " with %d copies at once" % (a.contenders + 1),
+           " ".join(shlex.quote(c) for c in cmd)))
+    if other:
+        print("   alternating, run for run, against: %s"
+              % " ".join(shlex.quote(c) for c in other))
 
     for i in range(a.warmup):
-        dt, rc, err = run_once(cmd, cwd, env)
+        dt, rc, err = run_once(cmd, cwd, env, a.contenders)
         if rc != 0:
             print("\nCOULD NOT MEASURE: warm-up %d exited %d. A command that fails "
                   "is not a slow command.\n%s" % (i + 1, rc, err.strip()[:800]),
@@ -111,30 +161,55 @@ def main(argv=None):
             return UNMEASURABLE
         print("   warm-up %d: %.1f s (dropped, on purpose, and said so)" % (i + 1, dt))
 
-    samples = []
+    samples, others = [], []
     for i in range(a.runs):
-        dt, rc, err = run_once(cmd, cwd, env)
-        if rc != 0:
-            print("\nCOULD NOT MEASURE: run %d exited %d. A command that fails is "
-                  "not a slow command.\n%s" % (i + 1, rc, err.strip()[:800]),
-                  file=sys.stderr)
-            return UNMEASURABLE
-        samples.append(dt)
-        print("   run %d: %.1f s" % (i + 1, dt))
+        for arm, argv, bucket in (("A", cmd, samples),
+                                  ("B", other, others)):
+            if argv is None:
+                continue
+            dt, rc, err = run_once(argv, cwd, env, a.contenders)
+            if rc != 0:
+                print("\nCOULD NOT MEASURE: run %d%s exited %d. A command that "
+                      "fails is not a slow command.\n%s"
+                      % (i + 1, "" if other is None else " (arm %s)" % arm,
+                         rc, err.strip()[:800]), file=sys.stderr)
+                return UNMEASURABLE
+            bucket.append(dt)
+            print("   run %d%s: %.1f s"
+                  % (i + 1, "" if other is None else " %s" % arm, dt))
 
-    med = statistics.median(samples)
-    sp = spread_pct(samples)
-    print("\n%s: median %.1f s, range %.1f-%.1f s over %d run(s)"
-          % (label, med, min(samples), max(samples), len(samples)))
+    def report(name, xs):
+        m = statistics.median(xs)
+        s_ = spread_pct(xs)
+        print("\n%s%s: median %.1f s, range %.1f-%.1f s over %d run(s)"
+              % (name, load, m, min(xs), max(xs), len(xs)))
+        if s_ is None:
+            # Everything landed on zero: faster than the clock can see.
+            print("the range is 0 s because every run was too fast to time; quote "
+                  "it as 'under the resolution of this instrument', not a number")
+        else:
+            print("spread %.0f%% of the median. %s" % (
+                s_,
+                "Quote the median." if s_ < 10 else
+                "Quote the range, not the median - a change smaller than this "
+                "is noise."))
+        return s_
+
+    sp = report(label, samples)
+    if other:
+        report(a.against_label or " ".join(shlex.quote(c) for c in other), others)
+        # The verdict, and the only reason --against exists. Two medians can sit
+        # far apart and still be the same machine on two afternoons; two ranges
+        # that do not touch cannot.
+        if max(samples) < min(others) or max(others) < min(samples):
+            print("\nThe two ranges do not overlap. That is a difference between "
+                  "the commands, not the box under them.")
+        else:
+            print("\nThe two ranges OVERLAP. Whatever separates these medians is "
+                  "not distinguishable from the box; do not publish it as a "
+                  "change.")
     if sp is None:
-        # Everything landed on zero: the command is faster than the clock can see.
-        print("the range is 0 s because every run was too fast to time; quote it "
-              "as 'under the resolution of this instrument', not as a number")
         return MEASURED
-    print("spread %.0f%% of the median. %s" % (
-        sp,
-        "Quote the median." if sp < 10 else
-        "Quote the range, not the median - a change smaller than this is noise."))
 
     if a.max_spread is not None and sp > a.max_spread:
         print("\nOUTSIDE THE LIMIT: spread %.0f%% is over the %.0f%% asked for. "

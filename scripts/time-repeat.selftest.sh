@@ -21,6 +21,15 @@
 # 12. --max-spread turns a noisy box into exit 1, not a confident number
 # 13. --max-spread that is met still exits 0
 # 14. the command runs exactly as many times as asked, warm-ups included
+# 15. a negative --contenders is refused
+# 16. the contenders are really launched, all N+1 of them, every run
+# 17. a contender that dies is NOT MEASURED, not a slow run
+# 18. a contended median never travels without saying it was contended
+# 19. --against alternates run for run; it does not run two blocks
+# 20. two ranges that overlap are named as the box, not as a change
+# 21. two ranges that do not overlap are named as a real difference
+# 22. a failing second arm is NOT MEASURED too, and says which arm
+# 23. --against with nothing to run is refused, not quietly ignored
 
 set -uo pipefail
 
@@ -144,6 +153,94 @@ t --runs 3 --warmup 2 -- "$LAB/ok.sh" >/dev/null 2>&1
 n="$(wc -l < "$COUNT" | tr -d ' ')"
 judge "it-runs-the-command-as-often-as-it-says" 0 - - \
   "$([ "$n" = "5" ] && echo 0 || echo 9)" "ran $n time(s), expected 5"
+
+# 15. Negative contention is not a thing, and a tool that accepted it would be
+#     silently measuring the quiet case while the caller believed otherwise.
+out="$(t --runs 2 --contenders -1 -- "$LAB/ok.sh")"; rc=$?
+judge "a-negative-contenders-is-refused" 2 "contenders cannot be negative" - "$rc" "$out"
+
+# 16. The contenders have to actually exist. `--contenders 2` that ran nothing
+#     alongside would hand back the QUIET number under a contended label, which
+#     is the worst possible failure for this flag: wrong, and labelled right.
+: > "$COUNT"
+t --runs 2 --contenders 2 -- "$LAB/ok.sh" >/dev/null 2>&1
+n="$(wc -l < "$COUNT" | tr -d " ")"
+judge "the-contenders-are-really-launched" 0 - - \
+  "$([ "$n" = "6" ] && echo 0 || echo 9)" "ran $n time(s), expected 6 (2 runs x 3 copies)"
+
+# 17. A contender that died is not contention. It is a box that could not run
+#     the copies, and the run beside it measured a load that was not there.
+#
+#     The fixture tells the measured run from a contender by its stderr: the
+#     tool captures the measured one through a pipe and sends the contenders to
+#     /dev/null, so `[ -p /dev/fd/2 ]` is true for exactly one of them. That is
+#     deliberate rather than a race on a counter file - and if someone ever
+#     stops capturing that stderr, this case goes red, which is right, because
+#     case 5 needs that capture to show the failing command's own words.
+cat > "$LAB/contender-bad.sh" <<"EOF"
+#!/bin/sh
+[ -p /dev/fd/2 ] && exit 0
+echo "the contender failed on purpose" >&2
+exit 7
+EOF
+chmod +x "$LAB/contender-bad.sh"
+out="$(t --runs 2 --contenders 1 -- "$LAB/contender-bad.sh")"; rc=$?
+judge "a-dead-contender-is-unmeasurable" 2 "a contender exited 7" - "$rc" "$out"
+
+# 18. 35 s and 140 s of the same battery do not contradict each other: they are
+#     two conditions. A median that travels without its load misleads exactly
+#     the way a median without its range does, so the condition is printed
+#     against the number itself, not only in the header.
+out="$(t --runs 2 --contenders 1 -- "$LAB/ok.sh")"; rc=$?
+judge "a-contended-median-says-it-was-contended" 0 "2-way contention: median" - "$rc" "$out"
+
+# 19. Alternation is the entire reason --against exists. The same battery gave
+#     28.3 s, 40.4 s and 43.6 s in three blocks of five on one afternoon, each
+#     block internally tight and no two blocks overlapping: a block against a
+#     block compares two moments of the machine, not two commands. So the order
+#     is checked directly - a tool that ran five of A and then five of B would
+#     read identically in its output and be worthless.
+cat > "$LAB/mark-a.sh" <<"EOF"
+#!/bin/sh
+printf A >> "$MARKS"
+EOF
+cat > "$LAB/mark-b.sh" <<"EOF"
+#!/bin/sh
+printf B >> "$MARKS"
+EOF
+cat > "$LAB/slow.sh" <<"EOF"
+#!/bin/sh
+sleep 0.4
+EOF
+chmod +x "$LAB/mark-a.sh" "$LAB/mark-b.sh" "$LAB/slow.sh"
+export MARKS="$LAB/marks"
+: > "$MARKS"
+t --runs 3 --against "$LAB/mark-b.sh" -- "$LAB/mark-a.sh" >/dev/null 2>&1
+seen="$(cat "$MARKS")"
+judge "against-alternates-run-for-run" 0 - - \
+  "$([ "$seen" = "ABABAB" ] && echo 0 || echo 9)" "order was '$seen', expected ABABAB"
+
+# 20. The same command against itself cannot be a change. If the tool calls that
+#     a difference, every A/B it ever signs is worthless in the same direction.
+out="$(t --runs 3 --against "$LAB/ok.sh" -- "$LAB/ok.sh")"; rc=$?
+judge "overlapping-ranges-are-the-box" 0 "ranges OVERLAP" "do not overlap" "$rc" "$out"
+
+# 21. And the opposite has to work, or the verdict would be a rubber stamp that
+#     only ever says no.
+out="$(t --runs 3 --against "$LAB/slow.sh" -- "$LAB/ok.sh")"; rc=$?
+judge "disjoint-ranges-are-a-real-difference" 0 "ranges do not overlap" - "$rc" "$out"
+
+# 22. The second arm is not a lesser arm: a failure there is NOT MEASURED just
+#     the same, and the message has to say which side died or nobody can fix it.
+out="$(t --runs 2 --against "$LAB/bad.sh" -- "$LAB/ok.sh")"; rc=$?
+judge "a-failing-second-arm-is-unmeasurable" 2 "arm B" - "$rc" "$out"
+
+# 23. `--against ""` is the shape a shell variable takes when it is empty. Taken
+#     quietly it would time ONE arm and print a single median under a command
+#     line that says two - the comparison would be missing and the output would
+#     not say so.
+out="$(t --runs 2 --against "" -- "$LAB/ok.sh")"; rc=$?
+judge "against-with-nothing-to-run-is-refused" 2 "nothing to run" - "$rc" "$out"
 
 echo
 echo "$pass PASS / $fail FAILED"
