@@ -49,6 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (31 cases) · `.github/workflows/coverage-sweep.yml` |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -649,6 +650,164 @@ A context enforced by the protection and **not** declared as required is reporte
 Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
+
+## A green battery is not yet a tested rule
+
+Every battery in this repository is green. That is a fact about the batteries.
+Whether it is also a fact about the *rules* is a different question, and until
+this control existed nothing here could answer it: a case is green when the rule
+works, and a case is also green when the case never exercised the rule and would
+have passed with the rule deleted. Rendered identically. Chosen between by
+nobody.
+
+`gate-coverage-sweep.sh` chooses. For every statement in `scripts/gates/lib/*.py`
+that RECORDS a problem, it replaces that statement with `pass`, runs that
+library's battery, and asks whether anything went red. A battery still green over
+a silenced rule was never testing it.
+
+### The operator is narrow on purpose
+
+Flipping a comparison or negating a condition produces mutants that crash, and a
+crash is caught by anything — it scores as coverage the battery does not have. A
+silenced report changes nothing except the verdict, which is the one thing a
+battery exists to check.
+
+Spans come from `ast` and not from a regex. `findings.append(` routinely opens a
+call that closes three lines later; replacing only its first line leaves a
+`SyntaxError`, the battery dies of the parser, and the mutant is scored as
+covered. The self-test case `multi-line-report-is-replaced-whole` exists for
+exactly that, over a fixture whose third rule spans four lines.
+
+Receivers named `info`, `note`, `notes` and `summary` are skipped: they carry a
+printed count, not a failure, and silencing one changes what a run prints rather
+than what it concludes.
+
+### The denominator, which is the part that was a fiction
+
+This sweep was written three times in three sessions, in three throwaway scripts,
+and each of those versions looked for one thing only: a sibling
+`gate-<lib>.selftest.sh`. Six of the sixteen gate libraries do not have one. They
+were **skipped in silence**, so the sweep's headline — "24 survivors" — was never
+a statement about this repository. It was a statement about ten sixteenths of it,
+and nothing in the output said which ten.
+
+There are three ways a library is proved here, and the sweep now knows all three:
+
+```
+gate-<lib>.selftest.sh          a sibling battery            10 libraries
+gate-<lib>.sh --self-test       the inline form               4 libraries
+the gate that imports it        a fixture with no gate        2 libraries
+```
+
+A library that matches none of them is **printed as `NOT MEASURED` and forces
+exit code 2**, per the doctrine at the top of this document. A denominator with a
+hole in it is not a denominator. The self-test proves both halves:
+`unresolvable-library-is-declared-not-skipped` and
+`inline-self-test-counts-as-a-battery`.
+
+The sweep also prints, per library, the battery it resolved. An instrument that
+does not name what it measured with cannot be checked by the person reading its
+output — and resolving the battery is the exact step the three earlier versions
+got wrong without saying a word.
+
+### The file of survivors is a ratchet, not an amnesty
+
+`scripts/gates/data/coverage-sweep-accepted.json` holds every survivor, each with
+its reason and a `kind`:
+
+```
+open     a real coverage hole, ticketed, waiting for somebody to write the case
+accepted a survivor somebody looked at and decided to keep, with the reason
+```
+
+Both suppress the *new hole* failure and the run prints the two counts apart, so
+a file of twenty-seven open holes cannot read as twenty-seven things anybody is
+happy about. The teeth are in the other direction: **an entry that no longer
+survives fails too**. Closing a hole obliges you to delete its line, so the list
+can only shrink, and nobody can quietly bank a fix without recording it. This is
+the same shape `gate-tree-delta.sh` and `gate-scorecard-threshold.sh` already
+use here — judge the movement, not the level.
+
+### Survivors are recorded by anchor, not by line
+
+Entries are keyed `library::qualified.function#ordinal`, the ordinal counting
+report sites inside that function.
+
+Line numbers were tried first and rot on contact: an edit anywhere above a site
+moves it, and the acceptance silently transfers to whatever rule inherited the
+number. An edit above an anchor moves nothing
+(`anchor-survives-an-edit-above-it`). **Renaming the function does** move it, and
+that is correct rather than unfortunate — the acceptance was granted to a rule
+that no longer answers to that name, so it goes stale and the run fails
+(`renaming-the-function-invalidates-the-acceptance`). An acceptance naming a site
+that no longer exists is a failure too, never a silence: the reason was written
+for a rule that has moved or gone, and a green run would never mention it.
+
+### Why it is not in `gates`, and how it is paid for instead
+
+Not scope: **cost**. Measured on 2026-09-06, one 10-core machine, four mutants at
+a time — 125 report sites, 9845 s of battery time, 2695 s of wall clock — and it
+is nowhere near evenly spread:
+
+| library | sites | battery time | share |
+|---|---:|---:|---:|
+| `corpus_contract.py` | 31 | 4352 s | 44% |
+| `protected_paths.py` | 11 | 1825 s | 19% |
+| `triage_rules.py` | 14 | 1114 s | 11% |
+| the other ten | 69 | 2554 s | 26% |
+
+`run-all.sh` finishes in under a minute and is what people wait on before a
+merge; three quarters of an hour inside it is how a suite gets switched off. So
+it is declared in `SLOW_SCOPED` — with the reason and the workflow that does run
+it — which keeps it in `run-all.sh --list`, keeps it required by
+`gate-contract-inventory.sh`, and stops it being quietly absent. A gate that is
+silently missing is indistinguishable from a gate that passed. Run it here with
+`EHS_SWEEP=1`.
+
+In CI it is **one job per library**. The work divides perfectly, a library's
+mutants only ever run that library's battery, and the table says the total is
+dominated by one library — so sharding makes the critical path
+`corpus_contract.py` alone rather than the sum, on a runner it does not share.
+No speed-up figure is claimed here: the first run of the workflow is what
+measures it, and 2695 s is the number to beat.
+
+Sharding opens exactly one hole, and it is the same hole as before: a library
+nobody put in the matrix would be skipped in silence. Two things close it. The
+matrix is generated from the tree by `--list-libraries` rather than typed by
+hand, and the verdict job re-derives every report site the tree has and exits 2
+if the shards between them do not cover all of it
+(`a-library-in-no-shard-is-refused-not-ignored`). A shard never judges itself —
+measured alone against the whole acceptance file, every shard would fail over the
+other twelve shards' entries — so shards MEASURE and `--verdict-from` JUDGES.
+
+### Proved in the negative
+
+`scripts/gates/gate-coverage-sweep.selftest.sh`, 31 cases, over a toy repository
+whose answers are decided by construction: one rule with a case, two without, one
+of them spanning four lines. The sweep exists to find batteries that are green
+for the wrong reason, so a sweep green for the wrong reason would be the joke
+writing itself.
+
+Its own first run found a defect in the instrument: the sweep did not say which
+battery it had used for each library, so `inline-self-test-counts-as-a-battery`
+could not tell a correct resolution from a lucky one. The engine now prints it.
+
+Then the battery was itself swept by hand, by breaking the engine fourteen ways
+and asking not *did anything go red* but **did the case written for this defect
+go red**. Twelve did. Two were green for a reason other than the one they claim,
+and both times the fault was the same: the needle was a fixed string, so
+`check#1` matched inside `check#10`. `multi-line-report-is-replaced-whole` was
+the worse of the two — with a line-wise operator its four-line site dies of
+`SyntaxError` instead of surviving, and the case passed anyway, because the
+anchor it looked for also appears on the line saying the mutant died. Needles
+prefixed `re:` are now regular expressions and every anchor assertion is bounded,
+and the case asserts the site **survives** rather than merely appearing. Fourteen
+of fourteen.
+
+Three further cases are refusals rather than verdicts, because an unread result
+is not a clean one: a battery already red before anything was mutated
+(`red-baseline-refuses-instead-of-reporting`), a selection matching no library,
+and a library with no report site at all. All three exit 2.
 
 ## Branch naming
 
