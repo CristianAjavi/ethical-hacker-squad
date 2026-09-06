@@ -102,6 +102,29 @@ seed echo-e-has-no-counterpart-at-all \
   'echo -e "a\\tb"'  # portable-shell: allow echo-e - fixture for the negative proof
 case_run echo-e-has-no-counterpart-at-all 1 "echo-e"
 
+# `cp -c` is the APFS clonefile, and it reached this catalogue the way these
+# holes always surface: a sibling branch shipped ten fixture batteries writing
+# `cp -Rc ... || cp -R ...`, and this gate reported OK over them - not because
+# the fallback is right, which it is, but because nothing here had ever heard of
+# `-c`. A green from an instrument that is not looking is not a measurement.
+
+seed cp-clone-with-no-way-out \
+  'cp -Rc "$src/." "$dst"'  # portable-shell: allow cp-c - fixture for the negative proof
+case_run cp-clone-with-no-way-out 1 "cp-c"
+
+# THE PROBE THAT DECIDES WHETHER THE RULE WORKS AT ALL. The counterpart for
+# `cp -c` is "a cp whose flags carry no c", and the obvious spelling - a plain
+# `cp -R` - matches the offending call itself, so every `cp -Rc` line would
+# exonerate itself and the rule would be decoration. Here there IS an `||` and
+# there is NO fallback copy, so a self-matching counterpart shows up as a green.
+seed cp-clone-with-an-or-but-no-fallback \
+  'cp -Rc "$src/." "$dst" 2>/dev/null || exit 1'  # portable-shell: allow cp-c - fixture: the self-exoneration probe
+case_run cp-clone-with-an-or-but-no-fallback 1 "cp-c"
+
+seed cp-clone-the-fallback-the-batteries-write \
+  'cp -Rc "$P/." "$w" 2>/dev/null || cp -R "$P/." "$w"'  # portable-shell: allow cp-c - fixture: the SHAPE under test
+case_run cp-clone-the-fallback-the-batteries-write 0 "no BSD-only or GNU-only"
+
 # --- the fallback idiom, which must NOT be a finding --------------------------
 
 seed mktemp-the-fallback-this-repo-writes \
