@@ -33,6 +33,10 @@ case_run() {
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  # The gate has run and its output is in `$out`; the copy is dead weight
+  # from here. Freeing it per case is what keeps the peak at one tree
+  # instead of one per case - 32 of them took this laptop to 0.26 GB free.
+  rm -rf "$work"
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-38s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else

@@ -58,6 +58,10 @@ case_run() {
   # runner. A battery that inherits the environment is not proving what it claims.
   out="$(env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF -u BASE_REF -u CHANGED_FILES_FILE \
         EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
+  # The gate has run and its output is in `$out`; the copy is dead weight
+  # from here. Freeing it per case is what keeps the peak at one tree
+  # instead of one per case - 32 of them took this laptop to 0.26 GB free.
+  rm -rf "$work"
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
