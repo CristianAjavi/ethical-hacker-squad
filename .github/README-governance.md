@@ -102,11 +102,24 @@ scripts/gates/run-all.sh --list       # inventory
 scripts/gates/run-all.sh --selftests  # the batteries under scripts/gates/ only
 scripts/run-batteries.sh              # EVERY battery in the tree - what CI runs
 scripts/run-batteries.sh --list       # name them without running them
+EHS_BATTERY_JOBS=1 scripts/run-batteries.sh   # one at a time, output as it happens
 ```
 
 `scripts/run-batteries.sh` is the one that matches CI. `--selftests` walks
 `scripts/gates/` and stops there, so it reports green without ever executing the
 batteries that live anywhere else.
+
+The batteries run **several at a time**, capped at four or the core count,
+whichever is lower. They can overlap because each one already builds its own
+`mktemp -d`, so nothing they write is shared; what is shared is the report, and
+no worker writes it. Each records its own output and exit code and the parent
+folds them afterwards **in list order**, so a parallel run prints the same report
+a serial one prints - only the order the work finished in differs, and that never
+reaches the output. `EHS_BATTERY_JOBS=1` selects the serial path, which is what
+you want when a battery misbehaves and you would rather watch its output arrive
+than read it replayed. The runner's own self-test compares the two paths against
+each other on every run, with a negative control, so the two cannot drift apart
+unnoticed.
 
 ---
 
