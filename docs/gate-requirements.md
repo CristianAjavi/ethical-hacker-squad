@@ -22,7 +22,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
-| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
+| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (32 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
@@ -782,7 +782,7 @@ other twelve shards' entries — so shards MEASURE and `--verdict-from` JUDGES.
 
 ### Proved in the negative
 
-`scripts/gates/gate-coverage-sweep.selftest.sh`, 31 cases, over a toy repository
+`scripts/gates/gate-coverage-sweep.selftest.sh`, 32 cases, over a toy repository
 whose answers are decided by construction: one rule with a case, two without, one
 of them spanning four lines. The sweep exists to find batteries that are green
 for the wrong reason, so a sweep green for the wrong reason would be the joke
@@ -803,6 +803,16 @@ anchor it looked for also appears on the line saying the mutant died. Needles
 prefixed `re:` are now regular expressions and every anchor assertion is bounded,
 and the case asserts the site **survives** rather than merely appearing. Fourteen
 of fourteen.
+
+Then the workflow's own first run found a thirty-second: GitHub runs every
+`run:` block with `bash -e`, and `set -uo pipefail` does not turn that off. With
+pipefail, the sweep's rc 1 — a rule survived, which the verdict job exists to
+judge — killed the step before the line that reads `PIPESTATUS` to decide what
+that 1 meant. Eight shards red in fifteen seconds for a reason with nothing to do
+with coverage. Nothing local could have seen it: the step exists only in the
+workflow and the gate is deferred. `workflow-reads-an-exit-code-it-can-reach`
+sees it now — it walks every `PIPESTATUS` read in the file and fails if the
+nearest `set` above it has not turned `-e` off.
 
 Three further cases are refusals rather than verdicts, because an unread result
 is not a clean one: a battery already red before anything was mutated

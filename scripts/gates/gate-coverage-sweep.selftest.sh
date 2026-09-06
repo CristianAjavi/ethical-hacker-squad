@@ -326,6 +326,31 @@ echo '[]' > "$LAB/empty.json"
 out="$("$PY" "$ENGINE" --root "$LAB/repo" --accepted "$acc" --verdict-from "$LAB/empty.json" 2>&1)"; rc=$?
 judge "an-empty-shard-is-not-a-clean-one" 2 "carries no result" - "$rc" "$out"
 
+# 32. The workflow reads exit codes it can actually reach. GitHub runs every
+#     `run:` block with `bash -e`, and `set -uo pipefail` does not turn that off.
+#     The first run of this workflow died of exactly that: with pipefail, the
+#     sweep's rc 1 - a rule survived, which the verdict job exists to judge -
+#     killed the step before the line that reads PIPESTATUS. Eight shards red in
+#     fifteen seconds, for a reason with nothing to do with coverage. Locally the
+#     step does not exist and the gate is deferred, so nothing here could have
+#     seen it; this case is the thing that sees it now.
+WF="$SELF_DIR/../../.github/workflows/coverage-sweep.yml"
+if [ ! -f "$WF" ]; then
+  judge "workflow-reads-an-exit-code-it-can-reach" 0 - - 2 "no workflow at $WF"
+else
+  bad=""
+  for n in $(grep -n 'PIPESTATUS' "$WF" | grep -v ':[[:space:]]*#' | cut -d: -f1); do
+    st="$(awk -v n="$n" 'NR<n && /^ *set /{l=$0} END{print l}' "$WF")"
+    case "$st" in *"+e"*) ;; *) bad="$bad $n" ;; esac
+  done
+  if [ -n "$bad" ]; then
+    judge "workflow-reads-an-exit-code-it-can-reach" 0 - - 1 \
+      "line(s)$bad read PIPESTATUS under an inherited -e: the step dies before deciding"
+  else
+    judge "workflow-reads-an-exit-code-it-can-reach" 0 - - 0 "every PIPESTATUS read is under +e"
+  fi
+fi
+
 # --------------------------------------------------------------------------- #
 echo
 echo "$pass PASS / $fail FAILED"
