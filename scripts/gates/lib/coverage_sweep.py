@@ -67,7 +67,13 @@ FREE_FLOOR_BYTES = 3 * 1024 ** 3
 # changes what a run prints and not what it concludes, so a green battery over it
 # is not evidence of anything missing.
 INFORMATIONAL = {"info", "notes", "note", "summary"}
-FAILED_CASE = re.compile(r"^\s*(?:FAILED|FAIL|HARNESS)\s+(\S+)")
+# A battery names the case it failed on: `FAILED <case>` or `HARNESS <case>`.
+# `FAIL <text>` is something else entirely - it is lib/common.sh's gate_fail,
+# the GATE's own verdict line - and accepting it made the first word of any
+# failure message look like a case name. That is the instrument lying upward:
+# it turned "the gate refused" into "a case caught it" and scored the mutant as
+# covered. Proved in the negative by two cases in the battery.
+FAILED_CASE = re.compile(r"^\s*(?:FAILED|HARNESS)\s+(\S+)")
 
 
 # --------------------------------------------------------------------------- #
@@ -225,13 +231,22 @@ def run_mutant(pristine, base, lib_name, battery_argv, site, idx, log):
         secs = time.time() - t0
         red = failed_cases(p.stdout + p.stderr)
         survived = p.returncode == 0
+        # A mutant that turns the battery red with NO case naming it was not
+        # caught by a case; it was caught by a crash, and this file's own header
+        # says a crash is caught by anything. `red` was being recorded and never
+        # read, so every such death has been scoring as coverage the battery
+        # does not have - the exact defect the sweep exists to find, inside the
+        # sweep.
+        crash_only = (not survived) and not red
         log("%-26s %-42s %-5s %5.1fs  %s"
             % (lib_name, site["anchor"][-42:], "rc %d" % p.returncode, secs,
                "SURVIVES <- " + site["stmt"][:44] if survived
-               else "dies by: " + ", ".join(red[:2])))
+               else "CRASH-ONLY, no case named it <- " + site["stmt"][:32]
+               if crash_only else "dies by: " + ", ".join(red[:2])))
         return dict(lib=lib_name, anchor=site["anchor"], line=site["lo"],
                     receiver=site["receiver"], stmt=site["stmt"],
-                    rc=p.returncode, caught_by=red, survived=survived)
+                    rc=p.returncode, caught_by=red, survived=survived,
+                    crash_only=crash_only)
     finally:
         subprocess.run(["/bin/rm", "-rf", str(work)])
 
@@ -343,7 +358,8 @@ def sweep(root: pathlib.Path, only=None, jobs=DEFAULT_JOBS, accepted=None,
                 except Exception as exc:                      # noqa: BLE001
                     r = dict(lib=lib_name, anchor=site["anchor"], line=site["lo"],
                              receiver=site["receiver"], stmt=site["stmt"], rc=-1,
-                             caught_by=[], survived=None, error=str(exc)[:120])
+                             caught_by=[], survived=None, crash_only=False,
+                             error=str(exc)[:120])
                     log("%-26s %-42s ERROR %s"
                         % (lib_name, site["anchor"][-42:], str(exc)[:60]))
                 with lock:
@@ -372,9 +388,10 @@ def sweep(root: pathlib.Path, only=None, jobs=DEFAULT_JOBS, accepted=None,
 
 def load_accepted(path: pathlib.Path):
     if path is None or not path.exists():
-        return {}
+        return {}, {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {e["anchor"]: e for e in data.get("accepted", [])}
+    return ({e["anchor"]: e for e in data.get("accepted", [])},
+            {e["battery"]: e for e in data.get("detector_unproven", [])})
 
 
 def main(argv=None):
@@ -484,19 +501,37 @@ def main(argv=None):
         pathlib.Path(args.json_out).write_text(
             json.dumps(results, indent=1) + "\n", encoding="utf-8")
 
-    accepted = load_accepted(accepted_path)
+    accepted, unproven_on_file = load_accepted(accepted_path)
     survivors = [r for r in results if r["survived"]]
     live_anchors = {r["anchor"] for r in results}
 
-    unaccounted = [r for r in survivors if r["anchor"] not in accepted]
+    # Absence of a case name is only evidence where a name has been SEEN. A
+    # battery this sweep never watched name a failing case has an unproven
+    # detector, and calling its silence a hole would be a zero from a blind
+    # instrument. Those subjects are declared by name in the acceptance file,
+    # on the same ratchet as the survivors: listed, or the sweep exits 2.
+    proven = {r["lib"] for r in results if r.get("caught_by")}
+    all_crash = [r for r in results if r.get("crash_only")]
+    blind = sorted({r["lib"] for r in all_crash if r["lib"] not in proven})
+    crash_only = [r for r in all_crash if r["lib"] in proven]
+
+    unaccounted = [r for r in survivors + crash_only
+                   if r["anchor"] not in accepted]
     stale = sorted(a for a in accepted if a not in live_anchors)
+    stale_unproven = sorted(b for b in unproven_on_file if b not in blind
+                            and b in {r["lib"] for r in results})
 
     n_open = sum(1 for e in accepted.values() if e.get("kind") == "open")
-    print("\n%d mutant(s) in %.0f s · %d survive · %d die · %d on file "
+    print("\n%d mutant(s) in %.0f s · %d survive · %d die by a named case · "
+          "%d die with no case naming them · %d on file "
           "(%d deliberate, %d open hole(s) waiting for a case)"
           % (len(results), time.time() - t0, len(survivors),
-             len(results) - len(survivors), len(accepted),
-             len(accepted) - n_open, n_open))
+             len(results) - len(survivors) - len(all_crash), len(all_crash),
+             len(accepted), len(accepted) - n_open, n_open))
+    if blind:
+        print("   %d battery(ies) were never watched name a failing case, so "
+              "their silence measures nothing: %s"
+              % (len(blind), ", ".join(blind)))
 
     if unresolved:
         print("\nCOULD NOT MEASURE %d library(ies); a denominator with a hole in it "
@@ -504,6 +539,27 @@ def main(argv=None):
         for name, why in unresolved:
             print("   %-30s %s" % (name, why))
         return 2
+
+    undeclared_blind = [b for b in blind if b not in unproven_on_file]
+    if undeclared_blind:
+        print("\nCOULD NOT MEASURE  %d battery(ies) turn red over a mutant without "
+              "ever naming the case that did it, and this sweep has never seen "
+              "them name one. Whether a case caught the mutant is unknown, not "
+              "no:" % len(undeclared_blind))
+        for b in undeclared_blind:
+            print("   %s" % b)
+        print("\n  Give the battery a line the sweep can read (FAILED <case>), or "
+              "declare it under detector_unproven in %s with why."
+              % accepted_path.name)
+        return 2
+
+    if stale_unproven:
+        print("\nFAIL  %d battery(ies) are on file as unable to name a failing case "
+              "and this run watched them name one. Delete the entry:"
+              % len(stale_unproven))
+        for b in stale_unproven:
+            print("   %s" % b)
+        return 1
 
     if stale:
         print("\nFAIL  %d acceptance(s) name a report site that no longer exists. "
@@ -513,15 +569,20 @@ def main(argv=None):
         return 1
 
     if unaccounted:
-        print("\nFAIL  %d report site(s) can be silenced and no battery notices:"
+        print("\nFAIL  %d report site(s) can be silenced and no case notices:"
               % len(unaccounted))
         for r in sorted(unaccounted, key=lambda x: x["anchor"]):
-            print("   %-46s %s" % (r["anchor"], r["stmt"]))
-        print("\n  Each is a rule whose case is green for some other reason. Write the "
+            print("   %-46s %-9s %s"
+                  % (r["anchor"], "CRASH" if r.get("crash_only") else "survives",
+                     r["stmt"]))
+        print("\n  A survivor is a rule no case exercises. A CRASH is a rule whose "
+              "case does not fail over it either - the battery went red because "
+              "the mutant broke something, which any mutant would. Write the "
               "case, or record it in %s with why." % accepted_path.name)
         return 1
 
-    print("\nOK    every surviving report site is accounted for")
+    print("\nOK    every surviving report site is accounted for, and every "
+          "death is named by a case or declared")
     return 0
 
 

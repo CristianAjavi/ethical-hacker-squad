@@ -326,6 +326,136 @@ echo '[]' > "$LAB/empty.json"
 out="$("$PY" "$ENGINE" --root "$LAB/repo" --accepted "$acc" --verdict-from "$LAB/empty.json" 2>&1)"; rc=$?
 judge "an-empty-shard-is-not-a-clean-one" 2 "carries no result" - "$rc" "$out"
 
+# --------------------------------------------------------------------------- #
+# A death is not a catch. These five cases exist because `caught_by` - the list
+# of cases the battery named when it went red - was recorded by the engine and
+# never read: every mutant that turned a battery red scored as covered, crashes
+# included, which is the exact failure this file's header says the operator was
+# kept narrow to avoid.
+# --------------------------------------------------------------------------- #
+
+# 23. The fixture: one rule with a case that names it, one rule whose silencing
+#     only trips a bare guard. The guard prints `FAIL <text>`, which is
+#     lib/common.sh's gate_fail and not a case name - the sweep used to read its
+#     first word as one.
+write_crash_lab() {
+  /bin/rm -rf "$LAB/repo"
+  mkdir -p "$LAB/repo/scripts/gates/lib"
+  cat > "$LAB/repo/scripts/gates/lib/crash.py" <<'EOF'
+def check(text):
+    findings = []
+    if "alpha" in text:
+        findings.append("alpha is present")
+    if "beta" in text:
+        findings.append("beta is present")
+    return findings
+EOF
+  cat > "$LAB/repo/scripts/gates/gate-crash.selftest.sh" <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+run() { "${EHS_PYTHON:-python3}" -c 'import sys; sys.path.insert(0, "scripts/gates/lib"); import crash; print("|".join(crash.check("alpha beta")))' 2>&1; }
+seen="$(run)"
+case "$seen" in
+  *alpha*) echo "PASS  alpha-is-reported" ;;
+  *)       echo "FAILED  alpha-is-reported"; exit 1 ;;
+esac
+n="$(printf '%s' "$seen" | tr '|' '\n' | grep -c .)"
+[ "$n" = 2 ] || { echo "FAIL  the count came back $n"; exit 1; }
+echo "PASS  count-is-two"
+exit 0
+EOF
+  chmod +x "$LAB/repo/scripts/gates/gate-crash.selftest.sh"
+}
+
+write_crash_lab
+out="$(sweep --only crash.py)"; rc=$?
+judge "a-named-case-is-a-catch" 1 "dies by: alpha-is-reported" - "$rc" "$out"
+judge "a-death-no-case-named-is-not-a-catch" 1 "CRASH-ONLY, no case named it" - "$rc" "$out"
+
+# 24. `FAIL <text>` is the GATE's verdict line, not a case. Reading its first
+#     word as a case name turned "the gate refused" into "a case caught it".
+judge "gate_fail-is-not-read-as-a-case-name" 1 "1 die with no case naming them" \
+  "dies by: the" "$rc" "$out"
+
+# 25. And the crash-only site is a FAILURE with its own label, not a silent pass.
+judge "a-crash-only-site-is-a-failure" 1 "re:crash\.py::check#1 +CRASH" - "$rc" "$out"
+
+# 26. Accepting it accounts for it, exactly like a survivor.
+cat > "$LAB/crash-acc.json" <<'EOF'
+{"accepted": [
+  {"anchor": "crash.py::check#1", "kind": "open", "why": "on purpose, for the self-test"}
+]}
+EOF
+out="$(sweep --only crash.py --accepted "$LAB/crash-acc.json")"; rc=$?
+judge "an-accepted-crash-only-site-is-not-a-failure" 0 \
+  "every surviving report site is accounted for" - "$rc" "$out"
+
+# 27. THE ZERO FROM A BLIND INSTRUMENT. A battery that never names a failing
+#     case cannot be asked whether a case caught the mutant: its silence is not
+#     a no, it is a not-measured. Calling it a hole would be the sweep doing to
+#     others what it exists to catch.
+write_mute_lab() {
+  /bin/rm -rf "$LAB/repo"
+  mkdir -p "$LAB/repo/scripts/gates/lib"
+  cat > "$LAB/repo/scripts/gates/lib/mute.py" <<'EOF'
+def check(text):
+    findings = []
+    if "alpha" in text:
+        findings.append("alpha is present")
+    return findings
+EOF
+  cat > "$LAB/repo/scripts/gates/gate-mute.selftest.sh" <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+seen="$("${EHS_PYTHON:-python3}" -c 'import sys; sys.path.insert(0, "scripts/gates/lib"); import mute; print(mute.check("alpha"))' 2>&1)"
+case "$seen" in
+  *alpha*) echo "all good"; exit 0 ;;
+  *)       echo "something is wrong"; exit 1 ;;
+esac
+EOF
+  chmod +x "$LAB/repo/scripts/gates/gate-mute.selftest.sh"
+}
+
+write_mute_lab
+out="$(sweep --only mute.py)"; rc=$?
+judge "an-unproven-detector-is-unmeasurable-not-a-hole" 2 \
+  "ever naming the case that did it" - "$rc" "$out"
+judge "the-blind-battery-is-named" 2 "mute.py" - "$rc" "$out"
+
+# 28. Declared under detector_unproven, it stops being a refusal - the same
+#     ratchet the survivors are on.
+cat > "$LAB/mute-acc.json" <<'EOF'
+{"accepted": [],
+ "detector_unproven": [
+  {"battery": "mute.py", "why": "on purpose, for the self-test"}
+]}
+EOF
+out="$(sweep --only mute.py --accepted "$LAB/mute-acc.json")"; rc=$?
+judge "a-declared-blind-battery-is-not-a-refusal" 0 \
+  "death is named by a case" - "$rc" "$out"
+
+# 29. And the ratchet turns the other way: a battery on file as unable to name a
+#     case, that this run watched name one, is a stale entry. Without this the
+#     declaration would outlive the defect it excused.
+cat > "$LAB/crash-acc2.json" <<'EOF'
+{"accepted": [
+  {"anchor": "crash.py::check#1", "kind": "open", "why": "on purpose"}
+],
+ "detector_unproven": [
+  {"battery": "crash.py", "why": "stale on purpose, for the self-test"}
+]}
+EOF
+write_crash_lab
+out="$(sweep --only crash.py --accepted "$LAB/crash-acc2.json")"; rc=$?
+judge "a-refuted-unproven-declaration-is-a-failure" 1 \
+  "this run watched them name one" - "$rc" "$out"
+
+# The toy repository the later cases read is rebuilt; the two labs above
+# replaced it.
+lab
+
 # 32. The workflow reads exit codes it can actually reach. GitHub runs every
 #     `run:` block with `bash -e`, and `set -uo pipefail` does not turn that off.
 #     The first run of this workflow died of exactly that: with pipefail, the

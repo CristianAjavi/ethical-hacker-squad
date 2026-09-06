@@ -109,12 +109,17 @@ selftest() {
   local work out
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
 
+  # Each failure names its case on a line of its own, `FAILED  <case>`.
+  # gate_fail alone is the GATE's verdict; a battery that only says "I went
+  # red" cannot tell the coverage sweep which rule the red belongs to, and the
+  # sweep was scoring those deaths as coverage nobody had.
+
   # A dataset whose wording gives the answer away must FAIL, or the gate is decoration.
   fixture "$work/leaky" 14 leaky
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
     1\|*OVER\ the\ ceiling*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a dataset that spells out its answers returned '$out', expected 1"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  leaky-dataset-fails"; gate_fail "self-test: a dataset that spells out its answers returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
   # ...and one whose wording does not must PASS, or the gate fails everything and means nothing.
@@ -122,7 +127,7 @@ selftest() {
   out="$(run_probe "$work/clean" cfg.json)"
   case "$out" in
     0\|*under\ the\ ceiling*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a dataset with no wording tell returned '$out', expected 0"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  clean-dataset-passes"; gate_fail "self-test: a dataset with no wording tell returned '$out', expected 0"; return "$GATE_FAIL" ;;
   esac
 
   # Too few cases is 2, never 0. This is the case that clears a leaky competitor.
@@ -130,7 +135,7 @@ selftest() {
   out="$(run_probe "$work/tiny" cfg.json)"
   case "$out" in
     2\|*below\ the\ pre-registered\ floor*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: 6 leaky cases returned '$out', expected 2 (underpowered, not a clearance)"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  underpowered-is-2-not-a-clearance"; gate_fail "self-test: 6 leaky cases returned '$out', expected 2 (underpowered, not a clearance)"; return "$GATE_FAIL" ;;
   esac
 
   # A key that does not line up with the cases is 2, never a pass.
@@ -144,7 +149,7 @@ PY
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
     2\|*against*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a truncated key returned '$out', expected 2"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  truncated-key-is-2"; gate_fail "self-test: a truncated key returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
   # A stage dataset nobody listed must FAIL, or the way to pass this gate is to
@@ -153,7 +158,7 @@ PY
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
     *"stages/two: a stage dataset that the probe config neither measures nor exempts"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an unlisted stage dataset returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  unlisted-stage-dataset-fails"; gate_fail "self-test: an unlisted stage dataset returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
   esac
 
   # An exemption with no reason is a skip wearing a label, and fails too.
@@ -161,16 +166,16 @@ PY
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
     *"exempted from the floor with no reason"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a reasonless exemption returned '$out', expected 1"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  reasonless-exemption-fails"; gate_fail "self-test: a reasonless exemption returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
   # ...and one that states its reason passes, or nothing could ever be exempted.
   python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" reasoned
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
-    *"1|stages/two"*) rm -rf "$work"; gate_fail "self-test: an exemption with a reason still failed: '$out'"; return "$GATE_FAIL" ;;
+    *"1|stages/two"*) rm -rf "$work"; echo "FAILED  reasoned-exemption-passes"; gate_fail "self-test: an exemption with a reason still failed: '$out'"; return "$GATE_FAIL" ;;
     *"not measured by the floor, on purpose"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an exemption with a reason returned '$out'"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  reasoned-exemption-passes"; gate_fail "self-test: an exemption with a reason returned '$out'"; return "$GATE_FAIL" ;;
   esac
 
   # An unreadable config is 2.
@@ -178,7 +183,7 @@ PY
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
     2\|*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an unparseable config returned '$out', expected 2"; return "$GATE_FAIL" ;;
+    *) rm -rf "$work"; echo "FAILED  unparseable-config-is-2"; gate_fail "self-test: an unparseable config returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
   rm -rf "$work"

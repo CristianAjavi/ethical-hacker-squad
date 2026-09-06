@@ -792,6 +792,71 @@ four-way contention*. About **3.8x**, with the Mac given the easier condition.
 The counts are identical on both machines, which is the part that says the runner
 really did the work: 125 sites, 27 survive, 98 die.
 
+### A death is not a catch
+
+Those 98 deaths were all scored as coverage, and they are not the same thing. The
+engine recorded `caught_by` — the cases the battery named when it went red — and
+never read it. The verdict was `survived = rc == 0`, so any mutant that turned a
+battery red counted as covered, **including one that turned it red by breaking
+something**. The header of `coverage_sweep.py` says the operator was kept narrow
+precisely so that would not happen, and then the verdict threw the distinction
+away.
+
+Two things were wrong, and the second hid the first:
+
+1. A mutant that dies with **no case naming it** was not caught by a case. It was
+   caught by a crash, and a crash is caught by anything.
+2. The expression that reads case names accepted `FAIL`, which is not a battery's
+   case line at all — it is `lib/common.sh`'s `gate_fail`, the **gate's own
+   verdict**. Its first word was being read as a case name, so "the gate refused"
+   rendered as "a case caught it". On the first three-library sample this alone
+   invented a case called `self-test:` and hid a crash behind it.
+
+Measured over the same 125 sites, one machine, four workers, 2055 s:
+
+| | before | after |
+|---|---:|---:|
+| caught by a case that names it | 98 (assumed) | **91 (measured)** |
+| dead with no case naming them | not measured | **7** |
+| surviving | 27 | 27 |
+
+The seven were not scattered. All of them sat in the three libraries proved by
+the **inline `--self-test` form**, which reports through `gate_fail` and never
+names a case, so the sweep could see the gate go red and never which rule the red
+belonged to:
+
+| library | sites that only crashed | after giving the self-test a case line |
+|---|---:|---:|
+| `routing_stage.py` | 5 | 0 |
+| `governance_contract.py` | 1 | 0 |
+| `stage_eval_floor.py` | 1 | 0 |
+
+The fix is one line per failure — `echo "FAILED  <case>"` beside the `gate_fail`
+that already knew the name — and it takes the repository to **zero report sites
+covered only by a crash**.
+
+### A zero from a blind instrument is not a zero
+
+Absence of a case name is only evidence where a name has been **seen**. A battery
+this sweep never watched name a failing case has an unproven detector, and
+calling its silence a hole would be the sweep doing to others exactly what it
+exists to catch. Those batteries are declared by name under `detector_unproven`
+in the acceptance file, on the same ratchet as the survivors: **listed with a
+reason, or the sweep exits 2** — and an entry the run refutes, because it did
+watch that battery name a case, is a failure too, so the excuse cannot outlive
+the defect. The list is empty today, and that is a measurement rather than a
+default: it had three entries when it was written.
+
+Proved in the negative by seven cases
+(`a-death-no-case-named-is-not-a-catch`, `gate_fail-is-not-read-as-a-case-name`,
+`a-crash-only-site-is-a-failure`, `an-accepted-crash-only-site-is-not-a-failure`,
+`an-unproven-detector-is-unmeasurable-not-a-hole`,
+`a-declared-blind-battery-is-not-a-refusal`,
+`a-refuted-unproven-declaration-is-a-failure`) and by a hand mutation of each new
+rule — five of five caught by the case written for it. It is a hand mutation
+because **`coverage_sweep.py` excludes itself from its own sweep**; that
+exclusion is a real hole, it is on the backlog, and it is not closed here.
+
 Sharding opens exactly one hole, and it is the same hole as before: a library
 nobody put in the matrix would be skipped in silence. Two things close it. The
 matrix is generated from the tree by `--list-libraries` rather than typed by
