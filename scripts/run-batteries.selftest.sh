@@ -112,6 +112,14 @@ echo "== mutant: prove the protection is doing the work =="
 # the shape the rule had when it lived inline in a CI step. The greedy battery
 # must now eat the rest of the list and the count must drop. If it does not, the
 # case above is decoration and proves nothing.
+#
+# This case went green over a broken protection once, and it is worth knowing
+# how. When the runner learned to launch batteries in parallel, its count line
+# was left counting ROWS OF THE LIST rather than results: the mutant truncated
+# the list exactly as it was supposed to, the printer walked all three rows
+# anyway, and "batteries run: 3" came out of a run where one battery had run.
+# The needle below is the count, so the case reported that the protection held.
+# A tally that reports work nobody did will cover for whatever broke it.
 sed -e 's#while IFS= read -r t <&3; do#while IFS= read -r t; do#' \
     -e 's#done 3< "$LIST"#done < "$LIST"#' \
     -e 's# </dev/null##' "$SUBJECT" > "$TMP/mutant.sh"
@@ -197,6 +205,135 @@ if [ -s "$TMP/led_probe.txt" ]; then
 else
   bad "the probe stayed empty: this case cannot tell a leak from a refusal"
 fi
+
+echo "== the workers, and what they must not change =="
+
+# slow <dir> <name> <seconds> <line> - a battery that takes its time
+slow() {
+  mkdir -p "$1"
+  printf '#!/usr/bin/env bash\nsleep %s\necho "%s"\nexit 0\n' "$3" "$4" > "$1/$2.selftest.sh"
+  chmod +x "$1/$2.selftest.sh"
+}
+
+# A worker count that is not a positive integer must stop the run, not shrink
+# it. `--jobs 0` starts nothing, and a runner that then printed "every battery
+# behaved" would be reporting a green it never measured.
+battery "$TMP/jobs" one 0
+bash "$SUBJECT" --jobs 0 "$TMP/jobs" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "--jobs 0 is COULD NOT MEASURE, not a run of nothing" \
+                || bad "--jobs 0 gave rc $rc"
+grep -q 'every battery behaved' "$TMP/out" \
+  && bad "--jobs 0 still claimed every battery behaved" \
+  || ok "--jobs 0 claims nothing about the batteries"
+
+bash "$SUBJECT" --jobs seven "$TMP/jobs" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "a non-numeric --jobs is COULD NOT MEASURE" \
+                || bad "--jobs seven gave rc $rc"
+
+bash "$SUBJECT" --jobs=3 "$TMP/jobs" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "--jobs=3 is accepted in the joined form" || bad "--jobs=3 gave rc $rc"
+grep -q 'up to 3 at a time' "$TMP/out" \
+  && ok "the count line declares how many ran at once" || bad "the worker count is not declared"
+
+bash "$SUBJECT" --nonsense "$TMP/jobs" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "an unknown option is COULD NOT MEASURE, not ignored" \
+                || bad "--nonsense gave rc $rc"
+
+# The point of the buffered printer. `aaa` takes a second, `zzz` is instant, and
+# `aaa` sorts first: whoever finishes first, the transcript reads in LIST order.
+# Without that, the same commit produces a different log on every machine and
+# two runs can only be compared by eye.
+slow    "$TMP/order" aaa 1 "SLOW-FIRST"
+says    "$TMP/order" zzz 0 "FAST-SECOND"
+bash "$SUBJECT" --jobs 4 "$TMP/order" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "a slow battery beside a fast one still gives rc 0" || bad "rc $rc"
+a="$(grep -n 'SLOW-FIRST'  "$TMP/out" | head -1 | cut -d: -f1)"
+z="$(grep -n 'FAST-SECOND' "$TMP/out" | head -1 | cut -d: -f1)"
+if [ -n "$a" ] && [ -n "$z" ] && [ "$a" -lt "$z" ]; then
+  ok "the transcript is in list order, not in finishing order"
+else
+  bad "the slow battery printed at line '$a', the fast one at '$z'"
+fi
+
+# The control the case above needs: if BOTH batteries were fast, list order and
+# finishing order would agree by accident and the case would pass on a runner
+# that had no printer at all.
+if [ -n "$a" ] && [ -n "$z" ]; then
+  ok "both lines were found, so the order above was actually compared"
+else
+  bad "one of the two lines is missing: nothing was compared"
+fi
+
+# Serial and parallel must be the same measurement. Only the clock may differ.
+battery "$TMP/same/a" one 0
+says    "$TMP/same/b" two 0 "3 passed, 0 failed"
+battery "$TMP/same/c" bad 1
+bash "$SUBJECT" --jobs 1 "$TMP/same" >"$TMP/one.out" 2>&1; r1=$?
+bash "$SUBJECT" --jobs 4 "$TMP/same" >"$TMP/four.out" 2>&1; r4=$?
+[ "$r1" -eq "$r4" ] && ok "one worker and four give the same exit code ($r1)" \
+                    || bad "one worker gave $r1, four gave $r4"
+if diff <(grep -v 'at a time' "$TMP/one.out") \
+        <(grep -v 'at a time' "$TMP/four.out") >/dev/null; then
+  ok "one worker and four give the same transcript"
+else
+  bad "the transcript depends on the number of workers"
+fi
+
+# The ledger is written by the printer, which is serial by construction. Under
+# four workers every green battery must still leave its line, and the red one
+# must still leave none.
+: > "$TMP/led_par.txt"
+EHS_TALLY_LEDGER="$TMP/led_par.txt" bash "$SUBJECT" --jobs 4 "$TMP/same" >"$TMP/out" 2>&1
+n="$(grep -c . "$TMP/led_par.txt")"
+[ "$n" -eq 1 ] && ok "under four workers the ledger has the one line it should" \
+               || bad "the ledger has $n lines, expected 1"
+grep -q 'two.selftest.sh 3 passed, 0 failed' "$TMP/led_par.txt" \
+  && ok "the parallel ledger line carries the right path and tally" \
+  || bad "the parallel ledger line is wrong or missing"
+
+# --list took its directory from $2 when --list was $1. The argument loop that
+# --jobs needed had to keep that working, and a --list that silently walked the
+# default directory would report someone else's batteries.
+bash "$SUBJECT" --list "$TMP/order" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "--list with a directory still exits 0" || bad "--list gave rc $rc"
+grep -q 'order/aaa.selftest.sh' "$TMP/out" \
+  && ok "--list walks the directory it was given" || bad "--list ignored its argument"
+grep -q 'SLOW-FIRST' "$TMP/out" \
+  && bad "--list ran the batteries instead of listing them" \
+  || ok "--list lists without running"
+
+echo "== the result that is never coming =="
+
+# The printer waits at battery n for its exit code. With two states - here and
+# not yet - a launcher that ends early leaves it waiting on a file nobody will
+# write, and a CI job hangs for six hours and then says nothing about why. The
+# mutant above is exactly that shape, so it doubles as this case's fixture: it
+# has to come back with a VERDICT, and quickly.
+start="$(date +%s)"
+EHS_BATTERY_STALL=20 bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/hang.out" 2>&1
+rc=$?
+elapsed=$(( $(date +%s) - start ))
+[ "$rc" -eq 2 ] && ok "a battery whose result never arrives is rc 2, not a hang" \
+                || bad "expected rc 2 from the truncated run, got $rc"
+# The number stays OUT of the PASS line on purpose: this transcript is compared
+# between a one-worker run and a four-worker run, and a line carrying a clock
+# reading would differ between them for a reason that has nothing to do with the
+# thing being compared.
+[ "$elapsed" -lt 60 ] && ok "it answered in seconds instead of waiting forever" \
+                      || bad "it took ${elapsed}s: that is the hang, not a verdict"
+grep -q 'produced no exit code' "$TMP/hang.out" \
+  && ok "the batteries with no result are named and diagnosed" \
+  || bad "the run ended without saying which battery produced nothing"
+grep -q 'batteries run: 2' "$TMP/hang.out" \
+  && ok "the count reports the 2 results, not the 3 rows of the list" \
+  || bad "the count claims batteries it did not measure: $(grep -o "batteries run: [0-9]*" "$TMP/hang.out")"
+
+# A stall bound that is not a positive integer must stop the run. Left to mean
+# "no bound", it would restore the hang through the back door.
+battery "$TMP/stall" one 0
+EHS_BATTERY_STALL=nope bash "$SUBJECT" "$TMP/stall" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "a non-numeric stall bound is COULD NOT MEASURE" \
+                || bad "EHS_BATTERY_STALL=nope gave rc $rc"
 
 echo
 echo "$pass PASS / $fail FAIL"

@@ -166,9 +166,20 @@ MUTANTS = [
     # with pipefail on, `$?` after the pipe is still non-zero when the battery
     # fails, and with PIPESTATUS[0] in place, dropping pipefail changes nothing.
     # The mutant is therefore the pair. Taking both away is what the case sees.
-    ("the-battery-code-is-read-off-the-pipe", RUNNER,
-     ["  rc=${PIPESTATUS[0]}", "set -uo pipefail"],
-     ["  rc=$?", "set -u"],
+    # The ledger records only batteries that exited 0, so the runner has to
+    # carry each battery's OWN exit code from a background worker back to the
+    # printer. Drop it on the floor - the worker reports 0 whatever happened -
+    # and a red battery's tally is written down as if it had passed.
+    ("the-battery-code-is-thrown-away", RUNNER,
+     ['bash "$t" </dev/null > "$TMPD/$i.out" 2>&1 || rc=$?'],
+     ['bash "$t" </dev/null > "$TMPD/$i.out" 2>&1'],
+     RUNNER_BATTERY, "expected rc 1, got 0"),
+
+    # The other half of the same rule: the printer must read the code the worker
+    # wrote, not assume it. Written this way the ledger takes every battery.
+    ("the-printer-assumes-the-code", RUNNER,
+     ['  rc="$(cat "$TMPD/$n.rc")"'],
+     ['  rc=0'],
      RUNNER_BATTERY, "expected rc 1, got 0"),
 ]
 

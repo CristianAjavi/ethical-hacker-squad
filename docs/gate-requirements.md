@@ -1319,7 +1319,7 @@ pass if the gate read the source it was meant to. The twenty-sixth checks this
 file's own row against its own tally. The twenty-seventh is the control: the
 real tree, all twelve real batteries, no mutation.
 
-The writer's side is `scripts/run-batteries.selftest.sh`, 20 cases, six of them
+The writer's side is `scripts/run-batteries.selftest.sh`, 41 cases, six of them
 the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
 one leaves nothing, a battery that prints no tally leaves nothing, no
 `EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
@@ -1657,30 +1657,65 @@ stderr that is neither the captured pipe nor a contender's sink now says so and
 exits 9. Proved in the negative directly: with fd 2 closed the old fixture exits
 7 and the new one exits 9, and the new case demands the 9.
 
-### Running the batteries at the same time, and why it is not in yet
+### Running the batteries at the same time, and where the answer is read
 
-`scripts/run-batteries.sh` is sequential on a ten-core laptop, and after the
-disk peaks came down (29240 MiB to 101 MiB across nine batteries) running them
-together stopped being a way to fill the disk. A parallel candidate was written
-and checked where the answer is not noisy: `--list` is identical (32 batteries
-at the time of that comparison),
-and against a sequential transcript it differs by the three lines the sequential
-runner already differs from ITSELF by - one mutant timer and two temporary paths
-- plus exactly one declared line, `batteries run: 32 (up to 4 at a time)`. Order
-is preserved and every verdict matches.
-
-It is not merged, because the number that would justify it **could not be
-measured here**. Four alternated suite runs:
+`scripts/run-batteries.sh` runs the batteries several at a time, `--jobs 4` by
+default. It was sequential on a ten-core laptop for a real reason - nine
+batteries copied the whole tree per case and one peaked at 6168 MiB, so starting
+two together was a way to fill the disk - and it stayed sequential for a while
+after that reason was removed, because the number that would justify the change
+**could not be measured on the machine that asked the question**. Four
+alternated suite runs there:
 
 | arm | runs |
 |---|---|
 | sequential, unchanged | 309.5 s and 483.6 s |
 | candidate, 4 workers | 331.4 s and 249.0 s |
 
-The sequential runner disagrees with itself by 174.1 s, 56% of its own faster
-run, over identical code. That range swallows the whole effect in both
-directions, so neither "it is faster" nor "it is slower" is a reading this
-machine can support. A merge would be argued, not measured.
+The sequential arm disagrees with itself by 174.1 s, 56% of its own faster run,
+over identical code. That range swallows the effect in both directions, so
+neither "faster" nor "slower" was a reading that machine could support.
+
+So the instrument moved instead of the standard.
+`.github/workflows/battery-workers-ab.yml` runs the two arms **alternately** on
+a runner and reports whether their ranges overlap, which is the only form this
+answer can take. Both arms are the same file at the same commit and differ only
+in `--jobs`, so the worker count is not confounded with every other line that
+would differ between two files. It carries a push trigger as well as
+`workflow_dispatch` for an unglamorous reason: a `workflow_dispatch` workflow
+can only be dispatched once its file is on the default branch, and a measurement
+that can only run after the merge arrives after the decision it exists to
+inform.
+
+What the batteries can decide without a clock is decided by the batteries: same
+exit code under one worker and under four, and the same transcript but for the
+one line that declares the worker count.
+
+**The printer, and the result that is never coming.** Output is buffered per
+battery and printed in LIST order, so the transcript does not depend on which
+machine ran it, and the tally ledger is written from that printer - single
+threaded by construction, so concurrent appends to one file are a question
+nobody has to answer.
+
+Written the obvious way, the printer waits at battery *n* for its exit code and
+has two states: here, and not yet. It has no value for *never*. A launcher that
+ends early leaves it waiting on a file nobody will write, and the job hangs
+until the six-hour CI timeout kills it having said nothing about why. That is
+not hypothetical - **this file's own mutant case produces exactly that shape**,
+and the first parallel printer answered it by hanging. The launcher now leaves a
+marker when its last worker is done, and the absence of a result beside the
+presence of that marker is read as what it is: COULD NOT MEASURE, named battery
+by battery. `EHS_BATTERY_STALL` (default 900 s) is the floor under the one path
+a marker cannot cover, a launcher killed outright.
+
+**A count that reported work nobody did.** The same mutant went green over a
+broken protection first. It takes FD 3 away from the launcher so a battery that
+reads stdin eats the rest of the list, and it did exactly that - but the count
+line was left counting rows of the list rather than results, so a run in which
+one battery ran and two never started still announced `batteries run: 3`, and
+the case whose needle is that count reported the protection intact. `found` now
+counts batteries that came back with an exit code. A tally that reports work
+nobody did will cover for whatever broke it.
 
 ## Branch naming
 
