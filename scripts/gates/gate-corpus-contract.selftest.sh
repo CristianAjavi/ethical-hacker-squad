@@ -44,7 +44,9 @@ K="skills/ethical-hacker-squad/references/knowledge"
 # lo mismo, solo que mas cara.
 PRISTINE="$TMP/pristine"
 mkdir -p "$PRISTINE"
-(cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$PRISTINE" && tar -xf -)
+# 259 MB of the repository's 321 MB is tooling/claude-cli/node_modules, which
+# this gate reads none of, and every case copies from the tree below.
+(cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$PRISTINE" && tar -xf -)
 
 # case <name> <expected rc> <expected substring> <python mutation>
 case_run() {

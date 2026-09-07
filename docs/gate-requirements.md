@@ -938,6 +938,86 @@ still renders a failed write as a case FAILURE where the exit-code doctrine says
 COULD NOT MEASURE. That is a separate defect, it is still open, and removing the
 pressure only made it rarer.
 
+### The same defect, in nine more batteries
+
+`gate-protected-paths.selftest.sh` was not special. Nine other batteries carried
+the identical pair of mistakes - the unexcluded `node_modules`, and a `work`
+that is `"$TMP/$name"` so the leading `rm -rf` deletes a directory that does not
+exist yet - and none of them reads a byte of `tooling/`, which was checked
+before the exclusion went in rather than after.
+
+| battery | peak before | peak after | |
+|---|---:|---:|---:|
+| `gate-bench-integrity.selftest.sh` | 6170.3 MiB | **10.1 MiB** | 611x |
+| `gate-scorecard-threshold.selftest.sh` | 4292.5 MiB | **10.1 MiB** | 425x |
+| `gate-triage-rules.selftest.sh` | 4292.5 MiB | **10.1 MiB** | 425x |
+| `gate-corpus-identifiers.selftest.sh` | 3755.9 MiB | **10.1 MiB** | 372x |
+| `gate-findings-artifact.selftest.sh` | 3219.3 MiB | **10.1 MiB** | 319x |
+| `gate-licence-hygiene.selftest.sh` | 2414.5 MiB | **10.1 MiB** | 239x |
+| `gate-bench-blinding.selftest.sh` | 2414.3 MiB | **10.1 MiB** | 239x |
+| `gate-secret-scan.selftest.sh` | 2143.9 MiB | **10.1 MiB** | 212x |
+| `gate-corpus-contract.selftest.sh` | 536.6 MiB | **20.3 MiB** | 26x |
+| **the nine together** | **29240 MiB** | **101 MiB** | **289x** |
+
+Freeing each case's copy when the case ends is the half of the fix that matters
+for a battery whose cases outnumber its cores; excluding `node_modules` is the
+half that matters for every single copy. The gate under test never sees a
+difference: the same tree, minus 259 MB it does not open.
+
+### The instrument that reported a regression that had not happened
+
+The first version of this table was measured by sampling the machine's FREE DISK
+while each battery ran. It reported that `gate-corpus-contract.selftest.sh` had
+got **worse** - 290 MiB before, 601 MiB after - and that `gate-bench-integrity`
+still held 1727 MiB after the fix. Both were artefacts. Free space is a
+machine-wide number: every neighbouring process moves it, so what that
+instrument measured was the laptop, not the job. It is the same defect the disk
+floor above was fixed for, one level up, committed this time into the ruler
+rather than into the rule.
+
+Measured instead on the tree the battery itself creates under `TMPDIR`, the two
+cells read 536.6 MiB -> 20.3 MiB and 6170.3 MiB -> 10.1 MiB. Nothing regressed.
+
+The two instruments can be told apart without trusting either one, and without
+any argument about which is right, by pointing both at something that did not
+change. 12 batteries were left untouched by this commit. Here is what free-disk
+sampling said about their peaks on two consecutive runs of the same suite over
+the same code:
+
+| untouched battery | run A | run B | |
+|---|---:|---:|---:|
+| `meter.selftest.sh` | 534.2 MiB | 1.1 MiB | 486x |
+| `time-repeat.selftest.sh` | 148.4 MiB | 0.6 MiB | 247x |
+| `run-batteries.selftest.sh` | 9.8 MiB | 0.0 MiB | 98x |
+| `verify-target-checkout.selftest.sh` | 0.8 MiB | 13.8 MiB | 17x |
+| `gate-agent-tools.selftest.sh` | 126.1 MiB | 1570.3 MiB | 12x |
+| `gate-benign-control.selftest.sh` | 18.9 MiB | 142.6 MiB | 8x |
+| `gate-protected-paths.selftest.sh` | 36.7 MiB | 158.1 MiB | 4x |
+| `coverage-sweep.mutants.selftest.sh` | 129.1 MiB | 495.9 MiB | 4x |
+| `gate-coverage-sweep.selftest.sh` | 9.4 MiB | 22.9 MiB | 2x |
+| `gate-verdict-vocabulary.selftest.sh` | 8.8 MiB | 8.4 MiB | 1x |
+| `gate-reproduction.selftest.sh` | 270.5 MiB | 277.8 MiB | 1x |
+| `gh.selftest.sh` | 325.0 MiB | 328.2 MiB | 1x |
+
+The instrument disagrees with ITSELF by up to 486x on work that did not change
+by a byte. `meter.selftest.sh` alone reads 534.2 MiB and then 1.1 MiB. Measured on the
+batteries' own trees, the same repeat moves the largest before arm by 5.8 MiB
+out of 6170 (0.09%) and every after arm by 0.0 MiB.
+
+A number whose repeats disagree by more than the effect being claimed is not
+evidence for that effect in either direction, and that is as true of the cell
+that flatters the change as of the one that accuses it. It was the accusing cell
+that cost the time here: half an hour looking for a regression that had never
+happened.
+
+The sampler also has to stay out of its own way. Walking a 6 GiB tree every
+0.15 s costs more than the battery being measured, and the first attempt at it
+inflated the wall clock of exactly the arm it was meant to accuse - the one with
+the most tree to walk. It now sleeps three times the cost of the previous walk,
+which bounds it near a fifth of the run whatever it is pointed at. The wall
+clock it prints is still not publishable for that reason; it says the battery
+ran, and `scripts/time-repeat.py` says how long anything takes.
+
 ### A disk floor that never looked at the tree
 
 The sweep stopped launching clones when free disk fell under a flat 3 GiB. That

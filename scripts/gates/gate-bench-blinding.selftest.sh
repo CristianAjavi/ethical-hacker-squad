@@ -21,15 +21,20 @@ B="bench/runs/2026-08-22-third-competitor/verify/claims.json"
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
   rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules is
+  # 259 MB of the repository's 321 MB and this gate reads none of it. Nor is the
+  # `rm -rf` below: `work` is "$TMP/$name", a NEW directory per case, so the
+  # `rm -rf "$work"` above only ever removed a directory that did not exist yet
+  # and every copy piled up until the EXIT trap fired.
+  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
   local before after
   before="$(cd "$work" && find bench -type f -exec shasum {} + | shasum)"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
   fi
   after="$(cd "$work" && find bench -type f -exec shasum {} + | shasum)"
   if [ -n "$mutation" ] && [ "$before" = "$after" ]; then
-    printf 'HARNESS  %-38s the mutation was a no-op\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-38s the mutation was a no-op\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
@@ -39,6 +44,7 @@ case_run() {
     printf 'FAILED   %-38s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
+  rm -rf "$work"
 }
 
 echo "=== self-test: gate-bench-blinding.sh (source: $SRC) ==="

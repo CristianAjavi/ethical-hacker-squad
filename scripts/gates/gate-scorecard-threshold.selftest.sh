@@ -20,9 +20,14 @@ F="scripts/gates/fixtures/scorecard/good.json"
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
   rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules is
+  # 259 MB of the repository's 321 MB and this gate reads none of it. Nor is the
+  # `rm -rf` below: `work` is "$TMP/$name", a NEW directory per case, so the
+  # `rm -rf "$work"` above only ever removed a directory that did not exist yet
+  # and every copy piled up until the EXIT trap fired.
+  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
   fi
   local out rc results="$work/$F"
   [ -f "$results" ] || results="$work/.absent.json"
@@ -33,6 +38,7 @@ case_run() {
     printf 'FAILED   %-40s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -6; fail=$((fail+1))
   fi
+  rm -rf "$work"
 }
 
 echo "=== self-test: gate-scorecard-threshold.sh (source: $SRC) ==="
