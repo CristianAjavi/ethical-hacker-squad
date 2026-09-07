@@ -434,7 +434,11 @@ self_test() {
   for f in "$FIXTURES"/unmeasurable/*.md; do
     [ -e "$f" ] || { printf '  self-test: there are no unmeasurable fixtures\n' >&2; return 2; }
     n_unm=$((n_unm + 1))
-    if ! awk -v FILE="$(basename "$f")" -f "$DETECTOR" "$f" 2>/dev/null | grep -q '^UNMEAS|'; then
+    det_out="$(awk -v FILE="$(basename "$f")" -f "$DETECTOR" "$f" 2>/dev/null)"; det_rc=$?
+    if [ "$det_rc" -ne 0 ]; then
+      printf '  self-test COULD NOT MEASURE: the detector exited %s reading %s\n' "$det_rc" "$(basename "$f")" >&2
+      ok_st=0
+    elif ! grep -q '^UNMEAS|' <<<"$det_out"; then
       printf '  self-test failed: %s must come out UNMEASURABLE and it came out silent\n' "$(basename "$f")" >&2
       ok_st=0
     fi

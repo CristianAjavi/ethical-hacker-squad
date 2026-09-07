@@ -324,7 +324,7 @@ echo "== the result that is never coming =="
 # mutant above is exactly that shape, so it doubles as this case's fixture: it
 # has to come back with a VERDICT, and quickly.
 start="$(date +%s)"
-EHS_BATTERY_STALL=20 bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/hang.out" 2>&1
+EHS_BATTERY_STALL=5 bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/hang.out" 2>&1
 rc=$?
 elapsed=$(( $(date +%s) - start ))
 [ "$rc" -eq 2 ] && ok "a battery whose result never arrives is rc 2, not a hang" \
@@ -341,6 +341,24 @@ grep -q 'produced no exit code' "$TMP/hang.out" \
 grep -q 'batteries run: 1' "$TMP/hang.out" \
   && ok "the count reports the 1 result, not the 3 rows of the list" \
   || bad "the count claims batteries it did not measure: $(grep -o "batteries run: [0-9]*" "$TMP/hang.out")"
+
+# THE BOUND IS IN SECONDS, NOT IN POLLS. It was counted in polls of 0.2 s, so
+# the documented 900 s floor fired at 180 and cut a battery that was still
+# running - printing its half-written transcript under the word UNMEASURABLE and
+# a headline that said the suite could not measure. This case is the smallest
+# tree that tells the two readings apart: a battery that takes two seconds under
+# a four-second bound. Read as polls, four is 0.8 s and the battery is declared
+# resultless; read as seconds, it finishes with room to spare.
+mkdir -p "$TMP/slowbat"
+printf '#!/usr/bin/env bash\nsleep 2\necho "--- 1 passed, 0 failed ---"\nexit 0\n' \
+  > "$TMP/slowbat/slow.selftest.sh"
+chmod +x "$TMP/slowbat/slow.selftest.sh"
+EHS_BATTERY_STALL=4 bash "$SUBJECT" "$TMP/slowbat" >"$TMP/slow.out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "a two-second battery survives a four-second bound" \
+                || bad "a 2 s battery under a 4 s bound gave rc $rc: the bound is being read as polls, not seconds"
+grep -q 'produced no exit code' "$TMP/slow.out" \
+  && bad "the printer gave up on a battery that was still running" \
+  || ok "the printer waited for the result instead of counting polls"
 
 # A stall bound that is not a positive integer must stop the run. Left to mean
 # "no bound", it would restore the hang through the back door.

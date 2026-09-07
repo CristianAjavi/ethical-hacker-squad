@@ -192,6 +192,13 @@ STALL="${EHS_BATTERY_STALL:-900}"
 case "$STALL" in
   ''|*[!0-9]*) err "COULD NOT MEASURE" "EHS_BATTERY_STALL takes a positive integer, got '$STALL'"; exit 2 ;;
 esac
+# THE BOUND IS IN SECONDS AND THE POLL IS EVERY 0.2 s. Counted in polls instead,
+# the documented 900 s floor was 180 s, and "a floor under an infinite wait and
+# not a policy about slowness" - the sentence in this file's own header - was a
+# policy about slowness with its threshold at a fifth of what everyone reading
+# the variable would assume. It cut a battery that was still running and printed
+# its half-written output underneath the word UNMEASURABLE.
+STALL_TICKS=$((STALL * 5))
 
 worst=0; found=0; failed=""; unmeasured=""
 n=0
@@ -208,7 +215,7 @@ while [ "$n" -lt "$total" ]; do
       [ -f "$TMPD/$n.rc" ] && have=1
       break
     fi
-    [ "$waited" -ge "$STALL" ] && break
+    [ "$waited" -ge "$STALL_TICKS" ] && break
     sleep 0.2
     waited=$((waited + 1))
   done

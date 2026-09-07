@@ -96,7 +96,7 @@ selftest() {
   # scoring as covered on the strength of a crash. Measured: 5 of the 7 sites in
   # this repository that died with nobody naming them were here.
   out="$(audit "$work/healthy")"
-  if printf '%s\n' "$out" | grep -qE '^[12]\|'; then
+  if grep -qE '^[12]\|' <<<"$out"; then
     rm -rf "$work"
     echo "FAILED  healthy-fixture-is-clean"
     gate_fail "self-test: the healthy fixture returned '$out'"; return "$GATE_FAIL"
@@ -113,13 +113,13 @@ selftest() {
   for spec in "${checks[@]}"; do
     name="${spec%%|*}"; spec="${spec#*|}"; code="${spec%%|*}"; phrase="${spec#*|}"
     out="$(audit "$work/$name")"
-    if ! printf '%s\n' "$out" | grep -qF -- "$phrase"; then
+    if ! grep -qF -- "$phrase" <<<"$out"; then
       rm -rf "$work"
       echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' never said '$phrase'; it said: ${out//$'\n'/ / }"
       return "$GATE_FAIL"
     fi
-    if ! printf '%s\n' "$out" | grep -q "^$code|"; then
+    if ! grep -q "^$code|" <<<"$out"; then
       rm -rf "$work"
       echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' did not return $code; it said: ${out//$'\n'/ / }"

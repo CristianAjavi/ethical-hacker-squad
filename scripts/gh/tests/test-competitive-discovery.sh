@@ -77,7 +77,7 @@ case_run() {  # case_run <name> <want-rc> <needle> <hits> <marked> [env...]
   local out rc
   out="$(env "$@" PATH="$LAB/bin:$PATH" HITS="$hits" MARKED="$marked" \
          bash "$TOOL" --baseline "$LAB/baseline.json" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf '  ok       %-34s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf '  FAILED   %-34s rc=%s (wanted %s)\n' "$name" "$rc" "$want"

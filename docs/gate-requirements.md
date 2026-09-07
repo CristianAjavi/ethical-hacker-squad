@@ -48,7 +48,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
-| an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (12 cases) |
+| an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
 | the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (27 cases) |
@@ -148,7 +148,8 @@ matches a REGEX: `[FAIL]` is a character class, and `a*b` and `a.b` both match
 `aXb`. Replacing the idiom that way would have silently changed 30 assertions.
 
 `gate-assertion-pipes.sh` cables the rule and its battery holds down three
-things learned from the gate's own first red:
+things learned from the gate's own first red, plus four more from the hole the
+gate could not see from inside itself:
 
 - **the population is asked for, not globbed.** The first version found 37
   batteries where `run-batteries.sh --list` has 35; the two extra were
@@ -162,9 +163,40 @@ things learned from the gate's own first red:
   verdict. Without those cases a gate that reddened on every tree would pass
   its own battery.
 
-Four mutants were run against that battery — the `[^|]` guard deleted, the
-population re-globbed, the empty population passed as clean, and the pattern
-widened to any pipe — and each died in the case named for it.
+- **a gate that self-tests inline is read too.** For three versions the
+  population was exactly what `run-batteries.sh --list` names, and a gate
+  invoked as `gate-x.sh --self-test` is not a battery, so its code was never
+  opened. The gate reported a clean zero over the files it could see, which is
+  the most convincing shape a blind spot can take. Asked from outside, the
+  shadow held **28 sites across 13 files** — three of them inside a gate that
+  had just produced a red nobody could reproduce. The population is now the
+  runner's list **plus** every other `*.sh` under `scripts/`, with the same
+  `find` the runner uses; the runner is still asked, and a battery missing from
+  the wider glob is exit `2`, not a smaller number printed with confidence.
+- **a line that is only a comment asserts nothing.** This gate quotes the shape
+  it forbids twice in its own header. Without that rule the widened population
+  would put it in permanent red over its own docstring, and the fix for that
+  would have been an exemption list — which opens once and stays open.
+- **sites, not lines.** The first widened version displayed with `grep -E` and
+  counted with `grep -coE`; `-c` counts *lines* and `-o` does not stop it, so a
+  line carrying two sites read as one. It reported 27 where there were 28, and
+  the gap was chased between two scripts for a whole iteration before either
+  number was believed. Display and count are now one `awk` pass over one
+  pattern.
+- **the wide list must contain the narrow one.** The runner remains the
+  authority on what a battery is; asking it is what proves the glob widened the
+  population instead of trading one blind spot for another.
+
+Eight mutants were run against that battery — the `[^|]` guard deleted, the
+population re-globbed, the empty population passed as clean, the pattern widened
+to any pipe, the population narrowed back to the runner's list, the comment skip
+removed, the counter switched back to lines, and the glob's prune widened until
+it lost batteries — and each died in the case named for it. The count mutant was
+not invented afterwards: the case caught that defect on its first run.
+
+**What has no case of its own.** Deleting the wide-versus-narrow reconciliation
+leaves the battery green; only the mutant that widens the prune proves the guard
+fires at all. Written down rather than dressed up.
 
 **What it does not close.** A grep killed by a signal is still
 indistinguishable from "not found" once it survives the pipe removal, because
@@ -1437,7 +1469,7 @@ pass if the gate read the source it was meant to. The twenty-sixth checks this
 file's own row against its own tally. The twenty-seventh is the control: the
 real tree, all twelve real batteries, no mutation.
 
-The writer's side is `scripts/run-batteries.selftest.sh`, 41 cases, six of them
+The writer's side is `scripts/run-batteries.selftest.sh`, 43 cases, six of them
 the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
 one leaves nothing, a battery that prints no tally leaves nothing, no
 `EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
@@ -1870,6 +1902,20 @@ marker when its last worker is done, and the absence of a result beside the
 presence of that marker is read as what it is: COULD NOT MEASURE, named battery
 by battery. `EHS_BATTERY_STALL` (default 900 s) is the floor under the one path
 a marker cannot cover, a launcher killed outright.
+
+**The floor that was a ceiling.** That bound is written in seconds — in its
+variable, in its header, in this paragraph — and was counted in *polls* of the
+0.2 s wait loop. Nine hundred polls are 180 seconds, so "a floor under an
+infinite wait and not a policy about slowness" was a policy about slowness with
+its threshold at a fifth of what anyone exporting the variable would assume, and
+`EHS_BATTERY_STALL=20` in this repository's own battery meant four. Measured:
+under eight workers it cut `gate-bench-integrity.selftest.sh` at case 22 of 23,
+printed the half-written transcript, and returned the whole suite as
+`COULD NOT MEASURE` — while the same battery run alone is 23 passed, 0 failed,
+rc 0. The case that separates the two readings is the smallest tree that can: a
+two-second battery under a four-second bound, which survives if the bound is
+seconds and is declared resultless if it is polls. Run against the old
+arithmetic it goes red; that is the only reason to believe the new one.
 
 **A count that reported work nobody did.** The same mutant went green over a
 broken protection first. It takes FD 3 away from the launcher so a battery that

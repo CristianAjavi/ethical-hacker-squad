@@ -410,7 +410,7 @@ EOF
   while IFS= read -r -d '' f; do
     [ "$f" = "${BASH_SOURCE[0]}" ] && continue     # never scan the gate's own source
     ext="${f##*.}"
-    if printf '%s' "$ext" | grep -qE "^($TEXT_EXT)$"; then
+    if grep -qE "^($TEXT_EXT)$" <<<"$ext"; then
       printf '%s\0' "$f" >>"$TMPD/files.list"
       N_FILES=$((N_FILES + 1))
     else

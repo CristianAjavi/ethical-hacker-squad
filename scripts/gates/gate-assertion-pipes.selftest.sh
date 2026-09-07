@@ -77,14 +77,22 @@ case_run() {
 echo "=== self-test: gate-assertion-pipes.sh (source: $SRC) ==="
 
 # --- the control ----------------------------------------------------------
-case_run control-a-clean-battery 0 "no battery tests a needle through a pipe" '
+case_run control-a-clean-battery 0 "no file under scripts/ tests a needle through a pipe" '
 scaffold "'"$TMP"'/control-a-clean-battery"
 printf "%s\n" "$CLEAN" > "'"$TMP"'/control-a-clean-battery/scripts/gates/gate-a.selftest.sh"'
 
 # The count is part of the verdict. A gate that read zero files would also
 # report zero pipes, and this line is what separates the two.
-case_run the-count-is-what-the-runner-lists 0 "this gate read: 3" '
+case_run the-count-is-what-the-runner-lists 0 "batteries the runner lists: 3" '
 w="'"$TMP"'/the-count-is-what-the-runner-lists"; scaffold "$w"
+for n in a b c; do printf "%s\n" "$CLEAN" > "$w/scripts/gates/gate-$n.selftest.sh"; done'
+
+# The wide count is the OTHER half of the same verdict, and it is not the same
+# number: three batteries plus the runner itself is four shell files. Asking the
+# runner is what proves the glob did not lose anybody; the glob is what stops a
+# gate that self-tests inline from living outside the population.
+case_run the-wide-count-includes-what-is-not-a-battery 0 "shell files this gate read: 4" '
+w="'"$TMP"'/the-wide-count-includes-what-is-not-a-battery"; scaffold "$w"
 for n in a b c; do printf "%s\n" "$CLEAN" > "$w/scripts/gates/gate-$n.selftest.sh"; done'
 
 # --- the shape the gate exists to remove ----------------------------------
@@ -119,7 +127,7 @@ echo "printf %s \"\$a\" $P grep -q x" > "$w/scripts/meter/meter.selftest.sh"'
 # --- the three that must NOT fire -----------------------------------------
 # `||` is not a pipe. Without this case the [^|] guard could be deleted and
 # every battery in the repo would go red for a shape that has no writer at all.
-case_run or-else-grep-q-is-not-a-pipe 0 "no battery tests a needle through a pipe" '
+case_run or-else-grep-q-is-not-a-pipe 0 "no file under scripts/ tests a needle through a pipe" '
 w="'"$TMP"'/or-else-grep-q-is-not-a-pipe"; scaffold "$w"
 { echo "[ -n \"\$a\" ] || grep -q x file"
   echo "true"
@@ -127,7 +135,7 @@ w="'"$TMP"'/or-else-grep-q-is-not-a-pipe"; scaffold "$w"
 
 # A pipe that only DISPLAYS is out of scope and says so in the header. A
 # truncated display line changes no verdict.
-case_run a-pipe-that-only-displays-is-allowed 0 "no battery tests a needle through a pipe" '
+case_run a-pipe-that-only-displays-is-allowed 0 "no file under scripts/ tests a needle through a pipe" '
 w="'"$TMP"'/a-pipe-that-only-displays-is-allowed"; scaffold "$w"
 { echo "printf %s \"\$out\" | grep -E oops | head -3"
   echo "printf %s \"\$out\" | sed s/a/b/"
@@ -136,12 +144,53 @@ w="'"$TMP"'/a-pipe-that-only-displays-is-allowed"; scaffold "$w"
 # THE FIRST RED THIS GATE EVER PRODUCED. A fixture holds on purpose whatever
 # shape the fixture is there to exercise; the runner prunes them, so the gate
 # must not see them. This case is the difference between 35 and 37.
-case_run a-fixture-is-not-a-battery 0 "this gate read: 1" '
+case_run a-fixture-is-not-a-battery 0 "shell files this gate read: 2" '
 w="'"$TMP"'/a-fixture-is-not-a-battery"; scaffold "$w"
 printf "%s\n" "$CLEAN" > "$w/scripts/gates/gate-a.selftest.sh"
 mkdir -p "$w/scripts/gates/fixtures/negative-proof/bad/gates"
 echo "printf %s \"\$a\" $P grep -q x" \
   > "$w/scripts/gates/fixtures/negative-proof/bad/gates/gate-alpha.selftest.sh"'
+
+# --- what the narrow population could not see -----------------------------
+# THE HOLE THIS GATE COULD NOT SEE FROM INSIDE ITSELF. A gate whose self-test
+# runs INLINE - `gate-x.sh --self-test`, no sibling file - is not a battery, so
+# for three versions the runner never named it and this gate never read it. It
+# reported a clean zero over the files it could see. Measured from outside: 13
+# files and 28 sites, three of them in a gate that had just produced a red
+# nobody could reproduce. Delete the wide glob and this case is the one that
+# goes red; the twelve that came before it stay green.
+case_run a-gate-that-self-tests-inline-is-read 1 "gates/gate-inline.sh:1" '
+w="'"$TMP"'/a-gate-that-self-tests-inline-is-read"; scaffold "$w"
+printf "%s\n" "$CLEAN" > "$w/scripts/gates/gate-a.selftest.sh"
+echo "printf %s \"\$a\" '"$P"' grep -q x" > "$w/scripts/gates/gate-inline.sh"'
+
+# And the other half of those 28: helper scripts that are neither a battery nor
+# a gate. Six of the sites lived in scripts/gh/.
+case_run a-helper-that-is-neither-gate-nor-battery 1 "gh/build-thing.sh:1" '
+w="'"$TMP"'/a-helper-that-is-neither-gate-nor-battery"; scaffold "$w"
+printf "%s\n" "$CLEAN" > "$w/scripts/gates/gate-a.selftest.sh"
+mkdir -p "$w/scripts/gh"
+echo "echo \"\$a\" '"$P"' grep -qF x" > "$w/scripts/gh/build-thing.sh"'
+
+# A LINE THAT IS ONLY A COMMENT ASSERTS NOTHING. This gate quotes the shape it
+# forbids twice in its own header to explain itself; without this case the
+# widened population would put the gate in permanent red over its own docstring,
+# and the fix for that would have been an exemption list - which opens once and
+# stays open.
+case_run a-comment-is-not-an-assertion 0 "no file under scripts/ tests a needle" '
+w="'"$TMP"'/a-comment-is-not-an-assertion"; scaffold "$w"
+{ echo "#   printf %s \"\$out\" '"$P"' grep -q -- \"\$needle\""
+  echo "    #   indented, and still only a comment: '"$P"' grep -q x"
+  printf "%s\n" "$CLEAN"
+} > "$w/scripts/gates/gate-a.selftest.sh"'
+
+# SITES, NOT LINES. Counting matching lines read 27 where there were 28: one
+# line carried two of them, and the gap between that 27 and the 22 a rewrite
+# reported was chased for a whole iteration before either number was believed.
+case_run two-sites-on-one-line-count-as-two 1 "assertions piped into grep -q: 2" '
+w="'"$TMP"'/two-sites-on-one-line-count-as-two"; scaffold "$w"
+echo "printf %s \"\$a\" '"$P"' grep -q x && printf %s \"\$b\" '"$P"' grep -q y" \
+  > "$w/scripts/gates/gate-a.selftest.sh"'
 
 # --- could not measure: never a pass --------------------------------------
 case_run no-scripts-directory 2 "nothing was read, which is not the same" '
