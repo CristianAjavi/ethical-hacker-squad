@@ -63,10 +63,10 @@ judge() {
   local name="$1" want="$2" needle="$3" absent="$4" rc="$5" out="$6" why=""
   [ "$rc" = "$want" ] || why="rc $rc, expected $want"
   if [ -z "$why" ] && [ "$needle" != "-" ]; then
-    printf '%s' "$out" | grep -qE -- "$needle" || why="never said '$needle'"
+    grep -qE -- "$needle" <<<"$out" || why="never said '$needle'"
   fi
   if [ -z "$why" ] && [ "$absent" != "-" ]; then
-    printf '%s' "$out" | grep -qE -- "$absent" && why="said '$absent', which it must not"
+    grep -qE -- "$absent" <<<"$out" && why="said '$absent', which it must not"
   fi
   if [ -z "$why" ]; then
     echo "PASS  $name"; pass=$((pass + 1))

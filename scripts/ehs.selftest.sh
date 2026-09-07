@@ -17,7 +17,7 @@ check() {
   if [ "$rc" -ne "$want_rc" ]; then
     ok=1
   fi
-  if [ -n "$needle" ] && ! echo "$out" | grep -q "$needle"; then
+  if [ -n "$needle" ] && ! grep -q "$needle" <<<"$out"; then
     ok=1
   fi
 

@@ -40,7 +40,7 @@ case_run() {
   git -C "$d" -c user.email=t@e -c user.name=t commit -qm change
   local out rc
   out="$(EHS_REPO_ROOT="$d" EHS_BASE_REF=main GITHUB_HEAD_REF="$branch" bash "$GATE" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-32s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-32s rc=%s (wanted %s)\n' "$name" "$rc" "$want"

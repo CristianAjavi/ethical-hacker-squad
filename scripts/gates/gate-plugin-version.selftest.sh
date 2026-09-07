@@ -79,7 +79,7 @@ run_case() {
   G "$d" add -A; G "$d" commit -qm change --allow-empty
   local out rc=0
   out="$(EHS_REPO_ROOT="$d" EHS_BASE_REF=main EHS_CHANNEL="$channel" bash "$GATE" 2>&1)" || rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -qi -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -qi -- "$needle" <<<"$out"; }; then
     printf 'ok       %-38s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-38s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -130,7 +130,7 @@ echo "-- could not measure (never a pass)"
 d="$TMP/no-base"; mkdir -p "$d"; build_repo "$d" "1.0.0"
 G "$d" checkout -q -b feat/change; m_served "$d"; G "$d" add -A; G "$d" commit -qm change
 rc=0; out="$(EHS_REPO_ROOT="$d" EHS_CHANNEL=latest EHS_BASE_REF=origin/does-not-exist bash "$GATE" 2>&1)" || rc=$?
-if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -qi "cannot resolve a base ref"; then
+if [ "$rc" -eq 2 ] && grep -qi "cannot resolve a base ref" <<<"$out"; then
   printf 'ok       %-38s rc=2\n' base-ref-unreachable; pass=$((pass+1))
 else printf 'FAILED   %-38s rc=%s (wanted 2)\n' base-ref-unreachable "$rc"
      printf '%s\n' "$out" | sed 's/^/         /' | tail -8; fail=$((fail+1)); fi
@@ -150,7 +150,7 @@ JSON
 printf -- '---\nname: pack\ndescription: A throwaway skill used only by this self-test.\n---\n\n# pack\n' > "$d/skills/pack/SKILL.md"
 printf -- '---\nname: a\ndescription: A throwaway agent used only by this self-test.\n---\n\nagent\n' > "$d/agents/a.md"
 rc=0; out="$(EHS_REPO_ROOT="$d" EHS_CHANNEL=latest bash "$GATE" 2>&1)" || rc=$?
-if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -qi "cannot resolve a base ref"; then
+if [ "$rc" -eq 2 ] && grep -qi "cannot resolve a base ref" <<<"$out"; then
   printf 'ok       %-38s rc=2\n' not-a-git-worktree; pass=$((pass+1))
 else printf 'FAILED   %-38s rc=%s (wanted 2)\n' not-a-git-worktree "$rc"
      printf '%s\n' "$out" | sed 's/^/         /' | tail -8; fail=$((fail+1)); fi

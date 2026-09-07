@@ -48,11 +48,72 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (12 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
 | the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (27 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
+
+## An assertion may not hang on a pipe that can die
+
+Thirty-seven assertions across twenty-five batteries were written this way:
+
+```sh
+printf '%s' "$out" | grep -q -- "$needle"
+```
+
+and the shape cannot tell **"the gate never said it"** from **"my grep died"**.
+`grep -q` exits 0 the instant it matches, so a MATCH makes the writer see EPIPE
+and a NON-match makes grep read to the end with no EPIPE. Run 34137809334
+produced both at once:
+
+```
+scripts/gates/gate-agent-tools.selftest.sh: line 78: printf: write error: Broken pipe
+  FAIL  a second agent declaring write authority   rc=1 but never said: at most 1 may
+        |   [FAIL] 2 agents declare write authority; at most 1 may. …
+```
+
+The case reported a measured absence while printing, two lines below, the very
+sentence it claimed was missing. **The cause of that grep's death was never
+established** — one broken pipe in the whole run, no `cannot allocate`, no
+`Killed`, no `No space left`. That is itself the finding: the idiom destroys
+the evidence it would need to diagnose itself, so it can be removed but not
+investigated.
+
+The fix is a here-string — `grep -q -- "$needle" <<<"$out"` — the same grep,
+the same flags, the same pattern, with no pipe for a writer to die in.
+
+**A substring test was the obvious fix and would have been wrong.** An
+equivalence prover run over 27 real needle-and-haystack pairs found 5 where
+`grep -q` and `[[ $out == *"$needle"* ]]` disagree, because grep without `-F`
+matches a REGEX: `[FAIL]` is a character class, and `a*b` and `a.b` both match
+`aXb`. Replacing the idiom that way would have silently changed 30 assertions.
+
+`gate-assertion-pipes.sh` cables the rule and its battery holds down three
+things learned from the gate's own first red:
+
+- **the population is asked for, not globbed.** The first version found 37
+  batteries where `run-batteries.sh --list` has 35; the two extra were
+  *fixtures*, which contain on purpose whatever shape the fixture exercises.
+- **the runner is told where to look.** It defaults to `scripts` relative to
+  the cwd and, run from elsewhere, lists nothing while still exiting 0 with its
+  complaint on stderr — a gate that asked without saying where would read an
+  empty list and blame the tree.
+- **three cases must not fire.** `x || grep -q y` is not a pipe, and a pipe
+  into `| head` or `| sed` only DISPLAYS: a truncated display line changes no
+  verdict. Without those cases a gate that reddened on every tree would pass
+  its own battery.
+
+Four mutants were run against that battery — the `[^|]` guard deleted, the
+population re-globbed, the empty population passed as clean, and the pattern
+widened to any pipe — and each died in the case named for it.
+
+**What it does not close.** A grep killed by a signal is still
+indistinguishable from "not found" once it survives the pipe removal, because
+separating them changes every battery's tally line and the count gate that
+reads it. That is a designed change, tracked separately; this gate closes the
+mechanism that was actually observed and says so in its own header.
 
 ## Exit-code semantics — applies to every gate
 

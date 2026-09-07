@@ -190,7 +190,7 @@ check "a floor nobody can offer" 2 "$D"
 # sandboxed one may fail. On a machine with no sandbox-exec the case says so and
 # is not counted as a pass, because an absent sandbox is not a proved one.
 iso="$(python3 "$HERE/../bench/selftest_isolation.py" 2>&1)"
-if printf '%s' "$iso" | grep -q '"skip"'; then
+if grep -q '"skip"' <<<"$iso"; then
   printf 'skip     %-46s %s\n' "the sandbox denies the network" "$iso"
   skip=$((skip + 1))
 elif printf '%s' "$iso" | python3 -c "

@@ -75,7 +75,7 @@ check() {
     printf '%s\n' "$out" | grep -E '\[FAIL\]|COULD NOT MEASURE' | sed 's/^/        | /' | head -6
     return
   fi
-  if [ "$needle" != "-" ] && ! printf '%s' "$out" | grep -qF "$needle"; then
+  if [ "$needle" != "-" ] && ! grep -qF "$needle" <<<"$out"; then
     printf '  FAIL  %-46s rc=%s but never said: %s\n' "$name" "$rc" "$needle"; fail=$((fail+1))
     printf '%s\n' "$out" | grep -E '\[FAIL\]|COULD NOT MEASURE' | sed 's/^/        | /' | head -6
     return

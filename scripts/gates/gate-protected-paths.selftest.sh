@@ -64,7 +64,7 @@ case_run() {
   # runner. A battery that inherits the environment is not proving what it claims.
   out="$(env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF -u BASE_REF -u CHANGED_FILES_FILE \
         EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-40s rc=%s (wanted %s)\n' "$name" "$rc" "$want"

@@ -79,7 +79,7 @@ fake() {
 check() {
   local name="$1" want="$2" needle="$3" out rc
   out="$(EHS_REPO_ROOT="$W" EHS_TALLY_LEDGER="$LEDGER" bash "$GATE" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-44s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-44s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -236,7 +236,7 @@ mkdir -p "$crash/scripts/gates/lib" "$crash/root"
 cp "$GATE" "$crash/scripts/gates/" && cp "$HERE/lib/common.sh" "$crash/scripts/gates/lib/"
 printf 'import sys\nsys.exit(1)\n' > "$crash/scripts/gates/lib/declared_case_counts.py"
 out="$(EHS_REPO_ROOT="$crash/root" bash "$crash/scripts/gates/gate-declared-case-counts.sh" 2>&1)"; rc=$?
-if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q "crash, not a verdict"; then
+if [ "$rc" -eq 2 ] && grep -q "crash, not a verdict" <<<"$out"; then
   printf 'ok       %-44s rc=%s\n' "a-crash-is-not-a-verdict" "$rc"; pass=$((pass+1))
 else
   printf 'FAILED   %-44s rc=%s (wanted 2)\n' "a-crash-is-not-a-verdict" "$rc"
@@ -257,7 +257,7 @@ fi
 
 # --- the control: the real tree, every real battery, no mutation -----------
 out="$(EHS_REPO_ROOT="$SRC" bash "$GATE" 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "every declared case count matches"; then
+if [ "$rc" -eq 0 ] && grep -q "every declared case count matches" <<<"$out"; then
   printf 'ok       %-44s rc=%s\n' "control-the-real-repository" "$rc"; pass=$((pass+1))
 else
   printf 'FAILED   %-44s rc=%s (wanted 0)\n' "control-the-real-repository" "$rc"

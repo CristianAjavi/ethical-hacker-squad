@@ -41,7 +41,7 @@ run_case() {  # <name> <expected rc> <needle> <mutation>
   "$mutate" "$d"
   local out rc=0
   out="$(bash "$d/$GATE_REL" 2>&1)" || rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -qi -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -qi -- "$needle" <<<"$out"; }; then
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"

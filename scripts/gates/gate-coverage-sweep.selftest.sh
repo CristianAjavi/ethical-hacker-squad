@@ -92,8 +92,8 @@ sweep() { "$PY" "$ENGINE" --root "$LAB/repo" --jobs 2 "$@" 2>&1; }
 # replaced whole.
 look() {
   case "$2" in
-    re:*) printf '%s' "$1" | grep -qE -- "${2#re:}" ;;
-    *)    printf '%s' "$1" | grep -qF -- "$2" ;;
+    re:*) grep -qE -- "${2#re:}" <<<"$1" ;;
+    *)    grep -qF -- "$2" <<<"$1" ;;
   esac
 }
 

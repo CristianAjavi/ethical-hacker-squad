@@ -86,7 +86,7 @@ expect() {  # <name> <mode> <needle> [extra args...]
   local art="$TMP/$name.json"
   build "$mode" "$art"
   local out; out="$(python3 "$SCORE" --findings "$art" "$@" 2>&1)"
-  if printf '%s' "$out" | grep -q -- "$needle"; then
+  if grep -q -- "$needle" <<<"$out"; then
     printf 'ok       %-28s %s\n' "$name" "$needle"; pass=$((pass+1))
   else
     printf 'FAILED   %-28s expected %s\n' "$name" "$needle"
