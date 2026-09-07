@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=19
+TOTAL_CASES=21
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -133,6 +133,16 @@ toy last && row gate-a 4 && fake gate-a sibling 'echo "1 passed, 0 failed"' \
   'echo "2 passed, 0 failed"' 'echo "4 passed, 0 failed"' 'exit 0'
 check the-last-count-line-is-the-summary 0 "4, and 4 ran"
 
+# --- the third number, which CI found the hard way -------------------------
+# gate-reproduction runs 33 cases on macOS and 32 on Linux: one needs
+# sandbox-exec and its skip branch counted toward neither pass nor fail, so the
+# battery shrank by platform and the row was right only on a Mac.
+toy skipped && row gate-a 3 && fake gate-a sibling 'echo "2 passed, 0 failed, 1 skipped"' 'exit 0'
+check a-skipped-case-still-counts-toward-the-row 0 "1 skipped here"
+
+toy skipped_extra && row gate-a 3 && fake gate-a sibling 'echo "3 passed, 0 failed, 1 skipped"' 'exit 0'
+check a-skip-the-document-did-not-count 1 "the row says 3 cases and the self-test runs 4"
+
 # --- could not measure, which is never a pass ------------------------------
 toy mute && row gate-a 6 && fake gate-a sibling 'echo "the self-test ran and everything was fine"' 'exit 0'
 check a-self-test-that-says-nothing 2 "prints no"
@@ -153,7 +163,7 @@ toy nogates && rm -rf "$W/scripts/gates"
 check no-scripts-gates-directory 2 "no scripts/gates"
 
 # --- the one row the gate refuses to run, and says so ----------------------
-toy self_row && row gate-declared-case-counts 19 && row gate-a 2 \
+toy self_row && row gate-declared-case-counts 21 && row gate-a 2 \
   && fake gate-a sibling 'echo "2 passed, 0 failed"' 'exit 0'
 check the-row-for-this-gate-is-not-run-from-here 0 "NOT run here: gate-declared-case-counts"
 

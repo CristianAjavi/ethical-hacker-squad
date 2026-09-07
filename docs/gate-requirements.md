@@ -50,7 +50,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (19 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (21 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -1172,6 +1172,23 @@ spelling (`N PASS / M FAIL`) was rewritten into the first, because a parser that
 accepts two forms is a parser that will one day accept a third that means
 something else.
 
+### The battery that shrank by platform
+
+CI found this on the gate's first run: `gate-reproduction.sh` runs **33 cases on
+macOS and 32 on Linux**. One of them asserts that the sandbox denies the network,
+which needs `sandbox-exec`; on a machine without it the case prints `skip` and,
+in the branch as written, counted toward neither `pass` nor `fail`. So the tally
+shrank silently and the row was right only on a Mac — a number measured on the
+machine that happened to write it.
+
+A skipped case is not a case that proved anything, and it is not counted as one.
+It is still a case OF THE FILE, and that is what the row counts, so the battery
+now prints three numbers, `N passed, M failed, K skipped`, and the sum of the
+three is compared against the row. The third group is optional, so the other
+eleven batteries are unaffected. When a battery does skip, the gate says so on
+that row (`33, and 33 ran (sibling battery, 1 skipped)`) rather than letting the
+skip disappear into a matching total.
+
 **Three invocation conventions live in this repository** and the gate finds each
 rather than assuming one: a sibling `<gate>.selftest.sh`, a `--self-test` flag on
 the gate itself, or a self-test that runs inline on a normal run. Where a gate
@@ -1227,18 +1244,23 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 19 cases. Seventeen build
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 21 cases. Nineteen build
 a toy repository — a table with the rows the case needs and fake gates that print
 a count and nothing else — so each costs milliseconds and can assert a shape the
 real tree does not currently contain. Both directions of drift, all three
 invocation conventions, the sibling beating the flag, `N + M` rather than `N`,
-the last summary line rather than the first, one drifted row among four good
-ones, and every refusal listed above. The eighteenth checks this file's own row
-against its own tally. The nineteenth is the control: the real tree, all twelve
-real batteries, no mutation.
+a skipped case counting toward the row and a skip the row did not count, the
+last summary line rather than the first, one drifted row among four good ones,
+and every refusal listed above. The twentieth checks this file's own row against
+its own tally. The twenty-first is the control: the real tree, all twelve real
+batteries, no mutation.
 
-Mutant bank: thirteen mutations of the core and the wrapper, each declaring in
-advance which case has to go red. **13 of 13 caught.**
+Mutant bank: fifteen mutations of the core and the wrapper, each declaring in
+advance which case has to go red. **15 of 15 caught**, in 3 s — the bank points
+the control case at a faithful toy repository rather than the real one, because
+a mutation of how the invocation is resolved can make that control launch the
+real weekly sweep. The first version of this bank died exactly that way, at
+900 s.
 
 ## A single timing is not a measurement
 

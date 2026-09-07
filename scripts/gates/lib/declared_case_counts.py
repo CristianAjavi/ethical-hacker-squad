@@ -50,7 +50,10 @@ GATES = "scripts/gates"
 SELF = "gate-declared-case-counts"
 # `gate-x.sh` ... self-test (N cases) - the `inline` variant sits between them.
 ROW = re.compile(r"`(gate-[a-z0-9-]+)\.sh`.*?self-test \((\d+) cases\)")
-COUNT = re.compile(r"(\d+) passed, (\d+) failed")
+# The third group is optional: only a battery that can skip a case prints it.
+# It still counts toward the row, because a skipped case is a case of the
+# file - one that proved nothing here, which is a different statement.
+COUNT = re.compile(r"(\d+) passed, (\d+) failed(?:, (\d+) skipped)?")
 # Sequential this would be 67 s on a ten-core box; the tail is one 33 s battery,
 # so eight at a time buys most of what there is to buy and the floor is that
 # battery. Measured: 67.1 s -> 39.7 s.
@@ -95,12 +98,14 @@ def measure(root: pathlib.Path, gate: str, declared: int):
         return gate, declared, None, (
             "its self-test (%s) prints no `N passed, M failed` line, so the row "
             "cannot be checked against anything" % how)
-    passed, failed = (int(x) for x in hits[-1])
+    passed, failed, skipped = (int(x or 0) for x in hits[-1])
     if p.returncode != 0:
         return gate, declared, None, (
             "its self-test exited %d with %d failed case(s): a count read off a "
             "red battery is not a measurement" % (p.returncode, failed))
-    return gate, declared, passed + failed, how
+    if skipped:
+        how = "%s, %d skipped here" % (how, skipped)
+    return gate, declared, passed + failed + skipped, how
 
 
 def main(argv: list[str]) -> int:

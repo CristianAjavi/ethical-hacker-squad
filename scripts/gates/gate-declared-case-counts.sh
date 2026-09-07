@@ -22,7 +22,10 @@
 #
 # WHAT IT MEASURES
 #   For every `self-test (N cases)` row: run that gate's self-test, read the
-#   `N passed, M failed` line it prints, and compare N+M against the row.
+#   `N passed, M failed` line it prints, and compare N+M against the row. A
+#   battery that can skip a case prints a third number and it counts too: CI
+#   found gate-reproduction running 33 cases on macOS and 32 on Linux, because
+#   one case needs sandbox-exec and its skip branch counted toward neither.
 #   Three invocation conventions live in this repository and the gate finds
 #   each rather than assuming one: a sibling `<gate>.selftest.sh`, a
 #   `--self-test` flag on the gate, or a self-test that runs inline on a
