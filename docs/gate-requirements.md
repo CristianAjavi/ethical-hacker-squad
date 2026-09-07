@@ -1267,6 +1267,48 @@ disagrees with itself by 174 s over identical code, so the added work is
 declared here as work rather than defended with a stopwatch reading that does
 not exist.
 
+#### The fallback that could never run
+
+Wiring it turned CI red on the first push, and the failure was Linux-only. The
+bank copied the pristine tree per mutant with
+
+```python
+subprocess.run(["cp", "-Rc", pristine, work], capture_output=True) \
+    or subprocess.run(["cp", "-R", pristine, work], check=True)
+```
+
+which is the shell idiom `cp -Rc … || cp -R …` transliterated into Python. It
+is not a fallback. **`CompletedProcess` is always truthy**, so the second call
+could never run — not on a bad day, not ever. And `cp -c` asks for an APFS
+clonefile that GNU coreutils does not have, so on the runner the first call
+exited at option parsing, nothing was copied, and the next `read_text()` raised
+`FileNotFoundError`. On this Mac the first call always worked, which is why the
+defect shipped: the arm that was broken was the one macOS never takes.
+
+The second defect was in how that arrived. A Python traceback exits 1, so
+`run-batteries.sh` filed a crash as `did not behave as specified` — a measured
+failure — and pointed the reader at the mutant instead of at the copy. Under
+`scripts/gates/lib/common.sh` a run that never reached a judgement is 2.
+
+Both were run in the negative on macOS by rejecting `-Rc` the way GNU coreutils
+rejects it, with the bank reduced to one mutant so a control costs one battery
+instead of twenty-one:
+
+| control | result |
+|---|---|
+| old code, `cp -Rc` rejected | rc 1, `FileNotFoundError … /cnt-*/una-sola-vuelta-deja-de-rechazarse/scripts/time-repeat.py` — the CI failure, reproduced locally |
+| new code, `cp -Rc` rejected | rc 0, `cazado por one-run-is-refused` — the fallback copied and the bank judged |
+| new code, both copies rejected | rc 2, `NO MEDIDO: el banco se cayo antes de juzgar` |
+
+The control that should have caught this is written and does not run, and would
+not have caught it either. `origin/loop/portable-shell-gate` carries a
+catalogue rule `cp-c` whose remedy field says, verbatim, `cp -R, or cp -Rc ...
+|| cp -R ... so the clone is tried and never assumed`. That branch is unmerged,
+and `lib/portable_shell.py` scans `SUFFIXES = (".sh", ".bash")` — this defect
+lived in a `.py`, in a `subprocess` argv list, where the catalogue's shell
+regex has nothing to match. Extending it to Python argv lists is the ticket;
+merging that branch alone would not have helped.
+
 ### The battery that answers differently on a busy machine
 
 Two cases of `scripts/time-repeat.selftest.sh` were caught going red on work

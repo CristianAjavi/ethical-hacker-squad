@@ -158,62 +158,82 @@ def run(cwd):
 
 base = tempfile.mkdtemp(prefix="cnt-")
 try:
-    pristine = pathlib.Path(base) / "p"
-    subprocess.run("(cd %s && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) "
-                   "| (mkdir -p %s && cd %s && tar -xf -)" % (ROOT, pristine, pristine),
-                   shell=True, check=True)
-    rc, red = run(pristine)
-    if rc != 0 or red:
-        # Un 1 y un 2 no se arreglan igual, asi que no se dicen igual: uno es la
-        # bateria rota y el otro es la bateria que no pudo medirse. Para el banco
-        # los dos acaban en lo mismo -- sin linea base verde, un rojo bajo un
-        # mutante no prueba nada -- y eso es COULD NOT MEASURE, nunca un fallo
-        # medido y nunca un aprobado.
-        print("REHUSADO: %s (rc=%d%s)"
-              % ("la bateria no se pudo medir sin mutar" if rc == 2 else
-                 "la bateria ya esta roja sin mutar",
-                 rc, (", casos: %s" % sorted(red)) if red else ""),
-              file=sys.stderr)
-        sys.exit(2)
-    print("linea base: la bateria pasa entera sin mutar\n")
-    ok = 0
-    stale = 0
-    for name, target, old, new, owner in M:
-        work = pathlib.Path(base) / name
-        subprocess.run(["cp", "-Rc", str(pristine), str(work)], capture_output=True) \
-            or subprocess.run(["cp", "-R", str(pristine), str(work)], check=True)
-        f = work / target
-        t = f.read_text()
-        if t.count(old) != 1:
-            print("%-44s ANCLA MALA (%d)" % (name, t.count(old)))
-            stale += 1
-            continue
-        f.write_text(t.replace(old, new))
-        rc, redset = run(work)
-        if rc == 0:
-            print("%-44s SOBREVIVE  <- nadie lo caza" % name)
-        elif owner in redset:
-            print("%-44s cazado por %s%s" % (name, owner,
-                  "" if len(redset) == 1 else "  (+%d mas)" % (len(redset) - 1)))
-            ok += 1
-        else:
-            print("%-44s ROJO PERO POR OTRO: %s" % (name, sorted(redset)[:3]))
-        subprocess.run(["/bin/rm", "-rf", str(work)])
-    print("\n%d de %d cazados por su dueno" % (ok, len(M)))
-    if stale:
-        print("NO MEDIDO: %d ancla(s) caduca(s). Un ancla que ya no casa no es un "
-              "mutante de menos: es una regla que dejo de medirse." % stale)
-        sys.exit(2)
-    if ok != len(M):
-        # Hasta aqui el banco imprimia SOBREVIVE y salia 0. La docstring prometia
-        # un 1 y nadie lo escribio, asi que el banco daba por bueno justo el
-        # hallazgo que existe para encontrar: una regla del instrumento que
-        # ningun caso mide. Cablearlo a un corredor sin esto habria metido en la
-        # suite un verde que no significa nada.
-        print("FALLO: %d mutante(s) sin el caso que dice cazarlos. Un caso verde "
-              "sobre una regla silenciada no mide esa regla: escribe el caso, en "
-              "%s." % (len(M) - ok, BATTERY))
-        sys.exit(1)
-    print("OK: cada regla del cronometro tiene un caso que la mide")
+  try:
+      pristine = pathlib.Path(base) / "p"
+      subprocess.run("(cd %s && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) "
+                     "| (mkdir -p %s && cd %s && tar -xf -)" % (ROOT, pristine, pristine),
+                     shell=True, check=True)
+      rc, red = run(pristine)
+      if rc != 0 or red:
+          # Un 1 y un 2 no se arreglan igual, asi que no se dicen igual: uno es la
+          # bateria rota y el otro es la bateria que no pudo medirse. Para el banco
+          # los dos acaban en lo mismo -- sin linea base verde, un rojo bajo un
+          # mutante no prueba nada -- y eso es COULD NOT MEASURE, nunca un fallo
+          # medido y nunca un aprobado.
+          print("REHUSADO: %s (rc=%d%s)"
+                % ("la bateria no se pudo medir sin mutar" if rc == 2 else
+                   "la bateria ya esta roja sin mutar",
+                   rc, (", casos: %s" % sorted(red)) if red else ""),
+                file=sys.stderr)
+          sys.exit(2)
+      print("linea base: la bateria pasa entera sin mutar\n")
+      ok = 0
+      stale = 0
+      for name, target, old, new, owner in M:
+          work = pathlib.Path(base) / name
+          # `cp -Rc` clona en APFS y NO existe en GNU coreutils: en Linux sale por
+          # el analisis de opciones. La linea que habia aqui era
+          #     run(["cp","-Rc",...]) or run(["cp","-R",...])
+          # transliterada del `cp -Rc ... || cp -R ...` que se usa en los guiones.
+          # En Python eso no es un respaldo: CompletedProcess es SIEMPRE verdadero,
+          # asi que el segundo `run` no corria nunca. En esta Mac el primero
+          # funciona y no se notaba; en el runner no se copiaba nada y el
+          # `read_text()` siguiente moria con FileNotFoundError.
+          if subprocess.run(["cp", "-Rc", str(pristine), str(work)],
+                            capture_output=True).returncode != 0:
+              subprocess.run(["cp", "-R", str(pristine), str(work)], check=True)
+          f = work / target
+          t = f.read_text()
+          if t.count(old) != 1:
+              print("%-44s ANCLA MALA (%d)" % (name, t.count(old)))
+              stale += 1
+              continue
+          f.write_text(t.replace(old, new))
+          rc, redset = run(work)
+          if rc == 0:
+              print("%-44s SOBREVIVE  <- nadie lo caza" % name)
+          elif owner in redset:
+              print("%-44s cazado por %s%s" % (name, owner,
+                    "" if len(redset) == 1 else "  (+%d mas)" % (len(redset) - 1)))
+              ok += 1
+          else:
+              print("%-44s ROJO PERO POR OTRO: %s" % (name, sorted(redset)[:3]))
+          subprocess.run(["/bin/rm", "-rf", str(work)])
+      print("\n%d de %d cazados por su dueno" % (ok, len(M)))
+      if stale:
+          print("NO MEDIDO: %d ancla(s) caduca(s). Un ancla que ya no casa no es un "
+                "mutante de menos: es una regla que dejo de medirse." % stale)
+          sys.exit(2)
+      if ok != len(M):
+          # Hasta aqui el banco imprimia SOBREVIVE y salia 0. La docstring prometia
+          # un 1 y nadie lo escribio, asi que el banco daba por bueno justo el
+          # hallazgo que existe para encontrar: una regla del instrumento que
+          # ningun caso mide. Cablearlo a un corredor sin esto habria metido en la
+          # suite un verde que no significa nada.
+          print("FALLO: %d mutante(s) sin el caso que dice cazarlos. Un caso verde "
+                "sobre una regla silenciada no mide esa regla: escribe el caso, en "
+                "%s." % (len(M) - ok, BATTERY))
+          sys.exit(1)
+      print("OK: cada regla del cronometro tiene un caso que la mide")
+  except SystemExit:
+    raise
+  except Exception as e:
+    # Una traza no es un fallo medido: el banco no llego a juzgar nada. Por la
+    # doctrina de scripts/gates/lib/common.sh eso es un 2. Sin esto, la caida en
+    # Linux se presento como «did not behave as specified», que manda a leer el
+    # caso equivocado.
+    print("NO MEDIDO: el banco se cayo antes de juzgar: %s: %s"
+          % (type(e).__name__, e), file=sys.stderr)
+    sys.exit(2)
 finally:
     shutil.rmtree(base, ignore_errors=True)
