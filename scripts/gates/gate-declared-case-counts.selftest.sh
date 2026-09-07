@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=21
+TOTAL_CASES=27
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -78,7 +78,7 @@ fake() {
 # check <name> <want-rc> <needle>  - run the gate over the toy just built.
 check() {
   local name="$1" want="$2" needle="$3" out rc
-  out="$(EHS_REPO_ROOT="$W" bash "$GATE" 2>&1)"; rc=$?
+  out="$(EHS_REPO_ROOT="$W" EHS_TALLY_LEDGER="$LEDGER" bash "$GATE" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-44s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
@@ -87,6 +87,33 @@ check() {
     printf '%s\n' "$out" | sed 's/^/         /' | tail -6; fail=$((fail+1))
   fi
   rm -rf "$W"
+  LEDGER=""
+}
+
+# --- the tally ledger -------------------------------------------------------
+# Empty unless a case sets it, and reset by check() so a ledger cannot leak from
+# one case into the next and make a later one pass for the wrong reason.
+LEDGER=""
+
+if command -v sha256sum >/dev/null 2>&1; then
+  digest() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  digest() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  digest() { echo ""; }
+fi
+
+# led <file> <tally>  - one ledger line for a file that exists, keyed by its
+# CONTENT. ledbad writes a line with a hash that belongs to nothing.
+led() {
+  LEDGER="$W/ledger.txt"
+  printf '%s %s %s\n' "$(digest "$1")" "$1" "$2" >> "$LEDGER"
+}
+ledbad() {
+  LEDGER="$W/ledger.txt"
+  printf '%s %s %s\n' \
+    "0000000000000000000000000000000000000000000000000000000000000000" \
+    "$1" "$2" >> "$LEDGER"
 }
 
 echo "=== self-test: gate-declared-case-counts.sh (source: $SRC) ==="
@@ -161,6 +188,40 @@ check a-document-that-is-not-there 2 "cannot read"
 
 toy nogates && rm -rf "$W/scripts/gates"
 check no-scripts-gates-directory 2 "no scripts/gates"
+
+# --- the tally ledger: what it may answer, and what it may not -------------
+# The battery under each of these prints a count that DISAGREES with the ledger
+# line, so the case can only pass if the gate read the source it was meant to.
+
+toy led_hit && row gate-a 4 && fake gate-a sibling 'echo "9 passed, 0 failed"' 'exit 0' \
+  && led "$W/scripts/gates/gate-a.selftest.sh" "4 passed, 0 failed"
+check a-battery-in-the-ledger-is-not-run-again 0 "earlier in this job, by run-batteries.sh"
+
+# Edit one case and the hash misses. There is no staleness window to reason
+# about because the key is the bytes, not the name.
+toy led_stale && row gate-a 9 && fake gate-a sibling 'echo "9 passed, 0 failed"' 'exit 0' \
+  && ledbad "$W/scripts/gates/gate-a.selftest.sh" "4 passed, 0 failed"
+check a-ledger-entry-whose-file-changed-is-ignored 0 "(sibling battery)"
+
+# run-batteries.sh records batteries. A gate whose self-test runs inline is not
+# one, so its hash can never answer for it - not even if it somehow appeared.
+toy led_inline && row gate-a 2 && fake gate-a inline 'echo "2 passed, 0 failed"' 'exit 0' \
+  && led "$W/scripts/gates/gate-a.sh" "7 passed, 0 failed"
+check the-ledger-cannot-answer-for-a-gate-run-inline 0 "(inline on a normal run)"
+
+toy led_gone && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && LEDGER="$W/there-is-no-ledger-here.txt"
+check a-ledger-that-is-not-there-runs-everything 0 "(sibling battery)"
+
+toy led_junk && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && LEDGER="$W/ledger.txt" && printf 'not a ledger line\nnor this one\n' > "$W/ledger.txt"
+check a-ledger-of-rubbish-runs-everything 0 "(sibling battery)"
+
+# A shortcut that could only ever agree would be worthless. Drift read off the
+# ledger is still drift.
+toy led_drift && row gate-a 5 && fake gate-a sibling 'echo "5 passed, 0 failed"' 'exit 0' \
+  && led "$W/scripts/gates/gate-a.selftest.sh" "3 passed, 0 failed"
+check a-drifted-row-is-caught-through-the-ledger-too 1 "the row says 5 cases and the self-test runs 3"
 
 # --- the one row the gate refuses to run, and says so ----------------------
 toy self_row && row gate-declared-case-counts 21 && row gate-a 2 \

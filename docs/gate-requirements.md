@@ -50,7 +50,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (21 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (27 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -1227,13 +1227,72 @@ prints which row it did not run and why, and the battery closes its own number
 with two assertions that pin each other — the document has to say 19, and the
 run has to reach 19. Raising one without the other leaves the file red.
 
+### The tally ledger, and why the job stopped doing the same work twice
+
+Counted with a shim on `bash` that logs each invocation's argv and `exec`s the
+real binary, so it changes nothing. One turn of
+`run-all.sh --skip gate-actions-lint.sh` — rc 0, 61 s, **228 bash invocations** —
+had seven gates running **twice**: `gate-agent-roster.sh`,
+`gate-alert-surface.sh`, `gate-budget-ledger.sh`, `gate-coverage-gap-claims.sh`,
+`gate-handover-contract.sh`, `gate-negative-proof-census.sh` and
+`gate-stage-eval-floor.sh`. Once as themselves, once
+because this gate ran their self-test — and under the inline convention that
+means running the gate. Measured cost of that half: **8.0 s, median of 5,
+spread 2%**.
+
+And the five rows with a sibling battery ran theirs **twice per CI job**: once
+here, once in `run-batteries.sh`. Measured: **59.3 s, median of 3, spread 2%**.
+
+So `run-batteries.sh` now leaves a ledger when `EHS_TALLY_LEDGER` names a file —
+one line per battery that exited 0, `<sha256 of the file> <path> <its tally>` —
+and this gate answers those rows from it. In CI the batteries step runs first
+and both steps share the file. Alternating, five runs each:
+
+| arm | runs |
+|---|---|
+| the gate reading the ledger | median **3.9 s**, range 3.9–4.0 s, spread 3% |
+| the gate as before | median **40.4 s**, range 39.6–43.6 s, spread 10% |
+
+The ranges do not overlap. The verdict is identical either way — same rc, same
+twelve rows, same counts — and the transcript differs only in the provenance it
+prints, which is the point of printing it:
+
+```
+checked 12 self-test(s) ... : 7 run here, 5 read off the ledger
+  gate-reproduction    33, and 33 ran (earlier in this job, by run-batteries.sh)
+```
+
+**The key is the content of the battery file, never its name**, and the ledger
+is consulted only for an invocation shaped exactly `bash <something>.selftest.sh`
+— what `run-batteries.sh` records. Edit a case, rename the file, check out
+another branch, or point a row at a gate rather than a battery, and the hash
+misses and it runs. There is no staleness window to reason about because there
+is no window, and every miss costs exactly what the check cost before. Only
+batteries that exited 0 are recorded: a count read off a red one is not a
+measurement, and both sides refuse it independently.
+
 ### Cost
 
-It runs twelve self-tests, eight at a time. Measured on a ten-core box:
-**67.1 s sequential, 39.7 s at eight threads**, and the floor is one battery
-(`gate-reproduction.sh`, 33.4 s) that no number of threads divides. That is the
-whole cost of the check, and it is why `run-all.sh` went from 21.5 s to 60.9 s
-the day this gate landed - both measured back to back on the same machine.
+Without a ledger it runs twelve self-tests, eight at a time. Measured on a
+ten-core box: **67.1 s sequential, 39.7 s at eight threads**, and the floor is
+one battery (`gate-reproduction.sh`, 33.4 s) that no number of threads divides.
+That is why `run-all.sh` went from 21.5 s to 60.9 s the day this gate landed —
+both measured back to back on the same machine. With the ledger the gate itself
+is 3.9 s.
+
+The figure that matters to CI is not the gate in isolation but the job around
+it. Alternating run for run, three each, `run-all.sh --skip
+'gate-actions-lint.sh'` — the exact command the `gates` job runs:
+
+| arm | median | range | spread |
+|---|---|---|---|
+| with the ledger | **25.3 s** | 25.2-25.5 s | 1% |
+| as it stood | **62.0 s** | 62.0-63.8 s | 3% |
+
+The ranges do not overlap, which is what makes this a difference between the two
+commands rather than a difference between two moments of the same box. **36.7 s
+off every push**, and the gate still checks all twelve rows: seven it runs, five
+it reads.
 
 A note on the inline convention: for a gate with neither a sibling battery nor a
 `--self-test` flag, "run its self-test" means running the gate itself. If such a
@@ -1244,23 +1303,54 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 21 cases. Nineteen build
-a toy repository — a table with the rows the case needs and fake gates that print
-a count and nothing else — so each costs milliseconds and can assert a shape the
-real tree does not currently contain. Both directions of drift, all three
-invocation conventions, the sibling beating the flag, `N + M` rather than `N`,
-a skipped case counting toward the row and a skip the row did not count, the
-last summary line rather than the first, one drifted row among four good ones,
-and every refusal listed above. The twentieth checks this file's own row against
-its own tally. The twenty-first is the control: the real tree, all twelve real
-batteries, no mutation.
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 27 cases. Twenty-five
+build a toy repository — a table with the rows the case needs and fake gates that
+print a count and nothing else — so each costs milliseconds and can assert a
+shape the real tree does not currently contain. Both directions of drift, all
+three invocation conventions, the sibling beating the flag, `N + M` rather than
+`N`, a skipped case counting toward the row and a skip the row did not count,
+the last summary line rather than the first, one drifted row among four good
+ones, and every refusal listed above. Six are the ledger's: a hit that is not
+re-run, an entry whose file changed being ignored, a ledger that cannot answer
+for a gate run inline, a ledger that is absent, one that is rubbish, and drift
+still caught when it comes off the ledger. In each of those the battery under
+the toy prints a count that DISAGREES with the ledger line, so the case can only
+pass if the gate read the source it was meant to. The twenty-sixth checks this
+file's own row against its own tally. The twenty-seventh is the control: the
+real tree, all twelve real batteries, no mutation.
 
-Mutant bank: fifteen mutations of the core and the wrapper, each declaring in
-advance which case has to go red. **15 of 15 caught**, in 3 s — the bank points
-the control case at a faithful toy repository rather than the real one, because
-a mutation of how the invocation is resolved can make that control launch the
-real weekly sweep. The first version of this bank died exactly that way, at
-900 s.
+The writer's side is `scripts/run-batteries.selftest.sh`, 20 cases, six of them
+the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
+one leaves nothing, a battery that prints no tally leaves nothing, no
+`EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
+the key. The sixth is the positive control for the fifth, and it exists because
+the fifth was green for the wrong reason: run inside `run-batteries.sh`, this
+file inherited the ledger the caller was using, and the toy battery its
+"no ledger written" case launched wrote a line into the REAL one. Nothing in the
+file noticed — the toy directory stays clean either way and the line lands
+somewhere else. So the file now unsets the variable at the top, and a case puts
+a probe ledger in the environment to prove the probe can see a write at all. A
+"nothing was written" that has never seen a write is not a measurement.
+
+Mutant bank: `scripts/declared-case-counts.mutants.py`, twenty-two mutations of
+the core, the wrapper and the runner that writes the ledger, each declaring in
+advance which case has to go red. **22 of 22 caught**, in 6 s. Two notes on how
+it had to be built. The bank points the control case at a faithful toy repository
+rather than the real one, because a mutation of how the invocation is resolved
+can make that control launch the real weekly sweep — the first version died
+exactly that way, at 900 s. And one mutant is a PAIR of edits: `PIPESTATUS[0]`
+and `set -o pipefail` cover the same hole in the runner, so neither is provable
+alone and only removing both is a test. A protection that cannot be mutated on
+its own is worth saying out loud rather than counting as proven.
+
+And one the suite caught rather than the author: run standalone the bank was
+**22 of 22**, and the first time it ran inside `run-batteries.sh` — which
+exports `EHS_TALLY_LEDGER` — **one mutant survived**. That mutant changes what
+happens when the variable is UNSET, and it was set. The bank now strips it from
+the environment of every battery it launches; each case that wants a ledger
+builds its own. A mutant whose effect depends on the environment it inherits is
+not a measurement, it is a coincidence — and a bank that only ever ran one way
+had no way to know which it had.
 
 ## A single timing is not a measurement
 
