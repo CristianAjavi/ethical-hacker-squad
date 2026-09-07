@@ -68,7 +68,7 @@ if [ "$rc" -eq 2 ]; then printf 'ok       %-32s rc=2\n' not-a-git-worktree; pass
 else printf 'FAILED   %-32s rc=%s (wanted 2)\n' not-a-git-worktree "$rc"; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate measures growth, respects the bot budget, ignores deletions,"
 echo "        and reports could-not-measure instead of guessing."

@@ -307,7 +307,7 @@ case_run bot-bump-with-no-diff-stays-protected dependabot/github_actions/g \
 
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
   echo "Result: OK. A change carrying ANY mark of automation - a reserved branch prefix, an"
   echo "        agent trailer, a bot identity - cannot move the limits whatever the branch is"

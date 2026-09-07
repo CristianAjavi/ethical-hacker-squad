@@ -114,7 +114,7 @@ run_case vocabulary-empty            2 "empty"                  m_empty_vocab
 run_case dimension-not-declared      2 "declares no dimension"  m_drop_dimension
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate catches a vocabulary that contradicts itself, a"
 echo "        definition file that stopped pointing at it, and an exemption that"

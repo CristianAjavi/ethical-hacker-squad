@@ -75,7 +75,7 @@ if [ "$rc" -eq 2 ]; then printf 'ok       %-34s rc=2\n' no-workflows-is-unmeasur
 else printf 'FAILED   %-34s rc=%s (wanted 2)\n' no-workflows-is-unmeasurable "$rc"; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The tool-free half of this gate fails when it must fail."
 exit 0

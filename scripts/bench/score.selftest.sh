@@ -120,7 +120,7 @@ if [ $? -eq 2 ]; then printf 'ok       %-28s missing artifact is 2\n' unmeasurab
 else printf 'FAILED   %-28s missing artifact was not 2\n' unmeasurable-artifact; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The scorer separates a perfect run, a short run, a decoy reported"
 echo "        and a near miss, and refuses to score what it cannot read."

@@ -10,34 +10,34 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test, `gate-plugin-version.sh` + self-test |
+| `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test (22 cases), `gate-plugin-version.sh` + self-test (13 cases) |
 | `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
 | `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
-| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
+| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (26 cases) |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
-| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test |
-| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
-| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
+| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (9 cases) |
+| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (8 cases) |
+| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (32 cases), PR context |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
-| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
-| triage rules | running | `gate-triage-rules.sh` + self-test |
+| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (16 cases) |
+| triage rules | running | `gate-triage-rules.sh` + self-test (16 cases) |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
-| findings artifact | running | `gate-findings-artifact.sh` + self-test |
-| bench integrity | running | `gate-bench-integrity.sh` + self-test |
+| findings artifact | running | `gate-findings-artifact.sh` + self-test (12 cases) |
+| bench integrity | running | `gate-bench-integrity.sh` + self-test (23 cases) |
 | bench index | running | `gate-bench-index.sh` + self-test |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
-| served-tree delta | running | `gate-tree-delta.sh` + self-test |
-| verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
+| served-tree delta | running | `gate-tree-delta.sh` + self-test (7 cases) |
+| verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test (12 cases) |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
-| workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test |
+| workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test (3 cases) |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |

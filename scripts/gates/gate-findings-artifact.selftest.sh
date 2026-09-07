@@ -99,7 +99,7 @@ import os,shutil,pathlib
 shutil.rmtree(pathlib.Path(os.environ["EHS_WORK"])/"'"$F"'")'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate validates the artifact, checks that each negative fixture fails"
 echo "        for its own reason, and reports could-not-measure when a source of truth is gone."

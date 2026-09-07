@@ -96,7 +96,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"NOTICE.md").unlink()'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
   echo "Result: OK. The gate fails on a pasted span, on an owner nobody attributed and on"
   echo "        a source with no licence, and reports could-not-measure when a source of"

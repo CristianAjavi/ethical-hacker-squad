@@ -156,7 +156,7 @@ else printf 'FAILED   %-38s rc=%s (wanted 2)\n' not-a-git-worktree "$rc"
      printf '%s\n' "$out" | sed 's/^/         /' | tail -8; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate keeps latest resolving by SHA, keeps stable on explicit"
 echo "        semver, refuses a double version declaration, and reports"

@@ -143,7 +143,7 @@ run_case no-skill-md-anywhere        2 "nothing to validate"       m_no_skill_md
 run_case no-markdown-at-all          2 ""                          m_no_md_at_all
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate rejects a malformed skill, a tree that points outside"
 echo "        itself, and a corpus over budget, and it reports could-not-measure"

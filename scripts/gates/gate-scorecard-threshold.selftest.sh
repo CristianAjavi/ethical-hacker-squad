@@ -157,7 +157,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/scorecard-thresholds.json").write_text("{")'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
   echo "Result: OK. A gated check below its minimum fails, an inconclusive or absent check is"
   echo "        could-not-measure rather than a pass, the aggregate is judged by movement, and"

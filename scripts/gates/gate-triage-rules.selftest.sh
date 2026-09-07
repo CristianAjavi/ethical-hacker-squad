@@ -127,7 +127,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.json").write_text("{ not json")'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate fails when it must fail and separates could-not-measure from nothing-to-report."
 exit 0

@@ -107,7 +107,7 @@ run_case labels-sh-missing           2 "labels.sh"               m_no_labels_sh
 run_case issue-template-dir-missing  2 "ISSUE_TEMPLATE"          m_no_form_dir
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate catches a label GitHub would drop in silence, an entry"
 echo "        path with no label at all, and a tool depending on a label nobody"

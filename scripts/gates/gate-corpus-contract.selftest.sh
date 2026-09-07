@@ -220,7 +220,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json").write_text("{ not json")'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -gt 0 ]; then
   echo "Result: FAILED. A case did not behave as the doctrine demands."
   exit 1

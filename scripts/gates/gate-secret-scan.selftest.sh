@@ -79,7 +79,7 @@ import os,shutil,pathlib
 shutil.rmtree(pathlib.Path(os.environ["EHS_WORK"]))'
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate finds published formats, ignores inert markers, refuses to let"
 echo "        the bench exclusion hide an undeclared secret, and reports what it did not scan."
