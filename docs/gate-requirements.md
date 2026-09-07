@@ -37,7 +37,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | negative evidence | running | `gate-negative-evidence.sh` |
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
-| workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
+| workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
@@ -54,6 +54,63 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (27 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
+
+## A job that installs its own Python measures a different machine
+
+`gate-workflow-hardening.sh` gained a fifth rule, `setup-python-bare`: **a job
+that installs its own Python with `actions/setup-python` and never installs a
+package.**
+
+The runner image ships a `python3` carrying distribution packages, PyYAML among
+them. `setup-python` puts a CLEAN interpreter first on `PATH`, so everything
+that relied on those packages breaks — and it breaks several steps later,
+looking like a defect in the code under measurement. Measured cost when
+`battery-workers-ab.yml` carried one for a single commit: **one whole CI run,
+three red batteries, one cause, none of them in the code being judged.**
+
+**The rule was proved reachable against the file that motivated it**, not
+against a fixture alone. Run over `f26a3b5^:.github/workflows/battery-workers-ab.yml`
+it reports `setup-python-bare` at line 61 — the exact `uses:` line that was
+removed. Run over the same file today it is silent, comment and all.
+
+Two of the three fixtures must NOT fire, and each is a way the rule could have
+been written wrong:
+
+| fixture | what it holds down |
+|---|---|
+| `good/04-setup-python-with-install.yml` | setup-python is not forbidden. A job that brings its own interpreter and then installs what it needs built that machine on purpose. The `pip install` lives inside a `run: \|` block the scanner steps over for every other rule; this one has to read it anyway. |
+| `good/05-setup-python-named-in-a-comment.yml` | the prose explaining why a workflow does NOT carry setup-python has to name the action. A rule matching the bare string would put that file in permanent red, and the next person would delete the sentence rather than the step. **Where the name sits is the whole test**: the scanner drops whole-line comments and `run: |` bodies before any rule sees them, so this fixture names the action in a step `name:` and in a trailing comment too - lines the rule actually reads. |
+
+**What it cannot check, stated in the scanner's own limitations:** *which*
+packages get installed. Finding that out would mean running the job to see what
+it imports, so a `pip install` of the wrong thing satisfies the rule. That is
+the honest edge of a lexical scanner, and it still catches the shape that
+actually cost a run.
+
+**Three green fixtures do not prove a rule, and the bank said so.** Each rule
+was broken in the way it could plausibly have been written wrong, and the
+self-test had to go red *by the fixture that names it* - a bank reading only the
+exit code signs a mutant that some other case killed.
+
+| mutant | the rule, written wrong | died by |
+|---|---|---|
+| does not look at whether anything is installed | the collection of `pip install` never runs | `good/04` |
+| matches the bare string, not the `uses:` | the check is hoisted out of the `uses:` block | `good/05` |
+| never sees the step | the verdict never fires | `bad/15` |
+
+**Two of the three survived their first version, and both survivals were defects
+in the bank, not in the gate.** The mutant meant to match a bare string kept the
+check *inside* `if (u ~ /^uses:/)`, so it could not do the thing it was named
+for. And `good/05` first carried the action name only in whole-line comments and
+inside a `run: |` - both dropped by the scanner several rules earlier, so the
+name sat where nothing reads it. A fixture holding a rule down by a place the
+rule never looks holds nothing, and a green self-test says so either way.
+
+**And the self-test now says how many cases it ran.** It executed 22 fixtures
+and printed no count, which is why it was one of the four self-tests
+`gate-declared-case-counts.sh` could not compare against anything — the row
+carried no number because there was no number to read. It prints
+`22 passed, 0 failed` now, and the row above carries the 22.
 
 ## An assertion may not hang on a pipe that can die
 
@@ -1752,18 +1809,25 @@ What the batteries can decide without a clock is decided by the batteries: same
 exit code under one worker and under four, and the same transcript but for the
 one line that declares the worker count.
 
-**The answer, read on a four-core runner, three alternated runs per arm:**
+**The answer, read on a four-core runner, three alternated runs per arm, with
+the control step in place (run 34143402483, 36 batteries):**
 
 | arm | median | range | spread |
 |---|---|---|---|
-| sequential, `--jobs 1` | 364.9 s | 363.9 - 365.7 s | 0% |
-| four workers, `--jobs 4` | **236.1 s** | 232.5 - 236.3 s | 2% |
+| sequential, `--jobs 1` | 367.2 s | 364.6 - 372.6 s | 2% |
+| four workers, `--jobs 4` | **228.9 s** | 227.5 - 229.4 s | 1% |
 
-**-128.8 s, -35.3%, and the ranges do not overlap.** That is a difference
+**-138.3 s, -37.7%, and the ranges do not overlap.** That is a difference
 between the commands, not the box under them - on four cores, where the laptop
 that could not read its own clock has ten. The move was the whole point: the
-same question that produced a 56% spread on the laptop produced a 0% spread
+same question that produced a 56% spread on the laptop produced a 2% spread
 here, and the quiet clock is what turned an argument into a number.
+
+The first published reading of this table - 364.9 s against 236.1 s, -35.3% -
+came from run 34133457474, whose verdict step had no control and therefore was
+not entitled to attribute anything. Same direction, same order of magnitude,
+and it is replaced rather than kept beside this one: two tables for one question
+make the reader pick, and a reader picks the friendlier number.
 
 **An instrument that installs its own runtime measures a different machine.**
 This job carried an `actions/setup-python` step for one commit, and it cost a

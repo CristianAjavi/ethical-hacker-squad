@@ -21,6 +21,12 @@
 #   - It does not evaluate job-level `if:`: rule 4 (secrets) is applied at the
 #     workflow level, which is the strict reading and the one that cannot be
 #     dodged with a badly reasoned conditional.
+#   - Rule 5 asks whether a job that installs its own Python installs any
+#     package at all. It does not check WHICH ones, and it cannot: the job
+#     would have to be run to find out what it imports. A `pip install` of the
+#     wrong thing satisfies it. That is the honest edge of a lexical scanner,
+#     and it still catches the shape that actually cost a run - setup-python
+#     with no install anywhere in the job.
 
 function ind(l,   n) {
     n = 0
@@ -215,8 +221,10 @@ function finalize_job() {
             fail("job-permissions", "job `" job "` does not declare `permissions:`; it would inherit the repository default permissions", job_line)
         if (job_body == 0)
             unmeas("job-permissions", "job `" job "` has no recognizable body; I cannot assert anything about its permissions", job_line)
+        if (job_setup_py > 0 && job_pip == 0)
+            fail("setup-python-bare", "job `" job "` installs its own Python with actions/setup-python and never installs a package; it will run on a CLEAN interpreter instead of the runner image one, and whatever relied on a distribution package breaks somewhere else", job_setup_py)
     }
-    job = ""
+    job = ""; job_setup_py = 0; job_pip = 0
 }
 
 BEGIN {
@@ -227,6 +235,7 @@ BEGIN {
     in_bs = 0; bs_ind = 0
     section = ""; on_ind = -1; jobs_ind = -1; jobkey_ind = -1
     job = ""; job_perm = 0; job_line = 0; job_body = 0
+    job_setup_py = 0; job_pip = 0
     njobs = 0; nsecret = 0; npinned = 0; nlocal = 0
     nfail = 0; nunmeas = 0
     saw_on = 0; saw_jobs = 0; has_tab = 0
@@ -256,6 +265,15 @@ index($0, "\t") > 0 { has_tab = 1 }
 {
     line = $0
 
+    # ---- rule 5 (collection): does this job install what it will need? -----
+    # Read BEFORE the block-scalar skip, because a `pip install` almost always
+    # lives inside a `run: |` that the scanner steps over on purpose. A line
+    # starting with `#` is a comment - YAML's or the shell's - and installs
+    # nothing.
+    if (job != "" && substr(trim(line), 1, 1) != "#" && \
+        (line ~ /pip3?[ ]+install/ || line ~ /-m[ ]+pip[ ]+install/))
+        job_pip = 1
+
     if (in_bs) {
         if (trim(line) == "") next
         if (ind(line) > bs_ind) next
@@ -269,7 +287,13 @@ index($0, "\t") > 0 { has_tab = 1 }
 
     u = tl
     sub(/^-[ ]+/, "", u)
-    if (u ~ /^uses:/) check_uses(u, FNR)
+    if (u ~ /^uses:/) {
+        check_uses(u, FNR)
+        # Only a real `uses:` counts. The comment that explains why a workflow
+        # does NOT carry one names the action too, and must not trip this.
+        if (u ~ /^uses:[ ]*actions\/setup-python([@ ]|$)/ && job != "")
+            job_setup_py = FNR
+    }
 
     if (ci == 0) {
         finalize_job()
@@ -304,7 +328,7 @@ index($0, "\t") > 0 { has_tab = 1 }
         if (ci == jobs_ind) {
             finalize_job()
             job = keyof(line)
-            if (job != "") { njobs++; job_perm = 0; job_line = FNR; jobkey_ind = -1; job_body = 0 }
+            if (job != "") { njobs++; job_perm = 0; job_line = FNR; jobkey_ind = -1; job_body = 0; job_setup_py = 0; job_pip = 0 }
         } else if (ci > jobs_ind && job != "") {
             job_body = 1
             if (jobkey_ind < 0) jobkey_ind = ci
