@@ -623,7 +623,16 @@ This document opens with a rule about itself: *if a gate and this document disag
 `gate-contract-inventory.sh` enforces the half that is machine-checkable in both directions:
 
 - a gate the runner discovers and this document names nowhere is **a control nobody can find from the contract**;
-- a name this document carries that the runner does not discover is **a control the document promises and nobody runs**.
+- a name this document carries that the runner does not discover is **a control the document promises and nobody runs**;
+- unless the same name plus `.sh` **is** in the inventory, and then nothing is missing: the document wrote the gate without its extension, and that is what the message says.
+
+The third case was added because the gate found it and then misnamed it. A
+paragraph in this document wrote *gate-bench-integrity*, with no suffix, where it
+meant `gate-bench-integrity.selftest.sh`, and `gate-contract-inventory.sh` reported *a control the document
+promises and nobody runs* - which sent the reader looking for a gate that was
+never missing, while `gate-bench-integrity.sh` sat in the inventory two lines
+away. The mismatch was real and the verdict was right; the diagnosis was not,
+and a wrong diagnosis on a true failure costs the same time as a false alarm.
 
 The inventory comes from `run-all.sh --list`, never from a glob of `scripts/gates/`. The runner is the authority on what counts as a gate — it discovers recursively and is not filtered by extension — so the two cannot disagree about what exists. A gate the runner declares it will not run in this context still counts: *not run here* is not *does not exist*.
 
@@ -631,7 +640,7 @@ Three things are deliberately **not** checked, because all three are a person's 
 
 `*.selftest.sh` is excluded. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
 
-Proved in the negative by 6 fixtures — 2 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation.
+Proved in the negative by 7 fixtures — 3 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation. The third negative fixture carries a `phrase.expected`: exiting 1 does not distinguish a promised-and-unrun control from a name missing its suffix, so that case asserts the sentence and not only the code. Without the assertion it passes against a gate that cannot tell the two apart — measured, not assumed.
 ## The contract inside governance.json
 
 `scripts/gh/governance.json` carries two lists that describe the same thing from two sides:
@@ -968,7 +977,7 @@ difference: the same tree, minus 259 MB it does not open.
 
 The first version of this table was measured by sampling the machine's FREE DISK
 while each battery ran. It reported that `gate-corpus-contract.selftest.sh` had
-got **worse** - 290 MiB before, 601 MiB after - and that `gate-bench-integrity`
+got **worse** - 290 MiB before, 601 MiB after - and that `gate-bench-integrity.selftest.sh`
 still held 1727 MiB after the fix. Both were artefacts. Free space is a
 machine-wide number: every neighbouring process moves it, so what that
 instrument measured was the laptop, not the job. It is the same defect the disk
