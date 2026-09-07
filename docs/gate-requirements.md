@@ -51,7 +51,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (32 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (36 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -215,6 +215,26 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### A row may name more than one gate, and only the first was being read
+
+The table's `G1` row names `gate-plugin-integrity.sh` and
+`gate-plugin-version.sh`; the workflow-hardening row names
+`gate-workflow-hardening.sh` and `gate-actions-lint.sh`. Both second gates
+carried a case count, and neither was ever compared: `ROW.search(line)` returns
+the FIRST match on a line and stops. Reading every match on the row takes the
+comparison from 30 self-tests to 32.
+
+Reading them all needs a fence. The span between a gate's name and its count is
+lazy, so unfenced it will happily reach across the NEXT gate's name — a row whose
+first gate carries no count and whose second does would hand the first its
+neighbour's number and accuse it of drift. `FENCE` refuses to cross another
+`gate-*.sh`. Nothing in the table has that shape today, which is exactly why the
+case for it is a toy and not the real tree.
+
+And a gate declared twice with two different numbers used to resolve by
+`declared[gate] = n` — last writer wins, in silence, with the losing row saying
+something no instrument would ever contradict. That is now a finding of its own.
 
 ### A gate may carry two self-tests, and only one was being counted
 
@@ -1476,7 +1496,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 32 cases. Thirty
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 36 cases. Thirty-four
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1494,9 +1514,13 @@ declares only the first, a row that declares a second for a gate that has none,
 a second count that drifts while the first still matches, a gate whose
 `--self-test` is its first and only one being declared a second time, and — the
 one that keeps the rule honest — a gate that merely NAMES the flag in a comment,
-which must not be accused. The thirty-first checks this file's own row against
-its own tally. The thirty-second is the control: the real tree, every self-test
-this table names, no mutation.
+which must not be accused. Four more are the multi-gate row's: both gates on
+one row compared, the second one drifting, a count that may not cross to the
+gate before it, and one gate declared twice with two numbers — that last fixture
+prints the SECOND number on purpose, so without the clash finding the case is
+green and one of the two written claims is still false. The thirty-fifth checks
+this file's own row against its own tally. The thirty-sixth is the control: the
+real tree, every self-test this table names, no mutation.
 
 Five of the bank's mutants are that rule's, each dying in the case named for
 it: `offers_flag` reverted to the substring test that started this, the
@@ -1520,9 +1544,9 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, twenty-eight mutations
+Mutant bank: `scripts/declared-case-counts.mutants.py`, thirty-two mutations
 of the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **28 of 28 caught**, in 24 s. This paragraph
+advance which case has to go red. **32 of 32 caught**, in 32 s. This paragraph
 said twenty-two while the file held twenty-three: nothing compares the number
 here against the bank, which is the defect one floor up wearing different
 clothes. Two notes on how

@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=32
+TOTAL_CASES=36
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -53,6 +53,19 @@ row() {
 row2() {
   printf '| something | running | `%s.sh` + self-test (%s cases) + --self-test (%s cases) |\n' \
     "$1" "$2" "$3" >> "$W/docs/gate-requirements.md"
+}
+
+# rowpair <gate> <n> <gate> <n>  - ONE row naming two gates, as `G1` and the
+# workflow-hardening row really do. Pass "-" as a count to leave that gate
+# undeclared while the other keeps its number. The backtick lives in a variable
+# because inside double quotes it would be a command substitution.
+rowpair() {
+  local a b bt
+  bt='`'
+  case "$2" in -) a="$bt$1.sh$bt" ;; *) a="$bt$1.sh$bt + self-test ($2 cases)" ;; esac
+  case "$4" in -) b="$bt$3.sh$bt" ;; *) b="$bt$3.sh$bt + self-test ($4 cases)" ;; esac
+  printf '| something | running | %s, %s |\n' "$a" "$b" \
+    >> "$W/docs/gate-requirements.md"
 }
 
 # fake <gate> <kind> <line...>  - a gate whose self-test prints exactly what the
@@ -151,6 +164,32 @@ check the-flag-when-there-is-no-sibling 0 "(--self-test)"
 
 toy inl && row gate-a 2 && fake gate-a inline 'echo "2 passed, 0 failed"' 'exit 0'
 check inline-when-there-is-neither 0 "(inline on a normal run)"
+
+# --- one row, more than one gate -------------------------------------------
+# `.search` returns the first match on the line, so on a row naming two gates
+# only the first was ever compared - and the real table has two such rows.
+toy pair && rowpair gate-a 4 gate-b 7 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && fake gate-b sibling 'echo "7 passed, 0 failed"' 'exit 0'
+check both-gates-on-one-row-are-compared 0 "checked 2 self-test"
+
+toy pair_drift && rowpair gate-a 4 gate-b 7 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && fake gate-b sibling 'echo "2 passed, 0 failed"' 'exit 0'
+check the-second-gate-on-the-row-drifts-too 1 "the row says 7 cases and the self-test runs 2"
+
+# The lazy span is fenced so it cannot reach across a gate name. Unfenced, the
+# first gate here would be handed the second one's 7 and accused of running 4.
+toy fence && rowpair gate-a - gate-b 7 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && fake gate-b sibling 'echo "7 passed, 0 failed"' 'exit 0'
+check a-count-does-not-cross-to-the-gate-before-it 0 "every declared case count matches"
+
+# Declared twice with two numbers: the fixture prints the SECOND, so without the
+# clash finding this row is green and one of the two claims is false anyway.
+toy twice && row gate-a 4 && row gate-a 9 \
+  && fake gate-a sibling 'echo "9 passed, 0 failed"' 'exit 0'
+check the-same-gate-declared-twice-with-two-numbers 1 "declares it twice"
 
 # --- a gate may carry TWO self-tests, and both have to answer ---------------
 # `invocation` returns the first convention that matches, so the second

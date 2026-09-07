@@ -65,14 +65,21 @@ GATES = "scripts/gates"
 # asserts its own doc row against its own tally, in both directions.
 SELF = "gate-declared-case-counts"
 # `gate-x.sh` ... self-test (N cases) - the `inline` variant sits between them.
-ROW = re.compile(r"`(gate-[a-z0-9-]+)\.sh`.*?self-test \((\d+) cases\)")
+# A ROW MAY NAME MORE THAN ONE GATE, and `.search` returns the first match on
+# the line - so on `| ... | gate-a.sh + self-test (22 cases), gate-b.sh +
+# self-test (13 cases) |` only gate-a was ever compared. Read every match.
+# The lazy span is FENCED so it cannot cross another gate name: without the
+# fence, a row whose first gate carries no count and whose second does would
+# hand the first gate its neighbour's number.
+FENCE = r"(?:(?!`gate-[a-z0-9-]+\.sh`).)*?"
+ROW = re.compile(r"`(gate-[a-z0-9-]+)\.sh`" + FENCE + r"self-test \((\d+) cases\)")
 # A GATE MAY CARRY TWO SELF-TESTS. `invocation` below returns the FIRST
 # convention that matches, so a gate with a sibling battery AND its own
 # `--self-test` had its second one compared against nothing: it could fall from
 # ten cases to two with every row in the table still green. The second count is
 # declared on the same row, after the first, as `+ --self-test (M cases)`.
 # ROW is non-greedy, so it still reads the first number and not this one.
-EXTRA = re.compile(r"`(gate-[a-z0-9-]+)\.sh`.*?\+ --self-test \((\d+) cases\)")
+EXTRA = re.compile(r"`(gate-[a-z0-9-]+)\.sh`" + FENCE + r"\+ --self-test \((\d+) cases\)")
 # The third group is optional: only a battery that can skip a case prints it.
 # It still counts toward the row, because a skipped case is a case of the
 # file - one that proved nothing here, which is a different statement.
@@ -239,10 +246,16 @@ def main(argv: list[str]) -> int:
         return unmeasurable("cannot read %s: %s" % (doc, exc))
 
     declared: dict[str, int] = {}
+    # THE LAST WRITER WINS unless somebody looks. A gate declared twice with two
+    # different numbers used to resolve in silence, and the row that lost said
+    # something no instrument would ever contradict.
+    clash: list[tuple[str, int, int]] = []
     for line in text.splitlines():
-        m = ROW.search(line)
-        if m:
-            declared[m.group(1)] = int(m.group(2))
+        for m in ROW.finditer(line):
+            gate, n = m.group(1), int(m.group(2))
+            if gate in declared and declared[gate] != n:
+                clash.append((gate, declared[gate], n))
+            declared[gate] = n
     mine = declared.pop(SELF, None)
     if not declared:
         return unmeasurable(
@@ -251,9 +264,11 @@ def main(argv: list[str]) -> int:
 
     extra: dict[str, int] = {}
     for line in text.splitlines():
-        m = EXTRA.search(line)
-        if m:
-            extra[m.group(1)] = int(m.group(2))
+        for m in EXTRA.finditer(line):
+            gate, n = m.group(1), int(m.group(2))
+            if gate in extra and extra[gate] != n:
+                clash.append((gate, extra[gate], n))
+            extra[gate] = n
     extra.pop(SELF, None)
 
     # A SECOND SELF-TEST NOBODY COUNTS, and a count for a second self-test that
@@ -292,6 +307,11 @@ def main(argv: list[str]) -> int:
         print("UNMEASURED %s\n         the row says %d cases and nothing here can confirm it\n"
               "         %s" % (gate, n, how))
 
+    for gate, first, second in clash:
+        print("FINDING  %s\n         the table declares it twice, %d cases and then %d. Whichever\n"
+              "         one is wrong, nothing here can contradict it: the second\n"
+              "         reading silently replaced the first"
+              % (gate, first, second))
     for gate in uncounted:
         print("FINDING  %s\n         it has a sibling battery AND its own --self-test, and only the\n"
               "         first is declared. Add `+ --self-test (N cases)` to its row,\n"
@@ -305,8 +325,8 @@ def main(argv: list[str]) -> int:
     if blind:
         print("%d row(s) could NOT be checked" % len(blind))
         return 2
-    if drifted or uncounted or phantom:
-        n = len(drifted) + len(uncounted) + len(phantom)
+    if drifted or uncounted or phantom or clash:
+        n = len(drifted) + len(uncounted) + len(phantom) + len(clash)
         print("%d declared case count(s) do not match what runs" % n)
         return 1
     return 0

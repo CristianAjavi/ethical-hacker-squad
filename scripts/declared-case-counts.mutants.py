@@ -107,6 +107,26 @@ MUTANTS = [
      '        return ["bash", str(src)], "inline on a normal run"',
      GATE_BATTERY, "a-row-naming-a-gate-that-is-not-there"),
 
+    # --- one row, more than one gate ---------------------------------------
+    ("only-the-first-gate-on-a-row-is-read", CORE,
+     "        for m in ROW.finditer(line):",
+     "        for m in list(ROW.finditer(line))[:1]:",
+     GATE_BATTERY, "both-gates-on-one-row-are-compared"),
+    ("the-fence-comes-down", CORE,
+     'FENCE = r"(?:(?!`gate-[a-z0-9-]+\\.sh`).)*?"',
+     'FENCE = r".*?"',
+     GATE_BATTERY, "a-count-does-not-cross-to-the-gate-before-it"),
+    ("a-second-declaration-replaces-the-first-in-silence", CORE,
+     "            if gate in declared and declared[gate] != n:\n"
+     "                clash.append((gate, declared[gate], n))",
+     "            if False:\n"
+     "                clash.append((gate, declared[gate], n))",
+     GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
+    ("a-clash-is-not-a-finding", CORE,
+     "    if drifted or uncounted or phantom or clash:",
+     "    if drifted or uncounted or phantom:",
+     GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
+
     # --- the SECOND self-test ----------------------------------------------
     # invocation() returns the first convention that matches, so a gate with a
     # sibling battery AND its own --self-test had the second one compared
@@ -151,8 +171,8 @@ MUTANTS = [
      "    if False:\n        print(",
      GATE_BATTERY, "a-self-test-that-says-nothing"),
     ("drift-does-not-fail", CORE,
-     "    if drifted or uncounted or phantom:",
-     "    if uncounted or phantom:",
+     "    if drifted or uncounted or phantom or clash:",
+     "    if uncounted or phantom or clash:",
      GATE_BATTERY, "the-row-says-fewer-than-it-runs"),
     ("only-drift-upward-is-drift", CORE,
      "drifted = [r for r in rows if r[2] is not None and r[2] != r[1]]",
