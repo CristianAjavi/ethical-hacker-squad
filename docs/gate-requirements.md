@@ -1229,7 +1229,43 @@ Proved in the negative: `scripts/time-repeat.selftest.sh`, 26 cases, and
 time and demands that the case written for it goes red — **twenty of twenty**. A
 stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
 four anchors went stale during this very refactor, and a bank that quietly shrank
-would have called that progress. It is not wired to a runner yet; T-ehs-55.
+would have called that progress.
+
+### The bank that said 0 while reporting a rule nobody measures
+
+Wiring that bank to a runner turned out to be the smaller half of T-ehs-55. Its
+docstring promised the usual three exit codes — 0 every mutant caught, 1 one was
+not, 2 could not measure — and the file contained no `sys.exit(1)` at all. It
+printed `SOBREVIVE  <- nadie lo caza` and then exited **0**. Any runner would
+have read that as a pass, which makes it the exact defect the bank exists to
+find, sitting in the bank: a green that means nothing. The refusal had the
+matching problem one level up — a battery it could not measure was announced as
+`la bateria ya esta roja` and exited 1, a measured failure, when no baseline had
+been established at all.
+
+Each row was run, before and after, with a bank reduced to one mutant so the
+control costs one battery instead of twenty-one:
+
+| control | before | after |
+|---|---|---|
+| a mutant nobody catches | **rc 0**, `SOBREVIVE` | rc 1, and it names the battery to write the case in |
+| red, but not by the case that claims it | rc 0 (same path; `sys.exit(1)` appears 0 times in the file) | rc 1 |
+| an anchor that no longer matches | rc 2 | rc 2, unchanged |
+| the baseline could not be measured (battery rc 2) | **rc 1**, "la bateria ya esta roja" | rc 2, "no se pudo medir sin mutar" |
+| the baseline is red (battery rc 1) | rc 1 | rc 2 — without a green baseline, a red under a mutant proves nothing |
+
+Then the wiring, and it is not a gate. `scripts/time-repeat.mutants.selftest.sh`
+execs the bank, which is what `run-batteries.sh` discovers — the same shape as
+`coverage-sweep.mutants.selftest.sh`, and deliberately not under
+`scripts/gates/`, where `run-all.sh` takes anything that is not documentation,
+data, fixtures or `lib/` for a gate. Batteries: **32 → 33**.
+
+The cost is 174 s measured, twenty mutants at one whole battery each plus the
+baseline, twice giving twenty of twenty. Whether that is visible in the suite's
+wall clock is a question this machine cannot answer: the sequential runner
+disagrees with itself by 174 s over identical code, so the added work is
+declared here as work rather than defended with a stopwatch reading that does
+not exist.
 
 ### The battery that answers differently on a busy machine
 
@@ -1296,7 +1332,8 @@ exits 9. Proved in the negative directly: with fd 2 closed the old fixture exits
 `scripts/run-batteries.sh` is sequential on a ten-core laptop, and after the
 disk peaks came down (29240 MiB to 101 MiB across nine batteries) running them
 together stopped being a way to fill the disk. A parallel candidate was written
-and checked where the answer is not noisy: `--list` is identical (32 batteries),
+and checked where the answer is not noisy: `--list` is identical (32 batteries
+at the time of that comparison),
 and against a sequential transcript it differs by the three lines the sequential
 runner already differs from ITSELF by - one mutant timer and two temporary paths
 - plus exactly one declared line, `batteries run: 32 (up to 4 at a time)`. Order

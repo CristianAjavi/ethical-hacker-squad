@@ -23,9 +23,10 @@ that quietly shrinks is worth less than no bank.
 Exit codes follow scripts/gates/lib/common.sh: 0 every mutant caught by its
 owner, 1 one was not, 2 could not measure.
 
-Not yet wired to a runner: it is minutes long and runs a whole battery per
-mutant. T-ehs-55 is the ticket for giving it the deferred-gate treatment that
-gate-coverage-sweep.sh already has.
+Wired through time-repeat.mutants.selftest.sh, which is what run-batteries.sh
+discovers - the same way coverage-sweep.mutants.py is wired, and NOT as a gate
+under scripts/gates/, where run-all.sh would take a bank for a gate. Measured:
+174 s for 20 mutants, one whole battery each plus the baseline.
 """
 import pathlib, re, shutil, subprocess, sys, tempfile
 
@@ -37,6 +38,7 @@ try:
 except Exception:
     ROOT = HERE.parent
 T = "scripts/time-repeat.py"
+BATTERY = "scripts/time-repeat.selftest.sh"
 
 M = [
  ("una-sola-vuelta-deja-de-rechazarse", T,
@@ -147,7 +149,7 @@ M = [
 ]
 
 def run(cwd):
-    p = subprocess.run(["bash", "scripts/time-repeat.selftest.sh"],
+    p = subprocess.run(["bash", BATTERY],
                        cwd=cwd, capture_output=True, text=True, timeout=600,
                        stdin=subprocess.DEVNULL)
     red = {m.group(1) for m in
@@ -162,7 +164,17 @@ try:
                    shell=True, check=True)
     rc, red = run(pristine)
     if rc != 0 or red:
-        sys.exit("REHUSADO: la bateria ya esta roja sin mutar (rc=%d, %s)" % (rc, sorted(red)))
+        # Un 1 y un 2 no se arreglan igual, asi que no se dicen igual: uno es la
+        # bateria rota y el otro es la bateria que no pudo medirse. Para el banco
+        # los dos acaban en lo mismo -- sin linea base verde, un rojo bajo un
+        # mutante no prueba nada -- y eso es COULD NOT MEASURE, nunca un fallo
+        # medido y nunca un aprobado.
+        print("REHUSADO: %s (rc=%d%s)"
+              % ("la bateria no se pudo medir sin mutar" if rc == 2 else
+                 "la bateria ya esta roja sin mutar",
+                 rc, (", casos: %s" % sorted(red)) if red else ""),
+              file=sys.stderr)
+        sys.exit(2)
     print("linea base: la bateria pasa entera sin mutar\n")
     ok = 0
     stale = 0
@@ -192,5 +204,16 @@ try:
         print("NO MEDIDO: %d ancla(s) caduca(s). Un ancla que ya no casa no es un "
               "mutante de menos: es una regla que dejo de medirse." % stale)
         sys.exit(2)
+    if ok != len(M):
+        # Hasta aqui el banco imprimia SOBREVIVE y salia 0. La docstring prometia
+        # un 1 y nadie lo escribio, asi que el banco daba por bueno justo el
+        # hallazgo que existe para encontrar: una regla del instrumento que
+        # ningun caso mide. Cablearlo a un corredor sin esto habria metido en la
+        # suite un verde que no significa nada.
+        print("FALLO: %d mutante(s) sin el caso que dice cazarlos. Un caso verde "
+              "sobre una regla silenciada no mide esa regla: escribe el caso, en "
+              "%s." % (len(M) - ok, BATTERY))
+        sys.exit(1)
+    print("OK: cada regla del cronometro tiene un caso que la mide")
 finally:
     shutil.rmtree(base, ignore_errors=True)
