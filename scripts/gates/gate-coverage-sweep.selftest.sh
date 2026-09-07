@@ -517,22 +517,27 @@ judge "the-disk-floor-comes-from-the-tree" 1 \
 
 # 37. And the derivation is live rather than decorative: the room demanded is
 #     the tree times the clones held at once, so a heavier tree raises it off
-#     the minimum. 16 MiB x 4 clones x 8 = 512 MiB. The ballast is kept as
+#     the minimum. 8 MiB x 6 clones x 8 = 384 MiB. The ballast is kept as
 #     small as the arithmetic allows: the refusal bank runs this battery
 #     fifteen times, so every byte here is paid fifteen times over.
 lab
-dd if=/dev/zero of="$LAB/repo/ballast.bin" bs=1048576 count=16 2>/dev/null
-out="$(sweep --jobs 4)"; rc=$?
+dd if=/dev/zero of="$LAB/repo/ballast.bin" bs=1048576 count=8 2>/dev/null
+out="$(sweep --jobs 6)"; rc=$?
 judge "a-heavier-tree-raises-the-floor" 1 \
-  "disk floor: 512 MiB applied" "256 MiB applied" "$rc" "$out"
+  "disk floor: 384 MiB applied" "256 MiB applied" "$rc" "$out"
 
-# 38. Cheaper is not toothless. The same tree with 256 clones in flight asks
-#     for 32 GiB, no machine here has it, and the clones stop rather than
-#     discover
-#     the ceiling the hard way - rc 2, because a sweep that ran out of room
-#     measured nothing. Nothing proved this while the floor was a constant: the
-#     branch existed and no case had ever entered it.
-out="$(sweep --jobs 256)"; rc=$?
+# 38. Cheaper is not toothless: a floor the machine cannot meet still stops the
+#     clones before they find the ceiling the hard way. Nothing proved that
+#     while the floor was a constant - the branch existed and no case had ever
+#     entered it.
+#
+#     The demand is raised by env rather than by a big tree and a big job count.
+#     The first attempt asked for 32 GiB, which this laptop cannot meet and the
+#     runner meets without noticing, so the case was green here and red there: a
+#     verdict about the machine, which is the very defect the floor itself was
+#     just fixed for. The knob only ever takes the MAXIMUM of the computed floor
+#     and itself, so it cannot weaken the guard it exists to exercise.
+out="$(EHS_SWEEP_MIN_FREE_MIB=999999999 sweep)"; rc=$?
 judge "a-floor-it-cannot-meet-stops-the-clones" 2 \
   "free disk fell below" - "$rc" "$out"
 lab

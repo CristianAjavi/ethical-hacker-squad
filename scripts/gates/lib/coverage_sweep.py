@@ -97,7 +97,18 @@ def free_floor_bytes(size: int, jobs: int) -> int:
     and the reason it was too small is the same reason it was too large here: it
     never looked at the tree.
     """
-    return max(FREE_FLOOR_MIN_BYTES, size * max(1, jobs) * FREE_FLOOR_MULTIPLE)
+    floor = max(FREE_FLOOR_MIN_BYTES, size * max(1, jobs) * FREE_FLOOR_MULTIPLE)
+    # A knob that can only make the floor STRICTER, never weaker. The abort below
+    # is unreachable on a machine that has room, and the first attempt to reach
+    # it - a tree and a job count whose product no machine here could meet - was
+    # green on this laptop and red on the runner, which has 65 GiB free. That is
+    # the same defect this floor was just fixed for, one level up: a verdict that
+    # depends on the machine it runs on. `max` is the whole safety argument;
+    # raising a threshold cannot be abused into disabling it.
+    raise_to = os.environ.get("EHS_SWEEP_MIN_FREE_MIB")
+    if raise_to:
+        floor = max(floor, int(raise_to) * 1024 ** 2)
+    return floor
 # Receivers that carry a printed count, not a failure. Silencing one of these
 # changes what a run prints and not what it concludes, so a green battery over it
 # is not evidence of anything missing.

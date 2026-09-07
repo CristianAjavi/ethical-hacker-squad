@@ -974,6 +974,7 @@ disk floor: 322 MiB applied (4 job(s) x 10314.5 KiB of tree x 8 = 322.3 MiB, nev
 |---|---:|---:|
 | floor for this repository | 3072 MiB | **322 MiB**, 8x the peak |
 | floor for the battery's toy tree | 3072 MiB | **256 MiB**, the minimum |
+| ballast the ballasted case writes | - | 8 MiB, paid 15x by the refusal bank |
 | battery cases | 44 | **47** |
 
 It is deliberately not capped at the top. A tree big enough to want more than
@@ -982,19 +983,28 @@ small there for the same reason it was too large here: it never looked at the
 tree.
 
 A control was made weaker, so the weaker control was proved to still bite.
-`a-floor-it-cannot-meet-stops-the-clones` gives the toy tree 16 MiB of ballast
-and 256 clones in flight, which asks for 32 GiB, and requires rc 2 with the
-mutants unrun. The ballast is kept as small as that arithmetic allows, because
-the refusal bank runs this battery fifteen times and every byte here is paid
-fifteen times over. That branch existed for the whole life of the constant and no case
-had ever entered it. All three new cases were checked in the negative: with the
-constant put back, exactly those three turn red and nothing else does, so each is
-the only case that catches its rule.
+`a-floor-it-cannot-meet-stops-the-clones` raises the demand to 953 TiB through
+`EHS_SWEEP_MIN_FREE_MIB` and requires rc 2 with the mutants unrun. That branch
+existed for the whole life of the constant and no case had ever entered it. All
+three new cases were checked in the negative: with the constant put back, exactly
+those three turn red and nothing else does, so each is the only case that catches
+its rule.
 
-What is still NOT measured: nothing exercises the abort with a floor the machine
+The knob deserves its own paragraph, because the first version of that case did
+not have one and was wrong. It reached the branch by arithmetic - 16 MiB of
+ballast times 256 clones times eight, a demand of 32 GiB - on the reasoning that
+no machine here has 32 GiB free. This laptop does not. The runner has 65 GiB, met
+the floor without noticing, and the case came back green locally and **red in
+CI**. That is the same defect the floor itself had just been fixed for, one level
+up: a verdict that depends on the machine it runs on rather than on the rule it
+claims to measure. `EHS_SWEEP_MIN_FREE_MIB` only ever takes the MAXIMUM of the
+computed floor and itself, so it can raise the bar and never lower it - a test
+hook able to weaken the guard it exercises would be worth less than no hook.
+
+What is still NOT measured: nothing exercises the abort at a threshold a machine
 could plausibly meet, because making free disk fall on demand means filling the
-disk. The case above reaches the branch by asking for an impossible number, which
-proves the branch runs and not that the threshold is the right one.
+disk. The case reaches the branch by asking for an impossible number, which proves
+the branch runs, not that the derived threshold is the right one.
 
 Sharding opens exactly one hole, and it is the same hole as before: a library
 nobody put in the matrix would be skipped in silence. Two things close it. The
