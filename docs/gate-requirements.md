@@ -49,6 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| every open pull request has a verdict from every required workflow | running daily | `gate-checks-ran.sh` + self-test (34 cases) · `scripts/gates/data/required-workflows.json` · `.github/workflows/checks-ran.yml` |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -649,6 +650,175 @@ A context enforced by the protection and **not** declared as required is reporte
 Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
+
+## An empty check list is not a green one
+
+On 2026-09-06 pull request #100 was opened on this repository and produced **zero
+workflow runs**. Not a failing one, not a queued one - none. Measured across the
+review queue that day:
+
+```
+open pull requests                          20
+with at least one run on their head commit  19
+with none                                    1   <- #100
+```
+
+Nothing noticed, and nothing could have: the absence of a check was not a signal
+anywhere in this repository. Thirty-nine gates measure the contents of the
+repository and none of them measured whether the measurement happened.
+
+**The cause is ordinary and will recur.** GitHub builds a `pull_request` event
+from the MERGE of head into base. A pull request opened already in conflict has
+no merge ref to check out, so **no workflow starts at all** - not the ones
+`ci.yml` filters by base branch, and not the unfiltered ones either. #100 was
+born in conflict because the branch it stacks on had been rebased locally and the
+force-push to move the remote had not happened yet.
+
+That is this document's own exit-code doctrine broken one level up. The table
+below says a `2` is never a pass, and every gate honours that about its own
+subject. Nothing honoured it about the *suite*: a suite that never ran rendered
+identically to a suite with nothing to say - an empty check list, which is also
+what a brand-new pull request shows.
+
+### What the control does, and where it can live
+
+`gate-checks-ran.sh` asks, for every open pull request, whether its head commit
+produced a run of every **required** workflow. It has no opinion on whether they
+passed: a red check is a measurement, and this gate is content with one. It
+measures only the difference between a verdict and no verdict.
+
+It is **not** a `pull_request` job, and that is the point. The pull request it
+exists to catch is precisely the one where no job runs; a check that only runs
+where checks already run cannot see its own case. So
+`.github/workflows/checks-ran.yml` sweeps on a schedule, from the outside, with
+the ordinary `GITHUB_TOKEN` - it needs `actions: read` and `pull-requests: read`
+and no administration scope, which is why it can run in CI at all where
+`gate-governance-drift.sh` cannot. Daily rather than weekly, because a pull
+request enters this state on its own the moment its base branch moves, and a week
+of it is a week of a review queue whose silence means nothing.
+
+### The second silence: a full check list that measured nothing
+
+"At least one run" was the first draft, and it has a hole the size of the
+defect. On 2026-09-07 pull request #105 was opened on a stacked branch and
+`gh pr checks` listed **nineteen checks, every one green but the expected red**.
+The `CI` workflow - the gates, the battery suite, the meter, the hardening scan
+- had not run at all: `ci.yml` is filtered to `branches: [main, stable]`, and a
+pull request based on anything else starts none of it. What did run was
+`PR-context gates`, the workflow with no base filter, and one workflow running is
+"at least one".
+
+Retargeting the pull request to `main` did not start CI either. The default
+`pull_request` types are `opened`, `synchronize` and `reopened`; `edited` is not
+among them, so changing the base fires nothing. The pull request had to be closed
+and reopened.
+
+Swept over the 24 open pull requests that day: **three had no CI run, and the
+gate as first written caught one** - the only one with no run whatsoever. The
+other two showed a check list and were invisible.
+
+| | pull requests named |
+|---|---|
+| before, "at least one run" | **1 of 3** |
+| after, by required name | **3 of 3** |
+
+### Where the requirement comes from, and why not from the workflow itself
+
+`scripts/gates/data/required-workflows.json` names the workflows that must have
+run, each with the reason it gates a change. The requirement deliberately does
+**not** depend on the pull request's base. A list derived from each workflow's own
+`branches:` filter would reproduce the defect's own logic and conclude that a pull
+request missing CI was never supposed to have it - the measuring instrument built
+out of the thing being measured. What gates a change is a property of the
+repository, declared once.
+
+The declaration is read in both directions, and neither is decoration:
+
+- **A required name that matches no workflow** stops the sweep at `2`. Without
+  that check every open pull request would be accused of missing it: a true exit
+  code with the wrong reason, and a fix applied to two dozen innocent branches
+  instead of to one stale line.
+- **A workflow triggered by `pull_request` that appears in neither list** is a
+  finding. A new gating workflow must not be able to arrive unrequired. The
+  escape hatch is `not_required`, which takes a `why` for the same reason an
+  accepted coverage gap does: an exemption nobody had to justify is
+  indistinguishable from an oversight.
+
+The triggers are read by `scripts/gates/lib/workflow-triggers.awk`, which answers
+`unknown` for any `on:` block it cannot place rather than `no`. That distinction
+is the whole file: answering `no` is how a required workflow stops being required
+without anybody deciding it. A probe caught it doing exactly that - `on:` followed
+by a six-space `pull_request:` came back "no, parsed fine" - and the fix, plus the
+case that would have caught it, are both in.
+
+Truncation is handled the same way round. The names come from one page of 100,
+and a page is a prefix: it can hide an absence, never a presence. So a pull
+request with 150 runs whose required workflows are all in the first hundred is
+**measured**, and only one whose required workflow is *not* among them returns
+`2`. The alternative - going unmeasurable on any busy pull request - is a gate
+that gets switched off.
+
+### The false positive that would have got it deleted
+
+GitHub creates the runs a moment *after* the push, so a zero on a head pushed
+seconds ago is not yet a fact about the pull request. A gate that accused every
+fresh push would be switched off within a day and would deserve it. Heads younger
+than `EHS_CHECKS_GRACE_MIN` are therefore **excluded from the population** rather
+than counted against it, and the exclusions are printed. If every open pull
+request is inside the window the gate returns `2`: a population of nobody is not
+a clean sweep.
+
+The window is 30 minutes, and that figure was measured rather than chosen. Across
+the 124 most recent first runs on this repository (`pull_request` and `push`;
+`schedule` excluded, because its `head_commit` is whatever main was and the
+delay is an artefact of the metric), the commit-to-first-run delay was:
+
+```
+median       8 s
+p90         45 s
+p99        633 s
+maximum    706 s   = 11.8 min
+```
+
+**The first draft of this gate used 10 minutes, and that would have falsely
+accused 2 of those 124 pushes.** Thirty is 2.5x the observed maximum and costs
+nothing, because the sweep is daily: a pull request that is genuinely dead is
+reported on the same day either way. The figure is in
+`scripts/gates/data/budget-ledger.json` with the measurement beside it, so
+loosening it is an edit somebody has to justify.
+
+The other side of the same discipline is that an unread count is not a zero.
+Every read that fails - the runs endpoint, the commit date, the pull request list,
+an unauthenticated `gh` - exits `2` rather than reporting an absence it did not
+observe. And before believing an empty list, the gate confirms the repository
+answers to its own name: `gh pr list` returns rc 0 and nothing at all when the
+repository is not the one you meant, which is a broken sweep spelled exactly like
+a clean one.
+
+### Proved in the negative
+
+`scripts/gates/gate-checks-ran.selftest.sh`, 34 cases, driven through a `gh`
+double on `PATH` so the code under test is the gate's real parsing and its real
+control flow rather than a second implementation that happens to agree with it.
+The cases exist for the four states GitHub renders as calm: a silence that should
+not be there, a silence that is only early, a silence that was never read, and a
+check list that is full and green and measures none of what it looks like it
+measured.
+
+`scripts/checks-ran.mutants.py` removes one decision at a time from the gate and
+from the trigger reader - sixteen of them - and each names the case that must die
+when it goes. **16 of 16 caught, 0 survive, 11 s.** A bank that has only ever been
+green proves nothing about itself, so it was run once against a mutant that edits
+a comment: it reported `SURVIVES` and rc 1, which is what makes the other sixteen
+readings mean something.
+
+Eight earlier mutations of the gate were written and every one is caught by the
+case that owns it. **One of them found a defect in the battery before the gate
+shipped:**
+the case asserting that the gate names the conflict as the cause was green
+because the fixture's own pull-request title contained the word "conflict". The
+needle was in the test's data, not in the gate's output. It has been changed to a
+phrase only the gate can produce.
 
 ## Branch naming
 
