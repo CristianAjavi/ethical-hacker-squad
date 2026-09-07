@@ -108,20 +108,34 @@ grep -q 'batteries run: 3' "$TMP/out" \
 
 echo "== mutant: prove the protection is doing the work =="
 
-# Take away FD 3 and </dev/null, leaving the loop reading its list from stdin -
-# the shape the rule had when it lived inline in a CI step. The greedy battery
-# must now eat the rest of the list and the count must drop. If it does not, the
-# case above is decoration and proves nothing.
+# THREE edits, and it has to be three ON ONE OF THE TWO PLATFORMS. Take away
+# FD 3 and </dev/null and put the worker back in the foreground, which is the
+# shape the rule had when it lived inline in a CI step: the greedy battery eats
+# the rest of the list and the count drops.
 #
-# This case went green over a broken protection once, and it is worth knowing
-# how. When the runner learned to launch batteries in parallel, its count line
-# was left counting ROWS OF THE LIST rather than results: the mutant truncated
-# the list exactly as it was supposed to, the printer walked all three rows
-# anyway, and "batteries run: 3" came out of a run where one battery had run.
-# The needle below is the count, so the case reported that the protection held.
-# A tally that reports work nobody did will cover for whatever broke it.
+# The third edit is there because of a disagreement between bash versions that
+# cost a red CI run to find. Bash redirects the stdin of an ASYNCHRONOUS command
+# from /dev/null "in the absence of any explicit redirections", and the two
+# shells do not read that clause the same way when the redirection sits on the
+# enclosing loop's `done` rather than on the command. Measured, same commit:
+#
+#   bash 3.2.57 (macOS)  the worker inherits the list      -> mutant truncates
+#   bash 5.x    (Linux)  the worker gets /dev/null anyway  -> mutant survives
+#
+# So a two-edit mutant proves the rule on one machine and proves nothing on the
+# other, while reporting the same green. Putting the worker in the foreground
+# removes that difference, and the mutant then dies on both.
+#
+# This case also went green over a broken protection once, and it is worth
+# knowing how. When the runner learned to launch batteries in parallel, its
+# count line was left counting ROWS OF THE LIST rather than results: the mutant
+# truncated the list exactly as intended, the printer walked all three rows
+# anyway, and "batteries run: 3" came out of a run in which one battery had run.
+# The needle below is that count. A tally that reports work nobody did will
+# cover for whatever broke it.
 sed -e 's#while IFS= read -r t <&3; do#while IFS= read -r t; do#' \
     -e 's#done 3< "$LIST"#done < "$LIST"#' \
+    -e 's#^    ) &$#    )#' \
     -e 's# </dev/null##' "$SUBJECT" > "$TMP/mutant.sh"
 if cmp -s "$SUBJECT" "$TMP/mutant.sh"; then
   bad "the mutant did not apply: this battery would pass without measuring anything"
@@ -324,8 +338,8 @@ elapsed=$(( $(date +%s) - start ))
 grep -q 'produced no exit code' "$TMP/hang.out" \
   && ok "the batteries with no result are named and diagnosed" \
   || bad "the run ended without saying which battery produced nothing"
-grep -q 'batteries run: 2' "$TMP/hang.out" \
-  && ok "the count reports the 2 results, not the 3 rows of the list" \
+grep -q 'batteries run: 1' "$TMP/hang.out" \
+  && ok "the count reports the 1 result, not the 3 rows of the list" \
   || bad "the count claims batteries it did not measure: $(grep -o "batteries run: [0-9]*" "$TMP/hang.out")"
 
 # A stall bound that is not a positive integer must stop the run. Left to mean
