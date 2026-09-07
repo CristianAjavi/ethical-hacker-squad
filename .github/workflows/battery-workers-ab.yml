@@ -112,18 +112,69 @@ jobs:
       # A speed reading is worthless if the two arms did not measure the same
       # thing. Same battery count, same verdict, same transcript but for the one
       # line that declares the worker count.
-      - name: The two arms must agree on the verdict, not only on the clock
+      # THE THIRD RUN IS THE CONTROL, AND IT IS NOT OPTIONAL.
+      #
+      # The first version of this step ran the suite twice - once per arm - and
+      # blamed every difference on the worker count. It came back red naming
+      # four: two stopwatch readings printed inside a battery's own output, and
+      # two lines carrying a mktemp directory name. None of them had anything to
+      # do with parallelism; a serial run differs from ANOTHER serial run by
+      # exactly those lines. A comparison with no control attributes its own
+      # noise to whatever it happens to be testing.
+      #
+      # So the suite runs SERIALLY TWICE and in parallel once. The two serial
+      # runs establish what the runner varies by on its own, with the variable
+      # under test held still. The normaliser below has to flatten that pair to
+      # nothing before the step is allowed to say anything about the arms: a
+      # leftover there means the normaliser is incomplete, which is COULD NOT
+      # MEASURE, not a finding about --jobs. Only a difference the control does
+      # NOT reproduce can be laid at the door of the worker count.
+      #
+      # The control is deliberately serial-vs-serial rather than the cheaper
+      # parallel-vs-parallel: it establishes the noise floor WITHOUT
+      # parallelism, so anything the arms diff shows on top of it is
+      # attributable to parallelism rather than absorbed into the baseline.
+      - name: The two arms must agree on the verdict, with a control for the noise
         env:
           JOBS: ${{ inputs.jobs || '4' }}
         run: |
           case "$JOBS" in ''|*[!0-9]*) echo "jobs must be a number"; exit 2 ;; esac
-          bash scripts/run-batteries.sh --jobs 1 > one.out 2>&1; r1=$?
-          bash scripts/run-batteries.sh --jobs "$JOBS" > many.out 2>&1; r2=$?
-          echo "serial rc=$r1   parallel rc=$r2"
+
+          bash scripts/run-batteries.sh --jobs 1        > one.out   2>&1; r1=$?
+          bash scripts/run-batteries.sh --jobs 1        > again.out 2>&1; rc=$?
+          bash scripts/run-batteries.sh --jobs "$JOBS"  > many.out  2>&1; r2=$?
+          echo "serial rc=$r1   serial again rc=$rc   parallel rc=$r2"
+
+          if [ "$r1" != "$rc" ]; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the same file gave $r1 and $rc. Nothing here can be attributed to the worker count."
+            exit 2
+          fi
+
+          # Everything this flattens is the runner talking to itself. Each entry
+          # earned its place by showing up in the control, and the control is
+          # what proves the list is long enough.
+          norm() {
+            sed -e 's#/tmp/tmp\.[A-Za-z0-9][A-Za-z0-9]*#<tmpdir>#g' \
+                -e 's# in [0-9][0-9]* s # in <elapsed> s #g' \
+                -e '/at a time/d' "$1"
+          }
+
+          norm one.out   > n1.txt
+          norm again.out > n2.txt
+          norm many.out  > n3.txt
+
+          if ! diff n1.txt n2.txt > control.diff 2>&1; then
+            echo "::error title=COULD NOT MEASURE::two serial runs still differ after normalising, so this step cannot tell noise from a finding. The normaliser is short by:"
+            cat control.diff
+            exit 2
+          fi
+          echo "control: two serial runs normalise to the same transcript"
+
           [ "$r1" = "$r2" ] || { echo "::error title=DIFFERENT VERDICT::the arms disagree on the exit code"; exit 1; }
-          if diff <(grep -v 'at a time' one.out) <(grep -v 'at a time' many.out); then
-            echo "the transcripts are identical but for the worker count"
+
+          if diff n1.txt n3.txt; then
+            echo "the arms leave the same transcript once the runner's own noise is taken out"
           else
-            echo "::error title=DIFFERENT TRANSCRIPT::the arms did not measure the same thing"
+            echo "::error title=DIFFERENT TRANSCRIPT::the arms differ by something the control does not reproduce"
             exit 1
           fi

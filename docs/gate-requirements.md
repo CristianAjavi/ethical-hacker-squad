@@ -1691,6 +1691,44 @@ What the batteries can decide without a clock is decided by the batteries: same
 exit code under one worker and under four, and the same transcript but for the
 one line that declares the worker count.
 
+**The answer, read on a four-core runner, three alternated runs per arm:**
+
+| arm | median | range | spread |
+|---|---|---|---|
+| sequential, `--jobs 1` | 364.9 s | 363.9 - 365.7 s | 0% |
+| four workers, `--jobs 4` | **236.1 s** | 232.5 - 236.3 s | 2% |
+
+**-128.8 s, -35.3%, and the ranges do not overlap.** That is a difference
+between the commands, not the box under them - on four cores, where the laptop
+that could not read its own clock has ten. The move was the whole point: the
+same question that produced a 56% spread on the laptop produced a 0% spread
+here, and the quiet clock is what turned an argument into a number.
+
+**An instrument that installs its own runtime measures a different machine.**
+This job carried an `actions/setup-python` step for one commit, and it cost a
+whole run. `ci.yml` deliberately has none: it runs the suite on the runner
+image's own `python3`, which carries PyYAML from the distribution package.
+`setup-python` installs a clean interpreter and puts it first on `PATH`, so
+PyYAML is gone - `gate-labels-taxonomy.sh` and `scripts/gh/tests` dropped to
+UNMEASURABLE, `gate-alert-surface.sh --self-test` stopped printing its tally, and
+the count gate's control over the real repository went red for a row it could no
+longer check. Three red batteries, one cause, none of them in the code under
+measurement. A job whose claim is "here is what the suite costs in CI" has to
+run in CI's environment, not in a tidier one of its own making.
+
+**The comparison needed a control before it was allowed to accuse anything.**
+The verdict step first ran the suite once per arm and attributed every
+difference to the worker count. It came back red naming four: two stopwatch
+readings printed inside a battery's own output, and two lines carrying a
+`mktemp` directory name. None of them had anything to do with parallelism - a
+sequential run differs from *another* sequential run by exactly those lines. The
+step now runs the suite sequentially **twice** and in parallel once. The two
+sequential runs establish what the runner varies by on its own with the variable
+under test held still, and the normaliser has to flatten that pair to nothing
+before the step is allowed to say anything about the arms: a leftover there is
+COULD NOT MEASURE, not a finding about `--jobs`. Only a difference the control
+does not reproduce can be laid at the door of the worker count.
+
 **The printer, and the result that is never coming.** Output is buffered per
 battery and printed in LIST order, so the transcript does not depend on which
 machine ran it, and the tally ledger is written from that printer - single
