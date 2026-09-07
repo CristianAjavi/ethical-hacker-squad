@@ -1,0 +1,212 @@
+# Does every rule in a gate library have a case that would notice if the rule
+# stopped firing?
+#
+# For each statement that RECORDS a problem, silence it and run that library's
+# battery. A battery still green over a silenced rule was never testing it.
+#
+# WHY IT IS NOT PART OF `gates`. It runs a whole battery per report site: 125 of
+# them. Measured end to end on one 10-core machine, four at a time - 2026-09-06,
+# 9845 s of battery time, 2695 s of wall clock - and it is not spread evenly:
+#
+#     corpus_contract.py     31 sites    4352 s    44% of the battery time
+#     protected_paths.py     11 sites    1825 s    19%
+#     triage_rules.py        14 sites    1114 s    11%
+#     the other ten          69 sites    2554 s    26%
+#
+# `run-all.sh` finishes in under a minute and is what people wait on before a
+# merge; three quarters of an hour inside it is how a suite gets switched off.
+#
+# WHY IT IS SHARDED BY LIBRARY. The work divides perfectly - a library's mutants
+# only ever run that library's battery - and the table above says the whole run
+# is dominated by one library. One job per library makes the critical path
+# corpus_contract.py alone instead of the sum, on a runner it does not share with
+# the other twelve. A red shard also names the library on the run page without
+# anybody opening a log.
+#
+# MEASURED, run 34052441419, 2026-09-06, and the two causes are separable:
+#
+#   2695 s   this Mac, 10 cores, one job, 4 workers
+#    284 s   one ubuntu-latest runner, 4 workers - the sum of the 13 shard sweeps
+#    111 s   sharded across 13 runners, end to end, plan and verdict included
+#
+# Sharding, machine held constant: 284 -> 111 s, 2.6x, and the critical path is
+# corpus_contract.py's 82 s exactly as the table above predicted. That figure is
+# the one this file is responsible for.
+#
+# The 2695 s is NOT a measurement and no ratio is drawn from it here. It is one
+# run, on a box that was also running actionlint and gh at the time. Measured
+# properly - scripts/time-repeat.py, five runs, nothing else on the machine - the
+# same battery is 35.2 s median over a 30.1-36.4 s range, an 18% spread, against
+# the runner's 9.3 s per mutant WITH four-way contention. That is about 3.8x with
+# the Mac given the easier condition, not the 9.5x an earlier version of this
+# comment claimed from the single run.
+#
+# The counts are identical on both machines, which is the part that says the
+# runner really did the work: 125 sites, 27 survive, 98 die.
+#
+# THE HOLE SHARDING OPENS, AND WHAT CLOSES IT. A matrix built from a hand-written
+# list goes stale the day somebody adds a library, and the sweep would skip it in
+# SILENCE - which is the precise defect this control exists to stop. So the
+# matrix is generated from the tree by `--list-libraries`, and the verdict job
+# re-derives every report site the tree has and refuses (exit 2) if the shards
+# between them do not cover all of it.
+#
+# WHY IT IS ALLOWED TO BE RED. A survivor is a rule with no case, which is a true
+# statement about this repository and ought to be visible.
+# scripts/gates/data/coverage-sweep-accepted.json is a RATCHET, not an amnesty:
+# a survivor missing from it fails, and an entry in it that no longer survives
+# fails too, so closing a hole obliges you to delete its line.
+name: Every gate rule has a case
+
+on:
+  schedule:
+    # Weekly, Mondays, in UTC. Off the hour so it does not queue behind the rest
+    # of the world's midnight crons.
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/gates/lib/**.py'
+      - 'scripts/gates/*.selftest.sh'
+      - 'scripts/gates/gate-coverage-sweep.sh'
+      - 'scripts/gates/data/coverage-sweep-accepted.json'
+      - '.github/workflows/coverage-sweep.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/gates/lib/**.py'
+      - 'scripts/gates/*.selftest.sh'
+      - 'scripts/gates/gate-coverage-sweep.sh'
+      - 'scripts/gates/data/coverage-sweep-accepted.json'
+      - '.github/workflows/coverage-sweep.yml'
+
+# No default permissions. Each job declares its own.
+permissions: {}
+
+jobs:
+  # The sweep before its own subject: an instrument that has not been proved in
+  # the negative cannot certify anything about anybody else's coverage. It also
+  # produces the matrix, so a broken instrument stops the run before it spends
+  # thirteen jobs.
+  plan:
+    name: Prove the sweep, then list what it has to sweep
+    runs-on: ubuntu-latest
+    if: github.repository == 'CristianAjavi/ethical-hacker-squad'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      libraries: ${{ steps.list.outputs.libraries }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prove the sweep in the negative
+        run: bash scripts/gates/gate-coverage-sweep.selftest.sh
+
+      - name: Build the matrix from the tree, not from a list somebody typed
+        id: list
+        run: |
+          set -euo pipefail
+          libs="$(python3 scripts/gates/lib/coverage_sweep.py --list-libraries)"
+          [ -n "$libs" ] || { echo "::error::no library has a report site; that is not a clean sweep"; exit 2; }
+          printf 'libraries=' >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$libs" | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))' >> "$GITHUB_OUTPUT"
+          echo 'libraries to sweep:'
+          printf '%s\n' "$libs" | sed 's/^/  /'
+
+  sweep:
+    name: ${{ matrix.library }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      # One red library must not cancel the other twelve: the point of the run is
+      # the whole tally, and a partial tally cannot be judged against the ratchet.
+      fail-fast: false
+      matrix:
+        library: ${{ fromJson(needs.plan.outputs.libraries) }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No verdict here. A shard that judged its own survivors against the whole
+      # acceptance file would fail over the other twelve shards' entries. The
+      # shard MEASURES; the verdict job below judges.
+      - name: Silence one rule at a time
+        env:
+          EHS_SWEEP_ONE: ${{ matrix.library }}
+        run: |
+          # +e on purpose: GitHub runs this with `bash -e`, and the whole point
+          # of the next lines is to READ the exit code and decide what it means.
+          # Under -e the pipeline's 1 kills the step before that decision runs.
+          set -u +e -o pipefail
+          python3 -u scripts/gates/lib/coverage_sweep.py \
+            --only "$EHS_SWEEP_ONE" --jobs 4 \
+            --json "shard-${EHS_SWEEP_ONE%.py}.json" | tee shard.txt
+          rc=${PIPESTATUS[0]}
+          # 0 and 1 are both MEASURED here, and the verdict job decides what they
+          # mean together. Only a 2 - could not measure - stops this shard.
+          [ "$rc" -ne 2 ] || { echo "::error title=$EHS_SWEEP_ONE::COULD NOT MEASURE, which is never a pass"; exit 2; }
+          { echo "### $EHS_SWEEP_ONE"; echo '```'; tail -25 shard.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the per-mutant result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shard-${{ matrix.library }}
+          path: shard-*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  verdict:
+    name: One verdict over every shard
+    needs: [plan, sweep]
+    runs-on: ubuntu-latest
+    # `always()` so a shard that could not measure still reaches the verdict step,
+    # which refuses rather than quietly judging twelve shards out of thirteen.
+    if: always() && needs.plan.result == 'success'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Collect the shards
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          path: shards
+          pattern: shard-*
+          merge-multiple: true
+
+      - name: Judge them together
+        run: |
+          # +e on purpose: GitHub runs this with `bash -e`, and the whole point
+          # of the next lines is to READ the exit code and decide what it means.
+          # Under -e the pipeline's 1 kills the step before that decision runs.
+          set -u +e -o pipefail
+          shopt -s nullglob
+          files=(shards/shard-*.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error title=Coverage sweep::no shard produced a result, and an absent measurement is not a clean one"
+            exit 2
+          fi
+          python3 -u scripts/gates/lib/coverage_sweep.py \
+            --verdict-from "${files[@]}" \
+            --accepted scripts/gates/data/coverage-sweep-accepted.json | tee verdict.txt
+          rc=${PIPESTATUS[0]}
+          { echo '## Coverage sweep'; echo '```'; tail -40 verdict.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          case "$rc" in
+            0) echo "::notice title=Coverage sweep::every rule that can be silenced has a case that notices, or an entry saying why not" ;;
+            1) echo "::error title=Coverage sweep::a rule can be silenced and no battery notices" ;;
+            *) echo "::error title=Coverage sweep::COULD NOT MEASURE, which is never a pass" ;;
+          esac
+          exit "$rc"
