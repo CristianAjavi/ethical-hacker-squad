@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Self-test for gate-portable-shell.sh. Each case seeds one tiny tree carrying
 # exactly one shape and asserts the exit code AND the reason, including a control
-# on the untouched repository and five cases that must report could-not-measure.
+# on the untouched repository and six cases that must report could-not-measure.
+#
+# Two arms, one catalogue: shell files are read as text and Python files as a
+# syntax tree, because the same `cp -Rc` is one divergence whether it is spelled
+# in a .sh or inside a subprocess argv list.
 #
 # The fixtures are seeded, not copied. Thirteen batteries in this repository tar
 # the whole tree per case and move 258 MB of node_modules to make a point about
@@ -34,6 +38,17 @@ seed() {
   local dir="$TMP/$name/scripts"
   mkdir -p "$dir" || return 1
   { printf '%s\n' '#!/usr/bin/env bash'; printf '%s\n' "$@"; } > "$dir/probe.sh"
+}
+
+# seed_py <case> <line>... - a tree whose scripts/ holds one .py with those lines.
+#
+# A tree seeded this way carries NO shell file at all, which is also the case
+# that proves a Python-only scripts/ is not read as a blind zero.
+seed_py() {
+  local name="$1"; shift
+  local dir="$TMP/$name/scripts"
+  mkdir -p "$dir" || return 1
+  { printf '%s\n' 'import subprocess'; printf '%s\n' "$@"; } > "$dir/probe.py"
 }
 
 # case_run <name> <expected rc> <needle> [extra gate args...]
@@ -190,7 +205,113 @@ seed an-exemption-for-a-different-rule \
   "$BSD_SED # portable-shell: allow mktemp-t - names a rule this line does not break"
 case_run an-exemption-for-a-different-rule 1 "sed-i-empty"
 
+# --- the Python arm -----------------------------------------------------------
+#
+# WHY IT IS HERE. Measured on CI 2026-09-07: scripts/time-repeat.mutants.py wrote
+# `run(["cp","-Rc",...]) or run(["cp","-R",...])`, the shell fallback
+# transliterated into Python, where it is not one - CompletedProcess is always
+# truthy, so the second call never ran. macOS clones and showed nothing; the
+# runner copied nothing and the next read_text() died. This gate read 107 shell
+# files beside that line and reported OK, because a shell regex has nothing to
+# match inside a subprocess argv list. Measured on the two real trees, before
+# and after: 0 findings on both, then 2 findings on the defective one and 0 on
+# the fixed one - including the correct fallback in gates/lib/coverage_sweep.py,
+# which a version without the structural exoneration flags.
+
+seed_py py-clone-with-no-way-out \
+  'subprocess.run(["cp", "-Rc", "a", "b"])'
+case_run py-clone-with-no-way-out 1 "cp-c"
+
+# The exact shape that broke the runner. Nothing else in this battery would go
+# red if the structural rule were deleted.
+seed_py py-run-or-is-not-a-fallback \
+  'subprocess.run(["bash", "x"]) or subprocess.run(["bash", "y"])'
+case_run py-run-or-is-not-a-fallback 1 "python-run-or"
+
+# `and` is the same misconception spelled `&&`, and it fails the same way.
+seed_py py-run-and-is-the-same-mistake \
+  'subprocess.run(["bash", "x"]) and subprocess.run(["bash", "y"])'
+case_run py-run-and-is-the-same-mistake 1 "python-run-or"
+
+# The three shapes that ARE fallbacks. The first two are in this repository
+# today; without these cases the gate would go red on correct code, which is how
+# a gate gets switched off.
+seed_py py-fallback-tested-on-a-later-statement \
+  'r = subprocess.run(["cp", "-Rc", "a", "b"], capture_output=True)' \
+  'if r.returncode != 0:' \
+  '    subprocess.run(["cp", "-R", "a", "b"], check=True)'
+case_run py-fallback-tested-on-a-later-statement 0 "no BSD-only or GNU-only"
+
+seed_py py-fallback-tested-inside-the-if \
+  'if subprocess.run(["cp", "-Rc", "a", "b"], capture_output=True).returncode != 0:' \
+  '    subprocess.run(["cp", "-R", "a", "b"], check=True)'
+case_run py-fallback-tested-inside-the-if 0 "no BSD-only or GNU-only"
+
+seed_py py-fallback-caught-in-a-handler \
+  'try:' \
+  '    subprocess.run(["cp", "-Rc", "a", "b"], check=True)' \
+  'except subprocess.CalledProcessError:' \
+  '    subprocess.run(["cp", "-R", "a", "b"], check=True)'
+case_run py-fallback-caught-in-a-handler 0 "no BSD-only or GNU-only"
+
+# The two halves of the exoneration, isolated. Drop either condition and one of
+# these goes green, which is the only way to know the condition does any work.
+seed_py py-a-counterpart-that-is-never-reached \
+  'r = subprocess.run(["cp", "-Rc", "a", "b"], capture_output=True)' \
+  'if r.returncode != 0:' \
+  '    pass' \
+  'x = 1' \
+  'subprocess.run(["cp", "-R", "a", "b"])'
+case_run py-a-counterpart-that-is-never-reached 1 "cp-c"
+
+seed_py py-two-copies-and-nothing-testing-the-first \
+  'subprocess.run(["cp", "-Rc", "a", "b"])' \
+  'subprocess.run(["cp", "-R", "a", "b"])'
+case_run py-two-copies-and-nothing-testing-the-first 1 "cp-c"
+
+# An argv element that is the empty string is how `sed -i ''` is spelled in
+# Python, and it has to reach the catalogue as that and not as `sed -i`.
+seed_py py-the-empty-argv-element-is-the-bsd-sed \
+  'subprocess.run(["sed", "-i", "", "-e", "s/a/b/", "f"])'
+case_run py-the-empty-argv-element-is-the-bsd-sed 1 "sed-i-empty"
+
+# The declared blind spots, PROVED blind rather than assumed. Both must be green
+# AND must show up in the printed count: an argv nobody read is not an argv with
+# no divergence in it, and the count is what says so out loud.
+seed_py py-an-argv-this-scanner-cannot-name \
+  'TOOL = "cp"' \
+  'subprocess.run([TOOL, "-Rc", "a", "b"])'
+case_run py-an-argv-this-scanner-cannot-name 0 "NOT decidable: 1"
+
+seed_py py-shell-true-is-not-read \
+  'subprocess.run("cp -Rc a b", shell=True)'  # portable-shell: allow cp-c - fixture: the shell=True string the Python arm cannot read
+case_run py-shell-true-is-not-read 0 "NOT decidable: 1"
+
+# subprocess is five names, and only `run` was ever exercised: a mutant bank run
+# over this battery narrowed SUBPROCESS_FUNCS to ("run",) and NOT ONE case
+# noticed. The four others get their own fixture, and the count is asserted so
+# dropping any single name shows up as a number and not as a shrug.
+seed_py py-the-other-four-names-subprocess-answers-to \
+  'subprocess.call(["cp", "-Rc", "a", "b"])' \
+  'subprocess.check_call(["cp", "-Rc", "a", "b"])' \
+  'subprocess.check_output(["cp", "-Rc", "a", "b"])' \
+  'subprocess.Popen(["cp", "-Rc", "a", "b"])'
+case_run py-the-other-four-names-subprocess-answers-to 1 "4 divergent invocation"
+
+# The written exemption, same marker, same teeth, on the Python side.
+seed_py py-an-exemption-that-says-why \
+  'subprocess.run(["cp", "-Rc", "a", "b"])  # portable-shell: allow cp-c - macOS-only helper, never runs on the runner'
+case_run py-an-exemption-that-says-why 0 "exempted in writing"
+
+seed_py py-an-exemption-that-says-nothing \
+  'subprocess.run(["cp", "-Rc", "a", "b"])  # portable-shell: allow cp-c'
+case_run py-an-exemption-that-says-nothing 1 "half an edit"
+
 # --- could not measure --------------------------------------------------------
+
+seed_py a-python-file-that-does-not-parse 'def ('
+case_run a-python-file-that-does-not-parse 2 "cannot parse"
+
 
 mkdir -p "$TMP/no-scripts-directory/docs"
 case_run no-scripts-directory 2 "no scripts/ directory"

@@ -49,22 +49,25 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| one platform's shell spelling, with no fallback | running | `gate-portable-shell.sh` + self-test (22 cases) |
+| one platform's shell spelling, with no fallback | running | `gate-portable-shell.sh` + self-test (40 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
 ## One platform's shell spelling, with no fallback written down
 
-`scripts/gates/gate-portable-shell.sh`. No shell script under `scripts/` may
-depend on a BSD-only or GNU-only invocation unless it offers the other
-platform's spelling as a fallback, or says in writing why it does not.
+`scripts/gates/gate-portable-shell.sh`. Nothing under `scripts/` may invoke a
+BSD-only or GNU-only spelling unless it offers the other platform's as a
+fallback, or says in writing why it does not — in a shell script or in a Python
+`subprocess` argv list, because the same `cp -Rc` is the same divergence either
+way.
 
-**What it measures.** Every `*.sh` and `*.bash` file under `scripts/`, against
-the catalogue written in `scripts/gates/data/portable-shell-catalogue.json` —
-eighteen rules at the time of writing, each naming the divergence, the platform
-it breaks on, and the portable spelling. The catalogue is a data file and not a
-table inside the checker because what a gate enforces has to be readable by
-someone who is not reading its code.
+**What it measures.** Every `*.sh` and `*.bash` file under `scripts/` read as
+text, and every `*.py` under `scripts/` read as a syntax tree, against ONE
+catalogue written in `scripts/gates/data/portable-shell-catalogue.json` — twenty
+rules at the time of writing, each naming the divergence, the platform it breaks
+on, and the portable spelling. The catalogue is a data file and not a table
+inside the checker because what a gate enforces has to be readable by someone
+who is not reading its code.
 
 **Why it exists.** Measured on CI on 2026-09-02:
 `gate-lockfile-coherence.selftest.sh` reported *16 passed, 0 failed* on the
@@ -78,7 +81,20 @@ only instrument that could answer, and it answers after the push.
 That day, `grep -rln "sed -i ''" scripts/` returned exactly one file: the one
 just written. The repository was portable by habit, not by control.
 
-**The two things that make this harder than a grep.**
+**The four things that make this harder than a grep.**
+
+0. *"Shell" is the command, not the file it is spelled in.* Measured on CI
+   2026-09-07, five days after this gate was written and in the same shape:
+   `scripts/time-repeat.mutants.py` carried
+   `run(["cp","-Rc",...]) or run(["cp","-R",...])` — the shell fallback
+   transliterated into Python, where it is not one, because
+   `CompletedProcess` is always truthy and the second call never runs. macOS
+   clones and shows nothing; the runner copied nothing and the next
+   `read_text()` died. **This gate read 107 shell files beside that line and
+   reported OK**, because a shell regex has nothing to match inside a
+   `subprocess` argv list. Measured on the two real trees, the commit with the
+   defect and the commit that fixed it: 0 findings on both before, then 2 and 0
+   after.
 
 1. *A logical line is not a physical line.* The one real `date` fallback in this
    repository is split across two lines by a trailing backslash, the BSD half on
@@ -93,6 +109,19 @@ just written. The repository was portable by habit, not by control.
    them correct** — sixteen `mktemp` fallbacks and one `date` pair. A gate whose
    first red accuses the compliant gets switched off, so a candidate is exonerated
    when its logical line also carries the counterpart spelling *and* an `||`.
+
+3. *In Python the fallback is a structure, not a line.* `A 2>/dev/null || B` has
+   no Python spelling. `run(A) or run(B)` reads like it and is the defect above,
+   so it is a rule of its own (`python-run-or`, which has no `pattern` because a
+   shape is not lexically decidable — the catalogue holds what it means and the
+   checker holds how it is found). The real Python fallback tests a `returncode`
+   or catches an exception and spans several statements, so the argv arm is
+   exonerated **structurally**: the counterpart call within a three-statement
+   window under a `returncode` test or a `try`, or in a handler of the `try` that
+   holds the divergent call. Both shapes are in this repository already, one of
+   them in `gates/lib/coverage_sweep.py`; a version without that exoneration
+   flags both, and a gate whose first red accuses the compliant gets switched
+   off.
 
 **The written exemption.** A line opts out with a trailing
 `# portable-shell: allow <rule-id> - <reason>`. An exemption that names no reason
@@ -117,16 +146,49 @@ genuinely lone `grep -P` will exonerate it. Telling those apart means parsing th
 shell. The gate is a floor, not a proof of portability; CI on Linux remains the
 only instrument that answers the question directly.
 
-**Negative proof.** `scripts/gates/gate-portable-shell.selftest.sh`, 22 cases.
-Seven seed a lone divergence and require rc=1 naming its rule. Four seed the
-fallback idiom — including the backslash-split `date` pair — and require rc=0;
-without the continuation joiner or the `||` test those four go red and nothing
-else does. Three exercise the written exemption and its teeth: one honoured, one
-refused for carrying no reason, one refused for naming a different rule. Six
-require rc=2: no `scripts/` directory, a `scripts/` with no shell file (a zero
-there is a blind zero), a file that does not decode as UTF-8, and three broken
-catalogues. The first case is the control — the whole repository, unmutated, which
-must come back rc=0.
+The Python arm declares its blindness with a **number**, not only a sentence.
+An argv whose first element is not a literal string cannot be named — built by
+concatenation, held in a variable, or passed as a `shell=True` string — and
+those are counted and the count printed on every run: 7 on this branch. An argv
+nobody read is not an argv with no divergence in it. Only
+`subprocess.run|call|check_call|check_output|Popen` is followed; `os.system`,
+`os.popen` and wrappers are not, and `.py` outside `scripts/` is out of scope on
+the same boundary the shell arm already draws.
+
+**Negative proof.** `scripts/gates/gate-portable-shell.selftest.sh`, **40
+cases** (22 when this section was written, 25 by the time `cp-c` landed — the
+count had drifted twice before anyone read it, and no gate watches it).
+
+*Shell arm and the harness, 25 cases.* Seven seed a lone divergence and require rc=1 naming its
+rule. Four seed the fallback idiom — including the backslash-split `date` pair —
+and require rc=0; without the continuation joiner or the `||` test those four go
+red and nothing else does. Three exercise the written exemption and its teeth:
+one honoured, one refused for carrying no reason, one refused for naming a
+different rule. Six require rc=2: no `scripts/` directory, a `scripts/` with no
+shell or Python file (a zero there is a blind zero), a file that does not decode
+as UTF-8, and three broken catalogues. The first case is the control — the whole
+repository, unmutated, which must come back rc=0.
+
+*Python arm, 15 cases.* Two seed the exact shapes that broke the runner, `or`
+and its `and` twin. Three seed the three real fallbacks — the `returncode` tested
+on a later statement, tested inside the `if`, and caught in a handler — and
+require rc=0. Two isolate the halves of that exoneration: a counterpart outside
+the window, and two copies with nothing testing the first. One pins that an
+empty argv element is the BSD `sed -i ''` and not a bare `-i`. One pins the four
+names besides `run` that `subprocess` answers to. Two prove the declared blind
+spots blind and assert the printed count. Two are the written exemption, honoured
+and refused. One requires rc=2 on a `.py` that does not parse. Every fixture tree
+holds a `.py` and no shell file at all, which is also what proves a Python-only
+`scripts/` is not read as a blind zero.
+
+*Mutant bank.* Eleven mutations of the Python arm — the exoneration always off
+and always on, the window widened to the whole block, the `returncode` guard
+dropped, the `or` rule off, the arity raised, the arm reading no files, the empty
+string rendered as itself, the undecided count dropped, `MIN_REASON` at zero, and
+the subprocess name list narrowed to `run` — **11 of 11 caught**. The last one
+survived the first run: not one case used `check_call`, `check_output`, `call` or
+`Popen`, so the list was a written rule nobody comprehended. That is the case
+`py-the-other-four-names-subprocess-answers-to`.
 
 The fixtures are seeded, not copied: a case here is a directory with one script
 in it. The battery also carries its own divergent spellings as fixture text, each
