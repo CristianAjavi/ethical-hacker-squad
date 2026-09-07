@@ -35,6 +35,8 @@
 # 24. a stderr that is neither answer says so instead of guessing
 # 25. a tool that splits two runs of ONE command is still caught
 # 26. and ranges that really do not touch are COULD NOT MEASURE, not a pass
+# 27. a diagnostic that names fd 2 reads the fd 2 under test, not its own
+# 28. a boundary touch is the rounding, not an overlap the tool got wrong
 
 set -uo pipefail
 
@@ -203,12 +205,35 @@ judge "the-contenders-are-really-launched" 0 - - \
 #     so and exits 9, instead of quietly taking a branch it was never meant to.
 cat > "$LAB/contender-bad.sh" <<"EOF"
 #!/bin/sh
-[ -p /dev/fd/2 ] && exit 0
+# `[ -p /dev/fd/2 ]` has been measured answering NO for a descriptor that IS a
+# pipe and YES on the very next probe in the same process: on 2026-09-07 the
+# honest diagnostic below printed `-p on a second look: yes` beside an `ls` that
+# read the real fd 2 and reported `p-w--w----`. What is transient is the
+# /dev/fd lookup, not the descriptor, so one probe is not an answer. Bounded at
+# five on purpose: a contender's stderr is genuinely not a pipe, and a probe
+# that is allowed to spin until it likes the answer is not a probe.
+probes=0
+while [ "$probes" -lt 5 ]; do
+  [ -p /dev/fd/2 ] && exit 0
+  probes=$((probes + 1))
+done
 if [ -c /dev/fd/2 ] || [ -f /dev/fd/2 ]; then
   echo "the contender failed on purpose" >&2
   exit 7
 fi
-echo "I cannot tell the captured pipe from a contender's sink: $(ls -l /dev/fd/2 2>&1)" >&2
+# The line below used to read `ls -l /dev/fd/2 2>&1`, and that `2>&1` points
+# THIS process's fd 2 at the substitution pipe before ls ever resolves the path:
+# it described the redirection instead of the state under test. So on the run
+# that finally caught the intermittent it reported `p-w--w----` - a pipe - one
+# line after `[ -p /dev/fd/2 ]` had said no, which sends the next reader to
+# blame `test` for a defect that is in the diagnostic. ls keeps the original
+# fd 2 here on purpose. The second `-p` probe separates a transient lookup from
+# a genuinely different kind of file, which is the whole question.
+again=no; [ -p /dev/fd/2 ] && again=yes
+desc="$(ls -l /dev/fd/2)" || desc="(ls could not describe fd 2)"
+echo "I cannot tell the captured pipe from a contender's sink." >&2
+echo "  -p said no $probes time(s); on one more look: $again" >&2
+echo "  ls -l /dev/fd/2: $desc" >&2
 exit 9
 EOF
 chmod +x "$LAB/contender-bad.sh"
@@ -290,15 +315,26 @@ END {
   }
   if (said == "") { print "fail|the tool printed no overlap verdict at all"; exit }
   span = sprintf("%.1f-%.1f s and %.1f-%.1f s", lo[1], hi[1], lo[2], hi[2])
-  touch = !(hi[1] < lo[2] || hi[2] < lo[1])
+  # The ranges arrive already rounded to %.1f, and the two directions are NOT
+  # symmetric. Printed apart means apart: rounding moves each end by at most
+  # 0.05 s and a visible gap is at least 0.1 s, so it cannot close. Printed
+  # touching means nothing on its own - two ranges 0.1 s apart can both print
+  # the same boundary, which is exactly how 0.4-0.6 and 0.4-0.4 showed up
+  # touching on 2026-09-07 while the tool called them a difference. So an
+  # overlap is only read as one when it is wider than the rounding that
+  # produced it, and the band in between is a third answer, not a verdict.
+  apart = (hi[1] < lo[2] || hi[2] < lo[1])
+  touch = (hi[1] >= lo[2] + 0.1 && hi[2] >= lo[1] + 0.1)
   if (touch && said == "together")
     print "pass|"
   else if (touch && said == "apart")
-    print "fail|the printed ranges " span " touch, and the tool called them a difference"
-  else if (!touch && said == "together")
+    print "fail|the printed ranges " span " overlap by more than the rounding, and the tool called them a difference"
+  else if (apart && said == "together")
     print "fail|the printed ranges " span " do not touch, and the tool called them one box"
-  else
+  else if (apart)
     print "unmeasured|two runs of one command landed on " span ", which do not touch: the box moved under the case and the rule was never exercised"
+  else
+    print "unmeasured|the printed ranges " span " differ by less than the 0.1 s that printing rounds away: this run cannot tell an overlap from a difference"
 }
 AWK
 
@@ -318,7 +354,33 @@ verdict_overlap() {   # <name> <rc> <transcript>
   esac
 }
 
-out="$(t --runs 3 --against "$LAB/slow.sh" -- "$LAB/slow.sh")"; rc=$?
+# The arms are NOT `slow.sh` any more, and the reason is the arithmetic above.
+# Two 0.4 s arms print as 0.4-0.4 and 0.4-0.4, and a range 0.0 s wide can never
+# clear the 0.1 s the printing rounds away: the case landed in the band on 4 of
+# 4 runs and reported COULD NOT MEASURE every time. A case that cannot create
+# its own condition does not measure the rule, whatever colour it prints.
+#
+# So each arm is given a spread WIDER than the rounding, and given the same one:
+# `wide.sh` keys its sleep on invocation number in pairs - 0.2, 0.2, 0.6, 0.6 -
+# so that `--against`, which alternates A,B,A,B, hands 0.2/0.6/0.2 to BOTH arms
+# instead of the fast one to A and the slow one to B. Keying on parity is how
+# this was got wrong once already: it separates the arms instead of widening
+# them. Both arms then print 0.2-0.6, the overlap clears the rounding by 0.3 s,
+# and the rule is actually exercised. It also costs less: 2.0 s against 2.4 s.
+cat > "$LAB/wide.sh" <<"EOF"
+#!/bin/sh
+c="$0.n"
+n=$(cat "$c" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" > "$c"
+case $(( (n - 1) % 4 )) in
+  0|1) sleep 0.2 ;;
+  *)   sleep 0.6 ;;
+esac
+EOF
+chmod +x "$LAB/wide.sh"
+: > "$LAB/wide.sh.n"
+out="$(t --runs 3 --against "$LAB/wide.sh" -- "$LAB/wide.sh")"; rc=$?
 verdict_overlap "overlapping-ranges-are-the-box" "$rc" "$out"
 
 # 21. And the opposite has to work, or the verdict would be a rubber stamp that
@@ -361,6 +423,40 @@ seen="$(printf '%s\n' \
   | awk -f "$LAB/overlap.awk")"
 judge "ranges-that-really-do-not-touch-are-not-measured" 0 - - \
   "$([ "${seen%%|*}" = unmeasured ] && echo 0 || echo 9)" "the classifier answered '$seen'"
+
+# 28. NEGATIVE CONTROL for the rounding band, the third of case 20's answers and
+#     the newest way to make a red vanish. Ranges that print as touching only at
+#     one boundary were 0.1 s apart for all anyone can tell, and calling that a
+#     defect in the tool is a verdict the transcript does not support.
+seen="$(printf '%s\n' \
+  "arm A: median 0.5 s, range 0.4-0.6 s over 3 run(s)" \
+  "arm B: median 0.4 s, range 0.4-0.4 s over 3 run(s)" \
+  "The two ranges do not overlap. That is a difference between the commands." \
+  | awk -f "$LAB/overlap.awk")"
+judge "a-boundary-touch-is-not-an-overlap" 0 - - \
+  "$([ "${seen%%|*}" = unmeasured ] && echo 0 || echo 9)" "the classifier answered '$seen'"
+
+# 27. The property case 17's diagnostic depends on, and the one that had quietly
+#     stopped holding: a line that names fd 2 has to be reading the fd 2 of the
+#     process under test. Point fd 2 at a regular file and ask; if the answer
+#     starts with `p` the question was answered by a redirection the diagnostic
+#     introduced itself, and every future reading of that line is worthless.
+#     Deliberately asserts only the honest form: the broken one is shell
+#     semantics, not repository code, and pinning it would go red the day a
+#     shell changed for reasons that are none of this battery's business.
+cat > "$LAB/fd2.sh" <<"EOF"
+#!/bin/sh
+exec 3>&1
+exec 2> "$1"
+ls -l /dev/fd/2 >&3
+EOF
+chmod +x "$LAB/fd2.sh"
+out="$("$LAB/fd2.sh" "$LAB/fd2.target")"; rc=$?
+case "$out" in
+  -*) judge "the-fd-2-diagnostic-reads-the-real-fd-2" 0 - - "$rc" "$out" ;;
+  *)  judge "the-fd-2-diagnostic-reads-the-real-fd-2" 0 - - 9 \
+        "fd 2 was a regular file and ls described it as: $out" ;;
+esac
 
 echo
 echo "$pass PASS / $fail FAILED / $unmeasured COULD NOT MEASURE"

@@ -1224,7 +1224,7 @@ as NOT MEASURED rather than as a slow run. Measured and fixed, alternated arms:
 The last row is what a mutant in the local sweep actually costs, and it is the
 figure the "140.4 s per mutant" of an earlier single run should be read against.
 
-Proved in the negative: `scripts/time-repeat.selftest.sh`, 26 cases, and
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 28 cases, and
 `scripts/time-repeat.mutants.py`, which silences one rule of the instrument at a
 time and demands that the case written for it goes red — **twenty of twenty**. A
 stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
@@ -1308,6 +1308,60 @@ and `lib/portable_shell.py` scans `SUFFIXES = (".sh", ".bash")` — this defect
 lived in a `.py`, in a `subprocess` argv list, where the catalogue's shell
 regex has nothing to match. Extending it to Python argv lists is the ticket;
 merging that branch alone would not have helped.
+
+### The intermittent that turned out to be three defects
+
+The red that surfaced beside it was the documented intermittent in
+`a-dead-contender-is-unmeasurable`, whose header said in as many words that the
+cause was NOT established after 600 controlled repetitions. It is established
+now, and the thing that established it was fixing the diagnostic written to
+explain it.
+
+**One.** That diagnostic read `ls -l /dev/fd/2 2>&1`, and the `2>&1` points the
+process's own fd 2 at the substitution pipe *before* `ls` resolves the path. It
+described the redirection, not the state under test, so it reported `p-w--w----`
+— a pipe — one line after `[ -p /dev/fd/2 ]` had said no. Read at face value it
+accuses `test` of a defect that lives in the diagnostic. `ls` now keeps the
+original fd 2, and case 27 pins the property: with fd 2 on a regular file, a
+line that names fd 2 must describe a regular file.
+
+**Two.** With an honest diagnostic the next occurrence answered the question on
+sight: `-p said no 1 time(s); on one more look: yes`, beside an `ls` that read
+the real descriptor and printed `p-w--w----`. What is transient is the
+`/dev/fd` lookup, not the descriptor — the fd was a pipe throughout. One probe
+is not an answer, so the probe is now bounded at five. Bounded, because a
+contender's stderr is genuinely not a pipe and a probe allowed to spin until it
+likes the answer is not a probe.
+
+**Three, and it was ours.** The classifier added for `overlapping-ranges-are-
+the-box` recomputed overlap from the ranges the tool printed. Printing rounds to
+`%.1f`, and the two directions are not symmetric: printed apart means apart,
+because rounding moves each end by at most 0.05 s and a visible gap is at least
+0.1 s. Printed *touching* means nothing on its own — two ranges 0.1 s apart can
+print the same boundary. The case failed on exactly that: `0.4-0.6` and
+`0.4-0.4`, which touch only where the rounding put them. An overlap is now read
+as one only when it clears the rounding that produced it, and the band between
+is a third answer.
+
+That correction then exposed the case's own dead end. Two 0.4 s arms print
+`0.4-0.4` and `0.4-0.4`; a range 0.0 s wide can never clear 0.1 s, so the case
+reported COULD NOT MEASURE on 4 of 4 runs — sound, and useless. **A case that
+cannot create its own condition does not measure the rule, whatever colour it
+prints.** The arms now carry a spread wider than the rounding and the *same*
+one: `wide.sh` keys its sleep on invocation number in pairs (0.2, 0.2, 0.6,
+0.6), so `--against`, which alternates A,B,A,B, hands 0.2/0.6/0.2 to both arms
+rather than the fast one to A and the slow one to B. Keying on parity is how
+this was got wrong once before: it separates the arms instead of widening them.
+Both arms print 0.2-0.6, the overlap clears the rounding by 0.3 s, and the case
+costs 2.0 s instead of 2.4 s.
+
+| control | result |
+|---|---|
+| the diagnostic put back to `2>&1`, fd 2 on a regular file | 26 PASS / 1 FAILED — case 27, saying `ls described it as: p-w--w----` |
+| the rounding band signed green instead of unmeasured | 27 PASS / 1 FAILED — case 28, and nothing else |
+| the battery as it stands | 28 PASS / 0 FAILED / 0 COULD NOT MEASURE, rc 0, on 4 of 4 runs |
+
+Cases: **26 → 28**.
 
 ### The battery that answers differently on a busy machine
 
