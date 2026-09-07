@@ -22,7 +22,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
-| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (32 cases) |
+| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
@@ -49,7 +49,8 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (31 cases) · `.github/workflows/coverage-sweep.yml` |
+| every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (19 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -1142,6 +1143,102 @@ Three further cases are refusals rather than verdicts, because an unread result
 is not a clean one: a battery already red before anything was mutated
 (`red-baseline-refuses-instead-of-reporting`), a selection matching no library,
 and a library with no report site at all. All three exit 2.
+
+## The number in the table, run
+
+Every row above that carries a self-test declares how many cases it runs. Until
+2026-09-07 nothing compared that number to anything, and the number was wrong
+more often than it was checked:
+
+| row | said | ran | what happened |
+|---|---|---|---|
+| `gate-coverage-sweep.sh` | 31 | **47** | sixteen cases added over four commits; the row was never touched |
+| `gate-triage-stage.sh` | 32 | **31** | never true: written wrong in `dc441f0`, and the battery has not changed since `a95347f` (#39) |
+| gate-portable-shell | 22 | **25** | found by hand the same week, on another branch |
+
+Two of twelve wrong, and four more that could not be compared to anything at
+all, because their self-test ran its cases as straight-line assertions and
+finished with a sentence instead of a count. A battery that cannot say how many
+cases it ran cannot tell five from zero, so `6 cases` in this table was not a
+claim anyone could check — it was decoration. Those four now keep a counter and
+print it (`gate-agent-roster.sh`, `gate-coverage-gap-claims.sh`,
+`gate-negative-proof-census.sh`, `gate-stage-eval-floor.sh`), and all four turned out
+to have been telling the truth. They simply had no way to prove it.
+
+`gate-declared-case-counts.sh` runs every self-test this table names and reads
+the count off it. One summary line, `N passed, M failed`, and the total is
+`N + M`. Two spellings of that line existed before this gate; the second
+spelling (`N PASS / M FAIL`) was rewritten into the first, because a parser that
+accepts two forms is a parser that will one day accept a third that means
+something else.
+
+**Three invocation conventions live in this repository** and the gate finds each
+rather than assuming one: a sibling `<gate>.selftest.sh`, a `--self-test` flag on
+the gate itself, or a self-test that runs inline on a normal run. Where a gate
+offers both a sibling and a flag, the sibling wins — a gate that grew a battery
+should not go on being read through its older inline path.
+
+### What it refuses to call a pass
+
+- a self-test that prints no count: the row cannot be checked against anything,
+  which is a `2`, not a green
+- a self-test that came back red: a count read off a failing battery is not a
+  measurement of a passing one
+- a row naming a gate that is not there
+- a table with no `self-test (N cases)` row at all: a zero here is a blind zero
+- the core exiting `1` with no row named — Python exits `1` when it dies, and a
+  verdict of "it FAILS" that names nothing is a crash wearing the exit code of
+  one
+
+### What it does not measure
+
+Whether the cases are any good, whether `N` is the *right* number of cases for
+that gate, or whether a green case measures its rule. That is what the mutant
+banks are for. This decides one thing: whether the document tells the truth
+about how many there are.
+
+It is also blind to a gate whose row carries no case count at all — twelve rows
+declare one and the rest do not, and those are invisible here.
+`gate-negative-proof.sh` is the one that refuses a gate with no battery.
+
+### The one row it will not run
+
+Its own. This gate's battery ends with a control case that invokes the gate over
+the real tree, so a gate that ran that battery would recurse without a floor.
+The row is not left unchecked, and it is not quietly skipped either: the gate
+prints which row it did not run and why, and the battery closes its own number
+with two assertions that pin each other — the document has to say 19, and the
+run has to reach 19. Raising one without the other leaves the file red.
+
+### Cost
+
+It runs twelve self-tests, eight at a time. Measured on a ten-core box:
+**67.1 s sequential, 39.7 s at eight threads**, and the floor is one battery
+(`gate-reproduction.sh`, 33.4 s) that no number of threads divides. That is the
+whole cost of the check, and it is why `run-all.sh` went from 21.5 s to 60.9 s
+the day this gate landed - both measured back to back on the same machine.
+
+A note on the inline convention: for a gate with neither a sibling battery nor a
+`--self-test` flag, "run its self-test" means running the gate itself. If such a
+gate were ever also expensive — a weekly sweep, say — this would launch it. The
+per-self-test ceiling is 900 s and the run says which convention it used, so the
+cost is visible rather than mysterious, but the shape is worth knowing before
+adding a gate of that kind.
+
+### Negative proof
+
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 19 cases. Seventeen build
+a toy repository — a table with the rows the case needs and fake gates that print
+a count and nothing else — so each costs milliseconds and can assert a shape the
+real tree does not currently contain. Both directions of drift, all three
+invocation conventions, the sibling beating the flag, `N + M` rather than `N`,
+the last summary line rather than the first, one drifted row among four good
+ones, and every refusal listed above. The eighteenth checks this file's own row
+against its own tally. The nineteenth is the control: the real tree, all twelve
+real batteries, no mutation.
+
+Mutant bank: thirteen mutations of the core and the wrapper, each declaring in
+advance which case has to go red. **13 of 13 caught.**
 
 ## A single timing is not a measurement
 

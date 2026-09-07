@@ -569,6 +569,6 @@ fi
 
 # --------------------------------------------------------------------------- #
 echo
-echo "$pass PASS / $fail FAILED"
+echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0
