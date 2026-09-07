@@ -61,8 +61,43 @@ import time
 
 DEFAULT_JOBS = 4
 BATTERY_TIMEOUT = 600
-# Below this the clones stop rather than discovering the ceiling the hard way.
-FREE_FLOOR_BYTES = 3 * 1024 ** 3
+# The clones stop before they discover the ceiling the hard way. The floor was a
+# flat 3 GiB checked against the whole machine, and that is not a measure of
+# anything this run does: `run_mutant` deletes each clone in its `finally`, so
+# the most a sweep holds at once is `jobs` copies of the tree. Measured on this
+# repository the peak a run can reach is 56 MiB against a 3072 MiB demand - 55x.
+# The consequence was not theoretical. Inside `run-batteries.sh` the refusal
+# bank sweeps toy trees of a few KB, and it came back COULD NOT MEASURE on a
+# machine with 4.6 GiB free because some other battery's temporary files had
+# taken the machine under a floor that had nothing to do with the job in front
+# of it. A guard that refuses work 55x smaller than its own threshold is not
+# protecting the disk; it is manufacturing NOT MEASURED, and a NOT MEASURED that
+# arrives for the wrong reason is the instrument lying.
+FREE_FLOOR_MULTIPLE = 8
+FREE_FLOOR_MIN_BYTES = 256 * 1024 ** 2
+
+
+def tree_bytes(root: pathlib.Path) -> int:
+    """Apparent size of the tree about to be cloned, in bytes."""
+    total = 0
+    for base, _dirs, names in os.walk(str(root)):
+        for n in names:
+            try:
+                total += os.lstat(os.path.join(base, n)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def free_floor_bytes(size: int, jobs: int) -> int:
+    """Room to demand before cloning: what this run can hold, with margin.
+
+    Deliberately NOT capped at the top. Sweeping a tree big enough to want more
+    than the old 3 GiB is exactly the case where the old constant was too small,
+    and the reason it was too small is the same reason it was too large here: it
+    never looked at the tree.
+    """
+    return max(FREE_FLOOR_MIN_BYTES, size * max(1, jobs) * FREE_FLOOR_MULTIPLE)
 # Receivers that carry a printed count, not a failure. Silencing one of these
 # changes what a run prints and not what it concludes, so a green battery over it
 # is not evidence of anything missing.
@@ -316,6 +351,14 @@ def sweep(root: pathlib.Path, only=None, jobs=DEFAULT_JOBS, accepted=None,
             "-cf - .) | (cd %s && tar -xf -)" % (root, pristine),
             shell=True, check=True)
 
+        size = tree_bytes(pristine)
+        floor = free_floor_bytes(size, jobs)
+        out("disk floor: %d MiB applied (%d job(s) x %.1f KiB of tree x %d = "
+            "%.1f MiB, never under %d MiB)"
+            % (floor / 2 ** 20, max(1, jobs), size / 1024, FREE_FLOOR_MULTIPLE,
+               size * max(1, jobs) * FREE_FLOOR_MULTIPLE / 2 ** 20,
+               FREE_FLOOR_MIN_BYTES / 2 ** 20))
+
         # A battery that is already red says nothing about a mutant. Refuse before
         # spending an hour producing verdicts that mean nothing.
         for argv in sorted({tuple(a for a in p[1]) for p in plan}):
@@ -345,10 +388,10 @@ def sweep(root: pathlib.Path, only=None, jobs=DEFAULT_JOBS, accepted=None,
                 with qlock:
                     if not queue or aborted:
                         return
-                    if free_bytes(base) < FREE_FLOOR_BYTES:
-                        aborted.append("free disk fell below %.1f GB with %d "
+                    if free_bytes(base) < floor:
+                        aborted.append("free disk fell below %d MiB with %d "
                                        "mutant(s) unrun"
-                                       % (FREE_FLOOR_BYTES / 1e9, len(queue)))
+                                       % (floor / 2 ** 20, len(queue)))
                         queue.clear()
                         return
                     idx, (lib_name, argv, site) = queue.pop(0)

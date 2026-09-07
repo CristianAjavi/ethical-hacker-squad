@@ -456,6 +456,87 @@ judge "a-refuted-unproven-declaration-is-a-failure" 1 \
 # replaced it.
 lab
 
+# 33-35. The engine's own refusals, and the three of them nobody watched.
+#
+#     A hand bank flipped each of this engine's 14 `return 1` / `return 2` to
+#     `return 0` - "what if this refusal silently became a pass" - and ran this
+#     battery against the mutant. Eleven were caught by a case that named them.
+#     THREE survived: nothing here noticed the engine giving up and calling it
+#     clean. All three are `except` blocks, which is the shape of the gap: the
+#     cases covered the CHECKS and left the CATCHES uncovered.
+#
+#     The worst is `the sweep itself failed`. A library that does not parse
+#     raises out of report_sites, and with that refusal gone the whole sweep
+#     reads as a clean sweep. The deepest scanner in the repository falling over
+#     and reporting green is the exact failure this file exists to prevent.
+
+# 33. A selection that matches no library is unmeasurable, not an empty pass.
+out="$(sweep --list-libraries --only nothing-by-this-name.py)"; rc=$?
+judge "a-selection-matching-nothing-is-unmeasurable" 2 \
+  "no gate library matched the selection" - "$rc" "$out"
+
+# 34. The verdict path builds the plan to check the shards cover the tree. If it
+#     cannot build one it must refuse: a verdict that skipped its own coverage
+#     check is a verdict over nothing.
+mkdir -p "$LAB/hollow"
+printf '%s\n' '[{"anchor":"toy.py::check#1","lib":"toy.py","survived":false,"caught_by":["alpha-is-reported"],"crash_only":false,"stmt":"x","line":1}]' > "$LAB/one-shard.json"
+out="$("$PY" "$ENGINE" --root "$LAB/hollow" --verdict-from "$LAB/one-shard.json" 2>&1)"; rc=$?
+judge "a-verdict-over-a-rootless-tree-is-unmeasurable" 2 \
+  "has no scripts/gates/lib" - "$rc" "$out"
+
+# 35. A library that does not parse crashes the sweep, and a crashed sweep is
+#     COULD NOT MEASURE. It reached this file as a survivor: the refusal was
+#     there and no case stood behind it.
+lab
+cat > "$LAB/repo/scripts/gates/lib/unparseable.py" <<'EOF'
+def check(text):
+    findings = [
+EOF
+cat > "$LAB/repo/scripts/gates/gate-unparseable.selftest.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "PASS  never-runs"
+exit 0
+EOF
+chmod +x "$LAB/repo/scripts/gates/gate-unparseable.selftest.sh"
+out="$(sweep)"; rc=$?
+judge "a-library-that-does-not-parse-is-unmeasurable" 2 \
+  "the sweep itself failed" "OK    every surviving" "$rc" "$out"
+lab
+
+# 36. The disk floor is derived from the tree in front of it, not from a
+#     constant with nothing to do with the job. It was a flat 3 GiB checked
+#     against the whole machine - 76x the 40 MiB peak a real sweep can reach,
+#     since `run_mutant` deletes each clone in its `finally` - and inside
+#     run-batteries.sh that turned toy trees of a few hundred bytes into COULD
+#     NOT MEASURE on a machine with 4.6 GiB free, because another battery's
+#     temporary files had moved a number this run does not depend on.
+lab
+out="$(sweep)"; rc=$?
+judge "the-disk-floor-comes-from-the-tree" 1 \
+  "disk floor: 256 MiB applied" "3072 MiB applied" "$rc" "$out"
+
+# 37. And the derivation is live rather than decorative: the room demanded is
+#     the tree times the clones held at once, so a heavier tree raises it off
+#     the minimum. 16 MiB x 4 clones x 8 = 512 MiB. The ballast is kept as
+#     small as the arithmetic allows: the refusal bank runs this battery
+#     fifteen times, so every byte here is paid fifteen times over.
+lab
+dd if=/dev/zero of="$LAB/repo/ballast.bin" bs=1048576 count=16 2>/dev/null
+out="$(sweep --jobs 4)"; rc=$?
+judge "a-heavier-tree-raises-the-floor" 1 \
+  "disk floor: 512 MiB applied" "256 MiB applied" "$rc" "$out"
+
+# 38. Cheaper is not toothless. The same tree with 256 clones in flight asks
+#     for 32 GiB, no machine here has it, and the clones stop rather than
+#     discover
+#     the ceiling the hard way - rc 2, because a sweep that ran out of room
+#     measured nothing. Nothing proved this while the floor was a constant: the
+#     branch existed and no case had ever entered it.
+out="$(sweep --jobs 256)"; rc=$?
+judge "a-floor-it-cannot-meet-stops-the-clones" 2 \
+  "free disk fell below" - "$rc" "$out"
+lab
+
 # 32. The workflow reads exit codes it can actually reach. GitHub runs every
 #     `run:` block with `bash -e`, and `set -uo pipefail` does not turn that off.
 #     The first run of this workflow died of exactly that: with pipefail, the

@@ -854,8 +854,147 @@ Proved in the negative by seven cases
 `a-declared-blind-battery-is-not-a-refusal`,
 `a-refuted-unproven-declaration-is-a-failure`) and by a hand mutation of each new
 rule — five of five caught by the case written for it. It is a hand mutation
-because **`coverage_sweep.py` excludes itself from its own sweep**; that
-exclusion is a real hole, it is on the backlog, and it is not closed here.
+because **`coverage_sweep.py` excludes itself from its own sweep**. That
+exclusion was written up here as a hole, and the next section is what happened
+when somebody measured it: the hole is real, and it was not the one described.
+
+### The engine's own report site is a refusal
+
+`coverage_sweep.py` excludes itself from the libraries it mutates, and the
+backlog called that a hole in the SUBJECT list. Measured, that reading is wrong,
+and it is worth writing down because the correction is the finding.
+
+The sweep's operator is `X.append(...)` as a statement. The engine has seven of
+those — `plan`, `results`, `seen`, `found`, `named_by`, `unresolved`, `aborted` —
+and **none of them is a report site**. They are all plumbing. Putting the engine
+in the subject list would manufacture seven mutants that crash, and, since the
+previous section stopped counting a crash as a catch, report seven holes that do
+not exist.
+
+The engine does not report through a findings list. It reports by REFUSING: a
+`print`, then `return 1` (measured, fails) or `return 2` (could not measure).
+Those are its report sites, and the sweep's own question, asked in the engine's
+own vocabulary, is: **if this refusal silently became a pass, would any case
+notice?** `scripts/coverage-sweep.mutants.py` is the bank that asks it — one
+`return 1`/`return 2` rewritten to `return 0` per mutant, in a copy of the tree,
+judged by the battery, with the unmutated original as the judge.
+
+| | before | after |
+|---|---:|---:|
+| refusals in the engine | 14, unmeasured | 14 |
+| caught by a case that names them | not measured | **14** |
+| **survive: a refusal becomes a pass and nobody notices** | not measured → **3** | **0** |
+| red with no case naming them | not measured | 0 |
+
+All three survivors were `except` blocks, and that is the shape of the gap: the
+cases covered the CHECKS and left the CATCHES uncovered.
+
+| site | refusal | why it matters |
+|---|---|---|
+| `:433` | `--list-libraries` over a selection that matches nothing | CI builds the shard matrix from that output |
+| `:477` | `--verdict-from` unable to build the plan | the verdict skips its own coverage check |
+| `:498` | **`the sweep itself failed`** | a library that does not parse crashes the sweep, and a crashed sweep reads GREEN |
+
+The third is the one that matters most. The deepest scanner in the repository
+falling over and reporting clean is the exact failure this file exists to
+prevent. Cases 33–35 close all three, and each of the three is the **only** case
+that catches its site, so the closure is attributable to the case rather than to
+a coincidence.
+
+The bank lives at `scripts/coverage-sweep.mutants.py` with
+`scripts/coverage-sweep.mutants.selftest.sh` beside it, so `run-batteries.sh` picks
+it up on its own: 14 mutants, four workers, 12 s, 13 MiB of peak disk. It sits
+deliberately OUTSIDE `scripts/gates/lib/` — every `.py` in that directory is a
+subject of the sweep, and this bank's own `.append` calls are plumbing that would
+be read as holes.
+
+It runs the unmutated tree first and exits 2 if that does not come back green.
+That baseline is not ceremony. The first version of this bank copied `scripts/`
+and not `.github/`, so the case that reads the workflow file failed for want of a
+file in all fourteen mutants — and the bank counted that failure as the case
+catching the mutant. Fourteen of fourteen caught, zero survivors, and the number
+was coverage that did not exist: the defect of the previous section, committed by
+the bank written to audit it.
+
+### 32 cases tarring 259 MB each
+
+`gate-protected-paths.selftest.sh` gives each case a work tree by tarring the
+repository into `"$TMP/$name"` — a new directory per case. The `rm -rf "$work"`
+at the top of the function therefore only ever removed a directory that did not
+exist yet, and all 32 copies piled up until the EXIT trap fired. Each copy
+included `tooling/claude-cli/node_modules`, 259 MB of the repository's 321 MB,
+which this gate reads none of.
+
+| | before | after |
+|---|---:|---:|
+| peak disk | 7855 MiB | **41 MiB** |
+| wall clock | 57 s | **25 s** |
+| cases green | 28 of 32 | **32 of 32** |
+| `No space left on device` write errors | 2013 | **0** |
+
+Four cases were red for a reason with nothing to do with protected paths. Note
+what that means and what it does not: the disk pressure is gone, but the battery
+still renders a failed write as a case FAILURE where the exit-code doctrine says
+COULD NOT MEASURE. That is a separate defect, it is still open, and removing the
+pressure only made it rarer.
+
+### A disk floor that never looked at the tree
+
+The sweep stopped launching clones when free disk fell under a flat 3 GiB. That
+number measures the machine, not the job. `run_mutant` deletes each clone in its
+`finally`, so the most a sweep ever holds at once is `jobs` copies of the tree it
+is sweeping.
+
+| | |
+|---|---:|
+| the repository's tree, as the sweep copies it | 10.1 MiB |
+| clones held at once, at the default `--jobs 4` | 4 |
+| peak the run can reach | 40.3 MiB |
+| free disk the guard demanded | 3072 MiB |
+| ratio | **76x** |
+
+The consequence arrived on its own, which is the only reason this section
+exists. The refusal bank above sweeps toy trees of a few hundred bytes, fifteen
+times over, and inside `run-batteries.sh` it came back COULD NOT MEASURE: 25 of
+44 cases red, `free disk fell below 3.2 GB` under every one of them, on a machine
+with 4.6 GiB free. Nothing about those trees had changed. Another battery's
+temporary files had moved a number the job in front of it did not depend on. The
+bank was right to refuse rather than publish a coverage figure it could not stand
+behind, and it was still an outage: a guard that refuses work 76x smaller than
+its own threshold is not protecting the disk, it is manufacturing NOT MEASURED.
+
+The floor is now the tree times the clones times eight, never under 256 MiB, and
+it is printed before the baseline runs so you learn it without waiting:
+
+```
+disk floor: 322 MiB applied (4 job(s) x 10314.5 KiB of tree x 8 = 322.3 MiB, never under 256 MiB)
+```
+
+| | before | after |
+|---|---:|---:|
+| floor for this repository | 3072 MiB | **322 MiB**, 8x the peak |
+| floor for the battery's toy tree | 3072 MiB | **256 MiB**, the minimum |
+| battery cases | 44 | **47** |
+
+It is deliberately not capped at the top. A tree big enough to want more than
+3 GiB is precisely the case where the old constant was too SMALL, and it was too
+small there for the same reason it was too large here: it never looked at the
+tree.
+
+A control was made weaker, so the weaker control was proved to still bite.
+`a-floor-it-cannot-meet-stops-the-clones` gives the toy tree 16 MiB of ballast
+and 256 clones in flight, which asks for 32 GiB, and requires rc 2 with the
+mutants unrun. The ballast is kept as small as that arithmetic allows, because
+the refusal bank runs this battery fifteen times and every byte here is paid
+fifteen times over. That branch existed for the whole life of the constant and no case
+had ever entered it. All three new cases were checked in the negative: with the
+constant put back, exactly those three turn red and nothing else does, so each is
+the only case that catches its rule.
+
+What is still NOT measured: nothing exercises the abort with a floor the machine
+could plausibly meet, because making free disk fall on demand means filling the
+disk. The case above reaches the branch by asking for an impossible number, which
+proves the branch runs and not that the threshold is the right one.
 
 Sharding opens exactly one hole, and it is the same hole as before: a library
 nobody put in the matrix would be skipped in silence. Two things close it. The
@@ -868,7 +1007,7 @@ other twelve shards' entries — so shards MEASURE and `--verdict-from` JUDGES.
 
 ### Proved in the negative
 
-`scripts/gates/gate-coverage-sweep.selftest.sh`, 32 cases, over a toy repository
+`scripts/gates/gate-coverage-sweep.selftest.sh`, 47 cases, over a toy repository
 whose answers are decided by construction: one rule with a case, two without, one
 of them spanning four lines. The sweep exists to find batteries that are green
 for the wrong reason, so a sweep green for the wrong reason would be the joke
