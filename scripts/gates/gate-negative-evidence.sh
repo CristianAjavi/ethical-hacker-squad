@@ -404,19 +404,19 @@ self_test() {
   local ok_st=1 f expect got
   [ -d "$FIXTURES" ] || { printf '  self-test: fixtures not found in %s\n' "$FIXTURES" >&2; return 2; }
 
-  local n_bad=0 n_good=0 n_unm=0
+  local n_bad=0 n_good=0 n_unm=0 n_fail=0
   for f in "$FIXTURES"/bad/*.md; do
     [ -e "$f" ] || { printf '  self-test: there are no negative fixtures\n' >&2; return 2; }
     n_bad=$((n_bad + 1))
     expect="$(sed -n 's/^<!--[ ]*gate-expect:[ ]*\([a-z-]*\).*/\1/p' "$f" | head -1)"
     if [ -z "$expect" ]; then
       printf '  self-test: fixture %s does not declare <!-- gate-expect: <rule> -->\n' "$(basename "$f")" >&2
-      ok_st=0; continue
+      ok_st=0; n_fail=$((n_fail + 1)); continue
     fi
     got="$(awk -v FILE="$(basename "$f")" -f "$DETECTOR" "$f" 2>/dev/null | awk -F'|' -v r="$expect" '$1=="FAIL" && $4==r' | grep -c . || true)"
     if [ "${got:-0}" -lt 1 ]; then
       printf '  NEGATIVE self-test failed: %s must trigger [%s] and it did not\n' "$(basename "$f")" "$expect" >&2
-      ok_st=0
+      ok_st=0; n_fail=$((n_fail + 1))
     fi
   done
 
@@ -427,7 +427,7 @@ self_test() {
     if [ "${got:-0}" -ne 0 ]; then
       printf '  POSITIVE self-test failed: %s is correct text and the detector fired on it:\n' "$(basename "$f")" >&2
       awk -v FILE="$(basename "$f")" -f "$DETECTOR" "$f" 2>/dev/null | sed 's/^/        /' >&2
-      ok_st=0
+      ok_st=0; n_fail=$((n_fail + 1))
     fi
   done
 
@@ -437,15 +437,20 @@ self_test() {
     det_out="$(awk -v FILE="$(basename "$f")" -f "$DETECTOR" "$f" 2>/dev/null)"; det_rc=$?
     if [ "$det_rc" -ne 0 ]; then
       printf '  self-test COULD NOT MEASURE: the detector exited %s reading %s\n' "$det_rc" "$(basename "$f")" >&2
-      ok_st=0
+      ok_st=0; n_fail=$((n_fail + 1))
     elif ! grep -q '^UNMEAS|' <<<"$det_out"; then
       printf '  self-test failed: %s must come out UNMEASURABLE and it came out silent\n' "$(basename "$f")" >&2
-      ok_st=0
+      ok_st=0; n_fail=$((n_fail + 1))
     fi
   done
 
   printf '  fixtures: %d that must fail, %d that must stay silent, %d that must be unmeasurable\n' \
     "$n_bad" "$n_good" "$n_unm"
+  # ONE FIXTURE IS ONE CASE, and the line says so in the spelling the count gate
+  # reads. Without it this self-test could fall from ten fixtures to two and the
+  # documentation would keep promising whatever it promised.
+  printf -- '--- %d passed, %d failed ---\n' \
+    "$((n_bad + n_good + n_unm - n_fail))" "$n_fail"
   [ "$ok_st" -eq 1 ] && return 0
   return 2
 }

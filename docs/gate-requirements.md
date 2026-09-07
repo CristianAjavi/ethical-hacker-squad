@@ -11,7 +11,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | Requirement | Status | Implementation |
 |---|---|---|
 | `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test (22 cases), `gate-plugin-version.sh` + self-test (13 cases) |
-| `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
+| `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test (29 cases) |
 | `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (26 cases) |
@@ -30,15 +30,15 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
-| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
+| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) + --self-test (2 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test (7 cases) |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test (12 cases) |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
-| negative evidence | running | `gate-negative-evidence.sh` |
+| negative evidence | running | `gate-negative-evidence.sh` + self-test (4 cases) + --self-test (10 cases) |
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test (3 cases) |
-| label taxonomy | running | `gate-labels-taxonomy.sh` |
+| label taxonomy | running | `gate-labels-taxonomy.sh` + self-test (12 cases) |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
@@ -51,7 +51,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (27 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (32 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -215,6 +215,29 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### A gate may carry two self-tests, and only one was being counted
+
+`gate-declared-case-counts.sh` resolves a gate's self-test by taking the **first
+convention that matches**: a sibling `<gate>.selftest.sh`, then `--self-test`,
+then inline. Two gates offer both — `gate-negative-evidence.sh` (a sibling
+battery of 4 path-resolution cases, and its own `--self-test` over 10 fixtures)
+and `gate-reproduction.sh` (a sibling battery of 33 cases, and its own
+`--self-test` over 2 mutants). The second one was compared against nothing: it
+could fall to a single case, or to none, with every row in this table still
+green — the same defect this section exists to close, one level down.
+
+Two things had to be true before it could be closed. Neither self-test printed a
+tally in a spelling any instrument reads, so both were given one; and the
+declaration needed a spelling of its own, because `+ inline self-test (N cases)`
+was **already taken** — three rows use it to say "this gate's only self-test is
+inline, it has no sibling", and a rule reading it as "the second one" would have
+accused all three. The second count is written `+ --self-test (N cases)`, which
+names the invocation and collides with nothing.
+
+Both ends are findings. A gate with two self-tests and one declaration is `1`;
+so is a row declaring a second self-test for a gate that has none, which is what
+a stale row looks like after the test is deleted.
 
 ### The four that had never been observed failing
 
@@ -1453,7 +1476,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 27 cases. Twenty-five
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 32 cases. Thirty
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1465,9 +1488,24 @@ re-run, an entry whose file changed being ignored, a ledger that cannot answer
 for a gate run inline, a ledger that is absent, one that is rubbish, and drift
 still caught when it comes off the ledger. In each of those the battery under
 the toy prints a count that DISAGREES with the ledger line, so the case can only
-pass if the gate read the source it was meant to. The twenty-sixth checks this
-file's own row against its own tally. The twenty-seventh is the control: the
-real tree, all twelve real batteries, no mutation.
+pass if the gate read the source it was meant to. Five are the second
+self-test's, and they close on each other: a gate that has one and a row that
+declares only the first, a row that declares a second for a gate that has none,
+a second count that drifts while the first still matches, a gate whose
+`--self-test` is its first and only one being declared a second time, and — the
+one that keeps the rule honest — a gate that merely NAMES the flag in a comment,
+which must not be accused. The thirty-first checks this file's own row against
+its own tally. The thirty-second is the control: the real tree, every self-test
+this table names, no mutation.
+
+Five of the bank's mutants are that rule's, each dying in the case named for
+it: `offers_flag` reverted to the substring test that started this, the
+uncounted finding deleted, the phantom finding deleted, `second_selftest` no
+longer requiring a sibling, and the second self-test discovered but never run.
+The bank refuses a mutation that matches nothing rather than counting it, which
+is how it reported its own stale anchor the moment the verdict line merged three
+conditions into one — a substitution that finds nothing kills nothing and
+reports the same green.
 
 The writer's side is `scripts/run-batteries.selftest.sh`, 43 cases, six of them
 the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
@@ -1482,9 +1520,12 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, twenty-two mutations of
-the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **22 of 22 caught**, in 6 s. Two notes on how
+Mutant bank: `scripts/declared-case-counts.mutants.py`, twenty-eight mutations
+of the core, the wrapper and the runner that writes the ledger, each declaring in
+advance which case has to go red. **28 of 28 caught**, in 24 s. This paragraph
+said twenty-two while the file held twenty-three: nothing compares the number
+here against the bank, which is the defect one floor up wearing different
+clothes. Two notes on how
 it had to be built. The bank points the control case at a faithful toy repository
 rather than the real one, because a mutation of how the invocation is resolved
 can make that control launch the real weekly sweep — the first version died

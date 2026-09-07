@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=27
+TOTAL_CASES=32
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -49,6 +49,12 @@ row() {
     >> "$W/docs/gate-requirements.md"
 }
 
+# row2 <gate> <first> <second>  - a row that declares BOTH self-tests.
+row2() {
+  printf '| something | running | `%s.sh` + self-test (%s cases) + --self-test (%s cases) |\n' \
+    "$1" "$2" "$3" >> "$W/docs/gate-requirements.md"
+}
+
 # fake <gate> <kind> <line...>  - a gate whose self-test prints exactly what the
 # case needs. `kind` picks which of the three invocation conventions it offers.
 fake() {
@@ -59,14 +65,29 @@ fake() {
       printf '#!/usr/bin/env bash\nexit 0\n' > "$d/$g.sh"
       { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$@"; } > "$d/$g.selftest.sh"
       ;;
-    sibling-and-flag)
-      # Offers BOTH. The sibling has to win, or a gate that grew a battery
-      # would go on being read through its older inline flag.
-      printf '#!/usr/bin/env bash\n# accepts --self-test\necho "99 passed, 0 failed"\nexit 0\n' > "$d/$g.sh"
+    sibling-and-flag|sibling-and-flag:*)
+      # Offers BOTH, and OFFERS the flag rather than naming it: a real
+      # comparison against "$1", which is one of the two shapes the gate reads
+      # as a declaration. The sibling has to win the FIRST count, or a gate that
+      # grew a battery would go on being read through its older inline flag -
+      # and the flag has to be measured as the second, or it answers to nothing.
+      local n="99"; case "$kind" in *:*) n="${kind#*:}" ;; esac
+      { printf '#!/usr/bin/env bash\n'
+        printf '[ "${1:-}" = "--self-test" ] || exit 0\n'
+        printf 'echo "%s passed, 0 failed"\nexit 0\n' "$n"; } > "$d/$g.sh"
+      { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$@"; } > "$d/$g.selftest.sh"
+      ;;
+    sibling-and-mention)
+      # NAMES the flag in a comment and does not answer it. A substring test
+      # cannot tell this apart from the kind above, which is how the rule first
+      # accused a gate whose header only explains what `--self-test` is.
+      printf '#!/usr/bin/env bash\n# a gate invoked with --self-test is not a battery\nexit 0\n' > "$d/$g.sh"
       { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$@"; } > "$d/$g.selftest.sh"
       ;;
     flag)
-      { printf '#!/usr/bin/env bash\n# accepts --self-test\n'; printf '%s\n' "$@"; } > "$d/$g.sh"
+      { printf '#!/usr/bin/env bash\n'
+        printf '[ "${1:-}" = "--self-test" ] || exit 0\n'
+        printf '%s\n' "$@"; } > "$d/$g.sh"
       ;;
     inline)
       { printf '#!/usr/bin/env bash\n'; printf '%s\n' "$@"; } > "$d/$g.sh"
@@ -122,7 +143,7 @@ echo "=== self-test: gate-declared-case-counts.sh (source: $SRC) ==="
 toy matches && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
 check a-count-that-matches 0 "every declared case count matches"
 
-toy sib && row gate-a 4 && fake gate-a sibling-and-flag 'echo "4 passed, 0 failed"' 'exit 0'
+toy sib && row2 gate-a 4 99 && fake gate-a sibling-and-flag 'echo "4 passed, 0 failed"' 'exit 0'
 check the-sibling-battery-beats-the-flag 0 "(sibling battery)"
 
 toy flg && row gate-a 7 && fake gate-a flag 'echo "7 passed, 0 failed"' 'exit 0'
@@ -130,6 +151,28 @@ check the-flag-when-there-is-no-sibling 0 "(--self-test)"
 
 toy inl && row gate-a 2 && fake gate-a inline 'echo "2 passed, 0 failed"' 'exit 0'
 check inline-when-there-is-neither 0 "(inline on a normal run)"
+
+# --- a gate may carry TWO self-tests, and both have to answer ---------------
+# `invocation` returns the first convention that matches, so the second
+# self-test of a gate that has a sibling battery was compared against nothing:
+# it could fall to a single case with the row still green. Both ends are
+# findings, and the middle - a gate that only NAMES the flag - is not.
+toy second && row gate-a 4 && fake gate-a sibling-and-flag:3 'echo "4 passed, 0 failed"' 'exit 0'
+check a-second-self-test-nobody-declared 1 "AND its own --self-test"
+
+toy phantom && row2 gate-a 4 5 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check a-declared-second-self-test-that-is-not-there 1 "no second self-test"
+
+toy second_drift && row2 gate-a 4 9 && fake gate-a sibling-and-flag:3 'echo "4 passed, 0 failed"' 'exit 0'
+check the-second-count-is-compared-too 1 "the row says 9 cases and the self-test runs 3"
+
+toy mention && row gate-a 4 && fake gate-a sibling-and-mention 'echo "4 passed, 0 failed"' 'exit 0'
+check naming-the-flag-in-a-comment-is-not-offering-it 0 "every declared case count matches"
+
+# A gate with no sibling already has its `--self-test` measured as its first and
+# only one. Declaring it a second time is the stale row, not a second test.
+toy first_is_flag && row2 gate-a 7 7 && fake gate-a flag 'echo "7 passed, 0 failed"' 'exit 0'
+check a-flag-with-no-sibling-is-not-a-second 1 "no second self-test"
 
 # --- the drift this gate exists for, in both directions --------------------
 toy up && row gate-a 3 && fake gate-a sibling 'echo "5 passed, 0 failed"' 'exit 0'

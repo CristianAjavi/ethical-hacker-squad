@@ -66,6 +66,13 @@ GATES = "scripts/gates"
 SELF = "gate-declared-case-counts"
 # `gate-x.sh` ... self-test (N cases) - the `inline` variant sits between them.
 ROW = re.compile(r"`(gate-[a-z0-9-]+)\.sh`.*?self-test \((\d+) cases\)")
+# A GATE MAY CARRY TWO SELF-TESTS. `invocation` below returns the FIRST
+# convention that matches, so a gate with a sibling battery AND its own
+# `--self-test` had its second one compared against nothing: it could fall from
+# ten cases to two with every row in the table still green. The second count is
+# declared on the same row, after the first, as `+ --self-test (M cases)`.
+# ROW is non-greedy, so it still reads the first number and not this one.
+EXTRA = re.compile(r"`(gate-[a-z0-9-]+)\.sh`.*?\+ --self-test \((\d+) cases\)")
 # The third group is optional: only a battery that can skip a case prints it.
 # It still counts toward the row, because a skipped case is a case of the
 # file - one that proved nothing here, which is a different statement.
@@ -129,6 +136,25 @@ def unmeasurable(reason: str) -> int:
     return 2
 
 
+# A SUBSTRING IS NOT A DECLARATION. `"--self-test" in text` also matches a gate
+# that only NAMES the flag in a comment - which is how the second-self-test rule
+# accused gate-assertion-pipes.sh, whose header explains that a gate invoked
+# `gate-x.sh --self-test` is not a battery. Two shapes actually offer it here: a
+# case arm, and a comparison against "$1". Whole-line comments are dropped
+# first, for the same reason.
+OFFERS = re.compile(r"""--self-test\)|[=!]=?\s*["']--self-test["']""")
+
+
+def offers_flag(text: str) -> bool:
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        if OFFERS.search(stripped):
+            return True
+    return False
+
+
 def invocation(root: pathlib.Path, gate: str):
     """(argv, how) for this gate's self-test, or (None, why not)."""
     sibling = root / GATES / ("%s.selftest.sh" % gate)
@@ -141,13 +167,33 @@ def invocation(root: pathlib.Path, gate: str):
         text = src.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return None, "cannot read %s.sh: %s" % (gate, exc)
-    if "--self-test" in text:
+    if offers_flag(text):
         return ["bash", str(src), "--self-test"], "--self-test"
     return ["bash", str(src)], "inline on a normal run"
 
 
-def measure(root: pathlib.Path, gate: str, declared: int, tallies=None):
-    argv, how = invocation(root, gate)
+def second_selftest(root: pathlib.Path, gate: str):
+    """argv for a SECOND self-test this gate offers beyond its sibling battery.
+
+    Only that shape: a gate whose sibling battery exists and which also answers
+    `--self-test`. A gate with no sibling already has its `--self-test` measured
+    as its first and only one.
+    """
+    sibling = root / GATES / ("%s.selftest.sh" % gate)
+    src = root / GATES / ("%s.sh" % gate)
+    if not sibling.is_file() or not src.is_file():
+        return None
+    try:
+        text = src.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not offers_flag(text):
+        return None
+    return ["bash", str(src), "--self-test"]
+
+
+def measure(root: pathlib.Path, gate: str, declared: int, tallies=None, forced=None):
+    argv, how = forced if forced else invocation(root, gate)
     if argv is None:
         return gate, declared, None, how
     recorded = from_ledger(argv, tallies)
@@ -203,10 +249,26 @@ def main(argv: list[str]) -> int:
             "%s declares no `self-test (N cases)` row - a zero here is a blind "
             "zero, not a clean table" % doc)
 
+    extra: dict[str, int] = {}
+    for line in text.splitlines():
+        m = EXTRA.search(line)
+        if m:
+            extra[m.group(1)] = int(m.group(2))
+    extra.pop(SELF, None)
+
+    # A SECOND SELF-TEST NOBODY COUNTS, and a count for a second self-test that
+    # is not there. Both are the same defect seen from its two ends, and both
+    # are findings rather than silence.
+    has_second = {g for g in declared if second_selftest(root, g) is not None}
+    uncounted = sorted(has_second - set(extra))
+    phantom = sorted(set(extra) - has_second)
+
     tallies = ledger(os.environ.get(LEDGER_ENV))
+    jobs = [(g, n, None) for g, n in sorted(declared.items())]
+    jobs += [(g, n, (second_selftest(root, g), "--self-test, the second one"))
+             for g, n in sorted(extra.items()) if g in has_second]
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        rows = list(pool.map(lambda kv: measure(root, kv[0], kv[1], tallies),
-                             sorted(declared.items())))
+        rows = list(pool.map(lambda j: measure(root, j[0], j[1], tallies, j[2]), jobs))
 
     drifted = [r for r in rows if r[2] is not None and r[2] != r[1]]
     blind = [r for r in rows if r[2] is None]
@@ -230,11 +292,22 @@ def main(argv: list[str]) -> int:
         print("UNMEASURED %s\n         the row says %d cases and nothing here can confirm it\n"
               "         %s" % (gate, n, how))
 
+    for gate in uncounted:
+        print("FINDING  %s\n         it has a sibling battery AND its own --self-test, and only the\n"
+              "         first is declared. Add `+ --self-test (N cases)` to its row,\n"
+              "         or the second one can fall to nothing with the table still green"
+              % gate)
+    for gate in phantom:
+        print("FINDING  %s\n         its row declares `+ --self-test (%d cases)` and the gate has\n"
+              "         no second self-test: either the row is stale or the test is gone"
+              % (gate, extra[gate]))
+
     if blind:
         print("%d row(s) could NOT be checked" % len(blind))
         return 2
-    if drifted:
-        print("%d declared case count(s) do not match what runs" % len(drifted))
+    if drifted or uncounted or phantom:
+        n = len(drifted) + len(uncounted) + len(phantom)
+        print("%d declared case count(s) do not match what runs" % n)
         return 1
     return 0
 

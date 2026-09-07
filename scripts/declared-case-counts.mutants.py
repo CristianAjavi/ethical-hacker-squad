@@ -95,7 +95,7 @@ MUTANTS = [
      '    src',
      GATE_BATTERY, "the-sibling-battery-beats-the-flag"),
     ("there-is-no-flag", CORE,
-     '    if "--self-test" in text:\n'
+     '    if offers_flag(text):\n'
      '        return ["bash", str(src), "--self-test"], "--self-test"',
      '    if False:\n'
      '        return ["bash", str(src), "--self-test"], "--self-test"',
@@ -107,6 +107,40 @@ MUTANTS = [
      '        return ["bash", str(src)], "inline on a normal run"',
      GATE_BATTERY, "a-row-naming-a-gate-that-is-not-there"),
 
+    # --- the SECOND self-test ----------------------------------------------
+    # invocation() returns the first convention that matches, so a gate with a
+    # sibling battery AND its own --self-test had the second one compared
+    # against nothing. Five mutants: one per end of the rule, one for the
+    # false positive that started it, one for what makes a self-test "second",
+    # and one for finding it and never running it.
+    ("the-flag-is-any-mention-of-it", CORE,
+     "    for line in text.splitlines():\n"
+     "        stripped = line.lstrip()\n"
+     '        if stripped.startswith("#"):\n'
+     "            continue\n"
+     "        if OFFERS.search(stripped):\n"
+     "            return True\n"
+     "    return False",
+     '    return "--self-test" in text',
+     GATE_BATTERY, "naming-the-flag-in-a-comment-is-not-offering-it"),
+    ("a-second-self-test-need-not-be-declared", CORE,
+     "    uncounted = sorted(has_second - set(extra))",
+     "    uncounted = []",
+     GATE_BATTERY, "a-second-self-test-nobody-declared"),
+    ("a-declared-second-need-not-exist", CORE,
+     "    phantom = sorted(set(extra) - has_second)",
+     "    phantom = []",
+     GATE_BATTERY, "a-declared-second-self-test-that-is-not-there"),
+    ("a-second-self-test-needs-no-sibling", CORE,
+     "    if not sibling.is_file() or not src.is_file():",
+     "    if not src.is_file():",
+     GATE_BATTERY, "a-flag-with-no-sibling-is-not-a-second"),
+    ("the-second-self-test-is-found-and-not-run", CORE,
+     '    jobs += [(g, n, (second_selftest(root, g), "--self-test, the second one"))\n'
+     "             for g, n in sorted(extra.items()) if g in has_second]",
+     "    pass",
+     GATE_BATTERY, "the-second-count-is-compared-too"),
+
     # --- the verdict --------------------------------------------------------
     ("an-empty-table-is-a-clean-table", CORE,
      "    if not declared:\n        return unmeasurable(",
@@ -117,8 +151,8 @@ MUTANTS = [
      "    if False:\n        print(",
      GATE_BATTERY, "a-self-test-that-says-nothing"),
     ("drift-does-not-fail", CORE,
-     "    if drifted:\n        print(",
-     "    if False:\n        print(",
+     "    if drifted or uncounted or phantom:",
+     "    if uncounted or phantom:",
      GATE_BATTERY, "the-row-says-fewer-than-it-runs"),
     ("only-drift-upward-is-drift", CORE,
      "drifted = [r for r in rows if r[2] is not None and r[2] != r[1]]",
