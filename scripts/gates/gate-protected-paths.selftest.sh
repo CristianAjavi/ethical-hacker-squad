@@ -26,9 +26,15 @@ case_run() {
   local name="$1" branch="$2" files="$3" want="$4" needle="$5" mutation="$6" work="$TMP/$1"
   local commits="${7-}" label="${8--}"
   rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules
+  # is 259 MB of the repository's 321 MB, this gate reads none of it, and
+  # each of the 32 cases below was tarring its own copy. Measured before:
+  # 7855 MiB of peak disk and 2013 "No space left on device" write errors,
+  # with four cases turning red for a reason that has nothing to do with
+  # protected paths.
+  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
   fi
   local list="$work/.changed"
   printf '%s\n' "$files" > "$list"
@@ -64,6 +70,11 @@ case_run() {
     printf 'FAILED   %-40s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
+  # And the copy goes with the case. `work` is "$TMP/$name", a NEW directory per
+  # case, so the `rm -rf "$work"` at the top of this function only ever removed a
+  # directory that did not exist yet: all 32 copies piled up until the EXIT trap
+  # fired. One case at a time is the whole requirement here.
+  rm -rf "$work"
 }
 
 echo "=== self-test: gate-protected-paths.sh (source: $SRC) ==="

@@ -85,11 +85,13 @@ self_test() {
       continue
     fi
     if [ "$rc" -ne 0 ]; then
+      echo "FAILED  negative/$(basename "$f")"
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should be MEASURED (rc 0 from the core) and the core returned $rc"
       ok=0
       continue
     fi
     if ! grep -q "^${expect}|" "$out"; then
+      echo "FAILED  negative/$(basename "$f")"
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should produce '$expect' and it produced:"
       sed 's/^/        /' "$out"
       ok=0
@@ -100,6 +102,7 @@ self_test() {
     [ -e "$f" ] || { gate_warn "self-test: there are no positive fixtures"; return "$GATE_UNMEASURABLE"; }
     rc=0; run_core "$f" "$out" || rc=$?
     if [ "$rc" -ne 0 ] || grep -qE '^(MISSING|ERR)\|' "$out"; then
+      echo "FAILED  positive/$(basename "$f")"
       gate_warn "POSITIVE self-test failed: $(basename "$f") should come out clean (rc=$rc):"
       sed 's/^/        /' "$out"
       ok=0

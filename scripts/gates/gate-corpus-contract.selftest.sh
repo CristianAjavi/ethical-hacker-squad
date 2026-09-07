@@ -34,12 +34,26 @@ trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 K="skills/ethical-hacker-squad/references/knowledge"
 
+# El arbol se empaqueta UNA vez y cada caso lo clona. Antes cada caso hacia su
+# propio `tar` del repositorio entero -27 veces- y ninguno liberaba el suyo
+# hasta el `trap` de salida: 7.083 MB de pico medidos para una sola corrida, y
+# cuatro copias a la vez agotan el disco de esta maquina antes de terminar.
+#
+# `-c` pide clonefile a APFS y no existe en el `cp` de GNU, asi que el `||` es la
+# sonda y no un adorno: donde no haya clon, se copia y la bateria sigue midiendo
+# lo mismo, solo que mas cara.
+PRISTINE="$TMP/pristine"
+mkdir -p "$PRISTINE"
+# 259 MB of the repository's 321 MB is tooling/claude-cli/node_modules, which
+# this gate reads none of, and every case copies from the tree below.
+(cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$PRISTINE" && tar -xf -)
+
 # case <name> <expected rc> <expected substring> <python mutation>
 case_run() {
   local name="$1" want="$2" needle="$3" mutation="$4"
   local work="$TMP/$name"
-  rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  rm -rf "$work"
+  cp -Rc "$PRISTINE" "$work" 2>/dev/null || cp -R "$PRISTINE" "$work"
   if [ -n "$mutation" ]; then
     if ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
       printf 'HARNESS  %-34s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
@@ -47,6 +61,7 @@ case_run() {
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
+  rm -rf "$work"
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
     printf 'ok       %-34s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else

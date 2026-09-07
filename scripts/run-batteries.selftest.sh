@@ -15,6 +15,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SUBJECT="$HERE/run-batteries.sh"
 [ -f "$SUBJECT" ] || { echo "UNMEASURABLE the subject is missing: $SUBJECT"; exit 2; }
 
+# This file runs blind to any ledger its caller is using, and every case that
+# wants one builds its own. Found the hard way: run under run-batteries.sh -
+# which exports EHS_TALLY_LEDGER - the "no ledger written" case inherited it,
+# passed anyway, and the toy battery it launched wrote a line into the REAL
+# ledger. A case that is green because of what it inherited is green for the
+# wrong reason, and the artefact it polluted belonged to someone else.
+unset EHS_TALLY_LEDGER
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-runner-XXXXXX")" || { echo "UNMEASURABLE no tmpdir"; exit 2; }
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -29,7 +37,17 @@ battery() {
   chmod +x "$1/$2.selftest.sh"
 }
 
+# says <dir> <name> <exit-code> <line> — a battery that prints something first
+says() {
+  mkdir -p "$1"
+  printf '#!/usr/bin/env bash\necho "%s"\nexit %s\n' "$4" "$3" > "$1/$2.selftest.sh"
+  chmod +x "$1/$2.selftest.sh"
+}
+
 run() { bash "$SUBJECT" "$1" >"$TMP/out" 2>&1; }
+
+# runl <dir> <ledger> — the same run, with a tally ledger to fill in
+runl() { EHS_TALLY_LEDGER="$2" bash "$SUBJECT" "$1" >"$TMP/out" 2>&1; }
 
 echo "== the ordinary verdicts =="
 
@@ -115,6 +133,70 @@ bash "$SUBJECT" --list "$TMP/listing" >"$TMP/out" 2>&1; rc=$?
 [ "$rc" -eq 0 ] && grep -q 'only.selftest.sh' "$TMP/out" \
   && ok "--list prints the battery and does not run it" \
   || bad "--list misbehaved: rc $rc"
+
+echo "== the tally ledger: what gets recorded, and what must not =="
+
+# The gate that checks the case counts in docs/gate-requirements.md runs these
+# same batteries. When this runner leaves its tallies behind, that gate reads
+# them instead of running them again: measured 40.4 s -> 3.9 s, ranges apart.
+# What it records is therefore load-bearing, and so is what it refuses to.
+
+says "$TMP/led_ok" green 0 "5 passed, 0 failed"
+runl "$TMP/led_ok" "$TMP/led_ok.txt"
+if [ -s "$TMP/led_ok.txt" ] && grep -q '5 passed, 0 failed' "$TMP/led_ok.txt" \
+   && [ "$(awk '{print length($1)}' "$TMP/led_ok.txt" | head -1)" = "64" ]; then
+  ok "a green battery leaves one line: sha256, path, tally"
+else
+  bad "no usable ledger line: $(cat "$TMP/led_ok.txt" 2>&1 | head -1)"
+fi
+
+# A count read off a red battery is not a measurement. It must not reach the
+# ledger at all, because on the other side a hit is trusted without a rerun.
+says "$TMP/led_red" red 1 "3 passed, 1 failed"
+runl "$TMP/led_red" "$TMP/led_red.txt"
+[ ! -s "$TMP/led_red.txt" ] \
+  && ok "a battery that came back red records nothing" \
+  || bad "a red battery got into the ledger: $(head -1 "$TMP/led_red.txt")"
+
+says "$TMP/led_mute" mute 0 "the battery ran and everything was fine"
+runl "$TMP/led_mute" "$TMP/led_mute.txt"
+[ ! -s "$TMP/led_mute.txt" ] \
+  && ok "a battery that prints no tally records nothing" \
+  || bad "a battery with no tally got in: $(head -1 "$TMP/led_mute.txt")"
+
+# The default is off. A runner that wrote a ledger nobody asked for would be
+# leaving a file in whatever directory it happened to be pointed at.
+says "$TMP/led_off" green 0 "5 passed, 0 failed"
+run "$TMP/led_off"
+[ ! -e "$TMP/led_off.txt" ] \
+  && ok "no EHS_TALLY_LEDGER, no ledger written" \
+  || bad "a ledger appeared without being asked for"
+
+# The key is the CONTENT. Change one byte of the battery and the old line can
+# no longer answer for it - that is the whole staleness argument, measured.
+says "$TMP/led_key" green 0 "5 passed, 0 failed"
+runl "$TMP/led_key" "$TMP/led_key1.txt"
+says "$TMP/led_key" green 0 "6 passed, 0 failed"
+runl "$TMP/led_key" "$TMP/led_key2.txt"
+k1="$(awk '{print $1}' "$TMP/led_key1.txt" | head -1)"
+k2="$(awk '{print $1}' "$TMP/led_key2.txt" | head -1)"
+if [ -n "$k1" ] && [ -n "$k2" ] && [ "$k1" != "$k2" ]; then
+  ok "editing the battery changes the key, so an old line cannot answer for it"
+else
+  bad "the key did not move with the content: $k1 vs $k2"
+fi
+
+# The leak above, as a case: with a ledger in the ENVIRONMENT and none asked
+# for, the runner must not write into it. Nothing else in this file would notice
+# - the toy directory stays clean either way, and the line lands elsewhere.
+says "$TMP/led_leak" green 0 "5 passed, 0 failed"
+: > "$TMP/led_probe.txt"
+EHS_TALLY_LEDGER="$TMP/led_probe.txt" bash "$SUBJECT" "$TMP/led_leak" >"$TMP/out" 2>&1
+if [ -s "$TMP/led_probe.txt" ]; then
+  ok "a ledger in the environment IS honoured, so the probe can tell silence apart"
+else
+  bad "the probe stayed empty: this case cannot tell a leak from a refusal"
+fi
 
 echo
 echo "$pass PASS / $fail FAIL"

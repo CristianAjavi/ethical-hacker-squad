@@ -322,7 +322,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"report.md").unlink()'
 
   command rm -rf "$tmp"
-  echo "  $p PASS / $f FAIL"
+  echo "  $p passed, $f failed"
   [ "$f" -eq 0 ] || return 1
   return 0
 }

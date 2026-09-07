@@ -104,33 +104,44 @@ PY
 }
 
 selftest() {
+  # Cases that PASSED. A self-test that cannot say how many it ran cannot
+  # tell five from zero, and the doc row promising a number was never
+  # checkable against anything. Counted on the pass branch, which is the
+  # only one that does not abort. Global on purpose: the line that prints it
+  # lives in the main flow, outside this function.
+  SELFTEST_CASES=0
   command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not on PATH"; return "$GATE_UNMEASURABLE"; }
   [ -f "$PROBE" ] || { gate_warn "the probe is missing: $PROBE"; return "$GATE_UNMEASURABLE"; }
   local work out
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
 
+  # Each failure names its case on a line of its own, `FAILED  <case>`.
+  # gate_fail alone is the GATE's verdict; a battery that only says "I went
+  # red" cannot tell the coverage sweep which rule the red belongs to, and the
+  # sweep was scoring those deaths as coverage nobody had.
+
   # A dataset whose wording gives the answer away must FAIL, or the gate is decoration.
   fixture "$work/leaky" 14 leaky
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
-    1\|*OVER\ the\ ceiling*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a dataset that spells out its answers returned '$out', expected 1"; return "$GATE_FAIL" ;;
+    1\|*OVER\ the\ ceiling*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  leaky-dataset-fails"; gate_fail "self-test: a dataset that spells out its answers returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
   # ...and one whose wording does not must PASS, or the gate fails everything and means nothing.
   fixture "$work/clean" 14 clean
   out="$(run_probe "$work/clean" cfg.json)"
   case "$out" in
-    0\|*under\ the\ ceiling*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a dataset with no wording tell returned '$out', expected 0"; return "$GATE_FAIL" ;;
+    0\|*under\ the\ ceiling*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  clean-dataset-passes"; gate_fail "self-test: a dataset with no wording tell returned '$out', expected 0"; return "$GATE_FAIL" ;;
   esac
 
   # Too few cases is 2, never 0. This is the case that clears a leaky competitor.
   fixture "$work/tiny" 6 leaky
   out="$(run_probe "$work/tiny" cfg.json)"
   case "$out" in
-    2\|*below\ the\ pre-registered\ floor*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: 6 leaky cases returned '$out', expected 2 (underpowered, not a clearance)"; return "$GATE_FAIL" ;;
+    2\|*below\ the\ pre-registered\ floor*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  underpowered-is-2-not-a-clearance"; gate_fail "self-test: 6 leaky cases returned '$out', expected 2 (underpowered, not a clearance)"; return "$GATE_FAIL" ;;
   esac
 
   # A key that does not line up with the cases is 2, never a pass.
@@ -143,8 +154,8 @@ p.write_text(json.dumps(d))
 PY
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
-    2\|*against*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a truncated key returned '$out', expected 2"; return "$GATE_FAIL" ;;
+    2\|*against*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  truncated-key-is-2"; gate_fail "self-test: a truncated key returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
   # A stage dataset nobody listed must FAIL, or the way to pass this gate is to
@@ -152,33 +163,33 @@ PY
   python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" listed
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
-    *"stages/two: a stage dataset that the probe config neither measures nor exempts"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an unlisted stage dataset returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
+    *"stages/two: a stage dataset that the probe config neither measures nor exempts"*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  unlisted-stage-dataset-fails"; gate_fail "self-test: an unlisted stage dataset returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
   esac
 
   # An exemption with no reason is a skip wearing a label, and fails too.
   python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" reasonless
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
-    *"exempted from the floor with no reason"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: a reasonless exemption returned '$out', expected 1"; return "$GATE_FAIL" ;;
+    *"exempted from the floor with no reason"*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  reasonless-exemption-fails"; gate_fail "self-test: a reasonless exemption returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
   # ...and one that states its reason passes, or nothing could ever be exempted.
   python3 "$SELF_DIR/lib/stage_eval_floor_enum_fixture.py" "$work/stages" reasoned
   out="$(run_probe "$work" stages/probe-config.json)"
   case "$out" in
-    *"1|stages/two"*) rm -rf "$work"; gate_fail "self-test: an exemption with a reason still failed: '$out'"; return "$GATE_FAIL" ;;
-    *"not measured by the floor, on purpose"*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an exemption with a reason returned '$out'"; return "$GATE_FAIL" ;;
+    *"1|stages/two"*) rm -rf "$work"; echo "FAILED  reasoned-exemption-passes"; gate_fail "self-test: an exemption with a reason still failed: '$out'"; return "$GATE_FAIL" ;;
+    *"not measured by the floor, on purpose"*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  reasoned-exemption-passes"; gate_fail "self-test: an exemption with a reason returned '$out'"; return "$GATE_FAIL" ;;
   esac
 
   # An unreadable config is 2.
   printf '%s\n' '{ not json' > "$work/leaky/cfg.json"
   out="$(run_probe "$work/leaky" cfg.json)"
   case "$out" in
-    2\|*) : ;;
-    *) rm -rf "$work"; gate_fail "self-test: an unparseable config returned '$out', expected 2"; return "$GATE_FAIL" ;;
+    2\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
+    *) rm -rf "$work"; echo "FAILED  unparseable-config-is-2"; gate_fail "self-test: an unparseable config returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
   rm -rf "$work"
@@ -194,6 +205,7 @@ main() {
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
+    gate_info "self-test: $SELFTEST_CASES passed, 0 failed"
     gate_info "self-test: a leaky dataset fails, a clean one passes, six leaky cases report 2 rather than a clearance, an unlisted stage dataset and a reasonless exemption both fail while an exemption that states its reason passes, and a truncated key and an unparseable config both report 2"
   else
     SELFTEST_SKIPPED=1
