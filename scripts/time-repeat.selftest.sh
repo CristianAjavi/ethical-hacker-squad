@@ -177,15 +177,33 @@ judge "the-contenders-are-really-launched" 0 - - \
 #     deliberate rather than a race on a counter file - and if someone ever
 #     stops capturing that stderr, this case goes red, which is right, because
 #     case 5 needs that capture to show the failing command's own words.
+#     THREE states, not two. `[ -p /dev/fd/2 ]` answers "am I the measured
+#     run?", and everything else used to be filed as "I am a contender" -
+#     including "I could not tell". This case went red once in four runs of the
+#     whole suite with the measured run reporting itself as a contender, 600
+#     controlled repetitions did not reproduce it, and the cause is NOT
+#     established. What is fixed here is the part that made it unreadable: a
+#     stderr that is neither the captured pipe nor a contender's sink now says
+#     so and exits 9, instead of quietly taking a branch it was never meant to.
 cat > "$LAB/contender-bad.sh" <<"EOF"
 #!/bin/sh
 [ -p /dev/fd/2 ] && exit 0
-echo "the contender failed on purpose" >&2
-exit 7
+if [ -c /dev/fd/2 ] || [ -f /dev/fd/2 ]; then
+  echo "the contender failed on purpose" >&2
+  exit 7
+fi
+echo "I cannot tell the captured pipe from a contender's sink: $(ls -l /dev/fd/2 2>&1)" >&2
+exit 9
 EOF
 chmod +x "$LAB/contender-bad.sh"
 out="$(t --runs 2 --contenders 1 -- "$LAB/contender-bad.sh")"; rc=$?
 judge "a-dead-contender-is-unmeasurable" 2 "a contender exited 7" - "$rc" "$out"
+
+#     The third state is reachable, and this proves it rather than asserting it
+#     in a comment: with fd 2 CLOSED the script can say nothing at all, so rc 9
+#     is the whole message - and no other path in that script produces a 9.
+"$LAB/contender-bad.sh" 2>&-; rc=$?
+judge "an-undecidable-stderr-says-so-instead-of-guessing" 9 - - "$rc" ""
 
 # 18. 35 s and 140 s of the same battery do not contradict each other: they are
 #     two conditions. A median that travels without its load misleads exactly

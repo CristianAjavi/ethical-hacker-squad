@@ -1224,12 +1224,66 @@ as NOT MEASURED rather than as a slow run. Measured and fixed, alternated arms:
 The last row is what a mutant in the local sweep actually costs, and it is the
 figure the "140.4 s per mutant" of an earlier single run should be read against.
 
-Proved in the negative: `scripts/time-repeat.selftest.sh`, 23 cases, and
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 24 cases, and
 `scripts/time-repeat.mutants.py`, which silences one rule of the instrument at a
 time and demands that the case written for it goes red — **twenty of twenty**. A
 stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
 four anchors went stale during this very refactor, and a bank that quietly shrank
 would have called that progress. It is not wired to a runner yet; T-ehs-55.
+
+### The battery that answers differently on a busy machine
+
+Two cases of `scripts/time-repeat.selftest.sh` were caught going red on work
+that had not changed, and only while the machine was loaded. Counted, not
+guessed:
+
+| condition | runs | red |
+|---|---:|---:|
+| the battery alone, idle box | 12 | 0 |
+| the battery alone, 14 spinning processes beside it | 8 | 1 (`overlapping-ranges-are-the-box`) |
+| inside a full suite run of 519.7 s | 1 | 1 (`a-dead-contender-is-unmeasurable`) |
+
+`overlapping-ranges-are-the-box` asserts that two runs of the SAME command
+produce ranges that overlap. Under contention they need not, and when they do
+not the case says FAILED — a verdict about the box, delivered as a verdict about
+the tool. By this repository's own doctrine that is a **2, could not measure**,
+and `judge` has no way to say it. That is written down as work, not fixed here:
+a case that can be falsified by a neighbouring process is not one to leave
+asserting a 1, and it is equally not one to relax into silence.
+
+`a-dead-contender-is-unmeasurable` is the one that was made readable. Its
+fixture tells the measured run from a contender by asking whether its own stderr
+is the pipe the tool captures, and every other answer - including *I could not
+tell* - was filed as "I am a contender". 600 controlled repetitions of that
+discriminator under load did not reproduce the failure and **the cause is not
+established**; what is fixed is that the next occurrence will name itself. A
+stderr that is neither the captured pipe nor a contender's sink now says so and
+exits 9. Proved in the negative directly: with fd 2 closed the old fixture exits
+7 and the new one exits 9, and the new case demands the 9.
+
+### Running the batteries at the same time, and why it is not in yet
+
+`scripts/run-batteries.sh` is sequential on a ten-core laptop, and after the
+disk peaks came down (29240 MiB to 101 MiB across nine batteries) running them
+together stopped being a way to fill the disk. A parallel candidate was written
+and checked where the answer is not noisy: `--list` is identical (32 batteries),
+and against a sequential transcript it differs by the three lines the sequential
+runner already differs from ITSELF by - one mutant timer and two temporary paths
+- plus exactly one declared line, `batteries run: 32 (up to 4 at a time)`. Order
+is preserved and every verdict matches.
+
+It is not merged, because the number that would justify it **could not be
+measured here**. Four alternated suite runs:
+
+| arm | runs |
+|---|---|
+| sequential, unchanged | 309.5 s and 483.6 s |
+| candidate, 4 workers | 331.4 s and 249.0 s |
+
+The sequential runner disagrees with itself by 174.1 s, 56% of its own faster
+run, over identical code. That range swallows the whole effect in both
+directions, so neither "it is faster" nor "it is slower" is a reading this
+machine can support. A merge would be argued, not measured.
 
 ## Branch naming
 
