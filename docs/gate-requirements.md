@@ -1224,7 +1224,7 @@ as NOT MEASURED rather than as a slow run. Measured and fixed, alternated arms:
 The last row is what a mutant in the local sweep actually costs, and it is the
 figure the "140.4 s per mutant" of an earlier single run should be read against.
 
-Proved in the negative: `scripts/time-repeat.selftest.sh`, 24 cases, and
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 26 cases, and
 `scripts/time-repeat.mutants.py`, which silences one rule of the instrument at a
 time and demands that the case written for it goes red — **twenty of twenty**. A
 stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
@@ -1243,13 +1243,43 @@ guessed:
 | the battery alone, 14 spinning processes beside it | 8 | 1 (`overlapping-ranges-are-the-box`) |
 | inside a full suite run of 519.7 s | 1 | 1 (`a-dead-contender-is-unmeasurable`) |
 
-`overlapping-ranges-are-the-box` asserts that two runs of the SAME command
-produce ranges that overlap. Under contention they need not, and when they do
-not the case says FAILED — a verdict about the box, delivered as a verdict about
+`overlapping-ranges-are-the-box` asserted that two runs of the SAME command
+produce ranges that overlap. Under contention they need not, and when they did
+not the case said FAILED — a verdict about the box, delivered as a verdict about
 the tool. By this repository's own doctrine that is a **2, could not measure**,
-and `judge` has no way to say it. That is written down as work, not fixed here:
-a case that can be falsified by a neighbouring process is not one to leave
-asserting a 1, and it is equally not one to relax into silence.
+and the battery had no way to say it. Both halves are now fixed, and the second
+one is the one that matters:
+
+- The arms are `slow.sh` (0.4 s) and no longer a command that finishes under the
+  0.1 s the report prints. Two ranges of rounded zeros carry no signal at all, so
+  a neighbouring process could pull them apart with nothing in the transcript to
+  show that it had.
+- The case no longer reads the verdict line as evidence about itself. A
+  classifier reads the two ranges the tool PRINTED and decides on its own whether
+  they touch. Ranges that touch under a verdict of "difference" is a defect in
+  the tool and is still a FAILURE. Ranges that genuinely do not touch, for two
+  runs of one command, is the box moving under the case: COULD NOT MEASURE,
+  counted apart from pass and fail, and the battery exits 2. Rounding cannot
+  invent that gap — it is monotone, so ranges that are apart at 0.1 s were apart
+  before they were printed.
+
+| the battery under 14 spinning processes | runs | red | could not measure |
+|---|---:|---:|---:|
+| before | 8 | 1 | — |
+| after | 8 | 0 | 0 |
+
+A third answer is also a way to make any red disappear, so it arrives with the
+measurement that it did not:
+
+| control | wanted | measured |
+|---|---|---|
+| the mutant `todo-par-de-rangos-es-una-diferencia` (`if True:`) | still caught | case 20 FAILED, battery rc 1 |
+| the real tool on arms that genuinely separate, 0.2-0.5 s against 0.9-0.9 s | could not measure | `COULD NOT MEASURE`, battery rc 2, nothing FAILED |
+| the classifier's own box branch mutated to `pass` | case 26 goes red | case 26 red |
+
+The first and the last of those three live in the battery as cases 25 and 26,
+reading canned transcripts, so they run on every commit instead of only when
+somebody loads the machine on purpose.
 
 `a-dead-contender-is-unmeasurable` is the one that was made readable. Its
 fixture tells the measured run from a contender by asking whether its own stderr
