@@ -230,10 +230,10 @@ fi
 # fd 2 here on purpose. The second `-p` probe separates a transient lookup from
 # a genuinely different kind of file, which is the whole question.
 again=no; [ -p /dev/fd/2 ] && again=yes
-desc="$(ls -l /dev/fd/2)" || desc="(ls could not describe fd 2)"
+desc="$(ls -lL /dev/fd/2)" || desc="(ls could not describe fd 2)"
 echo "I cannot tell the captured pipe from a contender's sink." >&2
 echo "  -p said no $probes time(s); on one more look: $again" >&2
-echo "  ls -l /dev/fd/2: $desc" >&2
+echo "  ls -lL /dev/fd/2: $desc" >&2
 exit 9
 EOF
 chmod +x "$LAB/contender-bad.sh"
@@ -438,17 +438,25 @@ judge "a-boundary-touch-is-not-an-overlap" 0 - - \
 
 # 27. The property case 17's diagnostic depends on, and the one that had quietly
 #     stopped holding: a line that names fd 2 has to be reading the fd 2 of the
-#     process under test. Point fd 2 at a regular file and ask; if the answer
-#     starts with `p` the question was answered by a redirection the diagnostic
-#     introduced itself, and every future reading of that line is worthless.
-#     Deliberately asserts only the honest form: the broken one is shell
-#     semantics, not repository code, and pinning it would go red the day a
-#     shell changed for reasons that are none of this battery's business.
+#     process under test. Point fd 2 at a regular file and ask; a `p` in the
+#     first column means the question was answered by a redirection the
+#     diagnostic introduced itself, and every future reading of that line is
+#     worthless. Deliberately asserts only the honest form: the broken one is
+#     shell semantics, not repository code, and pinning it would go red the day
+#     a shell changed for reasons that are none of this battery's business.
+#
+#     `-L` is what makes the question portable, and its absence is what made the
+#     first version of this case pass on macOS and fail on the runner. On macOS
+#     /dev/fd/N is an fdesc node and stats as the open file itself; on Linux it
+#     is a symlink into /proc/self/fd, so a bare `ls -l` describes the LINK and
+#     answers `l-wx------ ... -> /tmp/.../fd2.target` where the case expected a
+#     regular file. Following the link gives the same answer on both: `-` for
+#     the file, `p` for the pipe a redirection would have substituted.
 cat > "$LAB/fd2.sh" <<"EOF"
 #!/bin/sh
 exec 3>&1
 exec 2> "$1"
-ls -l /dev/fd/2 >&3
+ls -lL /dev/fd/2 >&3
 EOF
 chmod +x "$LAB/fd2.sh"
 out="$("$LAB/fd2.sh" "$LAB/fd2.target")"; rc=$?

@@ -1363,6 +1363,31 @@ costs 2.0 s instead of 2.4 s.
 
 Cases: **26 → 28**.
 
+#### And the case itself was only true on one platform
+
+Case 27 went green on macOS and red on the runner on its first push, which is
+the second Linux-only defect in two commits and the same shape as the first: a
+control written and proved on the arm that cannot fail. It asked `ls -l
+/dev/fd/2` and required a regular file. On macOS `/dev/fd/N` is an fdesc node
+and stats as the open file itself, so that holds. On Linux it is a symlink into
+`/proc/self/fd`, so a bare `ls -l` describes the LINK: `l-wx------ 1 runner
+runner 64 … /dev/fd/2 -> /tmp/…/fd2.target`.
+
+`ls -lL` follows it, and that single letter is what makes the question portable:
+a regular file answers `-` on both, and the pipe a redirection would have
+substituted answers `p` on both. Measured rather than argued — this Mac cannot
+run the Linux arm, so the Linux SHAPE was built here instead, a `mkfifo` with a
+symlink to it:
+
+| probe on a symlink to a fifo | answer | would the case have caught it? |
+|---|---|---|
+| `ls -l` (what case 27 shipped with) | `lrwxr-xr-x … -> …/f` | no — `l`, not `p`: blind on Linux |
+| `ls -lL` | `prw-r--r-- … ` | yes |
+
+Both the diagnostic and the case now use `-L`. The macOS half of the control was
+re-run with the lying `2>&1` restored: 27 PASS / 1 FAILED, case 27, saying `ls
+described it as: p-w--w----`.
+
 ### The battery that answers differently on a busy machine
 
 Two cases of `scripts/time-repeat.selftest.sh` were caught going red on work
