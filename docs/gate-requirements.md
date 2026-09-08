@@ -18,7 +18,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
 | `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (9 cases) |
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (8 cases) |
-| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (32 cases), PR context |
+| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (35 cases), PR context |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test (22 cases) |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (16 cases) |
 | triage rules | running | `gate-triage-rules.sh` + self-test (16 cases) |
@@ -736,7 +736,7 @@ So the prefix stays, demoted from *the* classifier to one signal among several, 
 
 **The exemption this replaced was measured and refused.** A task stood open to take those fixture inputs *out* of `scripts/gates/**` altogether, on the argument that they are negative proof rather than limits. Half of that argument holds — the three ways such a fixture can be weakened are all watched: deletion by `gate-negative-proof-census.sh`, neutering in place by the family's own self-test, which names the rule the fixture stopped tripping and caps the verdict at `2`. The other half does not. In **0 of those 28 changes** did G7 fire on fixtures alone, so the exemption would have cost 38 paths their protection and prevented not one firing. And the gates that do watch them answer a different question: the census asks whether the proof is still *there*, the self-test whether it still *trips*, and neither asks **who moved it**, which is the only question G7 asks. *Covered by another gate* is not *covered*. The refusal is recorded in `protected-paths.json` next to the list it declined to shorten, because the next reader will ask.
 
-It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 25 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 35 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file), and three that hold the shared work tree honest — it fingerprints the same as a private copy, no case wrote into it, and the fingerprint moves when one byte is appended. The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
 
 **The control went green because its input went missing, 2026-09-01.** The first push of the
 `alert-surface` branch had G7 **passing** on a diff that moved three protected paths. Nothing was
@@ -792,7 +792,7 @@ Three properties are worth stating because each has a case in the battery:
   and it would have been trivial to build it that way here.
 
 Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
-allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+allowed to pass** (35 cases in total, 0 failures). The other twenty-eight were unchanged by the
 work: with no diff there is no exemption, so every verdict written before exemptions existed still
 holds.
 
@@ -2408,6 +2408,75 @@ once rather than a case: a later change to `time-repeat.selftest.sh` that made i
 assert an absolute duration would be caught by the new job only when someone
 pushes to `measure/**` or dispatches it. Nothing runs it on every commit, because
 running the bank three times over is minutes CI does not owe every push.
+
+### Twenty-six copies of a tree nobody touched
+
+`gate-protected-paths.selftest.sh` gave every case a private work tree by tarring
+the repository into it. Thirty-two cases, thirty-two copies, 0.63 s each measured
+— **20 s of a 25 s battery**, and the reason it was the slowest battery in the
+suite once the two sections above had moved the other two out of the way: at
+`--jobs 8` those copies are thirty-two writers competing for one disk, and the
+same battery that costs 25 s alone cost **128 s** inside the suite.
+
+**Twenty-six of the thirty-two never touched the tree.** What each case varies is
+the four signals the harness INJECTS — branch, file list, commit range, label —
+and not one of them lives in the tree. Only six pass a mutation, and the mutation
+is run by this harness, so which cases can dirty a tree is not a list anybody
+maintains: it is whether the case asked for one. The twenty-six now share a single
+copy and the six still get their own.
+
+| | before | after |
+|---|---|---|
+| full copies of the tree per run | 32 | **2** (one shared, one for the equivalence case) + 6 private |
+| the battery on its own | 25 s | **8 s** |
+| the battery inside the suite | 128 s | **38 s** (48 s on the repeat) |
+| the suite | 228 s (267 s) | **195 s** (232 s) |
+| the slowest battery in the suite | this one | `gate-bench-integrity.selftest.sh`, 105 s |
+| cases | 32 | 35 |
+
+**Sharing a tree is the kind of change that goes green for the wrong reason**, so
+three cases hold it rather than a paragraph:
+
+- `shared-tree-equals-a-private-one` makes one private copy exactly the way every
+  case made its own before this change and requires the two to fingerprint alike.
+  A shared tree that had come out short would let twenty-six cases pass against
+  something the gate never sees in CI, and every one of them would look green.
+- `shared-tree-unchanged-by-every-case` fingerprints the shared tree before the
+  first case and after the last. It also prints the split — `26 shared, 6 private`
+  — because a run that silently stopped sharing would otherwise be invisible.
+- `the-fingerprint-sees-one-byte` appends one byte to the shared tree after every
+  case is done with it and requires the fingerprint to move. A check that cannot
+  see a change is not a check, and this repository has shipped one before.
+
+The fingerprint is `find -type f | sort -z | xargs $HASH | $HASH`, 65 ms, rather
+than `tar | $HASH`, 460 ms: same reading, seven times cheaper, and it is taken
+three times per run. `$HASH` is chosen once and named — `sha256sum` where a Linux
+runner has it, `shasum` where this laptop does, COULD NOT MEASURE where neither is
+— because a battery that hard-coded either would be green on one machine and blind
+on the other. An **empty** reading is a failure return, never a digest —
+"the tree is empty" and "I could not look" must not reach the caller wearing the
+same face — and every place that cannot take it exits COULD NOT MEASURE rather
+than failing a case.
+
+**Three mutations of the harness, each declaring in advance which case has to go
+red, 3 of 3 caught:** a case that mutates handed the shared tree
+(`shared-tree-unchanged-by-every-case`, rc 1), the fingerprint replaced by a
+constant (`the-fingerprint-sees-one-byte`, rc 1), and the private copy of the
+equivalence case tarred short (`shared-tree-equals-a-private-one`, rc 1).
+
+While counting these, the prose above was found declaring **25 cases for a battery
+that has run 32 since the fold cases landed**. Nothing read it: the count
+`gate-declared-case-counts.sh` compares lives in the table at the top of this file,
+in the shape `self-test (NN cases)`, and a sentence saying "25 cases" in the middle
+of a paragraph is invisible to it. It is corrected here, and it is the second time
+a hand-written number in this file has gone stale without a single instrument
+noticing.
+
+NOT DONE. The three mutations were run by hand, from a copy of the battery placed
+beside the gate — the battery derives the gate's path from its own `$0`, so a
+mutant run from elsewhere reports `rc 127` for every case and proves nothing. They
+are not wired to a bank: one would cost a battery run per mutant, and the three
+controls they exercise are already in the battery.
 
 ## Branch naming
 

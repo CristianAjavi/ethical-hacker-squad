@@ -8,6 +8,26 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Changed
 
+- **Twenty-six copies of a tree nobody touched.** `gate-protected-paths.selftest.sh`
+  gave each of its 32 cases a private work tree by tarring the repository into it:
+  0.63 s per copy measured, **20 s of a 25 s battery**, and 128 s inside the suite
+  because at `--jobs 8` those copies are thirty-two writers competing for one disk.
+  Twenty-six of the thirty-two never touch the tree — what a case varies is the four
+  signals the harness injects, and none of them lives in the tree. They now share one
+  copy; the six that pass a mutation still get their own, and which is which is not a
+  list anybody maintains but whether the case asked for one. **The battery 25 s → 8 s**, 128 s → 38 s inside the suite (48 s on the repeat), and the suite itself 228 s → 195 s (232 s).
+  Three new cases hold the sharing rather than a paragraph: the shared tree fingerprints
+  the same as a private copy made the old way, no case wrote into it (the split
+  `26 shared, 6 private` is printed), and — because a check that cannot see a change is
+  not a check — one appended byte moves the fingerprint. The fingerprint is
+  `find | sort | xargs shasum | shasum`, 65 ms against 460 ms for `tar | shasum`, and an
+  empty reading is a failure return rather than a digest. **32 → 35 cases**, and three
+  mutations of the harness each naming in advance the case that has to go red, 3 of 3
+  caught. While counting them, this file's sibling was found declaring **25 cases for a
+  battery that has run 32 since the fold cases landed** — prose no instrument reads,
+  since the count that is compared lives in the table at the top of
+  `docs/gate-requirements.md`.
+
 - **The bank of the clock ran its 21 batteries one after another.**
   `time-repeat.mutants.py` runs one whole battery per mutant, twenty of them plus the
   baseline, and the previous entry left it as the slowest battery in the suite at 213 s.
