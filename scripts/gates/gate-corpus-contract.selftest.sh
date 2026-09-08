@@ -219,6 +219,47 @@ case_run packs-json-unreadable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/meter/packs.json").write_text("{ not json")'
 
+# --- the exemption marker, which had no case at all -------------------------
+# The sentence that EXPLAINS the exemption used to OPEN it: a backticked mention
+# in prose, the lazy span running to the next real closing marker, and every
+# count in between silently unchecked. Measured in the real CHANGELOG.md: 35
+# lines and 10,116 characters of the live section, holding a corpus count that
+# had been wrong for six days. The run reported "1 region", the same words it
+# prints when nothing is wrong.
+case_run a-mention-of-the-marker-does-not-open-a-region 1 "procedures; measured" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text()+chr(10)+chr(10).join([
+  "Text quoting a superseded figure is exempt only inside a `<!-- counts:historical -->` region.",
+  "The corpus ships 999 numbered procedures.",
+  "<!-- counts:historical -->",
+  "It used to ship 3 numbered procedures.",
+  "<!-- /counts:historical -->"])+chr(10))'
+
+# And the other end: a region that really is marked stays exempt. Tightening the
+# rule until nothing is exempt would break the thing the exemption exists for.
+case_run a-properly-marked-region-is-still-exempt 0 "every declared number" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text()+chr(10)+chr(10).join([
+  "<!-- counts:historical -->",
+  "The first release shipped 999 numbered procedures.",
+  "<!-- /counts:historical -->"])+chr(10))'
+
+# --- the file count, in whichever spelling ---------------------------------
+# DECL_FILES accepts a digit as well as a word and the comparison admitted only
+# the word, so "across 20 files" was a finding no rewrite of the number could
+# clear. It was never seen because it lived inside the swallowed region.
+case_run a-file-count-in-digits-is-read-as-a-number 0 "every declared number" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text()+chr(10)+"The corpus is stored across 20 files."+chr(10))'
+
+case_run a-file-count-in-digits-that-is-wrong-is-caught 1 "there are 20" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"README.md"
+p.write_text(p.read_text()+chr(10)+"The corpus is stored across 19 files."+chr(10))'
+
 echo
 echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -gt 0 ]; then

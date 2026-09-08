@@ -14,7 +14,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test (29 cases) |
 | `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
-| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (26 cases) |
+| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (30 cases) |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
 | `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (9 cases) |
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (8 cases) |
@@ -215,6 +215,40 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### The sentence that explains an exemption used to open it
+
+`drop_historical` exempts text that quotes a superseded figure on purpose,
+inside a `<!-- counts:historical -->` region. The marker was matched as a
+SUBSTRING, so the sentence in `CHANGELOG.md` that *describes* the mechanism —
+naming the marker in backticks, in the middle of a line — opened a region, and
+the lazy span ran to the next real closing marker.
+
+Measured on 2026-09-07: **35 lines and 10,116 characters** of the live
+`[Unreleased]` section were silently unchecked, and inside them sat a declared
+corpus count that had been wrong since 2026-09-01 (`4,511` lines and `170`
+procedures against a measured 4,556 and 171), plus an identifier range that
+still ended at `AI-29` after `AI-30` shipped. The gate printed
+`exempted: 1 region(s)` — the same words it prints when the one region is the
+three-line one that was meant.
+
+A marker is a line, not a substring: both ends must own their line, which is
+how they are actually written, and a mention inside a sentence stays inert.
+
+Widening the reading exposed a second defect that had never been able to fire.
+`DECL_FILES` deliberately accepts a digit as well as a number word, and the
+comparison admitted only the word, so every `across 20 files` in the prose was
+a finding no rewrite of the number could clear — a check that accuses the text
+for being right in the other spelling. The count is now compared by VALUE, and
+a spelling this gate cannot read as a number says so instead of passing.
+
+Four cases, each with a named killer: a mention that must not open a region
+(dies with the loose marker), a properly marked region that must stay exempt
+(dies when the marker is tightened until nothing matches), a digit count read
+as a number (dies with the word-only comparison), and a wrong digit count still
+caught (dies when the comparison is removed). Two of the four detect the
+original defect; the other two are guards against over-correcting it, and the
+run above is what says which is which.
 
 ### A self-test that never says how many cases it ran
 
