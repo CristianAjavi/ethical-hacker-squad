@@ -111,14 +111,18 @@ MUTANTS = [
 
     # --- one row, more than one gate ---------------------------------------
     ("only-the-first-gate-on-a-row-is-read", CORE,
+     "        for line in body.splitlines():\n"
+     "            for rx in (ROW, HYPHEN):\n"
      "                for m in rx.finditer(line):",
+     "        for line in body.splitlines():\n"
+     "            for rx in (ROW, HYPHEN):\n"
      "                for m in list(rx.finditer(line))[:1]:",
      GATE_BATTERY, "both-gates-on-one-row-are-compared"),
     # THE RULE THAT EVERY GATE DECLARES ONE. Ten gates sat undeclared and
     # unaccused because the reading walks declarations and an absent row
     # declares nothing to walk.
     ("an-undeclared-gate-is-not-a-finding", CORE,
-     "    if drifted or uncounted or phantom or clash or undeclared:",
+     "    if drifted or uncounted or phantom or clash or undeclared or stray:",
      "    if drifted or uncounted or phantom or clash:",
      GATE_BATTERY, "a-gate-whose-row-declares-no-count"),
     ("the-undeclared-gate-is-never-named", CORE,
@@ -173,13 +177,36 @@ MUTANTS = [
      "    for rel in absent:",
      "    for rel in []:",
      GATE_BATTERY, "a-changelog-that-is-not-there-is-said-out-loud"),
+    # --- the files NOBODY reads ---------------------------------------------
+    # ALSO is hand-written, so nothing said a third document would be found.
+    # Four mutants: the sweep itself, the clause that keeps it inert without an
+    # exception list, the door marked COULD NOT MEASURE, and the memory of
+    # which files were already read.
+    ("the-sweep-never-runs", CORE,
+     "    stray, swept, unread = sweep(root, already, onfile)",
+     "    stray, swept, unread = [], 0, []",
+     GATE_BATTERY, "a-count-in-a-file-nobody-reads-is-a-finding"),
+    ("the-sweep-accuses-a-gate-that-is-not-there", CORE,
+     "                    if m.group(1) not in onfile:\n"
+     "                        continue",
+     "                    if False:\n"
+     "                        continue",
+     GATE_BATTERY, "a-count-for-a-gate-that-is-not-there-is-inert"),
+    ("an-unreadable-file-is-a-clean-file", CORE,
+     "    if blind or unread:",
+     "    if blind:",
+     GATE_BATTERY, "a-file-the-sweep-cannot-read-is-not-a-clean-file"),
+    ("the-sweep-forgets-what-was-already-read", CORE,
+     "    stray, swept, unread = sweep(root, already, onfile)",
+     "    stray, swept, unread = sweep(root, set(), onfile)",
+     GATE_BATTERY, "the-documents-that-were-read-are-not-swept-again"),
     ("a-clash-cannot-name-the-other-document", CORE,
      '        said = ("the table declares it twice" if one == two else\n'
      '                "`%s` and `%s` declare it twice between them" % (one, two))',
      '        said = "the table declares it twice"',
      GATE_BATTERY, "the-two-documents-cannot-say-different-numbers"),
     ("a-clash-is-not-a-finding", CORE,
-     "    if drifted or uncounted or phantom or clash or undeclared:",
+     "    if drifted or uncounted or phantom or clash or undeclared or stray:",
      "    if drifted or uncounted or phantom:",
      GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
 
@@ -223,11 +250,11 @@ MUTANTS = [
      "    if False:\n        return unmeasurable(",
      GATE_BATTERY, "a-document-with-not-one-count"),
     ("what-could-not-be-measured-passes", CORE,
-     "    if blind:\n        print(",
+     "    if blind or unread:\n        print(",
      "    if False:\n        print(",
      GATE_BATTERY, "a-self-test-that-says-nothing"),
     ("drift-does-not-fail", CORE,
-     "    if drifted or uncounted or phantom or clash or undeclared:",
+     "    if drifted or uncounted or phantom or clash or undeclared or stray:",
      "    if uncounted or phantom or clash:",
      GATE_BATTERY, "the-row-says-fewer-than-it-runs"),
     ("only-drift-upward-is-drift", CORE,

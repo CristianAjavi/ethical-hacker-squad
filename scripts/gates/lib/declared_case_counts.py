@@ -72,6 +72,15 @@ DOC = "docs/gate-requirements.md"
 # not a claim about today. A secondary that is not there is reported as absent
 # rather than counted as clean.
 ALSO = ["CHANGELOG.md"]
+# ...AND NOTHING SAID A THIRD ONE WOULD BE FOUND. ALSO is written by hand, so
+# the sweep below reads every other text file and reports any count it finds
+# there for a gate that EXISTS. A count for a gate that does not exist is a
+# fixture - the mutant bank holds one - and stays inert with no exception list
+# to maintain. Measured on 2026-09-07: 1,153 files in 0.24 s, against the ~90 s
+# this gate spends running the self-tests it compares.
+SWEEP_EXT = {".md", ".py", ".sh", ".txt", ".json", ".yml", ".yaml"}
+SWEEP_SKIP = {".git", "node_modules", ".venv", "__pycache__"}
+SWEEP_CAP = 2_000_000
 GATES = "scripts/gates"
 # The one row this file cannot run. Its battery ends with a control case
 # that invokes this gate over the real tree, so running it from here would
@@ -252,6 +261,46 @@ def measure(root: pathlib.Path, gate: str, declared: int, tallies=None, forced=N
     return gate, declared, passed + failed + skipped, how
 
 
+def sweep(root: pathlib.Path, already: set[str], onfile: set[str]):
+    """Every text file outside the document list, and what it declares.
+
+    Returns (findings, swept, unread). `unread` is not an empty list dressed up
+    as a clean one: a file this cannot open is named, because a count inside it
+    would go unchecked and the silence would read exactly like a file with none.
+    """
+    findings: list[str] = []
+    swept = 0
+    unread: list[str] = []
+    for q in sorted(root.rglob("*")):
+        if any(s in q.parts for s in SWEEP_SKIP):
+            continue
+        if not q.is_file() or q.suffix not in SWEEP_EXT:
+            continue
+        rel = q.relative_to(root).as_posix()
+        if rel in already:
+            continue
+        try:
+            if q.stat().st_size > SWEEP_CAP:
+                unread.append("%s (over %d bytes)" % (rel, SWEEP_CAP))
+                continue
+            body = q.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            unread.append("%s (%s)" % (rel, exc))
+            continue
+        swept += 1
+        for i, line in enumerate(body.splitlines(), 1):
+            for rx in (ROW, HYPHEN):
+                for m in rx.finditer(line):
+                    if m.group(1) not in onfile:
+                        continue
+                    findings.append(
+                        "%s:%d\n         it states %s cases for `%s.sh` and no document "
+                        "list reads\n         this file, so the number answers to "
+                        "nothing. Read the file,\n         or take the number out"
+                        % (rel, i, m.group(2), m.group(1)))
+    return findings, swept, unread
+
+
 def live_section(name: str, text: str) -> str:
     """A released changelog entry states the numbers of ITS OWN time. Only the
     top section is a claim about today; accusing history of drifting from a
@@ -329,6 +378,14 @@ def main(argv: list[str]) -> int:
     # otherwise satisfy the rule without the table ever growing a row.
     undeclared = sorted(onfile - primary) if onfile else []
 
+    already = set()
+    for src, _ in sources:
+        try:
+            already.add(src.relative_to(root).as_posix())
+        except ValueError:
+            pass
+    stray, swept, unread = sweep(root, already, onfile)
+
     mine = declared.pop(SELF, None)
     primary.discard(SELF)
     if not declared:
@@ -371,6 +428,7 @@ def main(argv: list[str]) -> int:
           "%d read off the ledger"
           % (len(rows), ", ".join(s.name for s, _ in sources),
              len(rows) - reused, reused))
+    print("  swept %d file(s) outside that list for counts nobody reads" % swept)
     for rel in absent:
         print("  not present here: %s. Any case count it states is unchecked,\n"
               "  and this run is not evidence that it states none." % rel)
@@ -405,17 +463,23 @@ def main(argv: list[str]) -> int:
               "         nothing compares its self-test with anything. Add\n"
               "         `+ self-test (N cases)` to its row, with N read off a run"
               % (gate, GATES))
+    for f in stray:
+        print("FINDING  %s" % f)
+    for u in unread:
+        print("UNMEASURED %s\n         a case count inside it would go unchecked, and this run\n"
+              "         is not evidence that it holds none" % u)
     for gate in phantom:
         print("FINDING  %s\n         its row declares `+ --self-test (%d cases)` and the gate has\n"
               "         no second self-test: either the row is stale or the test is gone"
               % (gate, extra[gate]))
 
-    if blind:
-        print("%d row(s) could NOT be checked" % len(blind))
+    if blind or unread:
+        print("%d row(s) and %d file(s) could NOT be checked"
+              % (len(blind), len(unread)))
         return 2
-    if drifted or uncounted or phantom or clash or undeclared:
+    if drifted or uncounted or phantom or clash or undeclared or stray:
         n = (len(drifted) + len(uncounted) + len(phantom) + len(clash)
-             + len(undeclared))
+             + len(undeclared) + len(stray))
         print("%d declared case count(s) do not match what runs" % n)
         return 1
     return 0

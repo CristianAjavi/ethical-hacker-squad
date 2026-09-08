@@ -8,6 +8,23 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The list of documents that state case counts was written by hand.** Reading `CHANGELOG.md`
+  as well as `docs/gate-requirements.md` closed two unchecked figures and left a hole in the same
+  sentence: `ALSO` is hand-written, so nothing said a **third** file declaring a count would ever
+  be found — and a rule that depends on somebody remembering to extend it is the rule that let
+  this file go unread for as long as it did. The gate now sweeps every other text file (1,153 of
+  them in 0.24 s, against the ~90 s it already spends running the self-tests it compares) and
+  reports any count it finds there **for a gate that exists**. That clause is what makes the rule
+  survivable with no exception list: a count for a gate that is not on disk is a fixture — the
+  mutant bank keeps one — and the rule never sees it. A file the sweep cannot open, undecodable
+  or over the 2 MB cap, leaves by the door marked COULD NOT MEASURE, rc 2: nobody measured
+  anything to call it wrong, and silence would have read exactly like a file holding no count.
+  Measured: **one** declaration lives outside the two documents and it is the fixture. The three
+  negative controls on the real tree are what say the green means something — a count for a real
+  gate planted in `CONTRIBUTING.md` turned it red, the same count for a gate that does not exist
+  left it green, and an undecodable file put it at 2. The clash rule then caught this entry
+  itself, which still said 42 while the table said 46.
+
 - **This file declared case counts and no instrument read them; one of the two was wrong.**
   `gate-declared-case-counts.sh` compared the numbers in `docs/gate-requirements.md` against a
   run of the self-test each row names, and read exactly one document. `CHANGELOG.md` states
@@ -25,7 +42,7 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   row. A disagreement between the two files was already the clash rule's business; it used to
   say "the table declares it twice" and now names both files, because a number that is wrong in
   the other document cannot be fixed by looking at this one.
-  `scripts/gates/gate-declared-case-counts.sh` (+ 42-case self-test), 41 mutants in
+  `scripts/gates/gate-declared-case-counts.sh` (+ 46-case self-test), 45 mutants in
   `scripts/declared-case-counts.mutants.py`.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a

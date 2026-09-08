@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=42
+TOTAL_CASES=46
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -121,6 +121,15 @@ chlog() {
       printf -- '- `scripts/gates/%s.sh` (+ %s-case self-test)\n' "$3" "$4"
     fi
   } > "$W/CHANGELOG.md"
+}
+
+# stray <relative-path> <gate> <n>  - a THIRD file, in no document list, that
+# states a case count. The backtick lives in a variable because inside double
+# quotes it would open a command substitution.
+stray() {
+  local bt; bt='`'
+  mkdir -p "$W/$(dirname "$1")" || return 1
+  printf -- '- %s%s.sh%s + self-test (%s cases)\n' "$bt" "$2" "$bt" "$3" > "$W/$1"
 }
 
 # checkno <name> <want-rc> <needle>  - like `check`, but the needle must be
@@ -382,6 +391,32 @@ check a-released-section-states-its-own-times-numbers 0 "4, and 4 ran"
 # one whose counts were all checked, or the silence reads like a pass.
 toy chl_none && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
 check a-changelog-that-is-not-there-is-said-out-loud 0 "not present here: CHANGELOG.md"
+
+# --- the files that are NOT in any document list ---------------------------
+# ALSO is written by hand: nothing said a third document would be found. The
+# sweep reads every other text file and reports the counts it finds there.
+toy sw_hit && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && stray docs/notes.md gate-a 9
+check a-count-in-a-file-nobody-reads-is-a-finding 1 "no document list reads"
+
+# INERT BY CONSTRUCTION, not by exception list. A count for a gate that does not
+# exist is a fixture - the mutant bank keeps one - and the rule never sees it,
+# so there is no list of allowed files to go stale.
+toy sw_toy && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && stray docs/notes.md gate-nowhere 9
+checkno a-count-for-a-gate-that-is-not-there-is-inert 0 "gate-nowhere"
+
+# A FILE THAT CANNOT BE READ is not a file with nothing in it. It leaves by the
+# door marked COULD NOT MEASURE, which is rc 2, and never by rc 1: nobody
+# measured anything to call it wrong.
+toy sw_blind && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && printf '\377\376 not utf-8 \303\050' > "$W/docs/junk.md"
+check a-file-the-sweep-cannot-read-is-not-a-clean-file 2 "not evidence that it holds none"
+
+# The documents the gate DID read must not come back as files nobody reads. The
+# table declares forty-one counts; swept twice, every one of them is a finding.
+toy sw_self && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+checkno the-documents-that-were-read-are-not-swept-again 0 "no document list reads"
 
 # --- the one row the gate refuses to run, and says so ----------------------
 toy self_row && row gate-declared-case-counts 21 && row gate-a 2 \

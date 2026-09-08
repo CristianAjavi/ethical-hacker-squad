@@ -51,7 +51,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (42 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (46 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -215,6 +215,43 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### The list of documents was written by hand
+
+Reading `CHANGELOG.md` as well as the table closed two unchecked figures, and
+left a hole in the same sentence that closed them: `ALSO` is a hand-written
+list, so nothing said a **third** file that declares a case count would ever be
+found. A rule that depends on somebody remembering to extend it is the same
+rule that let the changelog go unread for as long as it did.
+
+The gate now sweeps every other text file — 1,153 of them in 0.24 s, against
+the ~90 s it already spends running the self-tests it compares — and reports
+any count it finds there **for a gate that exists**. That last clause is what
+makes the rule survivable without an exception list: a count for a gate that is
+not on disk is a fixture, the mutant bank keeps one, and the rule never sees
+it. There is no allow-list to go stale, and no file that has to be remembered.
+
+A file the sweep cannot open — undecodable, or over the 2 MB cap — leaves by
+the door marked COULD NOT MEASURE, which is rc 2. It is not a finding: nobody
+measured anything to call it wrong, and it is not silence either, which would
+read exactly like a file that holds no count.
+
+Measured on 2026-09-07: **one** declaration lives outside the two documents,
+and it names a gate no file matches, inside
+`scripts/declared-case-counts.mutants.py` — a fixture, correctly inert.
+(That name is written here without backticks on purpose:
+`gate-contract-inventory.sh` reads every backticked gate name in this
+document as a gate the runner must discover, and a fixture is not one.) The rule ships green, and the three negative controls
+on the real tree are what say the green means something: a count for a real
+gate planted in `CONTRIBUTING.md` turned it red, the same count for a gate that
+does not exist left it green, and an undecodable file put it at 2.
+
+Four cases, each with a named killer: the finding itself (dies when the sweep
+goes), the fixture staying inert (dies when the existence check goes), the
+unreadable file (dies when it is folded back into the findings), and the two
+documents that were read not being swept a second time (dies when the sweep
+forgets which files it already read — the table alone would then produce
+forty-one findings about itself).
 
 ### A second document declared case counts and nothing read it
 
@@ -1593,7 +1630,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 42 cases. Forty
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 46 cases. Forty-four
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1647,9 +1684,9 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, forty-one mutations
+Mutant bank: `scripts/declared-case-counts.mutants.py`, forty-five mutations
 of the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **41 of 41 caught**, in 38 s. This paragraph
+advance which case has to go red. **45 of 45 caught**, in 40 s. This paragraph
 said twenty-two while the file held twenty-three: nothing compares the number
 here against the bank, which is the defect one floor up wearing different
 clothes. Two notes on how
