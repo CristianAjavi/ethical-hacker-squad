@@ -44,6 +44,13 @@ number, or whether a case measures its rule - that is the mutant bank's
 question. This only decides whether the document tells the truth about how many
 there are.
 
+EVERY GATE DECLARES ONE. A gate whose row carries no count was simply not
+visited: its self-test could fall to two cases, or to none, and nothing here
+would say a word, because there is no number to contradict. On 2026-09-07 ten
+of the forty-one were in that state. They are not any more, so the rule is
+enforceable without an exception list, and a gate that stops declaring is a
+finding rather than a silence.
+
 Exit codes: 0 = measured and true | 1 = measured and drifted | 2 = could not measure.
 """
 
@@ -256,6 +263,17 @@ def main(argv: list[str]) -> int:
             if gate in declared and declared[gate] != n:
                 clash.append((gate, declared[gate], n))
             declared[gate] = n
+    # THE GATE THAT DECLARES NOTHING answers to nothing. Read the files rather
+    # than the prose: a row can be deleted, a file cannot be talked away.
+    onfile = {q.stem for q in (root / GATES).glob("gate-*.sh")
+              if not q.name.endswith(".selftest.sh")}
+    # An EMPTY gates directory is not a clean table, but it is not this rule's
+    # to report: every declared row is then a file that is not there, and the
+    # gate already says so, per row, with a better message than this one could.
+    # Reporting zero undeclared gates here cannot hide anything, because there
+    # is no green road out of a run where every row names a missing file.
+    undeclared = sorted(onfile - set(declared)) if onfile else []
+
     mine = declared.pop(SELF, None)
     if not declared:
         return unmeasurable(
@@ -317,6 +335,11 @@ def main(argv: list[str]) -> int:
               "         first is declared. Add `+ --self-test (N cases)` to its row,\n"
               "         or the second one can fall to nothing with the table still green"
               % gate)
+    for gate in undeclared:
+        print("FINDING  %s\n         it exists under %s/ and its row declares no case count, so\n"
+              "         nothing compares its self-test with anything. Add\n"
+              "         `+ self-test (N cases)` to its row, with N read off a run"
+              % (gate, GATES))
     for gate in phantom:
         print("FINDING  %s\n         its row declares `+ --self-test (%d cases)` and the gate has\n"
               "         no second self-test: either the row is stale or the test is gone"
@@ -325,8 +348,9 @@ def main(argv: list[str]) -> int:
     if blind:
         print("%d row(s) could NOT be checked" % len(blind))
         return 2
-    if drifted or uncounted or phantom or clash:
-        n = len(drifted) + len(uncounted) + len(phantom) + len(clash)
+    if drifted or uncounted or phantom or clash or undeclared:
+        n = (len(drifted) + len(uncounted) + len(phantom) + len(clash)
+             + len(undeclared))
         print("%d declared case count(s) do not match what runs" % n)
         return 1
     return 0

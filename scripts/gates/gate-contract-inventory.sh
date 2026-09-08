@@ -154,27 +154,28 @@ self_test() {
     local found=0
     for d in "$FIXTURES/$want"/*/; do
       [ -d "$d" ] || continue
-      found=1
+      found=1; gate_case
       rc=0
       compare "$d/doc.md" "$d/inventory.txt" "$out" || rc=$?
       case "$want" in
         bad)
           if [ "$rc" -ne 1 ]; then
-            gate_warn "NEGATIVE self-test failed: $(basename "$d") should FAIL (1) and gave $rc"; ok=0
+            gate_warn "NEGATIVE self-test failed: $(basename "$d") should FAIL (1) and gave $rc"; ok=0; gate_case_failed
           elif [ -r "$d/phrase.expected" ] && ! grep -qF -f "$d/phrase.expected" "$out"; then
             # rc 1 alone does not say WHY. A fixture that carries expect.txt
             # demands the line that names the cause: two different defects that
             # both fail are not the same measurement.
             gate_warn "NEGATIVE self-test failed: $(basename "$d") fails, but not for the stated reason"
-            sed 's/^/        want: /' "$d/phrase.expected"; sed 's/^/        got:  /' "$out"; ok=0
+            sed 's/^/        want: /' "$d/phrase.expected"; sed 's/^/        got:  /' "$out"; ok=0; gate_case_failed
           fi ;;
-        good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; } ;;
-        unmeasurable) [ "$rc" -eq 2 ] || { gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (2) and gave $rc"; ok=0; } ;;
+        good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; gate_case_failed; } ;;
+        unmeasurable) [ "$rc" -eq 2 ] || { gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (2) and gave $rc"; ok=0; gate_case_failed; } ;;
       esac
     done
     [ "$found" -eq 1 ] || { gate_warn "self-test: there are no '$want' fixtures"; ok=0; }
   done
 
+  gate_tally
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"
 }

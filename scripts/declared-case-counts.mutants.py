@@ -38,6 +38,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CORE = "scripts/gates/lib/declared_case_counts.py"
 WRAP = "scripts/gates/gate-declared-case-counts.sh"
 RUNNER = "scripts/run-batteries.sh"
+# The shared counter every gate that has no counter of its own now uses.
+COMMON = "scripts/gates/lib/common.sh"
 
 GATE_BATTERY = "scripts/gates/gate-declared-case-counts.selftest.sh"
 RUNNER_BATTERY = "scripts/run-batteries.selftest.sh"
@@ -112,6 +114,34 @@ MUTANTS = [
      "        for m in ROW.finditer(line):",
      "        for m in list(ROW.finditer(line))[:1]:",
      GATE_BATTERY, "both-gates-on-one-row-are-compared"),
+    # THE RULE THAT EVERY GATE DECLARES ONE. Ten gates sat undeclared and
+    # unaccused because the reading walks declarations and an absent row
+    # declares nothing to walk.
+    ("an-undeclared-gate-is-not-a-finding", CORE,
+     "    if drifted or uncounted or phantom or clash or undeclared:",
+     "    if drifted or uncounted or phantom or clash:",
+     GATE_BATTERY, "a-gate-whose-row-declares-no-count"),
+    ("the-undeclared-gate-is-never-named", CORE,
+     "    for gate in undeclared:",
+     "    for gate in []:",
+     GATE_BATTERY, "a-gate-whose-row-declares-no-count"),
+    # And the other end: demanding a row for every FILE would demand one for
+    # each sibling battery, which no gate could ever satisfy.
+    ("a-sibling-battery-counts-as-a-gate-of-its-own", CORE,
+     '              if not q.name.endswith(".selftest.sh")}',
+     '              if q.name}',
+     GATE_BATTERY, "a-sibling-battery-is-not-a-gate-of-its-own"),
+    # THE SHARED COUNTER. Ten self-tests borrow it, so a counter that miscounts
+    # or falls silent takes ten rows down with it, and the only thing that would
+    # notice is a run over the real tree.
+    ("the-shared-tally-says-nothing", COMMON,
+     "gate_tally() {\n  printf -- '--- %d passed, %d failed ---\\n' \\",
+     "gate_tally() {\n  : printf -- '--- %d passed, %d failed ---\\n' \\",
+     GATE_BATTERY, "my-own-row-says-what-this-battery-runs"),
+    ("the-shared-counter-never-advances", COMMON,
+     "gate_case() { GATE_CASES=$((GATE_CASES + 1)); }",
+     "gate_case() { GATE_CASES=$((GATE_CASES + 0)); }",
+     GATE_BATTERY, "my-own-row-says-what-this-battery-runs"),
     ("the-fence-comes-down", CORE,
      'FENCE = r"(?:(?!`gate-[a-z0-9-]+\\.sh`).)*?"',
      'FENCE = r".*?"',
@@ -123,7 +153,7 @@ MUTANTS = [
      "                clash.append((gate, declared[gate], n))",
      GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
     ("a-clash-is-not-a-finding", CORE,
-     "    if drifted or uncounted or phantom or clash:",
+     "    if drifted or uncounted or phantom or clash or undeclared:",
      "    if drifted or uncounted or phantom:",
      GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
 
@@ -171,7 +201,7 @@ MUTANTS = [
      "    if False:\n        print(",
      GATE_BATTERY, "a-self-test-that-says-nothing"),
     ("drift-does-not-fail", CORE,
-     "    if drifted or uncounted or phantom or clash:",
+     "    if drifted or uncounted or phantom or clash or undeclared:",
      "    if uncounted or phantom or clash:",
      GATE_BATTERY, "the-row-says-fewer-than-it-runs"),
     ("only-drift-upward-is-drift", CORE,

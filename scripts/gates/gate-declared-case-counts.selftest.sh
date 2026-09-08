@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=36
+TOTAL_CASES=38
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -109,6 +109,23 @@ fake() {
   esac
 }
 
+# checkno <name> <want-rc> <needle>  - like `check`, but the needle must be
+# ABSENT. An absent needle is a blind zero unless something proves the run
+# would print it: the mutant `the-fence-comes-down` is that proof - with the
+# fence down this exact line appears and the case dies.
+checkno() {
+  local name="$1" want="$2" needle="$3" out rc
+  out="$(EHS_REPO_ROOT="$W" EHS_TALLY_LEDGER="$LEDGER" bash "$GATE" 2>&1)"; rc=$?
+  if [ "$rc" -eq "$want" ] && ! grep -q -- "$needle" <<<"$out"; then
+    printf 'ok       %-44s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
+  else
+    printf 'FAILED   %-44s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
+    printf '         must NOT say: %s\n' "$needle"
+    printf '%s\n' "$out" | sed 's/^/         /'
+    fail=$((fail+1))
+  fi
+}
+
 # check <name> <want-rc> <needle>  - run the gate over the toy just built.
 check() {
   local name="$1" want="$2" needle="$3" out rc
@@ -183,7 +200,12 @@ check the-second-gate-on-the-row-drifts-too 1 "the row says 7 cases and the self
 toy fence && rowpair gate-a - gate-b 7 \
   && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
   && fake gate-b sibling 'echo "7 passed, 0 failed"' 'exit 0'
-check a-count-does-not-cross-to-the-gate-before-it 0 "every declared case count matches"
+# gate-a here declares nothing on purpose, so the undeclared-count rule
+# reports it and the run is red either way. What this case asserts is the
+# accusation that must NOT appear: gate-a accused of running 4 against a 7
+# it never declared, which is what the neighbour's number crossing over
+# looks like from the outside.
+checkno a-count-does-not-cross-to-the-gate-before-it 1 "the row says 7 cases and the self-test runs 4"
 
 # Declared twice with two numbers: the fixture prints the SECOND, so without the
 # clash finding this row is green and one of the two claims is false anyway.
@@ -201,6 +223,22 @@ check a-second-self-test-nobody-declared 1 "AND its own --self-test"
 
 toy phantom && row2 gate-a 4 5 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
 check a-declared-second-self-test-that-is-not-there 1 "no second self-test"
+
+# --- a gate whose row declares nothing at all ------------------------------
+# The state ten of the forty-one gates were in until 2026-09-07: not compared
+# and not accused either, because the reading walks the DECLARATIONS and an
+# absent row declares nothing to walk. Read off the files instead - a row can be
+# deleted, a file cannot be talked away.
+toy undeclared && row gate-b 4 \
+  && fake gate-b inline 'echo "4 passed, 0 failed"' 'exit 0' \
+  && fake gate-a inline 'echo "9 passed, 0 failed"' 'exit 0'
+check a-gate-whose-row-declares-no-count 1 "declares no case count"
+
+# And the other end: a sibling battery is a FILE under scripts/gates/ and is not
+# a gate of its own. Demanding a row for `gate-b.selftest.sh` would make the
+# rule unsatisfiable for every gate that has a battery, which is most of them.
+toy sibfile && row gate-b 4 && fake gate-b sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check a-sibling-battery-is-not-a-gate-of-its-own 0 "checked 1 self-test"
 
 toy second_drift && row2 gate-a 4 9 && fake gate-a sibling-and-flag:3 'echo "4 passed, 0 failed"' 'exit 0'
 check the-second-count-is-compared-too 1 "the row says 9 cases and the self-test runs 3"

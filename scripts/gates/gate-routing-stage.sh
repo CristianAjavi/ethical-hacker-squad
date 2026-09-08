@@ -95,10 +95,15 @@ selftest() {
   # rule the red belongs to - so all eight of this library's report sites were
   # scoring as covered on the strength of a crash. Measured: 5 of the 7 sites in
   # this repository that died with nobody naming them were here.
+  # ONE FIXTURE IS ONE CASE. This self-test is fail-fast, so the tally is
+  # printed on both roads: a count read off a red run is refused by the
+  # count gate anyway, and a run that says nothing answers to nothing.
+  gate_case
   out="$(audit "$work/healthy")"
   if grep -qE '^[12]\|' <<<"$out"; then
     rm -rf "$work"
     echo "FAILED  healthy-fixture-is-clean"
+    gate_case_failed; gate_tally
     gate_fail "self-test: the healthy fixture returned '$out'"; return "$GATE_FAIL"
   fi
 
@@ -111,23 +116,27 @@ selftest() {
   )
   local spec name code phrase
   for spec in "${checks[@]}"; do
+    gate_case
     name="${spec%%|*}"; spec="${spec#*|}"; code="${spec%%|*}"; phrase="${spec#*|}"
     out="$(audit "$work/$name")"
     if ! grep -qF -- "$phrase" <<<"$out"; then
       rm -rf "$work"
       echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' never said '$phrase'; it said: ${out//$'\n'/ / }"
+      gate_case_failed; gate_tally
       return "$GATE_FAIL"
     fi
     if ! grep -q "^$code|" <<<"$out"; then
       rm -rf "$work"
       echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' did not return $code; it said: ${out//$'\n'/ / }"
+      gate_case_failed; gate_tally
       return "$GATE_FAIL"
     fi
   done
 
   rm -rf "$work"
+  gate_tally
   return "$GATE_OK"
 }
 

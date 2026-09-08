@@ -624,6 +624,7 @@ run_child() { # run_child <fake-root> [args...]; echoes rc
 
 ST_FAIL=0
 expect() { # expect <label> <expected-rc> <actual-rc>
+  gate_case
   if [ "$2" = "$3" ]; then
     printf '  [self-test OK]   %-46s rc=%s\n' "$1" "$3"
   else
@@ -693,6 +694,7 @@ self_test() {
   grep -q 'checksum validates offline' "$TMPD/child.out" \
     || { printf '  [self-test FAIL] the token was caught but not classified as a credential\n' >&2
          ST_FAIL=$((ST_FAIL + 1)); }
+  gate_case
 
   # 8. same shape, checksum deliberately wrong.
   t="$TMPD/st8"; mk_fake_root "$t"
@@ -741,6 +743,8 @@ self_test() {
   mv "$t/scripts/gates/fixtures/report/good" "$t/scripts/gates/fixtures/report/gone"
   rc="$(run_child "$t")"; expect "false-positive control missing" 2 "$rc"
 
+  # ST_FAIL is already the numerator; gate_case supplies the denominator.
+  printf -- '--- %d passed, %d failed ---\n' "$((GATE_CASES - ST_FAIL))" "$ST_FAIL"
   [ "$ST_FAIL" -eq 0 ] || return 1
   return 0
 }

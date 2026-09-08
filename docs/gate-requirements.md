@@ -19,39 +19,39 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (9 cases) |
 | `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (8 cases) |
 | `G7` protected paths | running | `gate-protected-paths.sh` + self-test (32 cases), PR context |
-| `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
+| `G8` closure guard | running | `gate-issue-closure.sh` + self-test (22 cases) |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (16 cases) |
 | triage rules | running | `gate-triage-rules.sh` + self-test (16 cases) |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test (12 cases) |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test (23 cases) |
-| bench index | running | `gate-bench-index.sh` + self-test |
+| bench index | running | `gate-bench-index.sh` + self-test (5 cases) |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
-| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
+| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 cases) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) + --self-test (2 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test (7 cases) |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test (12 cases) |
-| promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
+| promotion invariant | running | `gate-promotion-safepath.sh` + inline self-test (14 cases) |
 | negative evidence | running | `gate-negative-evidence.sh` + self-test (4 cases) + --self-test (10 cases) |
-| benign control | running | `gate-benign-control.sh` + self-test |
-| report contract | running | `gate-report-contract.sh` |
+| benign control | running | `gate-benign-control.sh` + self-test (23 cases) |
+| report contract | running | `gate-report-contract.sh` + inline self-test (17 cases) |
 | workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test (3 cases) |
 | label taxonomy | running | `gate-labels-taxonomy.sh` + self-test (12 cases) |
-| contract inventory | running | `gate-contract-inventory.sh` + self-test |
-| negative proof | running | `gate-negative-proof.sh` + self-test |
+| contract inventory | running | `gate-contract-inventory.sh` + inline self-test (7 cases) |
+| negative proof | running | `gate-negative-proof.sh` + inline self-test (9 cases) |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
 | the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
-| governance contract | running | `gate-governance-contract.sh` + self-test |
+| governance contract | running | `gate-governance-contract.sh` + inline self-test (7 cases) |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
-| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (36 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (38 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -215,6 +215,35 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### A self-test that never says how many cases it ran
+
+Ten of the forty-one documented gates ran cases and never printed a number. Their
+rows could not promise anything: the self-test could fall from fourteen cases to
+two, or to none, and every instrument in this repository would stay green,
+because there is nothing to compare a number against. `gate-routing-stage.sh`
+was the sharpest version — its row DID carry a number, `6 fixtures`, in a
+spelling no instrument reads, which is a claim dressed as a measurement.
+
+The counter is now shared rather than rewritten ten times. `lib/common.sh`
+carries `gate_case`, `gate_case_failed` and `gate_tally`, and `gate_tally`
+prints the one line `gate-declared-case-counts.sh` reads. Four of the ten
+already counted their failures and had no denominator; three ran a fixture loop
+with a single `ok` flag; `gate-governance-drift.selftest.sh` printed `6 cases`
+written by hand, true until somebody deleted a case, and now prints what it
+counted.
+
+Two of the ten are fail-fast — they stop at the first case that misbehaves — so
+they print the tally on both roads. A tally read off a red run is refused by the
+count gate anyway, and a run that says nothing answers to nothing.
+
+**The ten numbers in the table were not read off the code.** Each self-test was
+run and its printed tally copied: 5, 23, 7, 7, 6, 22, 9, 14, 17, 6. Counting
+cases by eye is how a row acquires a number that was never true.
+
+With this, every documented gate declares a case count and something reads it:
+42 self-tests compared, up from 32, and **zero** documented gates whose row
+promises nothing.
 
 ### A row may name more than one gate, and only the first was being read
 
@@ -1496,7 +1525,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 36 cases. Thirty-four
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 38 cases. Thirty-six
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1518,8 +1547,14 @@ which must not be accused. Four more are the multi-gate row's: both gates on
 one row compared, the second one drifting, a count that may not cross to the
 gate before it, and one gate declared twice with two numbers — that last fixture
 prints the SECOND number on purpose, so without the clash finding the case is
-green and one of the two written claims is still false. The thirty-fifth checks
-this file's own row against its own tally. The thirty-sixth is the control: the
+green and one of the two written claims is still false. Two more are the rule
+that every gate declares a count: a gate on disk whose row declares nothing is a
+finding, and a sibling battery is not a gate of its own — demanding a row for
+every FILE would demand one for each battery, which no gate could satisfy. The
+first of those two asserts an ABSENCE, so the mutant `the-fence-comes-down` is
+what proves the line would appear: with the fence down it does, and the case
+dies. The thirty-seventh checks
+this file's own row against its own tally. The thirty-eighth is the control: the
 real tree, every self-test this table names, no mutation.
 
 Five of the bank's mutants are that rule's, each dying in the case named for
@@ -1544,9 +1579,9 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, thirty-two mutations
+Mutant bank: `scripts/declared-case-counts.mutants.py`, thirty-seven mutations
 of the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **32 of 32 caught**, in 32 s. This paragraph
+advance which case has to go red. **37 of 37 caught**, in 43 s. This paragraph
 said twenty-two while the file held twenty-three: nothing compares the number
 here against the bank, which is the defect one floor up wearing different
 clothes. Two notes on how
