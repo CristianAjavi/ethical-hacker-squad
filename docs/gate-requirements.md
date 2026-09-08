@@ -51,7 +51,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (46 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (51 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -216,6 +216,53 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
 
+### The extension list was the next hand-written list
+
+Sweeping every file outside the document list closed the hole that a
+hand-written `ALSO` had left open, and opened the same hole one notch smaller
+in the same commit: the sweep read seven extensions and stopped at two million
+bytes. A count in a `.rst`, a `.toml`, a file with no suffix at all, or past
+byte two million answered to nothing, and the silence read exactly like a file
+that holds none. Seventy-four files in this repository were in that state.
+
+An extension list and a size cap are the same decision written twice — stop
+looking — as a constant nobody revisits. So the sweep now reads **bytes**, all
+of them, in one-megabyte pieces that carry the trailing partial line forward.
+Encoding stops mattering, because it never asks a file to decode. Size stops
+mattering, because memory is bounded by the longest line rather than the file.
+The two patterns it matches are compiled from the same source strings as the
+ones the documents are read with, rather than written out a second time: a
+hand-written copy would drift, and drift is what this gate is for.
+
+It is not a trade of speed for reach. Measured on 2026-09-07, median of seven:
+the old sweep read 1,151 files in **0.13 s**; the new one reads **1,224 in
+0.086 s** as a clean clone sees it, because a bytes match never decodes UTF-8
+and never builds a list of lines. This working copy also carries a 270 MB
+symlink into `node_modules` that `.gitignore` keeps out of the repository, and
+reading it takes the local figure to 0.37 s — worth naming, because it is the
+one number here a clone will not reproduce.
+
+That leaves exactly one door to rc 2: a file that cannot be OPENED. It is the
+narrowest the door has ever been, and a door nobody opens is a door nobody
+knows is there, so a case shuts one and demands rc 2 — and refuses to run,
+rather than passing, in a process that can read a `chmod 000` file.
+
+Six cases, each with a named killer: the count that is not UTF-8 (dies when
+`scan` refuses a blob it cannot decode), the file with no extension (dies when
+a suffix list comes back), the count past two megabytes (dies when a cap comes
+back), and two chunk boundaries — one with no newline anywhere before the
+declaration, one with the last newline just before it — because there are two
+ways to drop a partial line and only one mutant can be applied at a time. The
+sixth is the unopenable file.
+
+On the real tree, planted and removed: a count for a real gate in a file with
+no extension turned the gate red, so did one past the two-megabyte mark, so did
+one inside a file that is not valid UTF-8, and the same count for a gate that
+does not exist left it green. The unopenable file put it at 2 — and there the
+real tree cannot isolate the cause, because a file no process can read also
+blinds ten other rows whose self-tests walk this repository. The isolated
+evidence for that one is the toy case and the mutant that dies in it.
+
 ### The list of documents was written by hand
 
 Reading `CHANGELOG.md` as well as the table closed two unchecked figures, and
@@ -224,17 +271,17 @@ list, so nothing said a **third** file that declares a case count would ever be
 found. A rule that depends on somebody remembering to extend it is the same
 rule that let the changelog go unread for as long as it did.
 
-The gate now sweeps every other text file — 1,153 of them in 0.24 s, against
-the ~90 s it already spends running the self-tests it compares — and reports
-any count it finds there **for a gate that exists**. That last clause is what
+The gate now sweeps every other file — see the section above for what "every"
+came to mean, and what it costs — and reports any count it finds there **for a
+gate that exists**. That last clause is what
 makes the rule survivable without an exception list: a count for a gate that is
 not on disk is a fixture, the mutant bank keeps one, and the rule never sees
 it. There is no allow-list to go stale, and no file that has to be remembered.
 
-A file the sweep cannot open — undecodable, or over the 2 MB cap — leaves by
-the door marked COULD NOT MEASURE, which is rc 2. It is not a finding: nobody
-measured anything to call it wrong, and it is not silence either, which would
-read exactly like a file that holds no count.
+A file the sweep cannot open leaves by the door marked COULD NOT MEASURE,
+which is rc 2. It is not a finding: nobody measured anything to call it wrong,
+and it is not silence either, which would read exactly like a file that holds
+no count.
 
 Measured on 2026-09-07: **one** declaration lives outside the two documents,
 and it names a gate no file matches, inside
@@ -244,11 +291,11 @@ and it names a gate no file matches, inside
 document as a gate the runner must discover, and a fixture is not one.) The rule ships green, and the three negative controls
 on the real tree are what say the green means something: a count for a real
 gate planted in `CONTRIBUTING.md` turned it red, the same count for a gate that
-does not exist left it green, and an undecodable file put it at 2.
+does not exist left it green, and a file that could not be opened put it at 2.
 
 Four cases, each with a named killer: the finding itself (dies when the sweep
 goes), the fixture staying inert (dies when the existence check goes), the
-unreadable file (dies when it is folded back into the findings), and the two
+unopenable file (dies when it is folded back into the findings), and the two
 documents that were read not being swept a second time (dies when the sweep
 forgets which files it already read — the table alone would then produce
 forty-one findings about itself).
@@ -1630,7 +1677,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 46 cases. Forty-four
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 51 cases. Forty-nine
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1658,9 +1705,12 @@ finding, and a sibling battery is not a gate of its own — demanding a row for
 every FILE would demand one for each battery, which no gate could satisfy. The
 first of those two asserts an ABSENCE, so the mutant `the-fence-comes-down` is
 what proves the line would appear: with the fence down it does, and the case
-dies. The thirty-seventh checks
-this file's own row against its own tally. The thirty-eighth is the control: the
-real tree, every self-test this table names, no mutation.
+dies. Six more are the sweep's reach, listed in the section that added them.
+The last two are this file's own row against its own tally, and the control:
+the real tree, every self-test this table names, no mutation. Neither is given
+an ordinal here — the ones that used to be written out said thirty-seventh and
+thirty-eighth long after the file had passed forty, which is this gate's own
+defect in this gate's own paragraph.
 
 Five of the bank's mutants are that rule's, each dying in the case named for
 it: `offers_flag` reverted to the substring test that started this, the
@@ -1684,9 +1734,9 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, forty-five mutations
+Mutant bank: `scripts/declared-case-counts.mutants.py`, fifty mutations
 of the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **45 of 45 caught**, in 40 s. This paragraph
+advance which case has to go red. **50 of 50 caught**, in 39 s. This paragraph
 said twenty-two while the file held twenty-three: nothing compares the number
 here against the bank, which is the defect one floor up wearing different
 clothes. Two notes on how

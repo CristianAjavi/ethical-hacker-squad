@@ -187,15 +187,51 @@ MUTANTS = [
      "    stray, swept, unread = [], 0, []",
      GATE_BATTERY, "a-count-in-a-file-nobody-reads-is-a-finding"),
     ("the-sweep-accuses-a-gate-that-is-not-there", CORE,
-     "                    if m.group(1) not in onfile:\n"
-     "                        continue",
-     "                    if False:\n"
-     "                        continue",
+     "            if gate not in onfile:\n"
+     "                continue",
+     "            if False:\n"
+     "                continue",
      GATE_BATTERY, "a-count-for-a-gate-that-is-not-there-is-inert"),
     ("an-unreadable-file-is-a-clean-file", CORE,
      "    if blind or unread:",
      "    if blind:",
-     GATE_BATTERY, "a-file-the-sweep-cannot-read-is-not-a-clean-file"),
+     GATE_BATTERY, "a-file-that-cannot-be-opened-is-not-clean"),
+    # --- the two hand-written lists that bounded the sweep -------------------
+    # An extension list and a size cap are the same decision written twice:
+    # stop looking. Five mutants, one per way of putting a wall back up.
+    ("a-file-that-is-not-utf-8-is-skipped", CORE,
+     "    \"\"\"Report every declaration in `blob`, whose first line is numbered `first`.\"\"\"",
+     "    \"\"\"Report every declaration in `blob`.\"\"\"\n"
+     "    try:\n"
+     "        blob.decode(\"utf-8\")\n"
+     "    except UnicodeDecodeError:\n"
+     "        return",
+     GATE_BATTERY, "a-count-in-a-file-that-is-not-utf-8-is-found"),
+    ("the-extension-list-comes-back", CORE,
+     "        if not q.is_file():\n"
+     "            continue",
+     "        if not q.is_file() or q.suffix not in {\".md\", \".py\", \".sh\"}:\n"
+     "            continue",
+     GATE_BATTERY, "a-count-in-a-file-with-no-extension-is-found"),
+    ("the-size-cap-comes-back", CORE,
+     "        try:\n"
+     "            with q.open(\"rb\") as fh:",
+     "        try:\n"
+     "            if q.stat().st_size > 2_000_000:\n"
+     "                unread.append(\"%s (over the cap)\" % rel)\n"
+     "                continue\n"
+     "            with q.open(\"rb\") as fh:",
+     GATE_BATTERY, "a-count-past-the-old-two-megabyte-mark-is-found"),
+    ("a-line-longer-than-a-chunk-is-cut", CORE,
+     "                    if cut == 0:          # one line longer than a chunk so far\n"
+     "                        carry = buf",
+     "                    if cut == 0:\n"
+     "                        carry = b\"\"",
+     GATE_BATTERY, "a-count-straddling-a-chunk-with-no-newline-is-found"),
+    ("the-partial-line-is-not-carried", CORE,
+     "                    carry = buf[cut:]",
+     "                    carry = b\"\"",
+     GATE_BATTERY, "a-count-straddling-a-chunk-after-a-newline-is-found"),
     ("the-sweep-forgets-what-was-already-read", CORE,
      "    stray, swept, unread = sweep(root, already, onfile)",
      "    stray, swept, unread = sweep(root, set(), onfile)",

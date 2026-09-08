@@ -24,7 +24,7 @@ else SRC="$(cd "$HERE/../.." && pwd)"; fi
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 [ -f "$GATE" ] || { echo "UNMEASURABLE the gate is missing: $GATE"; exit 2; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-dcc-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
-pass=0; fail=0
+pass=0; fail=0; skip=0
 
 # The gate does NOT run this battery: the control case below invokes the
 # gate over the real tree, so a gate that ran it would recurse without a
@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=46
+TOTAL_CASES=51
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -130,6 +130,26 @@ stray() {
   local bt; bt='`'
   mkdir -p "$W/$(dirname "$1")" || return 1
   printf -- '- %s%s.sh%s + self-test (%s cases)\n' "$bt" "$2" "$bt" "$3" > "$W/$1"
+}
+
+# wide <path> <filler-bytes> <line-width> <gate> <n>  - a file with exactly
+# `filler-bytes` of x before a declaration, cut into lines `line-width` wide
+# (0 = one single line, no newline anywhere before the count). The offsets have
+# to be exact - the whole point of these cases is WHERE the read stops - so
+# python3 builds it rather than a shell loop, which at a million characters is
+# not a test but a wait.
+wide() {
+  python3 - "$W/$1" "$2" "$3" "$4" "$5" <<'PY'
+import pathlib, sys
+path, n, w, gate, num = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5]
+body = b"x" * n
+if w:
+    body = b"".join(body[i:i + w] + b"\n" for i in range(0, n, w))[:n]
+q = pathlib.Path(path)
+q.parent.mkdir(parents=True, exist_ok=True)
+q.write_bytes(body + b"- `%s.sh` + self-test (%s cases)\n"
+              % (gate.encode(), num.encode()))
+PY
 }
 
 # checkno <name> <want-rc> <needle>  - like `check`, but the needle must be
@@ -406,12 +426,53 @@ toy sw_toy && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'e
   && stray docs/notes.md gate-nowhere 9
 checkno a-count-for-a-gate-that-is-not-there-is-inert 0 "gate-nowhere"
 
-# A FILE THAT CANNOT BE READ is not a file with nothing in it. It leaves by the
-# door marked COULD NOT MEASURE, which is rc 2, and never by rc 1: nobody
-# measured anything to call it wrong.
-toy sw_blind && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
-  && printf '\377\376 not utf-8 \303\050' > "$W/docs/junk.md"
-check a-file-the-sweep-cannot-read-is-not-a-clean-file 2 "not evidence that it holds none"
+# ENCODING CANNOT HIDE A DECLARATION. The sweep reads bytes, so a file that is
+# not valid UTF-8 is searched like any other. It used to leave unread, which
+# was honest and blind at the same time: either way the count went uncompared.
+toy sw_bin && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && stray docs/notes.md gate-a 9 \
+  && printf '\377\376 not utf-8 \303\050\n' >> "$W/docs/notes.md"
+check a-count-in-a-file-that-is-not-utf-8-is-found 1 "no document list reads"
+
+# NO EXTENSION LIST. Seven suffixes used to decide what got looked at, so a
+# count in a file with no suffix at all was never compared with anything.
+toy sw_noext && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && stray docs/NOTES gate-a 9
+check a-count-in-a-file-with-no-extension-is-found 1 "no document list reads"
+
+# NO SIZE CAP. Two million bytes used to end the search, and no document is
+# obliged to put its declarations in the first two megabytes.
+toy sw_big && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && wide docs/big.md 2100000 100 gate-a 9
+check a-count-past-the-old-two-megabyte-mark-is-found 1 "no document list reads"
+
+# THE CHUNK BOUNDARY IS NOT A WALL, and there are two ways to fall off it.
+# Here the declaration straddles the first megabyte with no newline anywhere
+# before it: the partial line has to survive a read that found none at all.
+toy sw_cut0 && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && wide docs/wide.md 1048570 0 gate-a 9
+check a-count-straddling-a-chunk-with-no-newline-is-found 1 "no document list reads"
+
+# And here there ARE newlines before it, so the read stops at the last one and
+# the tail it leaves behind is where the declaration begins.
+toy sw_cut1 && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && wide docs/lines.md 1048570 100 gate-a 9
+check a-count-straddling-a-chunk-after-a-newline-is-found 1 "no document list reads"
+
+# A FILE THAT CANNOT BE OPENED is not a file with nothing in it. With the
+# extension list and the cap gone this is the only door left to rc 2, and a
+# door nobody opens is a door nobody knows is there. A process that can read a
+# chmod-000 file - root - cannot run this case, and says so rather than
+# passing it: a case that cannot fail here is not evidence of anything.
+toy sw_shut && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0' \
+  && stray docs/shut.md gate-a 9 && chmod 000 "$W/docs/shut.md"
+if cat "$W/docs/shut.md" >/dev/null 2>&1; then
+  printf 'skip     %-44s %s\n' "a-file-that-cannot-be-opened-is-not-clean" \
+    "this process reads a chmod-000 file"
+  skip=$((skip + 1)); chmod 644 "$W/docs/shut.md"; rm -rf "$W"; LEDGER=""
+else
+  check a-file-that-cannot-be-opened-is-not-clean 2 "not evidence that it holds none"
+fi
 
 # The documents the gate DID read must not come back as files nobody reads. The
 # table declares forty-one counts; swept twice, every one of them is a finding.
@@ -459,11 +520,11 @@ else
   printf '%s\n' "$out" | sed 's/^/         /' | tail -8; fail=$((fail+1))
 fi
 
-echo "--- $pass passed, $fail failed ---"
+echo "--- $pass passed, $fail failed, $skip skipped ---"
 # The other half of the pair above. A case added and not counted would leave the
 # document's number true of nothing.
-if [ "$((pass + fail))" -ne "$TOTAL_CASES" ]; then
-  echo "UNMEASURABLE this file declares $TOTAL_CASES cases and ran $((pass + fail))"
+if [ "$((pass + fail + skip))" -ne "$TOTAL_CASES" ]; then
+  echo "UNMEASURABLE this file declares $TOTAL_CASES cases and ran $((pass + fail + skip))"
   exit 2
 fi
 [ "$fail" -eq 0 ] || exit 1

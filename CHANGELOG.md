@@ -8,6 +8,33 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The extension list was the next hand-written list, and it was in the same commit.**
+  Sweeping every file outside the document list closed the hole a hand-written `ALSO` had left
+  open, and opened the same hole one notch smaller in the same breath: the sweep read seven
+  extensions and stopped at two million bytes. A count in a `.rst`, a `.toml`, a file with no
+  suffix at all, or past byte two million answered to nothing, and the silence read exactly like
+  a file holding none. **Seventy-four files in this repository were in that state.** An extension
+  list and a size cap are the same decision written twice — stop looking — as a constant nobody
+  revisits, so the sweep now reads **bytes**, all of them, in one-megabyte pieces that carry the
+  trailing partial line forward: encoding stops mattering because it never asks a file to decode,
+  and size stops mattering because memory is bounded by the longest line rather than the file.
+  The two patterns are compiled from the same source strings the documents are read with rather
+  than written out again, because a hand-written copy would drift and drift is what this gate is
+  for. It is not a trade of reach for speed — median of seven, the old sweep read 1,151 files in
+  **0.13 s**, the new one reads **1,224 in 0.086 s** as a clean clone sees it, a bytes match
+  never having to decode UTF-8 or build a list of lines. (This working copy also carries a 270 MB
+  symlink into `node_modules` that `.gitignore` keeps out of the repository; reading it takes the
+  local figure to 0.37 s, and it is the one number here a clone will not reproduce.) That leaves
+  exactly one door to rc 2 — a file that cannot be OPENED — so a case shuts one and demands rc 2,
+  and refuses to run rather than pass in a process that can read a `chmod 000` file. On the real
+  tree, planted and removed: a real gate's count in a file with no extension turned it red, so
+  did one past two megabytes, so did one inside a file that is not valid UTF-8, and the same
+  count for a gate that does not exist left it green. The unopenable file put it at 2, and there
+  the real tree cannot isolate the cause — a file no process can read also blinds ten other rows
+  whose self-tests walk this repository — so the isolated evidence for that one is the toy case
+  and the mutant that dies in it. `gate-declared-case-counts.sh` self-test 46 → 51 cases, mutant
+  bank 45 → 50, **50 of 50 caught** in 39 s.
+
 - **The list of documents that state case counts was written by hand.** Reading `CHANGELOG.md`
   as well as `docs/gate-requirements.md` closed two unchecked figures and left a hole in the same
   sentence: `ALSO` is hand-written, so nothing said a **third** file declaring a count would ever
@@ -42,7 +69,7 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   row. A disagreement between the two files was already the clash rule's business; it used to
   say "the table declares it twice" and now names both files, because a number that is wrong in
   the other document cannot be fixed by looking at this one.
-  `scripts/gates/gate-declared-case-counts.sh` (+ 46-case self-test), 45 mutants in
+  `scripts/gates/gate-declared-case-counts.sh` (+ 51-case self-test), 50 mutants in
   `scripts/declared-case-counts.mutants.py`.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a

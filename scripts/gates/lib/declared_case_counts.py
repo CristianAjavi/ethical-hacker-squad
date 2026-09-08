@@ -78,9 +78,12 @@ ALSO = ["CHANGELOG.md"]
 # fixture - the mutant bank holds one - and stays inert with no exception list
 # to maintain. Measured on 2026-09-07: 1,153 files in 0.24 s, against the ~90 s
 # this gate spends running the self-tests it compares.
-SWEEP_EXT = {".md", ".py", ".sh", ".txt", ".json", ".yml", ".yaml"}
 SWEEP_SKIP = {".git", "node_modules", ".venv", "__pycache__"}
-SWEEP_CAP = 2_000_000
+# The sweep reads bytes in pieces this size, carrying the trailing partial line
+# into the next one. A declaration cannot cross a newline - the fence excludes
+# it - so carrying the partial line loses nothing, and memory is bounded by the
+# longest line rather than by the file.
+SWEEP_CHUNK = 1 << 20
 GATES = "scripts/gates"
 # The one row this file cannot run. Its battery ends with a control case
 # that invokes this gate over the real tree, so running it from here would
@@ -108,6 +111,12 @@ HYPHEN = re.compile(NAME + FENCE + r"(\d+)-case self-test")
 # declared on the same row, after the first, as `+ --self-test (M cases)`.
 # ROW is non-greedy, so it still reads the first number and not this one.
 EXTRA = re.compile(NAME + FENCE + r"\+ --self-test \((\d+) cases\)")
+# The sweep reads BYTES, so no file's encoding can hide a declaration from it.
+# Compiled from the SAME pattern source as the two above rather than written
+# out again: a second hand-written copy would drift, and a hand-written list
+# that drifted is the whole reason this sweep exists.
+ROW_B = re.compile(ROW.pattern.encode("ascii"))
+HYPHEN_B = re.compile(HYPHEN.pattern.encode("ascii"))
 # The third group is optional: only a battery that can skip a case prints it.
 # It still counts toward the row, because a skipped case is a case of the
 # file - one that proved nothing here, which is a different statement.
@@ -261,8 +270,34 @@ def measure(root: pathlib.Path, gate: str, declared: int, tallies=None, forced=N
     return gate, declared, passed + failed + skipped, how
 
 
+def scan(blob: bytes, first: int, rel: str, onfile: set[str], out: list[str]):
+    """Report every declaration in `blob`, whose first line is numbered `first`."""
+    for rx in (ROW_B, HYPHEN_B):
+        for m in rx.finditer(blob):
+            gate = m.group(1).decode("ascii")
+            if gate not in onfile:
+                continue
+            out.append(
+                "%s:%d\n         it states %s cases for `%s.sh` and no document "
+                "list reads\n         this file, so the number answers to "
+                "nothing. Read the file,\n         or take the number out"
+                % (rel, first + blob.count(b"\n", 0, m.start()),
+                   m.group(2).decode("ascii"), gate))
+
+
 def sweep(root: pathlib.Path, already: set[str], onfile: set[str]):
-    """Every text file outside the document list, and what it declares.
+    """Every file outside the document list, read as BYTES, and what it declares.
+
+    NO EXTENSION LIST AND NO SIZE CAP. Both were here and both were the same
+    decision - stop looking - written as a constant nobody would revisit. A
+    count in a `.rst`, a `.toml`, a file with no extension at all, or past byte
+    two million answered to nothing, and the silence read exactly like a file
+    holding none. That is the defect this sweep was built to catch, one level
+    up, so it cannot be the way the sweep itself is bounded.
+
+    Files are read in SWEEP_CHUNK pieces, carrying the trailing partial line
+    forward. A declaration cannot cross a newline, so nothing is lost at a
+    boundary, and memory is bounded by the longest line rather than the file.
 
     Returns (findings, swept, unread). `unread` is not an empty list dressed up
     as a clean one: a file this cannot open is named, because a count inside it
@@ -274,30 +309,33 @@ def sweep(root: pathlib.Path, already: set[str], onfile: set[str]):
     for q in sorted(root.rglob("*")):
         if any(s in q.parts for s in SWEEP_SKIP):
             continue
-        if not q.is_file() or q.suffix not in SWEEP_EXT:
+        if not q.is_file():
             continue
         rel = q.relative_to(root).as_posix()
         if rel in already:
             continue
         try:
-            if q.stat().st_size > SWEEP_CAP:
-                unread.append("%s (over %d bytes)" % (rel, SWEEP_CAP))
-                continue
-            body = q.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
+            with q.open("rb") as fh:
+                carry = b""
+                first = 1
+                while True:
+                    piece = fh.read(SWEEP_CHUNK)
+                    if not piece:
+                        break
+                    buf = carry + piece
+                    cut = buf.rfind(b"\n") + 1
+                    if cut == 0:          # one line longer than a chunk so far
+                        carry = buf
+                        continue
+                    scan(buf[:cut], first, rel, onfile, findings)
+                    first += buf.count(b"\n", 0, cut)
+                    carry = buf[cut:]
+                if carry:
+                    scan(carry, first, rel, onfile, findings)
+            swept += 1        # counted only once it was read to the end
+        except OSError as exc:
             unread.append("%s (%s)" % (rel, exc))
             continue
-        swept += 1
-        for i, line in enumerate(body.splitlines(), 1):
-            for rx in (ROW, HYPHEN):
-                for m in rx.finditer(line):
-                    if m.group(1) not in onfile:
-                        continue
-                    findings.append(
-                        "%s:%d\n         it states %s cases for `%s.sh` and no document "
-                        "list reads\n         this file, so the number answers to "
-                        "nothing. Read the file,\n         or take the number out"
-                        % (rel, i, m.group(2), m.group(1)))
     return findings, swept, unread
 
 
@@ -428,7 +466,9 @@ def main(argv: list[str]) -> int:
           "%d read off the ledger"
           % (len(rows), ", ".join(s.name for s, _ in sources),
              len(rows) - reused, reused))
-    print("  swept %d file(s) outside that list for counts nobody reads" % swept)
+    print("  swept %d file(s) outside that list for counts nobody reads,\n"
+          "  every file and every byte of it, whatever its name or encoding"
+          % swept)
     for rel in absent:
         print("  not present here: %s. Any case count it states is unchecked,\n"
               "  and this run is not evidence that it states none." % rel)
