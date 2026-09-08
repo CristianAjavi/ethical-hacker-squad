@@ -1721,7 +1721,7 @@ is how it reported its own stale anchor the moment the verdict line merged three
 conditions into one — a substitution that finds nothing kills nothing and
 reports the same green.
 
-The writer's side is `scripts/run-batteries.selftest.sh`, 43 cases, six of them
+The writer's side is `scripts/run-batteries.selftest.sh`, 57 cases, six of them
 the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
 one leaves nothing, a battery that prints no tally leaves nothing, no
 `EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
@@ -2180,6 +2180,91 @@ one battery ran and two never started still announced `batteries run: 3`, and
 the case whose needle is that count reported the protection intact. `found` now
 counts batteries that came back with an exit code. A tally that reports work
 nobody did will cover for whatever broke it.
+
+### Whose minutes are these
+
+The suite takes minutes and its transcript never said who was spending them: 36
+batteries, **0 of them with a published time**. "The suite is slow" is not
+something anyone can act on, and the batteries that own most of it were guessed
+at for months rather than read. `EHS_BATTERY_TIMES=<file>` now files one line
+per row of the list — `<elapsed seconds> <path>` — and prints the slowest few
+under the headline.
+
+**Read on this laptop, `--jobs 8`, 36 of 36 batteries timed:**
+
+| battery | elapsed | repeat |
+|---|---|---|
+| `gate-declared-case-counts.selftest.sh` | **352 s** | 373 s |
+| `gate-protected-paths.selftest.sh` | 264 s | 260 s |
+| `gate-bench-integrity.selftest.sh` | 238 s | 264 s |
+| `time-repeat.mutants.selftest.sh` | 211 s | 211 s |
+| `gate-reproduction.selftest.sh` | 198 s | 187 s |
+
+2,898 s of battery time inside a **493 s** run. One battery is 12% of the whole
+suite and holds first place in both runs by a margin nothing else comes near;
+the rows below it sit within about 10% of each other and reorder between runs,
+so the ranking is a reading at the top and noise further down. That is the
+answer to the question this instrument exists for, and it is the first time it
+has been read rather than assumed.
+
+It is **off by default, and that is not a convenience**. The A/B job above
+decides whether its two arms measured the same thing by DIFFING their
+transcripts, and a clock reading in the default output differs between any two
+runs of the same file. It would arrive there as a difference between the arms,
+and the tempting repair — widen that job's normaliser until the new lines are
+swallowed — is a control being blinded to keep a feature. Two cases hold the
+line: the default transcript carries no timing block, and two default runs of
+the same tree are byte-identical.
+
+**The figure is elapsed, not cost.** At more than one worker a battery's
+seconds include waiting for the others: 2,898 s of them fit inside 493 s, so
+they overlap each other almost six times over and none is what that battery
+would cost alone. The block prints the worker count on the same line for that
+reason and the sum against the wall clock underneath, so the overlap is visible
+rather than asserted. A "slowest batteries" list with no concurrency beside it
+reads as isolated cost, which is the one thing those numbers are not.
+
+**A battery with no time is `unknown`, never 0.** Filed as 0 it would sort to
+the bottom of a list headed "slowest" and read as the cheapest thing in the
+suite. The fixture is this file's own greedy mutant, which makes two batteries
+produce no result at all — a row of the list with no clock beside it — and the
+mutation on top of it files the missing time as 0, at which point every other
+assertion still passes. That is the only reason to believe the word.
+
+**The instrument ate its own measurement twice before it read one.** The path
+arrives in the environment and the file is TRUNCATED at startup, so a nested run
+does not add a line to somebody else's artefact — it destroys what was in it.
+First run: 36 batteries in, **24 lines out**, two of them toy fixtures belonging
+to `run-batteries.selftest.sh`, and the suite red naming that file. Second run,
+with the battery unsetting the variable as it already does for the ledger: **34
+lines**, the two missing being the first two of the list, wiped by one of the
+four mutant banks that run this runner as their subject. The fix that holds is
+one line in the worker — a battery inherits an empty path, and one that wants a
+times file of its own names one. Third run: 36 of 36. The sum printed under the
+headline had been computed from the survivors both times, and read as a suite
+cheaper than the one that had just run.
+
+**What it costs.** Two `date` calls per battery: 72 process spawns, **0.119 s**
+measured on this laptop, inside a 493 s run. The summary block runs once. The
+overhead is four ten-thousandths of the run and well under the 24 s the two
+clean runs differ by on their own.
+
+Fourteen cases, and nine mutations of the runner run against them, each
+declaring in advance which assertion has to go red: the block printed
+unconditionally, the sort reversed, the worker count dropped from the heading,
+the sum dropped, the file appended instead of truncated, an unwritable path
+allowed to continue, the worker not timing at all, the child inheriting the
+parent's path, and the count of untimed batteries left unsaid. **9 of 9 died**,
+14 s per run.
+
+NOT DONE, and written here rather than left implicit. The 57 above is
+hand-maintained: `gate-declared-case-counts.sh` compares a declared count against
+what a self-test runs, but only for files named `gate-*.sh`, so `run-batteries`,
+`coverage-sweep.mutants`, `declared-case-counts.mutants` and
+`time-repeat.mutants` are batteries whose declared counts nothing reads. And
+`EHS_TALLY_LEDGER`, unlike `EHS_BATTERY_TIMES`, still fails silently when its
+path cannot be written, and is still inherited by the batteries the runner
+launches.
 
 ## Branch naming
 

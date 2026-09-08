@@ -43,6 +43,35 @@
 #     Only a battery that exited 0 is recorded. A count read off a red battery
 #     is not a measurement, and the gate refuses those on its own side too.
 #
+# THE PER-BATTERY CLOCK (optional, off unless EHS_BATTERY_TIMES names a file)
+#     The suite takes minutes and its transcript never said whose minutes they
+#     were: 36 batteries, 0 of them with a published time. "The suite is slow"
+#     is not something anyone can act on, and the two batteries that turned out
+#     to own most of it were guessed at for months rather than read.
+#
+#     So when EHS_BATTERY_TIMES names a file, every row of the list leaves one
+#     line - `<elapsed seconds> <path>` - and the run ends with the slowest few
+#     printed underneath the headline.
+#
+#     IT IS OFF BY DEFAULT AND THAT IS NOT A CONVENIENCE. This file's own A/B
+#     job proves the arms measured the same thing by diffing the two
+#     transcripts, and a clock reading in the default output differs between any
+#     two runs for reasons that have nothing to do with the worker count. The
+#     fix for that would be to widen the normaliser until it swallowed the new
+#     lines - which is a control being blinded to keep a feature. Off by
+#     default, the diff keeps comparing exactly what it compared before.
+#
+#     THE NUMBER IS ELAPSED, NOT COST. At more than one worker a battery's
+#     seconds include waiting for the others, so the figures overlap each other
+#     and none of them is what that battery would cost alone. The block prints
+#     the worker count on the same line for that reason, and prints the sum
+#     against the wall clock so the overlap is visible rather than asserted.
+#
+#     A battery whose time never arrived is `unknown`, never 0. Filed as 0 it
+#     would sort to the bottom of a list headed "slowest" and read as the
+#     cheapest thing in the suite - the one reading the measurement cannot
+#     support.
+#
 # WHY THEY RUN AT THE SAME TIME NOW
 #     Because the thing that stopped it was measured and then removed, in that
 #     order. Nine batteries copied the whole repository once per case without
@@ -111,6 +140,7 @@ while [ $# -gt 0 ]; do
 done
 ROOT="${ROOT:-scripts}"
 LEDGER="${EHS_TALLY_LEDGER:-}"
+TIMES="${EHS_BATTERY_TIMES:-}"
 
 # A worker count that is not a positive integer is not a slower run, it is an
 # unmeasured one: `--jobs 0` would start nothing and report every battery green.
@@ -141,6 +171,17 @@ else
 fi
 
 [ -d "$ROOT" ] || { err "COULD NOT MEASURE" "$ROOT does not exist"; exit 2; }
+
+# Truncated up front, and the failure to do it stops the run. A measurement
+# artefact that silently does not get written is worse than one that was never
+# asked for: the caller reads an empty file and takes it for a suite with no
+# batteries in it. Truncated rather than appended because these seconds belong
+# to ONE run - a file accumulating two runs would be read as one slow one.
+if [ -n "$TIMES" ] && ! : > "$TIMES" 2>/dev/null; then
+  err "COULD NOT MEASURE" "EHS_BATTERY_TIMES names a file I cannot write: $TIMES"
+  exit 2
+fi
+RUN_T0="$(date +%s)"
 
 TMPD="$(mktemp -d 2>/dev/null || mktemp -d -t batteries)" || {
   err "COULD NOT MEASURE" "I could not create a temporary directory"; exit 2; }
@@ -173,7 +214,22 @@ fi
     i=$((i + 1))
     (
       rc=0
-      bash "$t" </dev/null > "$TMPD/$i.out" 2>&1 || rc=$?
+      t0="$(date +%s)"
+      # THE PATH NAMES THIS RUN'S ARTEFACT, so no battery inherits it. Four
+      # batteries in this repository run this very file as their subject, and
+      # the times file is TRUNCATED at startup - so a nested run does not add a
+      # line to somebody else's artefact, it destroys what was in it. Measured
+      # before this line existed: 36 batteries went in and 34 lines came out,
+      # and the two missing were the first two of the list. A battery that
+      # wants a times file of its own names one itself.
+      EHS_BATTERY_TIMES= bash "$t" </dev/null > "$TMPD/$i.out" 2>&1 || rc=$?
+      # Filed BEFORE the exit code, and the order is the whole guarantee. The
+      # printer takes `$i.rc` as "this battery is finished" and looks for the
+      # time immediately after, so a time written afterwards would be a race the
+      # printer loses at random. Written first, a missing time can only mean
+      # nobody measured one.
+      echo "$(( $(date +%s) - t0 ))" > "$TMPD/$i.sec.part" \
+        && mv "$TMPD/$i.sec.part" "$TMPD/$i.sec"
       # Written aside and moved into place: the printer takes the existence of
       # `$i.rc` as "this battery is finished", and a plain redirect creates the
       # file before the exit code has been written into it.
@@ -222,6 +278,15 @@ while [ "$n" -lt "$total" ]; do
   group "$t"
   [ -f "$TMPD/$n.out" ] && cat "$TMPD/$n.out"
   endgrp
+  # Recorded for every row of the list, including the ones that came back with
+  # nothing: a battery that produced no exit code produced no time either, and
+  # that is the case the word `unknown` exists for.
+  sec="unknown"
+  if [ -f "$TMPD/$n.sec" ]; then
+    sec="$(cat "$TMPD/$n.sec")"
+    case "$sec" in ''|*[!0-9]*) sec="unknown" ;; esac
+  fi
+  if [ -n "$TIMES" ]; then printf '%s %s\n' "$sec" "$t" >> "$TIMES"; fi
   # `found` counts batteries that came back with an exit code, not rows of the
   # list. A headline reading "batteries run: 3" for a run where one produced a
   # result and two produced nothing states something it did not measure - and
@@ -262,4 +327,22 @@ echo "batteries run: $found (up to $JOBS at a time)"
 [ -n "$failed" ]     && echo "did not behave:$failed"
 [ -n "$unmeasured" ] && echo "could not measure:$unmeasured"
 [ "$worst" -eq 0 ]   && echo "every battery behaved"
+
+if [ -n "$TIMES" ]; then
+  wall=$(( $(date +%s) - RUN_T0 ))
+  sum="$(awk '$1 ~ /^[0-9]+$/ { s += $1 } END { print s + 0 }' "$TIMES")"
+  blind="$(awk '$1 == "unknown" { n += 1 } END { print n + 0 }' "$TIMES")"
+  echo ""
+  echo "slowest batteries, elapsed seconds, up to $JOBS at a time:"
+  grep -v '^unknown ' "$TIMES" | sort -rn | head -5 | while read -r s q; do
+    printf '  %6s s  %s\n' "$s" "$q"
+  done
+  # Both numbers, never a ratio dressed up as a speedup: at more than one worker
+  # the per-battery seconds overlap each other, and printing the sum beside the
+  # wall clock is what makes that overlap visible rather than asserted.
+  echo "  ${sum} s of battery time inside a ${wall} s run"
+  if [ "$blind" -gt 0 ]; then
+    echo "  $blind battery(s) left no time: unknown, which is not 0 s"
+  fi
+fi
 exit "$worst"

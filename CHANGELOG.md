@@ -6,7 +6,43 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Added
+
+- **The suite took 493 s and its transcript never said whose they were.** 36 batteries,
+  **0 of them with a published time**: "the suite is slow" is not something anyone can act
+  on, and the batteries that own most of it were guessed at for months rather than read.
+  `EHS_BATTERY_TIMES=<file>` now files one line per row of the list — `<elapsed seconds>
+  <path>` — and prints the slowest few under the headline. Read on this laptop at
+  `--jobs 8`, 36 of 36 timed: `gate-declared-case-counts.selftest.sh` **352 s** (373 s on
+  the repeat), then protected-paths 264 s, bench-integrity 238 s, time-repeat.mutants
+  211 s, reproduction 198 s. One battery is **12% of the whole suite** and holds first
+  place in both runs by a margin nothing else comes near; the rows below sit within about
+  10% of each other and reorder between runs, so the ranking is a reading at the top and
+  noise further down. It is **off by default and that is not a convenience**: the A/B job
+  decides whether its two arms measured the same thing by diffing their transcripts, and a
+  clock reading there would arrive as a difference between the arms — the tempting repair,
+  widening that job's normaliser, is a control being blinded to keep a feature. The figure
+  is **elapsed, not cost**: 2,898 s of battery time fit inside a 493 s run, so they overlap
+  each other almost six times over, which is why the block carries the worker count on its
+  heading and the sum against the wall clock underneath. A battery with no time is
+  `unknown`, **never 0** — filed as 0 it would sort to the bottom of a list headed
+  "slowest" and read as the cheapest thing in the suite. Two `date` calls per battery,
+  measured at **0.119 s** across 72 spawns inside a 493 s run. `run-batteries.selftest.sh`
+  43 → 57 cases, nine mutations of the runner run against them, **9 of 9 caught**.
+
 ### Fixed
+
+- **A nested runner ate the times file of the run that launched it.** The path arrives in
+  the environment and the file is truncated at startup, so a battery that is itself a
+  runner — four in this repository are — did not add a line to somebody else's artefact,
+  it destroyed what was in it. Measured, twice, by the instrument's own control run: 36
+  batteries in and **24 lines out** the first time, two of them toy fixtures belonging to
+  `run-batteries.selftest.sh` and the suite red naming that file; **34 lines** the second,
+  the two missing being the first two of the list. Both times the sum printed under the
+  headline was computed from the survivors and read as a suite cheaper than the one that
+  had just run. The battery now unsets the variable as it already does for the ledger, and
+  the runner hands every battery an empty path — one that wants a times file of its own
+  names one. Third run: 36 of 36.
 
 - **The extension list was the next hand-written list, and it was in the same commit.**
   Sweeping every file outside the document list closed the hole a hand-written `ALSO` had left

@@ -23,6 +23,17 @@ SUBJECT="$HERE/run-batteries.sh"
 # wrong reason, and the artefact it polluted belonged to someone else.
 unset EHS_TALLY_LEDGER
 
+# AND THE CLOCK, for a sharper version of the same reason. `EHS_BATTERY_TIMES`
+# arrives in the environment, so a nested run inherits it - and unlike the
+# ledger, the times file is TRUNCATED at startup, so the nested run does not
+# just add a line to somebody else's artefact, it destroys what was in it.
+# Measured, the first time the suite ran with the clock on: 36 batteries went
+# in, the file came out with 24 lines, two of them toy batteries from this
+# file's own fixtures, and the suite went red naming this file. The sum printed
+# under the headline was computed from the survivors and read as a suite 14
+# batteries cheaper than the one that had just run.
+unset EHS_BATTERY_TIMES
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-runner-XXXXXX")" || { echo "UNMEASURABLE no tmpdir"; exit 2; }
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -366,6 +377,120 @@ battery "$TMP/stall" one 0
 EHS_BATTERY_STALL=nope bash "$SUBJECT" "$TMP/stall" >"$TMP/out" 2>&1; rc=$?
 [ "$rc" -eq 2 ] && ok "a non-numeric stall bound is COULD NOT MEASURE" \
                 || bad "EHS_BATTERY_STALL=nope gave rc $rc"
+
+echo "== the per-battery clock =="
+
+# THE DEFAULT TRANSCRIPT IS THE A/B JOB'S INSTRUMENT, and this case is what
+# keeps it one. `.github/workflows/battery-workers-ab.yml` decides whether the
+# serial and parallel arms measured the same thing by DIFFING their two
+# transcripts. A clock reading in the default output differs between any two
+# runs of the same file, so it would come back as a difference between the arms
+# - and the tempting repair is to widen that job's normaliser until the new
+# lines are swallowed, which is a control being blinded to keep a feature.
+battery "$TMP/quiet/a" one 0
+battery "$TMP/quiet/b" two 0
+bash "$SUBJECT" "$TMP/quiet" > "$TMP/q1.out" 2>&1
+bash "$SUBJECT" "$TMP/quiet" > "$TMP/q2.out" 2>&1
+grep -q 'slowest batteries' "$TMP/q1.out" \
+  && bad "the clock printed itself into the default transcript, where the A/B job diffs it" \
+  || ok "no clock in the default transcript"
+cmp -s "$TMP/q1.out" "$TMP/q2.out" \
+  && ok "two runs of the same tree leave the same transcript" \
+  || bad "two default runs differ: $(diff "$TMP/q1.out" "$TMP/q2.out" | head -4)"
+
+# Asked for, it writes one line per ROW OF THE LIST and prints the slow end.
+mkdir -p "$TMP/timed"
+battery "$TMP/timed" quick 0
+printf '#!/usr/bin/env bash\nsleep 2\nexit 0\n' > "$TMP/timed/slow.selftest.sh"
+chmod +x "$TMP/timed/slow.selftest.sh"
+EHS_BATTERY_TIMES="$TMP/times.txt" bash "$SUBJECT" "$TMP/timed" >"$TMP/t.out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "asking for the clock does not change the verdict" \
+                || bad "with EHS_BATTERY_TIMES set the run gave rc $rc"
+[ "$(grep -c . "$TMP/times.txt")" = "2" ] \
+  && ok "one line per battery in the times file" \
+  || bad "expected 2 lines, got $(grep -c . "$TMP/times.txt")"
+grep -q 'slowest batteries' "$TMP/t.out" \
+  && ok "the slow end is printed under the headline" \
+  || bad "nothing was printed about the times"
+
+# THE FIGURE IS ELAPSED, SO IT ONLY MEANS SOMETHING BESIDE THE WORKER COUNT.
+# At more than one worker a battery's seconds include waiting for the others.
+# A "slowest batteries" list with no concurrency on it reads as isolated cost,
+# which is the one thing those seconds are not.
+grep -q 'slowest batteries.*at a time' "$TMP/t.out" \
+  && ok "the list names the concurrency it was measured under" \
+  || bad "the times are published with no worker count beside them"
+grep -q 's of battery time inside a' "$TMP/t.out" \
+  && ok "the sum is printed against the wall clock, so the overlap is visible" \
+  || bad "no sum against the wall clock: the reader cannot see the figures overlap"
+
+# Slowest first. Sorted the other way the block still looks right and names the
+# wrong battery, which is the whole reason it exists.
+first="$(grep 'slowest batteries' -A1 "$TMP/t.out" | tail -1)"
+case "$first" in
+  *slow.selftest.sh) ok "the slowest battery is at the top of the list" ;;
+  *) bad "the top of the list is not the 2 s battery: $first" ;;
+esac
+
+# The file belongs to ONE run. Left to accumulate, a second run doubles every
+# battery and the reader sees a suite twice as slow as the one that just ran.
+EHS_BATTERY_TIMES="$TMP/times.txt" bash "$SUBJECT" "$TMP/timed" >/dev/null 2>&1
+[ "$(grep -c . "$TMP/times.txt")" = "2" ] \
+  && ok "a second run replaces the file instead of adding to it" \
+  || bad "the times file accumulated across runs: $(grep -c . "$TMP/times.txt") lines"
+
+# A NESTED RUNNER MUST NOT EAT THE OUTER RUN'S FILE, and this is the case that
+# says so. Four batteries in this repository run the subject as their own
+# subject, the environment is inherited, and the file is truncated at startup.
+# Measured on the real tree before the fix: 36 batteries in, 34 lines out, the
+# two missing being the first two of the list - and the sum printed under the
+# headline was computed from the survivors.
+mkdir -p "$TMP/nested"
+printf '#!/usr/bin/env bash\nbash %s %s >/dev/null 2>&1\nexit 0\n' \
+  "$SUBJECT" "$TMP/quiet" > "$TMP/nested/outer.selftest.sh"
+chmod +x "$TMP/nested/outer.selftest.sh"
+EHS_BATTERY_TIMES="$TMP/nest.txt" bash "$SUBJECT" "$TMP/nested" >/dev/null 2>&1
+if [ "$(grep -c . "$TMP/nest.txt")" = "1" ] && grep -q 'outer.selftest.sh' "$TMP/nest.txt"; then
+  ok "a battery that is itself a runner leaves the outer times file alone"
+else
+  bad "the nested run rewrote the outer file: $(tr '\n' ' ' < "$TMP/nest.txt")"
+fi
+
+# A path that cannot be written is COULD NOT MEASURE, not a quiet nothing. Left
+# to fail silently, the caller reads an empty file and takes it for a suite with
+# no batteries in it.
+EHS_BATTERY_TIMES="$TMP/no-such-dir/t.txt" bash "$SUBJECT" "$TMP/quiet" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "a times file that cannot be written is rc 2" \
+                || bad "an unwritable EHS_BATTERY_TIMES gave rc $rc"
+
+# A BATTERY WITH NO TIME IS `unknown`, NEVER 0. Filed as 0 it sorts to the
+# bottom of a list headed "slowest" and reads as the cheapest thing in the
+# suite. The greedy mutant built above is the fixture, not the mutation: it
+# makes two batteries produce no result at all, which is the only way a row of
+# the list ends with no clock beside it.
+EHS_BATTERY_TIMES="$TMP/blind.txt" EHS_BATTERY_STALL=5 \
+  bash "$TMP/mutant.sh" "$TMP/greedy" >"$TMP/blind.out" 2>&1
+[ "$(grep -c '^unknown ' "$TMP/blind.txt")" -ge 1 ] \
+  && ok "a battery that produced no result leaves 'unknown', not a number" \
+  || bad "the resultless batteries were filed as $(head -3 "$TMP/blind.txt" | tr '\n' ' ')"
+grep -q 'left no time: unknown, which is not 0 s' "$TMP/blind.out" \
+  && ok "the transcript says how many batteries were never timed" \
+  || bad "the run hid that some batteries left no time at all"
+
+# And the mutation on top of that fixture, which is where the word earns its
+# keep: file the missing time as 0 and every assertion above still passes.
+sed -e 's/sec="unknown"/sec="0"/g' "$TMP/mutant.sh" > "$TMP/zero.sh"
+if cmp -s "$TMP/mutant.sh" "$TMP/zero.sh"; then
+  bad "the unknown-to-zero mutation did not apply: the case above measures nothing"
+else
+  EHS_BATTERY_TIMES="$TMP/zero.txt" EHS_BATTERY_STALL=5 \
+    bash "$TMP/zero.sh" "$TMP/greedy" >/dev/null 2>&1
+  if grep -q '^unknown ' "$TMP/zero.txt"; then
+    bad "the mutant still says unknown: the word is not coming from that line"
+  else
+    ok "filed as 0 the untimed batteries vanish into the fast end — the word is load-bearing"
+  fi
+fi
 
 echo
 echo "$pass PASS / $fail FAIL"
