@@ -10,7 +10,12 @@
 # assert a shape the real repository does not currently contain.
 #
 # The last case is the control, and it is the expensive one: the real tree, all
-# twelve batteries, no mutation. A gate that only works on toys is a toy.
+# forty-two rows the documents declare, no mutation. A gate that only works on
+# toys is a toy.
+#
+# ehs-runs-last: that control answers what it can from the tally ledger, which
+# the other batteries write as they finish - 132.2 s with an empty ledger here,
+# 6.9 s with a full one - so it has to be the last row of the list.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 set -uo pipefail

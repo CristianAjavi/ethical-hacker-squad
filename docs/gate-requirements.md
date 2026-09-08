@@ -1721,7 +1721,7 @@ is how it reported its own stale anchor the moment the verdict line merged three
 conditions into one — a substitution that finds nothing kills nothing and
 reports the same green.
 
-The writer's side is `scripts/run-batteries.selftest.sh`, 57 cases, six of them
+The writer's side is `scripts/run-batteries.selftest.sh`, 71 cases, six of them
 the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
 one leaves nothing, a battery that prints no tally leaves nothing, no
 `EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
@@ -2257,7 +2257,7 @@ allowed to continue, the worker not timing at all, the child inheriting the
 parent's path, and the count of untimed batteries left unsaid. **9 of 9 died**,
 14 s per run.
 
-NOT DONE, and written here rather than left implicit. The 57 above is
+NOT DONE, and written here rather than left implicit. The 71 above is
 hand-maintained: `gate-declared-case-counts.sh` compares a declared count against
 what a self-test runs, but only for files named `gate-*.sh`, so `run-batteries`,
 `coverage-sweep.mutants`, `declared-case-counts.mutants` and
@@ -2265,6 +2265,90 @@ what a self-test runs, but only for files named `gate-*.sh`, so `run-batteries`,
 `EHS_TALLY_LEDGER`, unlike `EHS_BATTERY_TIMES`, still fails silently when its
 path cannot be written, and is still inherited by the batteries the runner
 launches.
+
+### The battery that has to go last
+
+The clock above named a hot spot and the next question was where inside it the
+seconds went. Not where anyone assumed. `gate-declared-case-counts.selftest.sh`
+runs 51 cases; 50 of them build a toy repository and cost **0.05 s** between
+them. The fifty-first is the control — the real gate over the real tree — and it
+was the whole battery.
+
+**What that control costs depends on something outside it.** It runs the
+self-test of every row the documents declare, and answers what it can from the
+tally ledger the other batteries write as they finish. Measured on this laptop,
+same tree, same commit:
+
+| the control over the real tree | rows run | rows read | elapsed |
+|---|---|---|---|
+| with no ledger | 42 | 0 | **132.2 s** |
+| with a full ledger | 17 | 25 | **6.9 s** |
+
+Nineteen times. And the ledger is written by the printer, which is serial and
+works in list order, so what a battery finds when it starts is whatever prefix
+of the list has already finished AND been printed. `LC_ALL=C sort` put this one
+at **position 15 of 36**. It was reading an almost empty file.
+
+**So a battery may now declare itself deferred** — `# ehs-runs-last:` at the
+start of a line inside its first 20 lines, carrying its reason on the same line
+— and `run-batteries.sh` moves it to the end. Measured across two runs each,
+`--jobs 8`, the ledger on in both arms so the comparison is of the ORDER and
+nothing else:
+
+| | before | after |
+|---|---|---|
+| its position in the list | 15 of 36 | **36 of 36** |
+| its elapsed inside the suite | 294 s | **118 s** (130 s on the repeat) |
+| the suite | 437 s | **342 s** (359 s on the repeat) |
+| the slowest battery in the suite | this one | `time-repeat.mutants.selftest.sh`, 213 s |
+
+**The declaration lives in the battery, not in a list here.** A "run these last"
+list in the runner is the third hand-written list this repository has had to
+remove in a week, and it would have gone stale the first time a battery was
+renamed. The battery is what knows why it has to be late, and the marker carries
+that reason where the next reader will be standing.
+
+**Twenty lines is a rule, not a budget.** It is what makes the marker a header
+declaration rather than any occurrence of a string. Four batteries here write
+toy batteries into fixtures and one of them writes this very marker to prove the
+ordering works; a file quoting it in its body is not asking for anything. Two
+cases hold that: a marker past the window defers nothing, and an indented marker
+defers nothing.
+
+**`--list` prints the deferred order, not the alphabetical one.** The printer
+reports in list order and the A/B job diffs those transcripts, so a `--list` that
+disagreed with the run would be a map of a different suite. The case that holds
+it asserts the two agree rather than asserting either one alone.
+
+**Deferred is not skipped.** The cheapest way to stop a slow battery costing
+anything is to stop running it, and from the outside that reads exactly like
+this feature: one battery, much faster, suite still green. A case runs a deferred
+battery that FAILS and requires rc 1 and its name in the transcript, and the
+mutant that drops the row instead of moving it turns that into rc 0.
+
+**A battery that cannot be read stops the run at COULD NOT MEASURE.** The order
+is a decision taken over every battery, so one I cannot open makes the ORDER
+undecidable rather than just that row — and it was going to fail when bash
+reached it anyway.
+
+`gate-assertion-pipes.sh` caught the first draft of this and was right. It read
+the header with `head -n 20 "$file" | grep -q '^# ehs-runs-last:'`, which
+answers "the marker is not in the header" and "I could not open the file" with
+the same silence. The header now goes into a variable, the read is checked, and
+the match is a shell `case` pattern — which also spares the run a process per
+battery. It cost a red suite to find, which is what that gate is for.
+
+Fourteen cases and six mutations of the runner, each declaring in advance which
+assertion has to go red: no partition at all, the halves the wrong way round,
+the marker matched anywhere in the header, the whole file searched instead of
+the header, deferred turned into dropped, and an unreadable battery waved
+through. **6 of 6 died.**
+
+NOT DONE. Nothing measures that a battery which SHOULD defer has declared it:
+`gate-declared-case-counts.selftest.sh` is the only one that needs to today, and
+a second one would be found by someone reading a slow run rather than by a gate.
+And the deferred group runs at the end with the pool draining, so a suite with
+several of them would serialise its own tail.
 
 ## Branch naming
 

@@ -6,6 +6,39 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Changed
+
+- **The slowest battery in the suite was reading a file the suite had not written yet.**
+  `gate-declared-case-counts.selftest.sh` runs 51 cases; 50 build a toy repository and
+  cost **0.05 s** between them, and the fifty-first — the real gate over the real tree —
+  was the whole battery. What that control costs depends on the tally ledger the other
+  batteries write as they finish: measured on this laptop, same tree, **132.2 s with no
+  ledger (42 rows run) against 6.9 s with a full one (17 run, 25 read)**. The ledger is
+  appended by the printer, which is serial and works in list order, and `LC_ALL=C sort`
+  put this battery at **position 15 of 36** — it was reading an almost empty file. A
+  battery may now declare itself deferred with `# ehs-runs-last:` at the start of a line
+  inside its first 20 lines, and `run-batteries.sh` moves it to the end of the list.
+  Two runs each at `--jobs 8`, the ledger on in both arms so the comparison is of the
+  order and nothing else: that battery **294 s → 118 s** (130 s on the repeat), the whole
+  suite **437 s → 342 s** (359 s). The declaration lives in the battery because a "run
+  these last" list in the runner would be the third hand-written list removed here in a
+  week, and it would go stale the first time a battery was renamed. **Twenty lines is a
+  rule, not a budget**: four batteries here write toy batteries into fixtures and one
+  writes this very marker, so the window is what separates a declaration from an
+  occurrence. `--list` prints the deferred order, because the printer reports in list
+  order and the A/B job diffs those transcripts. **Deferred is not skipped** — a case
+  runs a deferred battery that fails and requires rc 1 and its name, and the mutant that
+  drops the row instead of moving it turns that into rc 0. A battery that cannot be read
+  stops the run at COULD NOT MEASURE. `run-batteries.selftest.sh` 57 → 71 cases, six
+  mutations of the ordering, **6 of 6 caught**.
+
+- **`gate-assertion-pipes.sh` caught the first draft of that and was right.** It read the
+  header with `head -n 20 "$file" | grep -q '^# ehs-runs-last:'`, which answers "the
+  marker is not in the header" and "I could not open the file" with the same silence. The
+  header now goes into a variable, the read is checked, and the match is a shell `case`
+  pattern — which also spares the run a process per battery. It cost a red suite to find,
+  which is what that gate is for.
+
 ### Added
 
 - **The suite took 493 s and its transcript never said whose they were.** 36 batteries,

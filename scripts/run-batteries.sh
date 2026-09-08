@@ -72,6 +72,36 @@
 #     cheapest thing in the suite - the one reading the measurement cannot
 #     support.
 #
+# THE BATTERY THAT HAS TO GO LAST
+#     A battery that READS the tally ledger cannot usefully run before the
+#     batteries that WRITE it. The ledger is appended by the printer, which is
+#     serial and works in list order, so what a battery sees when it starts is
+#     whatever prefix of the list has already finished AND been printed.
+#     `gate-declared-case-counts.selftest.sh` sorts to position 15 of 36 and its
+#     control - the real gate over the real tree - therefore found almost
+#     nothing to reuse. Measured on this laptop: that control costs 132.2 s with
+#     an empty ledger and 6.9 s with a full one, 42 rows run versus 17.
+#
+#     So a battery may declare itself deferred, with `# ehs-runs-last:` at the
+#     start of a line inside its first 20 lines, and this file moves it to the
+#     end of the list. The declaration lives in the battery because the battery
+#     is what knows why, and it carries its reason on the same line.
+#
+#     TWENTY LINES IS A RULE, NOT A BUDGET. It is what makes the marker a
+#     header declaration rather than any occurrence of a string: four batteries
+#     here write toy batteries into fixtures, and one of them writes this very
+#     marker to prove the ordering works. A file quoting the marker in its body
+#     is not asking for anything.
+#
+#     `--list` prints the deferred order, not the alphabetical one. The printer
+#     reports in list order and the A/B job diffs those transcripts, so a --list
+#     that disagreed with the run would be a map of a different suite.
+#
+#     A battery that cannot be READ stops the run at COULD NOT MEASURE. The
+#     order is a decision taken over every battery, so one I cannot open makes
+#     the ORDER unmeasurable, not just that battery - and it was going to fail
+#     when bash reached it anyway.
+#
 # WHY THEY RUN AT THE SAME TIME NOW
 #     Because the thing that stopped it was measured and then removed, in that
 #     order. Nine batteries copied the whole repository once per case without
@@ -190,6 +220,36 @@ LIST="$TMPD/batteries.txt"
 
 find "$ROOT" -type d -name fixtures -prune -o \
      -type f -name '*.selftest.sh' -print | LC_ALL=C sort > "$LIST"
+
+# A battery that reads what the others write goes to the end of the list. The
+# marker has to start a line and has to be inside the header, so a battery that
+# writes the marker into a fixture - one here does, to prove this works - is not
+# itself asking to be deferred. Order is preserved inside each group: the list
+# is still alphabetical, with a suffix that is also alphabetical.
+DEFER_HEAD=20
+DEFER_NL='
+'
+: > "$TMPD/first.txt"
+: > "$TMPD/last.txt"
+while IFS= read -r t; do
+  [ -n "$t" ] || continue
+  # No `head ... | grep -q` here, on purpose. That form answers "the marker is
+  # not in the header" and "I could not open the file" with the same silence,
+  # and this repository has a gate that refuses it. The header goes into a
+  # variable, the read is checked, and the match is a shell pattern - which also
+  # spares the run a process per battery.
+  hdr="$(head -n "$DEFER_HEAD" "$t" 2>/dev/null)"; hrc=$?
+  if [ "$hrc" -ne 0 ]; then
+    err "COULD NOT MEASURE" "$t cannot be read, so the order of the run is not decidable"
+    exit 2
+  fi
+  case "$hdr" in
+    "# ehs-runs-last:"*|*"$DEFER_NL# ehs-runs-last:"*) half="$TMPD/last.txt" ;;
+    *) half="$TMPD/first.txt" ;;
+  esac
+  printf '%s\n' "$t" >> "$half"
+done < "$LIST"
+cat "$TMPD/first.txt" "$TMPD/last.txt" > "$LIST"
 
 if [ "$LIST_ONLY" -eq 1 ]; then cat "$LIST"; exit 0; fi
 

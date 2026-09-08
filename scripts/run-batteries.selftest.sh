@@ -492,6 +492,184 @@ else
   fi
 fi
 
+echo "== the battery that has to go last =="
+
+# The order of the list is a decision, and until now it was one nobody had
+# taken. `LC_ALL=C sort` put `gate-declared-case-counts.selftest.sh` at position
+# 15 of 36, and that battery's control answers what it can from the tally ledger
+# the OTHER batteries write as they finish. Fifteenth, it found almost nothing
+# to reuse: measured on this laptop, 132.2 s over an empty ledger against 6.9 s
+# over a full one, 42 rows run against 17.
+#
+# So a battery may declare itself deferred in its header and the runner moves it
+# to the end. Everything below is about the ways that goes wrong quietly: an
+# order --list does not show, a marker matched in a body rather than a header,
+# and a battery quietly dropped instead of moved.
+
+# marked <dir> <name> <exit-code> — a battery whose HEADER defers it
+marked() {
+  mkdir -p "$1"
+  { printf '#!/usr/bin/env bash\n'
+    printf '%s it reads what the others write\n' '# ehs-runs-last:'
+    printf 'exit %s\n' "$3"; } > "$1/$2.selftest.sh"
+  chmod +x "$1/$2.selftest.sh"
+}
+
+# deep <dir> <name> — the same marker, past the header window
+deep() {
+  mkdir -p "$1"
+  { printf '#!/usr/bin/env bash\n'
+    i=0; while [ "$i" -lt 25 ]; do printf '# padding\n'; i=$((i + 1)); done
+    printf '%s quoted in a body, not declared in a header\n' '# ehs-runs-last:'
+    printf 'exit 0\n'; } > "$1/$2.selftest.sh"
+  chmod +x "$1/$2.selftest.sh"
+}
+
+# indented <dir> <name> — the marker, but not at the start of the line
+indented() {
+  mkdir -p "$1"
+  { printf '#!/usr/bin/env bash\n'
+    printf '  %s indented, so it starts nothing\n' '# ehs-runs-last:'
+    printf 'exit 0\n'; } > "$1/$2.selftest.sh"
+  chmod +x "$1/$2.selftest.sh"
+}
+
+# last_listed <dir> — the final path --list prints for that tree
+last_listed() { bash "$SUBJECT" --list "$1" 2>/dev/null | tail -1; }
+
+marked  "$TMP/defer" aaa 0
+battery "$TMP/defer" zzz 0
+case "$(last_listed "$TMP/defer")" in
+  *aaa.selftest.sh) ok "a battery that declares itself last is listed last, though its name sorts first" ;;
+  *) bad "--list still sorts alphabetically: $(last_listed "$TMP/defer")" ;;
+esac
+
+# --list and the run have to agree. The printer reports in list order and the
+# A/B job diffs those transcripts, so a --list showing a different order would
+# be a map of a suite nobody ran.
+run "$TMP/defer"
+case "$(grep '^ok ' "$TMP/out" | tail -1)" in
+  *aaa.selftest.sh) ok "the run reports it last too: --list is the order that runs" ;;
+  *) bad "--list says one order and the run used another: $(grep '^ok ' "$TMP/out" | tail -1)" ;;
+esac
+
+marked  "$TMP/keep" aaa 0
+battery "$TMP/keep" mmm 0
+battery "$TMP/keep" zzz 0
+got="$(bash "$SUBJECT" --list "$TMP/keep" 2>/dev/null | sed 's#.*/##' | tr '\n' ' ')"
+[ "$got" = "mmm.selftest.sh zzz.selftest.sh aaa.selftest.sh " ] \
+  && ok "an undeclared battery keeps its alphabetical place" \
+  || bad "the rest of the list moved too: $got"
+
+marked  "$TMP/two" bbb 0
+marked  "$TMP/two" aaa 0
+battery "$TMP/two" zzz 0
+got="$(bash "$SUBJECT" --list "$TMP/two" 2>/dev/null | sed 's#.*/##' | tr '\n' ' ')"
+[ "$got" = "zzz.selftest.sh aaa.selftest.sh bbb.selftest.sh " ] \
+  && ok "two deferred batteries keep alphabetical order between themselves" \
+  || bad "the deferred group is not sorted: $got"
+
+# A battery that WRITES the marker into a fixture is not asking for anything,
+# and four batteries in this repository write toy batteries. The header window
+# is what separates a declaration from an occurrence.
+deep    "$TMP/body" aaa
+battery "$TMP/body" zzz 0
+case "$(last_listed "$TMP/body")" in
+  *zzz.selftest.sh) ok "the marker past the header window defers nothing" ;;
+  *) bad "a marker quoted in a body deferred the battery: $(last_listed "$TMP/body")" ;;
+esac
+
+indented "$TMP/indent" aaa
+battery  "$TMP/indent" zzz 0
+case "$(last_listed "$TMP/indent")" in
+  *zzz.selftest.sh) ok "an indented marker defers nothing: it has to start the line" ;;
+  *) bad "an indented marker deferred the battery: $(last_listed "$TMP/indent")" ;;
+esac
+
+# Deferred is not skipped. The cheapest way to make a slow battery stop costing
+# anything is to stop running it, and that reads exactly like this feature.
+marked  "$TMP/still" aaa 1
+battery "$TMP/still" zzz 0
+run "$TMP/still"; rc=$?
+[ "$rc" -eq 1 ] && grep -q 'did not behave.*aaa.selftest.sh' "$TMP/out" \
+  && ok "a deferred battery still runs, and its failure still lands" \
+  || bad "deferred turned into skipped: rc $rc"
+
+# Deciding the order means reading every battery, so one I cannot open makes the
+# ORDER unmeasurable rather than just that row.
+battery "$TMP/unread" aaa 0
+chmod 000 "$TMP/unread/aaa.selftest.sh" 2>/dev/null || :
+if [ -r "$TMP/unread/aaa.selftest.sh" ]; then
+  ok "SKIPPED unreadable: this user reads a mode-000 file anyway, so the case cannot be posed here"
+else
+  run "$TMP/unread"; rc=$?
+  [ "$rc" -eq 2 ] && grep -q 'COULD NOT MEASURE.*cannot be read' "$TMP/out" \
+    && ok "a battery that cannot be read is COULD NOT MEASURE, not a silent alphabetical fallback" \
+    || bad "an unreadable battery did not stop the run: rc $rc"
+fi
+
+echo "== mutants of the ordering =="
+
+# Six mutations, each naming in advance which assertion above has to go red. The
+# subject is the real runner, not the crippled copy the FD-3 mutant left behind.
+ordmut() {
+  local name="$1" expr="$2" tree="$3" needle="$4" why="$5"
+  sed -e "$expr" "$SUBJECT" > "$TMP/ord.sh"
+  if cmp -s "$SUBJECT" "$TMP/ord.sh"; then
+    bad "mutant '$name' did not apply: the case it answers measures nothing"
+    return
+  fi
+  bash "$TMP/ord.sh" --list "$tree" >"$TMP/ordout" 2>&1
+  if [ "$(tail -1 "$TMP/ordout")" = "$needle" ]; then
+    bad "mutant '$name' survives: $why"
+  else
+    ok "mutant '$name' dies — $why"
+  fi
+}
+
+ordmut "no partition at all" \
+  's#^cat "$TMPD/first.txt" "$TMPD/last.txt" > "$LIST"$#:#' \
+  "$TMP/defer" "$TMP/defer/aaa.selftest.sh" \
+  "without the two halves rejoined the list stays alphabetical"
+
+ordmut "the halves the wrong way round" \
+  's#^cat "$TMPD/first.txt" "$TMPD/last.txt" > "$LIST"$#cat "$TMPD/last.txt" "$TMPD/first.txt" > "$LIST"#' \
+  "$TMP/defer" "$TMP/defer/aaa.selftest.sh" \
+  "deferred first is the opposite of deferred last"
+
+ordmut "the marker matched anywhere in the header" \
+  's,[$]DEFER_NL# ehs-runs-last:,# ehs-runs-last:,' \
+  "$TMP/indent" "$TMP/indent/zzz.selftest.sh" \
+  "an indented mention would defer the battery"
+
+ordmut "the whole file searched, not the header" \
+  's#head -n "$DEFER_HEAD" "$t"#cat "$t"#' \
+  "$TMP/body" "$TMP/body/zzz.selftest.sh" \
+  "a marker quoted in a fixture would defer the battery that wrote it"
+
+sed -e 's,half="$TMPD/last.txt" ;;,continue ;;,' "$SUBJECT" > "$TMP/ord.sh"
+if cmp -s "$SUBJECT" "$TMP/ord.sh"; then
+  bad "mutant 'deferred means dropped' did not apply"
+else
+  bash "$TMP/ord.sh" "$TMP/still" >"$TMP/ordout" 2>&1; rc=$?
+  [ "$rc" -eq 1 ] \
+    && bad "mutant 'deferred means dropped' survives: the failing battery still landed" \
+    || ok "mutant 'deferred means dropped' dies — dropping the row turns rc 1 into rc $rc"
+fi
+
+sed -e 's#^  if \[ "$hrc" -ne 0 \]; then$#  if false; then#' "$SUBJECT" > "$TMP/ord.sh"
+if cmp -s "$SUBJECT" "$TMP/ord.sh"; then
+  bad "mutant 'an unreadable battery is fine' did not apply"
+elif [ -r "$TMP/unread/aaa.selftest.sh" ]; then
+  ok "SKIPPED unreadable mutant: this user reads a mode-000 file anyway"
+else
+  bash "$TMP/ord.sh" "$TMP/unread" >"$TMP/ordout" 2>&1; rc=$?
+  [ "$rc" -eq 2 ] \
+    && bad "mutant 'an unreadable battery is fine' survives: something else returned 2" \
+    || ok "mutant 'an unreadable battery is fine' dies — the run carries on at rc $rc instead of saying it could not measure"
+fi
+chmod 644 "$TMP/unread/aaa.selftest.sh" 2>/dev/null || :
+
 echo
 echo "$pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
