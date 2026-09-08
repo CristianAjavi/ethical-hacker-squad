@@ -2350,6 +2350,65 @@ a second one would be found by someone reading a slow run rather than by a gate.
 And the deferred group runs at the end with the pool draining, so a suite with
 several of them would serialise its own tail.
 
+### The bank of the clock, several mutants at a time
+
+`time-repeat.mutants.py` silences one rule of the instrument at a time and asks
+which case goes red. Each mutant runs one whole battery, twenty of them plus a
+baseline: **21 runs, one after another**. The section above left it as the
+slowest battery in the suite at 213 s, and that is the question this one answers.
+
+The mutants are independent - each works on its own copy of the tree and reads
+nothing the others write - so `EHS_TIMING_JOBS` of them now run at once,
+defaulting to 4.
+
+**Four rather than eight, and the reason is not caution.** This bank is itself
+one battery of a suite that already runs eight at a time. A bank that took a core
+per mutant would be competing with the seven siblings beside it, and the box
+would be measuring its own contention rather than this change. Eight is there for
+a run on its own, and both readings are in the table.
+
+**What is being timed here is a CLOCK, which is why it was measured before it was
+changed.** `time-repeat.selftest.sh` asserts on elapsed seconds. A battery whose
+assertions moved under load would turn this bank intermittent, and an
+intermittent bank is worse than a slow one: it teaches people to re-run until it
+is green. Reading the code would not have settled that. Measured on this laptop:
+**44 concurrent copies of that battery across four rounds** - one round of 8 and
+three of 12 - **28 of 28 cases green in every one of them**, rc 0 throughout,
+each copy 8 s alone against 11-16 s under load. The cases assert no absolute
+duration, and that is why they survive it.
+
+| | before | after |
+|---|---|---|
+| the bank on its own | 172 s (twice, transcripts byte-identical) | **55 s** at `EHS_TIMING_JOBS=4`, 42 s at 8 |
+| the bank inside the suite | 213 s (222 s on the repeat) | **84 s** (89 s) |
+| its rank among the 36 batteries | 1st, the slowest | 7th |
+| the suite | 342 s (359 s) | **228 s** (267 s) |
+| mutants caught by their owner | 20 of 20 | 20 of 20, in every arm |
+| the slowest battery in the suite | this one | `gate-protected-paths.selftest.sh`, 128 s |
+
+**The transcript does not move.** `ThreadPoolExecutor.map` yields in ARGUMENT
+order and nothing is printed until the pool closes, so the bank reads the same at
+one worker as at eight. That is not a nicety. `battery-workers-ab.yml` now
+carries a second job that decides whether the two arms measured the same thing by
+DIFFING their transcripts, and it has the shape of the suite job above for the
+same reason: **two serial runs first**, to establish what the bank varies by with
+the variable under test held still. That control came back byte-identical here -
+a stronger floor than the suite's, because the bank prints no clock readings of
+its own - so anything the arms differ by is the worker count or nothing. One line
+differs on purpose and is normalised, the count of how many ran at a time,
+because a verdict that does not say under what conditions it was reached is half
+a verdict.
+
+**A worker count nobody can read is a 2, not a default.** `EHS_TIMING_JOBS=x`
+exits COULD NOT MEASURE rather than falling back to 4 and reporting a number
+under a shape the reader believes they chose.
+
+NOT DONE. The 44-copy evidence is from this laptop, and it is a measurement taken
+once rather than a case: a later change to `time-repeat.selftest.sh` that made it
+assert an absolute duration would be caught by the new job only when someone
+pushes to `measure/**` or dispatches it. Nothing runs it on every commit, because
+running the bank three times over is minutes CI does not owe every push.
+
 ## Branch naming
 
 - `main` — channel `latest`. No direct pushes.

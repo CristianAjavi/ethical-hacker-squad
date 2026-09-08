@@ -11,11 +11,12 @@
 # fixtures or lib/, so a bank left there IS a gate, and contract-inventory and
 # negative-proof would both say so.
 #
-# It costs 174 s measured - one whole battery per mutant, twenty of them, plus
-# the baseline - against a suite whose own wall clock disagrees with itself by
-# 174 s over identical code on this machine. That is not an argument for it
-# being free; it is the reason the cost is declared here as work rather than
-# defended with a stopwatch reading this box cannot produce.
+# One whole battery per mutant, twenty of them, plus the baseline. Those 21 runs
+# used to go one after another and made this the slowest battery in the suite;
+# they now run EHS_TIMING_JOBS at a time, 4 by default, because each works on its
+# own copy of the tree and reads nothing the others write. The cost is declared
+# here as work rather than defended with a stopwatch reading this box cannot
+# produce: its own wall clock disagrees with itself by 174 s over identical code.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 exec "${EHS_PYTHON:-python3}" -u scripts/time-repeat.mutants.py "$@"

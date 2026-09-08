@@ -8,6 +8,25 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Changed
 
+- **The bank of the clock ran its 21 batteries one after another.**
+  `time-repeat.mutants.py` runs one whole battery per mutant, twenty of them plus the
+  baseline, and the previous entry left it as the slowest battery in the suite at 213 s.
+  They are independent - each works on its own copy of the tree and reads nothing the
+  others write - so `EHS_TIMING_JOBS` of them now run at once, **4 by default** rather
+  than 8 because this bank is itself one battery of a suite that already runs eight at a
+  time, and a bank taking a core per mutant would be measuring its own contention.
+  What is being timed here is a **clock**, so the risk was measured before the change
+  rather than reasoned about: **44 concurrent copies of `time-repeat.selftest.sh` across
+  four rounds** at 8 and 12 at a time, **28 of 28 cases green in every one**, each copy
+  8 s alone against 11-16 s under load. The bank on its own **172 s → 55 s** (42 s at 8),
+  inside the suite **213 s → 84 s** (89 s on the repeat), and the whole suite
+  **342 s → 228 s** (267 s); 20 of 20 mutants caught by their owner in every arm.
+  `ThreadPoolExecutor.map` yields in argument order and nothing prints until the pool
+  closes, so the transcript is identical at any worker count - which is what
+  `battery-workers-ab.yml`'s new second job checks, two serial runs first for the floor
+  (byte-identical here) and then the parallel arm diffed against them. A worker count
+  that is not a number exits **COULD NOT MEASURE**, not a silent fallback to 4.
+
 - **The slowest battery in the suite was reading a file the suite had not written yet.**
   `gate-declared-case-counts.selftest.sh` runs 51 cases; 50 build a toy repository and
   cost **0.05 s** between them, and the fifty-first — the real gate over the real tree —

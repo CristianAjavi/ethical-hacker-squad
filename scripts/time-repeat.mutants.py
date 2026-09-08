@@ -25,9 +25,30 @@ owner, 1 one was not, 2 could not measure.
 
 Wired through time-repeat.mutants.selftest.sh, which is what run-batteries.sh
 discovers - the same way coverage-sweep.mutants.py is wired, and NOT as a gate
-under scripts/gates/, where run-all.sh would take a bank for a gate. Measured:
-174 s for 20 mutants, one whole battery each plus the baseline.
+under scripts/gates/, where run-all.sh would take a bank for a gate.
+
+SEVERAL AT A TIME, AND THE ORDER OF THE TRANSCRIPT DOES NOT MOVE. One battery
+per mutant plus the baseline is 21 runs, and they were 21 runs one after
+another: 213 s measured inside the suite, the slowest battery in it. They are
+independent - each works on its own copy of the tree and reads nothing the
+others write - so EHS_TIMING_JOBS of them run at once, defaulting to 4.
+
+The thing being measured is a CLOCK, which is the reason to check rather than
+assume: a battery whose assertions moved under load would turn this bank
+intermittent, and an intermittent bank is worse than a slow one. Measured
+before the change, on this laptop: 44 concurrent copies of
+time-repeat.selftest.sh across four rounds at 8 and 12 at a time, 28 of 28
+cases green in every one of them, elapsed per copy 8 s alone against 11-16 s
+under load. The cases do not assert an absolute duration, and that is why.
+
+Results are collected with ThreadPoolExecutor.map, which yields in ARGUMENT
+order, and every line is printed after the pool closes. The transcript is
+therefore identical at any worker count, which .github/workflows/
+battery-workers-ab.yml checks by diffing the two arms against a
+serial-versus-serial control.
 """
+import concurrent.futures as cf
+import os
 import pathlib, re, shutil, subprocess, sys, tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -39,6 +60,12 @@ except Exception:
     ROOT = HERE.parent
 T = "scripts/time-repeat.py"
 BATTERY = "scripts/time-repeat.selftest.sh"
+
+# Four rather than eight because this bank is itself one battery of a suite that
+# already runs eight at a time: a bank that took a core per mutant would be
+# competing with the seven siblings beside it, and the box would be measuring
+# its own contention. Overridable for a run on its own.
+JOBS_ENV = "EHS_TIMING_JOBS"
 
 M = [
  ("una-sola-vuelta-deja-de-rechazarse", T,
@@ -156,6 +183,15 @@ def run(cwd):
            (re.match(r"^FAILED\s+(\S+?):", l) for l in (p.stdout + p.stderr).splitlines()) if m}
     return p.returncode, red
 
+_j = os.environ.get(JOBS_ENV, "4")
+if not _j.isdigit() or int(_j) < 1:
+    # Not a default and not a crash. A worker count nobody can read is a run
+    # whose shape is unknown, and this file's doctrine says that is a 2.
+    print("NO MEDIDO: %s=%r no es un numero de obreros" % (JOBS_ENV, _j),
+          file=sys.stderr)
+    sys.exit(2)
+JOBS = int(_j)
+
 base = tempfile.mkdtemp(prefix="cnt-")
 try:
   try:
@@ -177,9 +213,9 @@ try:
                 file=sys.stderr)
           sys.exit(2)
       print("linea base: la bateria pasa entera sin mutar\n")
-      ok = 0
-      stale = 0
-      for name, target, old, new, owner in M:
+
+      def uno(entrada):
+          name, target, old, new, owner = entrada
           work = pathlib.Path(base) / name
           # `cp -Rc` clona en APFS y NO existe en GNU coreutils: en Linux sale por
           # el analisis de opciones. La linea que habia aqui era
@@ -195,12 +231,30 @@ try:
           f = work / target
           t = f.read_text()
           if t.count(old) != 1:
-              print("%-44s ANCLA MALA (%d)" % (name, t.count(old)))
-              stale += 1
-              continue
+              subprocess.run(["/bin/rm", "-rf", str(work)])
+              return dict(name=name, ancla=t.count(old))
           f.write_text(t.replace(old, new))
           rc, redset = run(work)
-          if rc == 0:
+          subprocess.run(["/bin/rm", "-rf", str(work)])
+          return dict(name=name, ancla=None, rc=rc, red=redset, owner=owner)
+
+      # .map yields in ARGUMENT order, and nothing is printed until it closes,
+      # so the transcript reads the same at one worker as at eight. That is not
+      # a nicety: the A/B job that justifies this change decides whether the two
+      # arms measured the same thing by diffing their transcripts.
+      with cf.ThreadPoolExecutor(max_workers=JOBS) as ex:
+          filas = list(ex.map(uno, M))
+
+      ok = 0
+      stale = 0
+      for r in filas:
+          name = r["name"]
+          if r["ancla"] is not None:
+              print("%-44s ANCLA MALA (%d)" % (name, r["ancla"]))
+              stale += 1
+              continue
+          redset, owner = r["red"], r["owner"]
+          if r["rc"] == 0:
               print("%-44s SOBREVIVE  <- nadie lo caza" % name)
           elif owner in redset:
               print("%-44s cazado por %s%s" % (name, owner,
@@ -208,8 +262,7 @@ try:
               ok += 1
           else:
               print("%-44s ROJO PERO POR OTRO: %s" % (name, sorted(redset)[:3]))
-          subprocess.run(["/bin/rm", "-rf", str(work)])
-      print("\n%d de %d cazados por su dueno" % (ok, len(M)))
+      print("\n%d de %d cazados por su dueno (%d a la vez)" % (ok, len(M), JOBS))
       if stale:
           print("NO MEDIDO: %d ancla(s) caduca(s). Un ancla que ya no casa no es un "
                 "mutante de menos: es una regla que dejo de medirse." % stale)

@@ -178,3 +178,86 @@ jobs:
             echo "::error title=DIFFERENT TRANSCRIPT::the arms differ by something the control does not reproduce"
             exit 1
           fi
+
+  # THE SAME QUESTION, ASKED OF THE BANK INSTEAD OF THE SUITE
+  #     time-repeat.mutants.py runs one whole battery per mutant, twenty of them
+  #     plus a baseline, and they used to run one after another - 213 s inside
+  #     the suite, the slowest battery in it. They now run several at a time.
+  #
+  #     What makes this one worth its own job rather than a case is WHAT it
+  #     measures: a CLOCK. A battery whose assertions moved under load would
+  #     turn the bank intermittent, and an intermittent bank is worse than a
+  #     slow one - it teaches people to re-run until it is green. That cannot be
+  #     settled by reading the code, and it cannot be settled on a laptop with a
+  #     different core count than the runner.
+  #
+  #     The control is the same shape as the suite job above and for the same
+  #     reason: two SERIAL runs first, to establish what the bank varies by with
+  #     the variable under test held still. On this laptop that pair came back
+  #     byte-identical, which is a stronger floor than the suite's - the bank
+  #     prints no clock readings of its own - so anything the arms differ by is
+  #     the worker count or nothing.
+  bank:
+    name: the timing bank, serial vs parallel
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # No actions/setup-python here either, for the reason spelled out in the
+      # job above: the bank runs the real battery, and a clean interpreter is a
+      # different machine than the one CI judges.
+
+      - name: How many cores, and how many mutants
+        run: |
+          echo "cores: $(nproc)"
+          echo "mutants: $(grep -c '^ ("' scripts/time-repeat.mutants.py)"
+
+      - name: Serial twice for the floor, then parallel, and diff all three
+        env:
+          JOBS: ${{ inputs.jobs || '4' }}
+        run: |
+          case "$JOBS" in ''|*[!0-9]*) echo "jobs must be a number"; exit 2 ;; esac
+
+          EHS_TIMING_JOBS=1 bash scripts/time-repeat.mutants.selftest.sh \
+            > one.out 2>&1; r1=$?
+          EHS_TIMING_JOBS=1 bash scripts/time-repeat.mutants.selftest.sh \
+            > again.out 2>&1; rc=$?
+          EHS_TIMING_JOBS="$JOBS" bash scripts/time-repeat.mutants.selftest.sh \
+            > many.out 2>&1; r2=$?
+          echo "serial rc=$r1   serial again rc=$rc   parallel rc=$r2"
+
+          if [ "$r1" != "$rc" ]; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the bank gave $r1 and $rc. Nothing here can be attributed to the worker count."
+            cat one.out again.out
+            exit 2
+          fi
+
+          # One line differs on purpose: the bank prints how many ran at a time,
+          # because a verdict that does not say under what conditions it was
+          # reached is half a verdict. Nothing else in the transcript may move.
+          norm() { sed -e 's/ ([0-9][0-9]* a la vez)/ (<n> a la vez)/' "$1"; }
+
+          norm one.out   > n1.txt
+          norm again.out > n2.txt
+          norm many.out  > n3.txt
+
+          if ! diff n1.txt n2.txt > control.diff 2>&1; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the bank still differ after normalising, so this step cannot tell noise from a finding. The normaliser is short by:"
+            cat control.diff
+            exit 2
+          fi
+          echo "control: two serial runs of the bank are the same transcript"
+
+          [ "$r1" = "$r2" ] || { echo "::error title=DIFFERENT VERDICT::the arms disagree on the exit code"; cat many.out; exit 1; }
+
+          if diff n1.txt n3.txt; then
+            echo "every mutant is caught by the same case at $JOBS at a time as at one"
+          else
+            echo "::error title=DIFFERENT TRANSCRIPT::a mutant changes hands under load, which makes the bank intermittent"
+            exit 1
+          fi
