@@ -51,7 +51,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
-| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (38 cases) |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (42 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -215,6 +215,40 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### A second document declared case counts and nothing read it
+
+`CHANGELOG.md` states case counts too, in its own spelling: it names the
+path and writes the number as `6-case self-test` rather than
+`self-test (6 cases)`. Until 2026-09-07
+`gate-declared-case-counts.sh` read exactly one document. Two live claims sat
+there unchecked; **one of the two was wrong**, and it was found by hand while
+fixing something else, which is precisely how the next one would not be found.
+
+The gate now reads a list of documents. Three things had to hold for that to be
+an improvement rather than a wider surface:
+
+- **Only the live section of a changelog is a claim about today.** A released
+  entry states the numbers of its own time. Accusing history of drifting from a
+  present it never described would produce a finding nobody could clear, and a
+  gate whose red cannot be cleared is a gate that gets skipped.
+- **Absent is not clean.** A repository without the secondary file is told so in
+  the run, in the same words the gate uses for anything else it could not read.
+  A silent skip would read exactly like a document with nothing to check.
+- **The rule that every gate must declare a count stays scoped to this table.**
+  The contract is what has to name every gate; a gate mentioned only in a
+  changelog entry must not satisfy the rule without a row ever being added.
+
+A disagreement between the two documents was already covered by the clash rule,
+which used to say "the table declares it twice" — it now names both files,
+because a number that is wrong in the other document cannot be fixed by looking
+at this one.
+
+Four cases, each with a named killer: a count in the changelog compared at all
+(dies when the second document is dropped), the two documents forbidden to
+disagree (same killer, from the other end), a released section left alone (dies
+when the truncation goes), and an absent changelog said out loud (dies when the
+line goes).
 
 ### The sentence that explains an exemption used to open it
 
@@ -1559,7 +1593,7 @@ adding a gate of that kind.
 
 ### Negative proof
 
-`scripts/gates/gate-declared-case-counts.selftest.sh`, 38 cases. Thirty-six
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 42 cases. Forty
 build a toy repository — a table with the rows the case needs and fake gates that
 print a count and nothing else — so each costs milliseconds and can assert a
 shape the real tree does not currently contain. Both directions of drift, all
@@ -1613,9 +1647,9 @@ somewhere else. So the file now unsets the variable at the top, and a case puts
 a probe ledger in the environment to prove the probe can see a write at all. A
 "nothing was written" that has never seen a write is not a measurement.
 
-Mutant bank: `scripts/declared-case-counts.mutants.py`, thirty-seven mutations
+Mutant bank: `scripts/declared-case-counts.mutants.py`, forty-one mutations
 of the core, the wrapper and the runner that writes the ledger, each declaring in
-advance which case has to go red. **37 of 37 caught**, in 43 s. This paragraph
+advance which case has to go red. **41 of 41 caught**, in 38 s. This paragraph
 said twenty-two while the file held twenty-three: nothing compares the number
 here against the bank, which is the defect one floor up wearing different
 clothes. Two notes on how

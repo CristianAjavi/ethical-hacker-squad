@@ -65,6 +65,13 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 DOC = "docs/gate-requirements.md"
+# A SECOND DOCUMENT MAKES THE SAME PROMISE. CHANGELOG.md states case counts too,
+# in its own phrasing, and nothing read them: on 2026-09-07 one of the two was
+# wrong and was found by hand while fixing something else. Only its live section
+# is read - a released entry states the numbers of its own time and is history,
+# not a claim about today. A secondary that is not there is reported as absent
+# rather than counted as clean.
+ALSO = ["CHANGELOG.md"]
 GATES = "scripts/gates"
 # The one row this file cannot run. Its battery ends with a control case
 # that invokes this gate over the real tree, so running it from here would
@@ -78,15 +85,20 @@ SELF = "gate-declared-case-counts"
 # The lazy span is FENCED so it cannot cross another gate name: without the
 # fence, a row whose first gate carries no count and whose second does would
 # hand the first gate its neighbour's number.
-FENCE = r"(?:(?!`gate-[a-z0-9-]+\.sh`).)*?"
-ROW = re.compile(r"`(gate-[a-z0-9-]+)\.sh`" + FENCE + r"self-test \((\d+) cases\)")
+# The name may carry its path: CHANGELOG.md writes
+# `scripts/gates/gate-governance-drift.sh`, the table writes `gate-x.sh`.
+NAME = r"`(?:[A-Za-z0-9._/-]*/)?(gate-[a-z0-9-]+)\.sh`"
+FENCE = r"(?:(?!`(?:[A-Za-z0-9._/-]*/)?gate-[a-z0-9-]+\.sh`).)*?"
+ROW = re.compile(NAME + FENCE + r"self-test \((\d+) cases\)")
+# The other spelling, which is the CHANGELOG's: `(+ 6-case self-test)`.
+HYPHEN = re.compile(NAME + FENCE + r"(\d+)-case self-test")
 # A GATE MAY CARRY TWO SELF-TESTS. `invocation` below returns the FIRST
 # convention that matches, so a gate with a sibling battery AND its own
 # `--self-test` had its second one compared against nothing: it could fall from
 # ten cases to two with every row in the table still green. The second count is
 # declared on the same row, after the first, as `+ --self-test (M cases)`.
 # ROW is non-greedy, so it still reads the first number and not this one.
-EXTRA = re.compile(r"`(gate-[a-z0-9-]+)\.sh`" + FENCE + r"\+ --self-test \((\d+) cases\)")
+EXTRA = re.compile(NAME + FENCE + r"\+ --self-test \((\d+) cases\)")
 # The third group is optional: only a battery that can skip a case prints it.
 # It still counts toward the row, because a skipped case is a case of the
 # file - one that proved nothing here, which is a different statement.
@@ -240,6 +252,19 @@ def measure(root: pathlib.Path, gate: str, declared: int, tallies=None, forced=N
     return gate, declared, passed + failed + skipped, how
 
 
+def live_section(name: str, text: str) -> str:
+    """A released changelog entry states the numbers of ITS OWN time. Only the
+    top section is a claim about today; accusing history of drifting from a
+    present it was never describing would be a finding nobody could clear."""
+    if not name.endswith("CHANGELOG.md"):
+        return text
+    head, sep, _ = text.partition("\n## [")
+    if not sep:
+        return text
+    rest = text[len(head) + len(sep):]
+    return head + sep + rest.split("\n## [")[0]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) not in (2, 3):
         return unmeasurable("usage: declared_case_counts.py <repo-root> [doc.md]")
@@ -248,21 +273,48 @@ def main(argv: list[str]) -> int:
     if not (root / GATES).is_dir():
         return unmeasurable("no %s/ directory under %s" % (GATES, root))
     try:
-        text = doc.read_text(encoding="utf-8")
+        text = live_section(doc.name, doc.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         return unmeasurable("cannot read %s: %s" % (doc, exc))
+
+    # The primary document is the contract; a secondary merely also states
+    # numbers. One that cannot be read is not survivable either: a count it
+    # holds would go unchecked and nothing would say so.
+    sources = [(doc, text)]
+    absent: list[str] = []
+    for rel in ALSO:
+        q = root / rel
+        if q == doc:
+            continue
+        if not q.is_file():
+            absent.append(rel)
+            continue
+        try:
+            sources.append((q, live_section(rel, q.read_text(encoding="utf-8"))))
+        except (OSError, UnicodeDecodeError) as exc:
+            return unmeasurable("cannot read %s: %s" % (rel, exc))
 
     declared: dict[str, int] = {}
     # THE LAST WRITER WINS unless somebody looks. A gate declared twice with two
     # different numbers used to resolve in silence, and the row that lost said
     # something no instrument would ever contradict.
-    clash: list[tuple[str, int, int]] = []
-    for line in text.splitlines():
-        for m in ROW.finditer(line):
-            gate, n = m.group(1), int(m.group(2))
-            if gate in declared and declared[gate] != n:
-                clash.append((gate, declared[gate], n))
-            declared[gate] = n
+    clash: list[tuple[str, int, int, str, str]] = []
+    # WHERE a number was written is part of the finding: two documents that
+    # disagree is a clash, and the message has to be able to say which is which.
+    where: dict[str, str] = {}
+    primary: set[str] = set()
+    for src, body in sources:
+        for line in body.splitlines():
+            for rx in (ROW, HYPHEN):
+                for m in rx.finditer(line):
+                    gate, n = m.group(1), int(m.group(2))
+                    if gate in declared and declared[gate] != n:
+                        clash.append((gate, declared[gate], n,
+                                      where.get(gate, doc.name), src.name))
+                    declared[gate] = n
+                    where[gate] = src.name
+                    if src is doc:
+                        primary.add(gate)
     # THE GATE THAT DECLARES NOTHING answers to nothing. Read the files rather
     # than the prose: a row can be deleted, a file cannot be talked away.
     onfile = {q.stem for q in (root / GATES).glob("gate-*.sh")
@@ -272,20 +324,26 @@ def main(argv: list[str]) -> int:
     # gate already says so, per row, with a better message than this one could.
     # Reporting zero undeclared gates here cannot hide anything, because there
     # is no green road out of a run where every row names a missing file.
-    undeclared = sorted(onfile - set(declared)) if onfile else []
+    # Scoped to the PRIMARY document on purpose: the contract is what has to
+    # name every gate. A gate mentioned only in a changelog entry would
+    # otherwise satisfy the rule without the table ever growing a row.
+    undeclared = sorted(onfile - primary) if onfile else []
 
     mine = declared.pop(SELF, None)
+    primary.discard(SELF)
     if not declared:
         return unmeasurable(
             "%s declares no `self-test (N cases)` row - a zero here is a blind "
             "zero, not a clean table" % doc)
 
+    # The second-self-test contract is the table's alone; no other document
+    # writes that phrasing, and a blind zero here would need a reader first.
     extra: dict[str, int] = {}
     for line in text.splitlines():
         for m in EXTRA.finditer(line):
             gate, n = m.group(1), int(m.group(2))
             if gate in extra and extra[gate] != n:
-                clash.append((gate, extra[gate], n))
+                clash.append((gate, extra[gate], n, doc.name, doc.name))
             extra[gate] = n
     extra.pop(SELF, None)
 
@@ -310,7 +368,12 @@ def main(argv: list[str]) -> int:
     reused = sum(1 for r in rows if r[3].startswith("earlier in this job"))
 
     print("checked %d self-test(s) named by a case count in %s: %d run here, "
-          "%d read off the ledger" % (len(rows), doc.name, len(rows) - reused, reused))
+          "%d read off the ledger"
+          % (len(rows), ", ".join(s.name for s, _ in sources),
+             len(rows) - reused, reused))
+    for rel in absent:
+        print("  not present here: %s. Any case count it states is unchecked,\n"
+              "  and this run is not evidence that it states none." % rel)
     if mine is not None:
         print("  NOT run here: %s (%d cases). Its battery ends by invoking this\n"
               "  gate over the real tree, so running it from here would recurse.\n"
@@ -325,11 +388,13 @@ def main(argv: list[str]) -> int:
         print("UNMEASURED %s\n         the row says %d cases and nothing here can confirm it\n"
               "         %s" % (gate, n, how))
 
-    for gate, first, second in clash:
-        print("FINDING  %s\n         the table declares it twice, %d cases and then %d. Whichever\n"
+    for gate, first, second, one, two in clash:
+        said = ("the table declares it twice" if one == two else
+                "`%s` and `%s` declare it twice between them" % (one, two))
+        print("FINDING  %s\n         %s, %d cases and then %d. Whichever\n"
               "         one is wrong, nothing here can contradict it: the second\n"
               "         reading silently replaced the first"
-              % (gate, first, second))
+              % (gate, said, first, second))
     for gate in uncounted:
         print("FINDING  %s\n         it has a sibling battery AND its own --self-test, and only the\n"
               "         first is declared. Add `+ --self-test (N cases)` to its row,\n"

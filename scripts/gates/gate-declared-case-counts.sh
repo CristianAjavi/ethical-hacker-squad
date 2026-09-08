@@ -60,8 +60,8 @@ ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 CORE="$HERE/lib/declared_case_counts.py"
 
 gate_header "declared-case-counts (the number the document promises, run)"
-gate_scope "every 'self-test (N cases)' row of docs/gate-requirements.md, compared against the count its self-test prints when it runs"
-gate_out_of_scope "whether the cases are good, whether N is the right number, and any gate whose row carries no case count at all"
+gate_scope "every declared case count in docs/gate-requirements.md and in the live section of CHANGELOG.md, in either spelling, compared against the count its self-test prints when it runs; and every gate under scripts/gates/ whose row in the table declares none"
+gate_out_of_scope "whether the cases are good, whether N is the right number, and the numbers stated in a released section of CHANGELOG.md, which describe their own time and not this tree"
 
 if ! command -v python3 >/dev/null 2>&1; then
   gate_warn "python3 is not installed: nothing was measured"

@@ -8,6 +8,26 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **This file declared case counts and no instrument read them; one of the two was wrong.**
+  `gate-declared-case-counts.sh` compared the numbers in `docs/gate-requirements.md` against a
+  run of the self-test each row names, and read exactly one document. `CHANGELOG.md` states
+  counts too, in its own spelling — the path spelled out and `6-case self-test` instead of
+  `self-test (6 cases)` — and on 2026-09-07 one of its two live claims promised a 17-case
+  battery for a self-test that runs thirty. It was found by hand while fixing something else,
+  which is how the next one would not have been found. The gate now reads a list of documents:
+  **41 declarations in one file becomes 43 across two**. Three things had to hold for that to be
+  an improvement and not a wider surface. Only the **live section** of a changelog is a claim
+  about today — a released entry states the numbers of its own time, and a red nobody can clear
+  is a red that gets skipped. An **absent** secondary is said out loud, in the same words the
+  gate uses for anything else it could not read, because silence there reads exactly like a
+  document with nothing to check. And the rule that every gate must declare a count **stays
+  scoped to the table**, so a gate named only in a changelog entry cannot satisfy it without a
+  row. A disagreement between the two files was already the clash rule's business; it used to
+  say "the table declares it twice" and now names both files, because a number that is wrong in
+  the other document cannot be fixed by looking at this one.
+  `scripts/gates/gate-declared-case-counts.sh` (+ 42-case self-test), 41 mutants in
+  `scripts/declared-case-counts.mutants.py`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;

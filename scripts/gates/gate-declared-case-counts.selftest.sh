@@ -32,7 +32,7 @@ pass=0; fail=0
 # row, and it does it with two assertions that close on each other: the
 # document has to say TOTAL_CASES, and this run has to reach TOTAL_CASES.
 # Raising one without the other leaves the file red.
-TOTAL_CASES=38
+TOTAL_CASES=42
 
 # --------------------------------------------------------------------------
 # toy <name>  - an empty repository shell.
@@ -107,6 +107,20 @@ fake() {
       ;;
     *) return 1 ;;
   esac
+}
+
+# chlog <gate> <n> [released-gate] [released-n]  - a toy CHANGELOG.md in the
+# real one's spelling: `(+ 6-case self-test)`, the path spelled out, and the
+# count under a live `## [Unreleased]` heading. A released section, when asked
+# for, goes below a second heading, which is where it must stop being read.
+chlog() {
+  { printf '# Changelog\n\n## [Unreleased]\n\n'
+    printf -- '- `scripts/gates/%s.sh` (+ %s-case self-test)\n' "$1" "$2"
+    if [ -n "${3:-}" ]; then
+      printf '\n## [0.1.0] - 2026-01-01\n\n'
+      printf -- '- `scripts/gates/%s.sh` (+ %s-case self-test)\n' "$3" "$4"
+    fi
+  } > "$W/CHANGELOG.md"
 }
 
 # checkno <name> <want-rc> <needle>  - like `check`, but the needle must be
@@ -342,6 +356,32 @@ check a-ledger-of-rubbish-runs-everything 0 "(sibling battery)"
 toy led_drift && row gate-a 5 && fake gate-a sibling 'echo "5 passed, 0 failed"' 'exit 0' \
   && led "$W/scripts/gates/gate-a.selftest.sh" "3 passed, 0 failed"
 check a-drifted-row-is-caught-through-the-ledger-too 1 "the row says 5 cases and the self-test runs 3"
+
+# --- the second document that also states counts ---------------------------
+# CHANGELOG.md declares case counts too, in its own spelling, and nothing read
+# them until 2026-09-07 - one of the two live claims was wrong and was found by
+# hand while fixing something else.
+toy chl_read && row gate-a 4 && chlog gate-a 4 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check a-count-in-the-changelog-is-read-too 0 "gate-requirements.md, CHANGELOG.md"
+
+# The whole point: a number stated there and nowhere else is now compared with a
+# RUN, so the two documents cannot drift apart in silence.
+toy chl_clash && row gate-a 4 && chlog gate-a 9 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check the-two-documents-cannot-say-different-numbers 1 "declare it twice between them"
+
+# A released entry states the numbers of ITS OWN time. Accusing it of drifting
+# from a present it never described would be a finding nobody could clear, and a
+# gate whose red cannot be cleared is a gate that gets skipped.
+toy chl_hist && row gate-a 4 && chlog gate-a 4 gate-a 9 \
+  && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check a-released-section-states-its-own-times-numbers 0 "4, and 4 ran"
+
+# ABSENT IS NOT CLEAN. A repository without that file has to be told apart from
+# one whose counts were all checked, or the silence reads like a pass.
+toy chl_none && row gate-a 4 && fake gate-a sibling 'echo "4 passed, 0 failed"' 'exit 0'
+check a-changelog-that-is-not-there-is-said-out-loud 0 "not present here: CHANGELOG.md"
 
 # --- the one row the gate refuses to run, and says so ----------------------
 toy self_row && row gate-declared-case-counts 21 && row gate-a 2 \

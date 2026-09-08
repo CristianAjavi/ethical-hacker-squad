@@ -111,8 +111,8 @@ MUTANTS = [
 
     # --- one row, more than one gate ---------------------------------------
     ("only-the-first-gate-on-a-row-is-read", CORE,
-     "        for m in ROW.finditer(line):",
-     "        for m in list(ROW.finditer(line))[:1]:",
+     "                for m in rx.finditer(line):",
+     "                for m in list(rx.finditer(line))[:1]:",
      GATE_BATTERY, "both-gates-on-one-row-are-compared"),
     # THE RULE THAT EVERY GATE DECLARES ONE. Ten gates sat undeclared and
     # unaccused because the reading walks declarations and an absent row
@@ -143,15 +143,41 @@ MUTANTS = [
      "gate_case() { GATE_CASES=$((GATE_CASES + 0)); }",
      GATE_BATTERY, "my-own-row-says-what-this-battery-runs"),
     ("the-fence-comes-down", CORE,
-     'FENCE = r"(?:(?!`gate-[a-z0-9-]+\\.sh`).)*?"',
+     'FENCE = r"(?:(?!`(?:[A-Za-z0-9._/-]*/)?gate-[a-z0-9-]+\\.sh`).)*?"',
      'FENCE = r".*?"',
      GATE_BATTERY, "a-count-does-not-cross-to-the-gate-before-it"),
     ("a-second-declaration-replaces-the-first-in-silence", CORE,
-     "            if gate in declared and declared[gate] != n:\n"
-     "                clash.append((gate, declared[gate], n))",
-     "            if False:\n"
-     "                clash.append((gate, declared[gate], n))",
+     "                    if gate in declared and declared[gate] != n:\n"
+     "                        clash.append((gate, declared[gate], n,\n"
+     "                                      where.get(gate, doc.name), src.name))",
+     "                    if False:\n"
+     "                        clash.append((gate, declared[gate], n,\n"
+     "                                      where.get(gate, doc.name), src.name))",
      GATE_BATTERY, "the-same-gate-declared-twice-with-two-numbers"),
+
+    # --- the SECOND document ------------------------------------------------
+    # CHANGELOG.md stated case counts nobody read, and one of the two live
+    # claims was wrong. Four mutants: one per thing that had to hold for
+    # reading a second document to be an improvement rather than a surface.
+    ("the-second-document-is-never-opened", CORE,
+     'ALSO = ["CHANGELOG.md"]',
+     "ALSO = []",
+     GATE_BATTERY, "a-count-in-the-changelog-is-read-too"),
+    ("history-is-accused-of-the-present", CORE,
+     '    if not name.endswith("CHANGELOG.md"):\n'
+     "        return text\n",
+     "    if True:\n"
+     "        return text\n",
+     GATE_BATTERY, "a-released-section-states-its-own-times-numbers"),
+    ("an-absent-second-document-says-nothing", CORE,
+     "    for rel in absent:",
+     "    for rel in []:",
+     GATE_BATTERY, "a-changelog-that-is-not-there-is-said-out-loud"),
+    ("a-clash-cannot-name-the-other-document", CORE,
+     '        said = ("the table declares it twice" if one == two else\n'
+     '                "`%s` and `%s` declare it twice between them" % (one, two))',
+     '        said = "the table declares it twice"',
+     GATE_BATTERY, "the-two-documents-cannot-say-different-numbers"),
     ("a-clash-is-not-a-finding", CORE,
      "    if drifted or uncounted or phantom or clash or undeclared:",
      "    if drifted or uncounted or phantom:",
