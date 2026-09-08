@@ -24,7 +24,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | triage rules | running | `gate-triage-rules.sh` + self-test (16 cases) |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test (12 cases) |
-| bench integrity | running | `gate-bench-integrity.sh` + self-test (23 cases) |
+| bench integrity | running | `gate-bench-integrity.sh` + self-test (27 cases) |
 | bench index | running | `gate-bench-index.sh` + self-test (5 cases) |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
@@ -2477,6 +2477,87 @@ beside the gate — the battery derives the gate's path from its own `$0`, so a
 mutant run from elsewhere reports `rc 127` for every case and proves nothing. They
 are not wired to a bank: one would cost a battery run per mutant, and the three
 controls they exercise are already in the battery.
+
+### One tree, put back between cases
+
+`gate-bench-integrity.selftest.sh` rots the answer key in one specific way per
+case, so unlike the battery in the section above **twenty-two of its
+twenty-three cases really do need a tree they can ruin**. Sharing one was not
+available. What was available is not copying it again: the tree cost **627 ms**
+to `tar` and **95 ms** to put back with `rsync -a --delete`, and twenty-three
+copies were two thirds of a 21 s battery — 132 s of it inside the suite, where
+those copies are eight batteries' worth of writers competing for one disk.
+
+| | before | after |
+|---|---|---|
+| full copies of the tree per run | 23 | **2** (one pristine, one for the equivalence case) |
+| the battery on its own | 21 s | **11 s** |
+| the battery inside the suite | 132 s | **82 s**, and see below |
+| cases | 23 | 27 |
+
+**The suite total is NOT MEASURED for this change, and the reason is worth more
+than a number would have been.** The run that produced the 82 s above took
+383 s against the 232 s of the run before it — and battery by battery, **thirty
+of the thirty-one others went up** (`gate-declared-case-counts.selftest.sh`
+87 s → 188 s, `gh.selftest.sh` 97 s → 159 s, `gate-agent-tools.selftest.sh`
+91 s → 152 s) while the only one that went down was this one. The laptop had a
+load average of 11 to 17 with none of it belonging to the suite: `fseventsd`
+had been pinned at 100% of a core for thirty hours. A total measured through
+that is a reading of the machine and not of the change, so it is not published
+as one. The battery's own number is the claim, and it was taken alone, twice,
+on both sides.
+
+The machinery lives in `scripts/gates/lib/fixture-tree.sh` rather than in the
+battery, because **this is the second battery to need it and nine more have the
+same shape**. It chooses its tools and says so rather than assuming them:
+`sha256sum` where a Linux runner has it and `shasum` where this laptop does,
+`rsync` where there is one and the old full copy where there is not. The
+fallback is deliberate — without `rsync` the per-case copy is still correct,
+only slow, and turning a working battery red over a missing convenience would
+be the wrong trade — but the battery **prints which path it took**, because a
+suite quietly running the slow path forever is the same as never having done
+this.
+
+**`rsync` decides what to resend from size and mtime, not content.** A mutation
+that rewrote a file to the same length in the same second would survive the
+restore, the next case would run against it, and — since most cases here want a
+non-zero exit anyway — it would very probably still look green. So four cases
+hold the reuse rather than a paragraph:
+
+- `restored-tree-equals-a-fresh-copy` fingerprints the reused tree against a
+  copy made exactly the old way, with `tar`, from the real repository.
+- `the-restore-removes-a-stray-file` adds a file no case adds and requires the
+  restore to take it away. It exists because **every case above only edits or
+  deletes**: nothing exercised the `--delete` half, so the claim that the tree
+  comes back whatever a case did was resting on a measurement taken outside
+  this battery.
+- `every-case-restored-the-tree` compares the number of restores that landed
+  clean against the number of cases, and prints the mode.
+- `the-fingerprint-sees-one-byte` appends one byte and requires the fingerprint
+  to move.
+
+**Four mutations of the harness, each naming in advance which control has to go
+red, 4 of 4 caught:** the restore replaced by `true`, the fingerprint replaced
+by a constant, the tally never written, and `--delete` dropped from the
+`rsync`. Each is matched on the `FAILED` line of the named control and not on
+the control's name alone — the name appears on the `ok` line too, and a mutant
+scored on that would be scored on the right exit code for the wrong reason.
+
+The tally is kept in a **file** and not a variable, and the reason is the first
+run of this library: `fixture_reset` is called from inside `$(...)` so the
+caller can capture its complaint, a subshell incremented the counter into its
+own grave, and the battery reported `0 restores for 24 cases`. The control was
+written to catch exactly that and caught it on its first run.
+
+NOT DONE. Nine other batteries copy the whole tree per case
+(`gate-bench-blinding.selftest.sh`, `gate-corpus-contract.selftest.sh`,
+`gate-corpus-identifiers.selftest.sh`, `gate-findings-artifact.selftest.sh`,
+`gate-licence-hygiene.selftest.sh`, `gate-scorecard-threshold.selftest.sh`,
+`gate-secret-scan.selftest.sh`, `gate-triage-rules.selftest.sh`, and
+`gate-protected-paths.selftest.sh` for its six mutating cases). They are 134 cases between them and none has been
+converted yet. The four mutations here were run by hand from a copy of the
+battery and library placed beside the real ones — the battery derives both
+paths from its own `$0` — and are not wired to a bank.
 
 ## Branch naming
 

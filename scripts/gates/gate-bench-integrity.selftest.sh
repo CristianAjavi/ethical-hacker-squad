@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Self-test for gate-bench-integrity.sh: each case rots the answer key in one
-# specific way on a throwaway copy and asserts the exit code and the reason.
+# specific way and asserts the exit code and the reason.
+#
+# The rotting happens in ONE work tree that is put back between cases, not in a
+# fresh copy per case: the copy cost 0.63 s and the restore costs 0.10 s, and
+# twenty-three copies were two thirds of this battery. scripts/gates/lib/
+# fixture-tree.sh holds the machinery and the reasoning; what matters here is
+# that a shared tree is only safe while something PROVES it came back clean, so
+# every case ends with a fingerprint of the whole tree against the pristine one
+# and a case that cannot prove it is a harness failure, never a pass.
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 set -uo pipefail
 
@@ -14,17 +22,16 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-bench-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
+# shellcheck source=scripts/gates/lib/fixture-tree.sh
+. "$HERE/lib/fixture-tree.sh" || { echo "UNMEASURABLE lib/fixture-tree.sh is missing"; exit 2; }
+fixture_init "$SRC" "$TMP" || exit 2
+
 case_run() {
-  local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
-  rm -rf "$work"; mkdir -p "$work"
-  # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules is
-  # 259 MB of the repository's 321 MB and this gate reads none of it. Nor is the
-  # `rm -rf` below: `work` is "$TMP/$name", a NEW directory per case, so the
-  # `rm -rf "$work"` above only ever removed a directory that did not exist yet
-  # and every copy piled up until the EXIT trap fired.
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
+  local name="$1" want="$2" needle="$3" mutation="$4" work="$FIXTURE_WORK"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-36s the mutation itself failed\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
+    printf 'HARNESS  %-36s the mutation itself failed\n' "$name"; fail=$((fail+1))
+    fixture_reset >/dev/null 2>&1 || true
+    return
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
@@ -34,10 +41,16 @@ case_run() {
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
-  rm -rf "$work"
+  # The tree the next case is about to receive is only trustworthy if this one
+  # gave it back intact, so the proof runs here and not at the end of the file.
+  local why
+  if ! why="$(fixture_reset)"; then
+    printf 'HARNESS  %-36s %s\n' "$name" "$why"; fail=$((fail+1))
+  fi
 }
 
 echo "=== self-test: gate-bench-integrity.sh (source: $SRC) ==="
+echo "    one work tree, restored by $FIXTURE_RESTORE, fingerprinted with $FIXTURE_HASH"
 
 case_run control-untouched-bench 0 "still describes the cases" ""
 
@@ -187,6 +200,80 @@ import os,pathlib
 case_run key-unparseable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").write_text("{ not json")'
+
+# ---------------------------------------------------------------------------
+# THREE CASES THAT HOLD THE SHARED TREE, because reusing one tree is the kind of
+# change that goes green for the wrong reason: every case above would still pass
+# against a tree that had quietly stopped being the repository.
+
+# Taken here and not below, because the three controls score themselves into
+# `pass` and the first of them does not restore anything.
+CASES=$((pass + fail))
+
+# The tree the cases have been handed twenty-three times must still be what a
+# case used to be given - a copy made exactly the old way, from $SRC, with tar.
+FRESH="$TMP/.fresh"
+fixture_copy "$SRC" "$FRESH"
+if fresh_digest="$(fixture_digest "$FRESH")" && work_digest="$(fixture_digest "$FIXTURE_WORK")"; then
+  if [ "$fresh_digest" = "$work_digest" ]; then
+    printf 'ok       %-36s %s\n' restored-tree-equals-a-fresh-copy "${work_digest:0:12}"
+    pass=$((pass+1))
+  else
+    printf 'FAILED   %-36s the reused tree is not a fresh copy (%s vs %s)\n' \
+      restored-tree-equals-a-fresh-copy "$work_digest" "$fresh_digest"
+    fail=$((fail+1))
+  fi
+else
+  echo "UNMEASURABLE the trees cannot be fingerprinted, so the reuse above is unproven"
+  exit 2
+fi
+rm -rf "$FRESH"
+
+# A mutation can go three ways - edit, delete, add - and every case above only
+# edits or deletes. Nothing exercised the `--delete` half of the restore, so the
+# claim that it puts the tree back whatever a case did was resting on a
+# measurement taken outside this battery. Here it rests on the battery.
+: > "$FIXTURE_WORK/bench/a-stray-file-no-case-should-leave.txt"
+if why="$(fixture_reset)"; then
+  if [ -e "$FIXTURE_WORK/bench/a-stray-file-no-case-should-leave.txt" ]; then
+    printf 'FAILED   %-36s the stray file survived the restore\n' the-restore-removes-a-stray-file
+    fail=$((fail+1))
+  else
+    printf 'ok       %-36s\n' the-restore-removes-a-stray-file
+    pass=$((pass+1))
+  fi
+else
+  printf 'FAILED   %-36s %s\n' the-restore-removes-a-stray-file "$why"
+  fail=$((fail+1))
+fi
+CASES=$((CASES + 1))
+
+# A run that silently stopped restoring - an early `return` added to a case, a
+# restore that failed and was swallowed - would leave this count short.
+if restores="$(fixture_restores)" && [ "$restores" -eq "$CASES" ]; then
+  printf 'ok       %-36s %s restores, %s mode\n' every-case-restored-the-tree "$restores" "$FIXTURE_RESTORE"
+  pass=$((pass+1))
+else
+  printf 'FAILED   %-36s %s restores for %s cases\n' \
+    every-case-restored-the-tree "${restores:-unreadable}" "$CASES"
+  fail=$((fail+1))
+fi
+
+# A check that cannot see a change is not a check. One byte, after every case is
+# done with the tree, and the fingerprint has to move.
+printf 'x' >> "$FIXTURE_WORK/README.md"
+if moved="$(fixture_digest "$FIXTURE_WORK")"; then
+  if [ "$moved" != "$FIXTURE_DIGEST" ]; then
+    printf 'ok       %-36s one byte moved it\n' the-fingerprint-sees-one-byte
+    pass=$((pass+1))
+  else
+    printf 'FAILED   %-36s the fingerprint did not move\n' the-fingerprint-sees-one-byte
+    fail=$((fail+1))
+  fi
+else
+  echo "UNMEASURABLE the fingerprint could not be taken, so its sensitivity is unproven"
+  exit 2
+fi
 
 echo
 echo "Summary: $pass passed, $fail failed"

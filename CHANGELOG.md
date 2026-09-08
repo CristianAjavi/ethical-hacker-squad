@@ -8,6 +8,31 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Changed
 
+- **One tree, put back between cases.** `gate-bench-integrity.selftest.sh` gave each
+  of its 23 cases a fresh `tar` copy of the repository. Unlike the battery in the
+  entry below, **22 of its 23 cases really do need a tree they can ruin**, so sharing
+  one was never available — but copying it again was not the only alternative: the
+  copy costs 627 ms and putting the tree back with `rsync -a --delete` costs 95 ms.
+  **The battery 21 s → 11 s alone and 132 s → 82 s inside the suite**, and 23 full
+  copies per run → 2. The suite TOTAL is not published: the run that produced the
+  82 s took 383 s against 232 s before it, thirty of the other thirty-one batteries
+  went up, and the laptop was carrying a load average of 11 to 17 that the suite did
+  not put there — a total measured through that reads the machine, not the change. The machinery is in
+  the new `scripts/gates/lib/fixture-tree.sh` rather than in the battery, because
+  this is the second battery to need it and **nine more have the same shape**. It
+  picks its tools and says which it picked — `sha256sum` or `shasum`, `rsync` or the
+  old full copy — and falls back rather than refusing, because a missing convenience
+  should not turn a correct battery red. Since `rsync` decides what to resend from
+  size and mtime rather than content, **four new cases hold the reuse**: the reused
+  tree fingerprints the same as a `tar` copy made the old way, a stray file no case
+  adds is removed by the restore (nothing else exercised `--delete` — every case only
+  edits or deletes), the number of clean restores matches the number of cases, and one
+  appended byte moves the fingerprint. **23 → 27 cases**, and four mutations of the
+  harness each naming in advance the control that has to go red, 4 of 4 caught on the
+  `FAILED` line of that control rather than on its name. The tally lives in a file
+  because the first run reported `0 restores for 24 cases`: `fixture_reset` runs
+  inside `$(...)`, and a subshell increments a counter into its own grave.
+
 - **Twenty-six copies of a tree nobody touched.** `gate-protected-paths.selftest.sh`
   gave each of its 32 cases a private work tree by tarring the repository into it:
   0.63 s per copy measured, **20 s of a 25 s battery**, and 128 s inside the suite
