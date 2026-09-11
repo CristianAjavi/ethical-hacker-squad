@@ -77,6 +77,8 @@ suite "NEGATIVE: the workflow validator rejects every malicious mutation" \
   python3 "$SP/test-workflow-mutations.py"
 suite "Promotion decision logic" \
   bash "$SP/test-promote-decision.sh"
+suite "next-version + build-changelog: who may declare a break" \
+  bash "$SP/test-next-version.sh"
 suite "Gates job + negative paths of apply-governance.sh" \
   bash "$SP/test-gates-and-governance.sh"
 suite "NEGATIVE: the gates loop cannot skip any gate" \

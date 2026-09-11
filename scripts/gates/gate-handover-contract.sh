@@ -62,8 +62,20 @@
 #   (EHS_MAX_SKILL_MD_BYTES) and duplicating it here would give the repo two
 #   places to change one number.
 #
+# WHICH FILES IT READS
+#   From data/handover-contract.json - `skill_md` and `report_md` - and from
+#   nowhere else. Those two keys were in the data file from the start and the
+#   caller cabled the same two literals, so the file could name one pair while
+#   the gate measured another and nothing would go red: a declaration that reads
+#   as the contract, sitting beside a gate that never consulted it. There is no
+#   fallback path here on purpose. A default would put the truth back in two
+#   places, which is the defect this removes; a key that is missing is reported
+#   as could-not-measure, which never counts as a pass.
+#
 # EXIT CODES
-#   0 measured and wired · 1 measured and broken · 2 could not measure
+#   0 measured and wired · 1 measured and broken · 2 could not measure (no
+#   python3, an unusable data file, a `skill_md`/`report_md` the data file does
+#   not declare, or one it declares and that is not on disk)
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -78,13 +90,16 @@ DATA="$HERE/data/handover-contract.json"
 ONLY_SELFTEST=0
 [ "${1:-}" = "--self-test" ] && ONLY_SELFTEST=1
 
-# measure <skill_md> <report_md> <gates_dir> <data_json>
+# measure <root> <gates_dir> <data_json>
+# The two files under audit are NOT arguments: they are named by the data file,
+# resolved against <root>. Passing them in was how the declaration and the gate
+# came to be two independent statements of one fact.
 # emits "rc|message" lines on stdout
 measure() {
-  python3 - "$1" "$2" "$3" "$4" <<'PY'
+  python3 - "$1" "$2" "$3" <<'PY'
 import json, os, pathlib, re, subprocess, sys, tempfile
 
-skill_md, report_md, gates_dir, data_json = (pathlib.Path(a) for a in sys.argv[1:5])
+root, gates_dir, data_json = (pathlib.Path(a) for a in sys.argv[1:4])
 
 def out(rc, msg): print(f"{rc}|{msg}")
 
@@ -93,6 +108,23 @@ try:
 except Exception as e:
     out(2, f"{data_json.name} is missing or unusable: {e}")
     sys.exit(0)
+
+WANTED = {
+    "skill_md":  "the file whose step 9 has to carry the delivery instruction",
+    "report_md": "the file that specifies the block step 9 points at",
+}
+declared = {}
+for key, why in WANTED.items():
+    rel = str(D.get(key) or "").strip()
+    if not rel:
+        out(2, f"{data_json.name} declares no `{key}`, which names {why}. This gate has no path "
+               f"of its own to fall back on: a default would be a second place to state one "
+               f"fact, and the two would drift the way these two already could")
+        sys.exit(0)
+    declared[key] = rel
+skill_md = root / declared["skill_md"]
+report_md = root / declared["report_md"]
+out(0, f"reading the pair {data_json.name} names: {declared['skill_md']} and {declared['report_md']}")
 
 for f in (skill_md, report_md):
     if not f.is_file():
@@ -193,25 +225,34 @@ selftest() {
   local p=0 f=0 tmp
   tmp="$(mktemp -d)"
 
-  # seed <dir>: a synthetic pair of files, not a copy of the repo, so a mutation
-  # cannot be satisfied by something else in the tree.
+  # seed <dir>: a synthetic repository - not a copy of the whole tree, so a
+  # mutation cannot be satisfied by something else in it - laid out the way the
+  # real one is. The layout is spelled out HERE rather than read back out of the
+  # data file on purpose: the harness has to be the independent witness, and a
+  # seed that followed the declaration would move with every mutation of it and
+  # never catch one. If SKILL.md legitimately moves, this is the second place
+  # that has to say so, and it failing is the conversation.
   seed() {
     local w="$1"
-    mkdir -p "$w"
+    mkdir -p "$w/skills/ethical-hacker-squad/references"
     cp "$DATA" "$w/handover-contract.json"
-    cp "$ROOT/skills/ethical-hacker-squad/SKILL.md" "$w/SKILL.md"
-    cp "$ROOT/skills/ethical-hacker-squad/references/report.md" "$w/report.md"
+    cp "$ROOT/skills/ethical-hacker-squad/SKILL.md" "$w/skills/ethical-hacker-squad/SKILL.md"
+    cp "$ROOT/skills/ethical-hacker-squad/references/report.md" \
+       "$w/skills/ethical-hacker-squad/references/report.md"
   }
 
   run_case() {
     local name="$1" want="$2" needle="$3" mut="$4" gates="${5:-$GATES_DIR}"
     local w="$tmp/$name"
     seed "$w"
-    if [ -n "$mut" ] && ! EHS_WORK="$w" python3 -c "$mut" >/dev/null 2>&1; then
+    if [ -n "$mut" ] && ! EHS_WORK="$w" \
+         EHS_SKILL="$w/skills/ethical-hacker-squad/SKILL.md" \
+         EHS_REPORT="$w/skills/ethical-hacker-squad/references/report.md" \
+         python3 -c "$mut" >/dev/null 2>&1; then
       printf '  HARNESS  %-48s the mutation itself failed\n' "$name"; f=$((f+1)); return
     fi
     local out rc
-    out="$(measure "$w/SKILL.md" "$w/report.md" "$gates" "$w/handover-contract.json" 2>&1)"; rc=0
+    out="$(measure "$w" "$gates" "$w/handover-contract.json" 2>&1)"; rc=0
     printf '%s' "$out" | grep -q '^1|' && rc=1
     printf '%s' "$out" | grep -q '^2|' && rc=2
     if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
@@ -228,37 +269,55 @@ selftest() {
   echo "  == step 9 stops pointing at the deliverable =="
   run_case step9-drops-findings-json 1 "does not name 'findings.json'" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"SKILL.md"
+p=pathlib.Path(os.environ["EHS_SKILL"])
 p.write_text(p.read_text().replace("`report.md` and `findings.json`","`report.md`",1))'
 
   run_case step9-drops-the-absolute-path 1 "does not name .absolute path" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"SKILL.md"
+p=pathlib.Path(os.environ["EHS_SKILL"])
 p.write_text(p.read_text().replace("**absolute path**","path",1))'
 
   run_case step9-stops-pointing-at-the-spec 1 "does not name 'references/report.md'" '
 import os,pathlib,re
-p=pathlib.Path(os.environ["EHS_WORK"])/"SKILL.md"
+p=pathlib.Path(os.environ["EHS_SKILL"])
 t=p.read_text()
 i=t.index("### 9.")
 head,tail=t[:i],t[i:]
 p.write_text(head+tail.replace("`references/report.md`","the report specification",1))'
 
+  # The lookahead carries `|\Z` because the reader at the top of this file does.
+  # Without it the mutation is a no-op the day step 9 becomes the last section,
+  # the case returns 0 where it wants 1, and the negative proof of this gate's
+  # most important assertion disappears with nothing else going red. On
+  # 2026-09-10 the margin was one heading: `### 9.` at SKILL.md:113, the next
+  # `## ` at :121, the file ending at :129.
   run_case step9-deleted-entirely 1 "no .### 9" '
 import os,pathlib,re
-p=pathlib.Path(os.environ["EHS_WORK"])/"SKILL.md"
+p=pathlib.Path(os.environ["EHS_SKILL"])
 t=p.read_text()
-p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## )","",t))'
+p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## |\Z)","",t))'
+
+  # And the same deletion in the geometry that used to defeat it: step 9 last,
+  # nothing after it. A case that only passes while a later heading happens to
+  # exist is proving the heading, not the deletion.
+  run_case step9-deleted-when-it-is-the-last-section 1 "no .### 9" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_SKILL"])
+t=p.read_text()
+i=t.index("### 9.")
+nxt=t.find("\n## ",i)
+t=t[:i]+(t[i:nxt] if nxt!=-1 else t[i:])
+p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## |\Z)","",t))'
 
   echo "  == the specification loses a field =="
   run_case a-declared-field-loses-its-marker 1 "has no marker in report.md" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 p.write_text(p.read_text().replace("<!-- handover:field id=counts -->","",1))'
 
   run_case a-field-emptied-to-its-marker 1 "instructs nobody" '
 import os,pathlib,re
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 t=p.read_text()
 i=t.index("<!-- handover:field id=validators -->")
 j=t.index("<!-- handover:field id=not-measured -->")
@@ -267,7 +326,7 @@ p.write_text(t[:i]+"<!-- handover:field id=validators -->\n\n"+t[j:])'
   echo "  == the omission hole: prose grows, nothing enumerates it =="
   run_case a-marker-nobody-declared 1 "declared nowhere" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 t=p.read_text()
 i=t.index("<!-- /report:section -->",t.index("id=handover"))
 p.write_text(t[:i]+"<!-- handover:field id=invented -->\nSomething someone added.\n\n"+t[i:])'
@@ -275,20 +334,20 @@ p.write_text(t[:i]+"<!-- handover:field id=invented -->\nSomething someone added
   echo "  == the branch that must not print a summary =="
   run_case no-deliverable-loses-its-prohibition 1 "no longer says" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 p.write_text(p.read_text().replace("Do not print counts","Mention it",1))'
 
   echo "  == the whole section removed =="
   run_case handover-section-deleted 1 "declares the handover section 0 time" '
 import os,pathlib,re
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 t=p.read_text()
 i=t.index("<!-- report:section id=handover")
 p.write_text(t[:i])'
 
   run_case handover-section-opened-and-not-closed 1 "opened and never closed" '
 import os,pathlib
-p=pathlib.Path(os.environ["EHS_WORK"])/"report.md"
+p=pathlib.Path(os.environ["EHS_REPORT"])
 t=p.read_text()
 i=t.index("<!-- report:section id=handover")
 p.write_text(t[:i]+t[i:].replace("<!-- /report:section -->","",1))'
@@ -312,14 +371,43 @@ p.write_text(t[:i]+t[i:].replace("<!-- /report:section -->","",1))'
   done
   run_case a-named-validator-answers-0-on-nothing 1 "not 2" "" "$tmp/lying-gates"
 
+  echo "  == the data file names which two files this is a contract over =="
+  run_case skill-md-repointed-at-another-file 1 "no '### 9.' step" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"handover-contract.json"
+d=json.loads(p.read_text())
+assert d["skill_md"]=="skills/ethical-hacker-squad/SKILL.md"
+# a file that is really there and is really not SKILL.md
+d["skill_md"]="skills/ethical-hacker-squad/references/report.md"
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case report-md-repointed-at-another-file 1 "declares the handover section 0 time" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"handover-contract.json"
+d=json.loads(p.read_text())
+d["report_md"]="skills/ethical-hacker-squad/SKILL.md"
+p.write_text(json.dumps(d,indent=2))'
+
   echo "  == could not measure =="
+  run_case skill-md-not-declared 2 "declares no .skill_md" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"handover-contract.json"
+d=json.loads(p.read_text()); assert d.pop("skill_md",None)
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case report-md-declared-and-not-on-disk 2 "I cannot certify a contract I cannot read" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"handover-contract.json"
+d=json.loads(p.read_text()); d["report_md"]="skills/ethical-hacker-squad/references/gone.md"
+p.write_text(json.dumps(d,indent=2))'
+
   run_case data-file-unparseable 2 "missing or unusable" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"handover-contract.json").write_text("{")'
 
   run_case report-md-missing 2 "missing or unusable" '
 import os,pathlib
-(pathlib.Path(os.environ["EHS_WORK"])/"report.md").unlink()'
+(pathlib.Path(os.environ["EHS_REPORT"])).unlink()'
 
   command rm -rf "$tmp"
   echo "  $p PASS / $f FAIL"
@@ -361,9 +449,7 @@ while IFS= read -r line; do
     1) gate_fail "$msg"; RC=1 ;;
     2) gate_warn "$msg"; RC=2 ;;
   esac
-done < <(measure "$ROOT/skills/ethical-hacker-squad/SKILL.md" \
-                 "$ROOT/skills/ethical-hacker-squad/references/report.md" \
-                 "$GATES_DIR" "$DATA")
+done < <(measure "$ROOT" "$GATES_DIR" "$DATA")
 
 echo "NOT MEASURED: whether the leader prints the block when an engagement ends. This gate proves"
 echo "              the instruction exists, is reachable in step 9, and is complete. Obedience is a"
