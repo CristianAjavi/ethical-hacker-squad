@@ -21,6 +21,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
+| `G10` a path that names one machine | running | `gate-machine-identity.sh` + self-test (25 cases) |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
@@ -649,6 +650,73 @@ A context enforced by the protection and **not** declared as required is reporte
 Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
+
+## G10 — A path that names one machine
+
+A public repository publishes measurements so a stranger can re-run them. An absolute path that
+exists on exactly one laptop publishes the opposite: a number nobody else can reproduce, and — when
+the path is a home directory or a per-user temporary root — an operating-system account name, a
+numeric uid and a session identifier, handed to everyone who clones an MIT repository.
+
+Measured on 2026-09-11 over `origin/main` at `6066048`, sweeping every file `git ls-files` names:
+
+The shapes are quoted below exactly as they appear in `scripts/gates/data/machine-identity.json`,
+which is the only place they are defined. Four of the five do not match their own source text — the
+character after the prefix is a bracket or a parenthesis, not a path — so this table can name them
+without becoming a finding. The fifth, `/var/folders`, matches itself literally and is therefore
+written here **without its trailing slash**, which the pattern requires. This document is not exempt
+from the gate it specifies, and that is deliberate: the one file that is exempt is the data file,
+by name.
+
+| pattern | occurrences | where they are |
+|---|---|---|
+| `/private/(?:tmp\|var)/` | 617 | 203 files, nearly all recorded agent transcripts under `bench/runs/**` quoting one session scratchpad whose path carries a uid and two session UUIDs |
+| `/Users/[A-Za-z0-9._-]+` | 7 | five prose files under `docs/coverage/**` saying where a read-only pass was run |
+| `/var/folders` + `/` | 5 | the reference-frame note in `gate-negative-evidence.sh` and its battery, which are *about* the `/var` → `/private/var` divergence |
+| `/home/[A-Za-z0-9._-]+` | 1 | `gate-bench-blinding.selftest.sh`, an invented lab account planted as a payload so the blinding check can be seen rejecting it |
+| `[A-Za-z]:\\?Users\\?` | 0 | the Windows shape; nothing in this tree carries it, and the rule is forward-looking |
+
+Three of those four rows are not defects, and that is the whole difficulty. Prose explaining the
+mechanism has to *contain* the shape to explain it; a fixture that plants a machine path as payload
+has to plant a machine path. A rule that hunted the shape and nothing else would convict the two
+files in this repository that exist to defend against it. The requirement is therefore **not** "no
+machine paths": it is that the number is **known, frozen per file, and only allowed to fall**.
+
+**The requirement.**
+
+1. **One definition.** The shapes live in `scripts/gates/data/machine-identity.json` and nowhere
+   else. `scripts/gates/lib/external_crosscheck.py` already spells the same five shapes for its own
+   purpose, on an open branch; the gate reconciles the two lists and fails when they disagree,
+   because two spellings of one rule is two answers to one question. Where that file is not present
+   the gate prints `n/a` and says so on screen — an absent consumer is not an agreeing one.
+2. **A ratchet with a per-file ceiling.** A file absent from the inventory may carry none. A file in
+   it may not exceed its own figure, so a deletion in one file cannot pay for an addition in
+   another. An entry the tree no longer needs also fails: a paid debt left in the ledger is a
+   ceiling nobody is under, and the next addition would hide beneath it. `--update` may only turn
+   the ratchet **down** and refuses, with exit `2`, to write an entry that grows.
+3. **Forward declarations, verified.** A file that legitimately carries a shape and lives on an open
+   branch is declared in `expected_on_merge` with the branch it comes from and the reason, and the
+   gate checks the branch actually has it. A checkout without that ref reports the declaration as
+   **unverified**, never as passed — a shallow CI checkout is precisely where a false declaration
+   would hide.
+4. **Exemption by name, never by glob.** Exactly one path is exempt, the data file itself, which
+   necessarily quotes the shapes it defines. The same bytes in a file next door go red.
+5. **Unread is not clean.** A file that cannot be decoded is counted and reported as unread. A gate
+   that silently treats what it could not read as fine is a gate that gets quieter as the tree gets
+   worse.
+
+**What it does not measure.** It does not judge whether a path is real, only whether it has the
+shape of one machine; it does not remove the 623 occurrences already frozen, it stops them growing;
+and it says nothing about paths that leak identity in some other form — an email address, a hostname
+— which are other gates' business.
+
+Implemented by `gate-machine-identity.sh` with `scripts/gates/lib/machine_identity.py`, proved in
+the negative by a 25-case battery whose case 18 runs the gate against **this repository** rather
+than a fixture, and by a mutation bank of ten mutants over the engine, each weakening exactly one
+check at the real site: **10 killed, 0 survivors**, the engine restored byte-for-byte after each.
+The tenth is the reason case 17 asserts a count and not a sentence — its first version grepped for
+the words *"binary or undecodable and not read"*, which the gate prints on every run whatever the
+number is, and it passed identically with the binary branch of the engine deleted.
 
 ## Branch naming
 
