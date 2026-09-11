@@ -4,7 +4,7 @@ The corpus in `skills/ethical-hacker-squad/references/knowledge/` decays. Standa
 
 So the corpus is refreshed automatically. This document explains the cadence, and then spends most of its length on why that automation is itself the most dangerous component in the repository.
 
-> **Status.** This is a specification. The automation it describes has not landed yet: there is no `stable` branch, no tagged release and no CI on `main`. Read it as the contract the machinery is built to satisfy, not as a description of controls already running. See `docs/design-decisions.md`.
+> **Status.** This is a specification. CI **does** run on `main` and on every pull request — `.github/workflows/ci.yml` and six more workflows — but the automation *this document* describes has not landed: there is no `stable` branch and no tagged release (`git tag` is empty). Read it as the contract the machinery is built to satisfy, not as a description of controls already running. See `docs/design-decisions.md`.
 
 ## Cadence
 

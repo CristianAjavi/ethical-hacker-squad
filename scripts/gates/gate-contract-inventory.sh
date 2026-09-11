@@ -121,6 +121,46 @@ compare() {  # <doc> <inventory-or-empty> <out>  -> 0 fine | 1 disagreement | 2 
   return "$GATE_OK"
 }
 
+
+# The batteries the document names. ONE direction only: a `*.selftest.sh` named
+# in the contract has to exist. Not the reverse - the runner discovers 29 and
+# the document names a handful by design, so requiring every battery to appear
+# would be a rule with more reach than it is owed, and it would go red on a repo
+# that is behaving.
+read_battery_inventory() {  # <list-file-or-empty> <out>
+  local src="$1" out="$2"
+  if [ -n "$src" ]; then
+    [ -r "$src" ] || return 1
+    grep -oE '[A-Za-z0-9_.-]+\.selftest\.sh' "$src" | LC_ALL=C sort -u > "$out"
+  else
+    bash "$ROOT/scripts/run-batteries.sh" --list 2>/dev/null \
+      | grep -oE '[A-Za-z0-9_.-]+\.selftest\.sh' | LC_ALL=C sort -u > "$out" || return 1
+  fi
+  return 0
+}
+
+compare_batteries() {  # <doc> <list-or-empty> <out> -> 0 fine | 1 phantom | 2 unmeasurable
+  local doc="$1" src="$2" out="$3"
+  local inv="$TMPDIR_GATE/binv" docd="$TMPDIR_GATE/bdoc"
+  : > "$out"
+  if ! read_battery_inventory "$src" "$inv"; then
+    printf 'UNMEAS|the battery inventory could not be read: run-batteries.sh did not answer\n' >> "$out"
+    return "$GATE_UNMEASURABLE"
+  fi
+  if [ ! -s "$inv" ]; then
+    printf 'UNMEAS|the battery inventory is empty: a repository with no batteries cannot be checked\n' >> "$out"
+    return "$GATE_UNMEASURABLE"
+  fi
+  [ -r "$doc" ] || {
+    printf 'UNMEAS|%s cannot be read\n' "$doc" >> "$out"; return "$GATE_UNMEASURABLE"; }
+  grep -oE '[A-Za-z0-9_.-]+\.selftest\.sh' "$doc" | LC_ALL=C sort -u > "$docd"
+  comm -13 "$inv" "$docd" | sed 's/^/PHANTOMBATTERY|/' >> "$out"
+  printf 'STAT|batteries discovered|%s\n' "$(wc -l < "$inv"  | tr -d " ")" >> "$out"
+  printf 'STAT|batteries named in the contract|%s\n' "$(wc -l < "$docd" | tr -d " ")" >> "$out"
+  grep -q '^PHANTOMBATTERY|' "$out" && return "$GATE_FAIL"
+  return "$GATE_OK"
+}
+
 # ---------------------------------------------------------------------------
 # SELF-TEST. Each fixture is a directory with `inventory.txt` and `doc.md`; the
 # group it lives in is the verdict it must produce.
@@ -137,7 +177,15 @@ self_test() {
       [ -d "$d" ] || continue
       found=1
       rc=0
-      compare "$d/doc.md" "$d/inventory.txt" "$out" || rc=$?
+      # A fixture carrying `batteries.txt` exercises the battery half; one
+      # without it exercises the gate half, as every fixture did before. Over
+      # the real repository the list is never absent - it comes from
+      # run-batteries.sh, and a runner that does not answer is a 2.
+      if [ -f "$d/batteries.txt" ]; then
+        compare_batteries "$d/doc.md" "$d/batteries.txt" "$out" || rc=$?
+      else
+        compare "$d/doc.md" "$d/inventory.txt" "$out" || rc=$?
+      fi
       case "$want" in
         bad)          [ "$rc" -eq 1 ] || { gate_warn "NEGATIVE self-test failed: $(basename "$d") should FAIL (1) and gave $rc"; ok=0; } ;;
         good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; } ;;
@@ -154,8 +202,8 @@ self_test() {
 # ---------------------------------------------------------------------------
 main() {
   gate_header "contract-inventory (the document and the gates name the same set)"
-  gate_scope "every gate \`run-all.sh --list\` discovers is named in docs/gate-requirements.md, and every gate named there exists"
-  gate_out_of_scope "WHICH row a gate belongs to, whether the row's status word is accurate, and whether the requirement text matches what the gate does - all three are a person's judgement; and \`*.selftest.sh\` batteries, which are not gates and which the runner does not list as such"
+  gate_scope "every gate \`run-all.sh --list\` discovers is named in docs/gate-requirements.md, every gate named there exists, and every \`*.selftest.sh\` battery the document names is one \`run-batteries.sh --list\` discovers"
+  gate_out_of_scope "WHICH row a gate belongs to, whether the row's status word is accurate, and whether the requirement text matches what the gate does - all three are a person's judgement; whether a battery the document does NOT name exists, which is most of them and is not a defect; and the CASE COUNTS the document quotes next to a battery (\"10 cases\", \"26 cases\"), which go stale the moment a battery grows and which nothing here measures - the batteries report their totals in five different formats and a parser over all five would fail for its own reasons"
 
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     self_test
@@ -180,6 +228,13 @@ main() {
 
   local out="$TMPDIR_GATE/repo.out" rc=0
   compare "$DOC" "$INVENTORY" "$out" || rc=$?
+  local bout="$TMPDIR_GATE/repo.batteries.out" brc=0
+  compare_batteries "$DOC" "" "$bout" || brc=$?
+  cat "$bout" >> "$out"
+  # The worse of the two answers wins, and 2 beats 1: a half that could not
+  # measure is not a half that passed.
+  if [ "$brc" -eq 2 ] || [ "$rc" -eq 2 ]; then rc=2
+  elif [ "$brc" -eq 1 ]; then rc=1; fi
   gate_info "contract: ${DOC#"$ROOT"/}"
   sed -n 's/^STAT|/· /p' "$out" | tr '|' ' '
 
@@ -193,6 +248,9 @@ main() {
       done
       grep '^PHANTOM|' "$out" | while IFS='|' read -r _k g; do
         gate_fail "the contract names $g and the runner does not discover it: a control the document promises and nobody runs"
+      done
+      grep '^PHANTOMBATTERY|' "$out" | while IFS='|' read -r _k b; do
+        gate_fail "the contract names the battery $b and run-batteries.sh does not discover it: the negative proof the document promises is not run"
       done
       gate_verdict 1; return "$GATE_FAIL" ;;
   esac

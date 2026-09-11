@@ -65,6 +65,22 @@ if names:
 PY
 }
 
+# Make the fixture's runner IGNORE the cost lane it declares, so `--list` names
+# a gate the census defers. The disagreement is built here rather than borrowed
+# from whatever run-all.sh was copied in, and the substitution is asserted: a
+# mutation that stops applying reports the gate green and calls the gate wrong.
+unhonour_cost_lane() { # unhonour_cost_lane <dir>
+  python3 - "$1/scripts/gates/run-all.sh" <<'PY'
+import re, sys
+p = sys.argv[1]
+t = open(p).read()
+t, n = re.subn(r'in_list "\$name" "\$SLOW_SCOPED" && \[ -z "\$\{EHS_SLOW_GATES:-\}" \]',
+               'false', t)
+assert n == 1, "the cost-lane guard was substituted %d times, so this case proves nothing" % n
+open(p, "w").write(t)
+PY
+}
+
 check() { # check <label> <expected rc> <dir> [gate to run: default the fixture's own copy]
   # one `local` per line: bash expands every word of a `local` BEFORE running it,
   # so a default written as "${4:-$dir/...}" on the same line reads $dir unset.
@@ -140,7 +156,11 @@ python3 - "$D/docs/gate-requirements.md" <<'PY'
 import re, sys
 p = sys.argv[1]
 t = open(p).read()
-t = re.sub(r"39 gate scripts", "Thirty-nine gate scripts", t)
+# ANY figure, and it must actually be replaced. Pinned to the literal `39` this
+# mutation stopped applying the day the tree grew, and a case whose mutant is
+# never applied reports the gate green and calls the gate wrong.
+t, n = re.subn(r"\b\d+ gate scripts", "Thirty-nine gate scripts", t)
+assert n == 1, "the mutation substituted %d times, so it proves nothing" % n
 open(p, "w").write(t)
 PY
 check "a figure written back out as a word" 1 "$D"
@@ -217,13 +237,17 @@ cost_lane "$D" "# deferred for cost" gate-agent-roster.sh
 # "the runner does not honour this lane" it measured a property of whatever
 # run-all.sh happened to be copied in: on the tree that merges the branch which
 # TAUGHT the runner the lane, the two agreed and the case went red over a tree
-# where nothing was wrong. Asking the runner to run the cost lane instead makes
-# it list a name the census defers - on a runner that honours the lane and on
-# one that has never heard of it - and a census that disagrees with `--list`
-# about one name is a 2.
-export EHS_SLOW_GATES=1
+# where nothing was wrong. It is built by MUTATING the fixture's own runner so
+# the lane it declares is not honoured, which reads the same on a runner that
+# honours the lane and on one that has never heard of it - and a census that
+# disagrees with `--list` about one name is a 2.
+#
+# It used to be built by exporting EHS_SLOW_GATES=1, which is no longer a
+# disagreement (the probe drops it, see doc_census.py) and was never safe here:
+# the `unset` that followed also cleared an override the CALLER had set, so
+# every case after this one ran in an environment the caller had not asked for.
+unhonour_cost_lane "$D" || die "could not build the un-honoured lane"
 check "a cost lane the runner does not defer" 2 "$D"
-unset EHS_SLOW_GATES
 
 # and the positive half: the names in that file are the ones the reader returns.
 LANES="$(cd "$D" && python3 - 2>&1 <<'PY'
@@ -242,6 +266,26 @@ else
   printf 'FAIL     %-48s %s\n' "the file lane is read, by name" "$LANES"; fail=$((fail + 1))
 fi
 
+# --- 4c. the ambient cost override is not an input ------------------------
+# EHS_SLOW_GATES is a local convenience for running an expensive gate here; it
+# says nothing about which gates run on a push, which is what this census
+# counts. The same tree must therefore answer the same with and without it. It
+# did not: ci.yml's `counts` job exports it for the whole job, so the one lane
+# that ever measures this battery measured a 2 on a healthy tree.
+D="$TMP/override-blind"; build "$D" || die "fixture"
+rc_off=0; ( cd "$D" && EHS_REPO_ROOT="$D" env -u EHS_SLOW_GATES bash "$D/$GATE" ) \
+  >"$TMP/off.txt" 2>&1 || rc_off=$?
+rc_on=0; ( cd "$D" && EHS_REPO_ROOT="$D" EHS_SLOW_GATES=1 bash "$D/$GATE" ) \
+  >"$TMP/on.txt" 2>&1 || rc_on=$?
+if [ "$rc_on" = "$rc_off" ] && [ "$rc_on" != "2" ]; then
+  printf 'ok       %-48s %s\n' "the cost override changes no verdict" "rc=$rc_off both ways"
+  pass=$((pass + 1))
+else
+  printf 'FAIL     %-48s %s\n' "the cost override changes no verdict" \
+    "rc=$rc_off without, rc=$rc_on with"
+  sed 's/^/        | /' "$TMP/on.txt" | tail -6; fail=$((fail + 1))
+fi
+
 # A cost lane defers the battery beside the gate - deferring only the gate moves
 # the cost into --selftests instead of removing it - so a battery in a lane is
 # not a lane pointing at nothing. Both halves are measured: the name that is
@@ -258,8 +302,11 @@ check "and after --write, that tree is green" 0 "$D"
 # BOTH halves. The first draft of the cost clause overwrote the line that names
 # the live lane, and a check that only looked for the new clause called that
 # green: a sentence can gain a lane and lose one in the same edit.
+# `measures`/`measure`: the clause agrees in number with the count it carries, so
+# a fixture with no live gate spells the verb the other way. The question is
+# whether the clause is still there, not how it conjugates.
 if grep -q 'deferred for cost by name in' "$D/docs/gate-requirements.md" \
-   && grep -q 'measures the live repository' "$D/docs/gate-requirements.md"; then
+   && grep -qE 'measures? the live repository' "$D/docs/gate-requirements.md"; then
   printf 'ok       %-48s %s\n' "the cost clause displaces no other lane" "both named"; pass=$((pass + 1))
 else
   printf 'FAIL     %-48s %s\n' "the cost clause displaces no other lane" \

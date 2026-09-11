@@ -199,10 +199,20 @@ def census(root):
         where = origin["SLOW_SCOPED"]
         slow_at = os.path.relpath(where, root) if os.path.isabs(where) else where
 
-    # the runner's own answer, so the count is not read off the scaffolding alone
+    # the runner's own answer, so the count is not read off the scaffolding alone.
+    # It is asked the question this census answers - which gates run ON A PUSH -
+    # and a push carries no local cost override, so the probe must not inherit
+    # one. It did, and the damage was not hypothetical: ci.yml's `counts` job
+    # sets EHS_SLOW_GATES=1 for the whole job, so inside the one lane where this
+    # census is ever measured `--list` named the deferred gate, this count did
+    # not, and every measurement there was an Unmeasurable. A generated sentence
+    # that changes with the shell is not a property of the tree.
+    probe_env = dict(os.environ)
+    probe_env.pop("EHS_SLOW_GATES", None)
     try:
         proc = subprocess.run(
-            ["bash", runall, "--list"], cwd=root, capture_output=True, text=True, timeout=120
+            ["bash", runall, "--list"], cwd=root, capture_output=True, text=True,
+            timeout=120, env=probe_env
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise Unmeasurable("could not run run-all.sh --list: %s" % exc)
@@ -263,23 +273,30 @@ def render(c):
             % c["push_pr"],
             "> `.github/workflows/ci.yml`; %d run where they can only run — in a pull request —"
             % c["pr"],
-            "> through `.github/workflows/issue-closure-gate.yml`; %d runs where its input"
-            % c["external"],
-            "> exists, in `.github/workflows/scorecard.yml`; and %d measures the live repository"
-            % c["live"],
+            "> through `.github/workflows/issue-closure-gate.yml`; %d %s where its input"
+            % (c["external"], "runs" if c["external"] == 1 else "run"),
+            "> exists, in `.github/workflows/scorecard.yml`; and %d %s the live repository"
+            % (c["live"], "measures" if c["live"] == 1 else "measure"),
     ]
+    # The number decides the verb, here as in the slow clause below. It was not
+    # so: the live clause was written when the lane held one gate and read
+    # `2 measures the live repository ... with its reason` the day it held two.
+    its_reason = "its reason" if c["live"] == 1 else "their reasons"
+    is_deferred = "is deferred" if c["live"] == 1 else "are deferred"
     if c.get("slow"):
         # append, never assign: the first draft of this clause wrote over
         # lines[-1] and silently deleted the live lane from the sentence - the
         # very defect this module exists to stop, committed by the fix for it.
-        lines.append("> and is deferred BY NAME, with its reason, in `scripts/gates/run-all.sh`; and")
+        lines.append("> and %s BY NAME, with %s, in `scripts/gates/run-all.sh`; and"
+                     % (is_deferred, its_reason))
         lines.append(
             "> %d %s in a CI job of %s, deferred for cost by name in"
             % (c["slow"], "runs" if c["slow"] == 1 else "run", "its own" if c["slow"] == 1 else "their own")
         )
         lines.append("> `%s`. These" % c.get("slow_at", SLOW_DECL_REL))
     else:
-        lines.append("> and is deferred BY NAME, with its reason, in `scripts/gates/run-all.sh`. These")
+        lines.append("> and %s BY NAME, with %s, in `scripts/gates/run-all.sh`. These"
+                     % (is_deferred, its_reason))
     lines.append("> figures are counted from the tree by `scripts/gates/lib/doc_census.py`; editing")
     lines.append("> them here turns `gate-doc-census.sh` red rather than making them true.")
     lines.append(END)

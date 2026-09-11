@@ -29,9 +29,19 @@ on:
 # No default permissions: each job asks for the minimum it needs.
 permissions: {}
 
+# Cancelling an in-flight run is right for a pull request and wrong for a push.
+# A pull request's ref is its own, so a second push to it supersedes the first
+# and the cancelled run measured code that no longer exists. `main` and `stable`
+# share one ref between every merge: with a single group, two merges landing
+# close together cancel each other and the first commit is left with no verdict
+# at all - the same shape as a gate that silently did not run.
+#
+# The damage was bounded before this and is bounded still: promotion does not
+# trust a historical check run, it re-runs every gate over the candidate tree in
+# release.yml's `verify` job. What was exposed was the history a person reads.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   gates:
@@ -70,6 +80,37 @@ jobs:
       # both call, and that file has its own battery.
       - name: Prove the gates in the negative
         run: ./scripts/run-batteries.sh
+
+  counts:
+    # Same rule as the jobs around it: the name IS the required-context string.
+    #
+    # This job exists because of what the gate costs, not because of what it
+    # checks. gate-case-counts.sh settles a quoted case count by RUNNING the
+    # battery that produces it - twenty batteries - which is 301 s measured,
+    # and its own battery carries a control over the real tree for another
+    # 313 s. That is far past the ~30 s this repository allows on the path that
+    # runs on every push, and seven times what the `gates` job costs today. In
+    # the serial set it would make every push slower for everyone; here it runs
+    # at the same time as `gates` and costs the person who pushed nothing.
+    # run-all.sh defers both names in every other run and prints this job as the
+    # place they do run.
+    name: counts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No token: this job only reads the checkout and runs batteries that are
+      # already in it.
+      - name: Every quoted case count, against the battery that produces it
+        env:
+          EHS_SLOW_GATES: "1"
+        run: ./scripts/gates/run-all.sh --selftests --only 'gate-case-counts*'
 
   workflow-hardening:
     # Same rule as above: the name IS the required-context string.

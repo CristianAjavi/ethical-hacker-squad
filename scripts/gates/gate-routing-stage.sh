@@ -26,6 +26,15 @@
 #   it. The number is REPORTED and only the perfect score is enforced: a
 #   threshold picked after seeing the number is a threshold fitted to it.
 #
+#   And REPORTED is where it stopped, which is the reason for the third half.
+#   That router is built out of `coverage.md`, a file free to change and one
+#   that changed 48 minutes after the dataset was sealed. On 2026-09-10 this
+#   gate printed 14/22, 12/22 and eight hard cases, exited 0, and stood beside a
+#   pre-registration declaring 13/22, 11/22 and nine -- refuting the document on
+#   screen and never comparing itself to it. A gate that contradicts a frozen
+#   document and approves is worse than one that never read it, because the
+#   contradiction is on the same page as the pass.
+#
 # WHAT IT MEASURES
 #   1. `cases.json` still hashes to the digest the key sealed.
 #   2. Every case has exactly one key row and every key row exactly one case.
@@ -36,12 +45,25 @@
 #      marker or a procedure id -- all read out of `coverage.md`, never listed
 #      here, so the scan forbids what the table actually declares.
 #   5. The table-word router does not answer every case correctly.
+#   6. The documents that quote that score still agree with it: the
+#      pre-registration's `## Registration in force` block cell for cell -- the
+#      two scores, the case count and the primary set -- plus every fraction
+#      over the case count anywhere in that file outside
+#      `## Superseded registrations`, and in the sections of the dataset README
+#      whose headings name the table-word router. A registration that supersedes
+#      an earlier one while a result already exists is refused: re-registering
+#      before anything has been run is free, after is fitting.
 #
 # WHAT IT DOES NOT MEASURE
 #   Whether a case is well chosen, whether the row the key names is the row a
 #   careful reader would name, and whether the inventory fragment is realistic.
 #   Those are editorial. This gate checks that the key is forced by the table
 #   and that the set is not trivially string-matchable.
+#
+#   Counts written out in words. `nine of the twenty-two` is invisible to check
+#   6, and the first registration had exactly that sentence backwards from the
+#   day it was written. The documents are written to state such numbers as
+#   digits, or not at all, because that is the half this gate can hold.
 #
 #   It also does not run the eval. No model has seen these cases; see
 #   `bench/stages/routing/PREREGISTRATION.md`.
@@ -70,7 +92,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift 2 ;;
     --self-test) ONLY_SELFTEST=1; shift ;;
-    -h|--help) sed -n '2,49p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,69p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) gate_warn "unknown argument: $1"; exit "$GATE_UNMEASURABLE" ;;
   esac
 done
@@ -86,9 +108,9 @@ selftest() {
   python3 "$SELF_DIR/lib/routing_stage_fixture.py" "$work" || {
     rm -rf "$work"; gate_warn "self-test: cannot build the fixture"; return "$GATE_UNMEASURABLE"; }
 
-  # The healthy tree must be clean, and each of the other five is the healthy
-  # tree with exactly one thing broken. A check that passes all six is a check
-  # that is not reading the thing it claims to read.
+  # The healthy tree must be clean, and each of the others is the healthy tree
+  # with exactly one thing broken. A check that passes them all is a check that
+  # is not reading the thing it claims to read.
   out="$(audit "$work/healthy")"
   if printf '%s\n' "$out" | grep -qE '^[12]\|'; then
     rm -rf "$work"; gate_fail "self-test: the healthy fixture returned '$out'"; return "$GATE_FAIL"
@@ -100,6 +122,13 @@ selftest() {
     "leaked-role|1|names the role"
     "trivial-router|1|answers every case"
     "no-table|2|holds no routing row"
+    "prereg-score-drift|1|registers 1/3 on the role"
+    "prereg-primary-drift|1|registers the primary set as"
+    "prereg-prose-drift|1|outside \`## Superseded registrations\`"
+    "prereg-cited-drift|1|names FX-01 outside"
+    "readme-score-drift|1|naming the \`table-word router\`"
+    "readme-no-section|2|no section heading naming"
+    "superseded-after-result|1|fitted to that number"
   )
   local spec name code phrase
   for spec in "${checks[@]}"; do
@@ -123,14 +152,14 @@ selftest() {
 
 main() {
   gate_header "routing-stage (the key is forced by the routing table, and the set is not string-matchable)"
-  gate_scope "bench/stages/routing: the seal on cases.json, the key's agreement with references/coverage.md cell for cell, the leak scan over presented fields, and what a router built from the table's own words scores"
+  gate_scope "bench/stages/routing: the seal on cases.json, the key's agreement with references/coverage.md cell for cell, the leak scan over presented fields, what a router built from the table's own words scores, and whether PREREGISTRATION.md and README.md still agree with that score"
   gate_out_of_scope "whether a case is well chosen and whether the row the key names is the row a careful reader would name - both editorial; and running the eval, which no model has done"
 
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
-    gate_info "self-test: a key row disagreeing with the table, a stale seal, a role name leaked into a case, a set the trivial router answers perfectly, and a missing table all behave"
+    gate_info "self-test: a key row disagreeing with the table, a stale seal, a role name leaked into a case, a set the trivial router answers perfectly, a missing table, a registration frozen on an older score, a primary set that drifted, prose and a README quoting a score the gate does not print, a README with no section naming the router, and a registration superseded after a result existed all behave"
   else
     SELFTEST_SKIPPED=1
     gate_warn "self-test SKIPPED via GATE_SELFTEST=0: the verdict cannot be 0"
