@@ -200,7 +200,42 @@ done
 # How the ledger spells the gates directory. Derived, not assumed: if GATES_DIR
 # is not under ROOT the strip leaves an absolute path and check 5 says so
 # instead of inventing a prefix.
-[ -n "$GATES_REL" ] || GATES_REL="${GATES_DIR#"$ROOT"/}"
+#
+# BOTH PATHS ARE REDUCED TO ONE SPELLING FIRST, and that is the whole of why
+# this is a function and not a parameter expansion. $ROOT arrives the way git
+# spells it - `rev-parse --show-toplevel`, symlinks resolved - and $GATES_DIR the
+# way bash spells it, because `cd` keeps the logical path. On macOS those two
+# differ for anything under $TMPDIR, where /var is a symlink to /private/var.
+# A plain `${GATES_DIR#"$ROOT"/}` then matches nothing, GATES_REL stays absolute,
+# check 5 refuses to guess and the gate exits 2 - reporting where the checkout
+# happens to live as a verdict about the repository.
+#
+# Measured 2026-09-11 on this branch's tree 2232601: the gate returned
+# 5/5 UNMEASURABLE in a worktree under $TMPDIR - the shape
+# scripts/gh/merge-preview.sh creates for every point of a --chain run - and 0/5
+# on the identical tree checked out under a path with no symlink in it. That is
+# how one instrument came back 2 and a second came back 0 on the same commits,
+# and this line was the whole difference between them.
+gates_rel_from() {            # <root> <gates-dir> -> the ledger's spelling
+  local root="$1" dir="$2"
+  local rp dp
+  # An empty operand first, because `cd ""` RETURNS 0 in bash and stays where it
+  # is: an empty root would silently make the current directory the frame of
+  # reference and produce an address derived from a tree nobody named. Hand the
+  # directory back as given - absolute - and let check 5 refuse it by name.
+  if [ -z "$root" ] || [ -z "$dir" ]; then
+    printf '%s\n' "$dir"; return 0
+  fi
+  rp="$(cd "$root" 2>/dev/null && pwd -P)" || rp=""
+  dp="$(cd "$dir" 2>/dev/null && pwd -P)" || dp=""
+  # A path that cannot be entered keeps its given spelling: the strip then fails
+  # to match, GATES_REL stays absolute, and check 5 says it could not measure.
+  # Falling back to a guess here is the one thing that must not happen.
+  [ -n "$rp" ] || rp="$root"
+  [ -n "$dp" ] || dp="$dir"
+  printf '%s\n' "${dp#"$rp"/}"
+}
+[ -n "$GATES_REL" ] || GATES_REL="$(gates_rel_from "$ROOT" "$GATES_DIR")"
 
 measure() {
   python3 - "$1" "$2" "$3" <<'PY'
@@ -624,6 +659,97 @@ import os,pathlib
       printf '%s\n' "$fr_out" | sed 's/^/        /' | head -3; f=$((f+1))
     fi
   done
+
+  # THE FRAME OF REFERENCE ITSELF - the derivation, not the branch that refuses
+  # to guess when it is handed a bad one. The two cases above prove the gate
+  # says 2 when GATES_REL is empty or absolute; nothing proved that GATES_REL
+  # arrives usable in the first place, and for one whole class of checkout it
+  # did not. A directory reached through a SYMLINK is spelled one way by bash
+  # and another by git; the derivation has to make the two meet. Plain prefix
+  # stripping does not, so the address stayed absolute, check 5 said it could
+  # not measure, and the gate blamed the repository for the filesystem.
+  #
+  # The symlink is built here rather than assumed from $TMPDIR on purpose: on a
+  # Linux runner $TMPDIR is /tmp with nothing symlinked, and a case that only
+  # bites on macOS is a case that passes on one machine and defends nothing on
+  # the other. Reverting gates_rel_from to `${GATES_DIR#"$ROOT"/}` turns
+  # frame-gates-dir-reached-through-a-symlink and frame-root-reached-through-a-
+  # symlink red on any machine that has `ln -s`; frame-both-paths-spelled-alike
+  # stays green either way and is here to say the fix did not move the ordinary
+  # case.
+  local sym_real sym_link
+  sym_real="$tmp/frame/real"
+  sym_link="$tmp/frame/link"
+  mkdir -p "$sym_real/scripts/gates"
+  rel_case() {              # <name> <wanted spelling> <root> <gates-dir>
+    local name="$1" want="$2" root="$3" dir="$4"
+    local got
+    got="$(gates_rel_from "$root" "$dir")"
+    if [ "$got" = "$want" ]; then
+      printf '  PASS  %-46s %s\n' "$name" "$got"; p=$((p+1))
+    else
+      printf '  FAIL  %-46s got %s, wanted %s\n' "$name" "$got" "$want"; f=$((f+1))
+    fi
+  }
+  echo "  == the frame of reference, when one directory is spelled two ways =="
+  if ln -s "$sym_real" "$sym_link" 2>/dev/null && [ -d "$sym_link/scripts/gates" ]; then
+    rel_case frame-both-paths-spelled-alike scripts/gates \
+      "$sym_real" "$sym_real/scripts/gates"
+    # The measured shape: git hands over the root resolved, bash hands over the
+    # gates directory through the link. This is the pair that returned 2.
+    rel_case frame-gates-dir-reached-through-a-symlink scripts/gates \
+      "$sym_real" "$sym_link/scripts/gates"
+    rel_case frame-root-reached-through-a-symlink scripts/gates \
+      "$sym_link" "$sym_real/scripts/gates"
+    # No root at all: the answer must come back EXACTLY as handed in, absolute,
+    # so check 5 refuses it. `cd ""` succeeds in bash, so without the guard the
+    # current directory becomes the frame of reference and the path comes back
+    # resolved through the symlink - a different string on any machine that has
+    # one, which is what makes this case a control and not a coincidence.
+    rel_case frame-no-root-at-all-comes-back-as-given \
+      "$sym_link/scripts/gates" "" "$sym_link/scripts/gates"
+  else
+    printf '  HARNESS  %-44s this filesystem would not make a symlink\n' "frame-of-reference"
+    f=$((f+1))
+  fi
+
+  # ...and the production path still ASKS it. The cases above measure the
+  # FUNCTION; put the old expansion back at the CALL SITE and every one of them
+  # stays green while the gate goes back to returning 2 in every worktree under
+  # a symlink. So this one runs the script itself the way the harness reaches it -
+  # through a symlinked root, with the root declared resolved, which is exactly
+  # the pair merge-preview.sh hands it - and reads whether check 5 got an
+  # address it could use. GATE_SELFTEST=0 is what stops it recursing into here.
+  #
+  # EHS_BITE_PROBE=1 on that sub-run is a cost decision with a measurement behind
+  # it and it costs this case nothing: GATES_REL has exactly one consumer, the
+  # `measure` call that is check 5, and check 6 never sees it. The full run is
+  # 16 s on this tree against 0 s with the probe shut, and 16 s is a third of the
+  # `gates` job for a second opinion on a bound this file already probes elsewhere.
+  local live_top live_out
+  live_top="$(cd "$GATES_DIR/../.." 2>/dev/null && pwd -P)" || live_top=""
+  if [ -n "$live_top" ] && [ -f "$live_top/scripts/gates/gate-budget-ledger.sh" ] \
+     && ln -s "$live_top" "$tmp/frame/toplink" 2>/dev/null; then
+    live_out="$(GATE_SELFTEST=0 EHS_BITE_PROBE=1 EHS_REPO_ROOT="$live_top" \
+                bash "$tmp/frame/toplink/scripts/gates/gate-budget-ledger.sh" 2>&1)" || true
+    # Three outcomes, not two. An empty answer is not the absence of the defect,
+    # it is the absence of a measurement, and scoring it PASS is the exact move
+    # this gate exists to stop.
+    if ! printf '%s' "$live_out" | grep -q 'VERDICT'; then
+      printf '  HARNESS  %-44s the symlinked run returned no verdict at all\n' \
+        "frame-the-production-path-uses-it"; f=$((f+1))
+    elif printf '%s' "$live_out" | grep -q 'how the ledger spells'; then
+      printf '  FAIL  %-46s reached through a symlink, the script derived an address it could not use\n' \
+        "frame-the-production-path-uses-it"; f=$((f+1))
+    else
+      printf '  PASS  %-46s measured through a symlinked root\n' \
+        "frame-the-production-path-uses-it"; p=$((p+1))
+    fi
+  else
+    printf '  HARNESS  %-44s could not stage a symlinked root\n' \
+      "frame-the-production-path-uses-it"; f=$((f+1))
+  fi
+
   # -- check 6, proved in the negative ---------------------------------------
   # run_case copies scripts/gates/ and that is enough for measure(), which only
   # READS files. The bite probe RUNS gates, and those gates read skills/, agents/
