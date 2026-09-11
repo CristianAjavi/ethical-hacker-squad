@@ -25,6 +25,20 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **Nine procedures were defined, numbered, traced — and unreachable.** This corpus is reachable
+  only through prose: a specialist opens a sibling file because the entry file's header says it is
+  there, and nothing scans the directory at runtime. Six pack headers and two agent definitions
+  still carried the ranges from before their pack was split, so `INF-19`..`INF-23`, `AI-23`,
+  `SUP-26` and `LOC-11`..`LOC-14` could not be reached by the specialists that own them. Every
+  other gate was green and each was right — the files were present, the identifiers unique, the
+  counts and traceability rows correct. None of them asks whether anyone is ever sent there.
+  Routing fixed in all eight documents, and `gate-pack-routing.sh` now measures it: both routers
+  of every multi-file pack against the `### <ID>` headings its siblings actually define. Twelve
+  self-test cases, ten of them mutants that must go red, two of which must exit `2` rather than
+  pass, plus the real tree, which passes. The phantom half is deliberately the weaker one and
+  says so: two attempts at attributing a claim to the nearer file both accused a **correct**
+  router, so the guess was dropped rather than shipped. See `docs/gate-requirements.md`.
+
 - **The sweep that asks whether the competitor list is still the field could not see the two
   largest products in it.** `competitive-discovery.sh` exits `0` when every candidate its queries
   returned is named in the baseline. Measured 2026-09-10: the five text queries it declared
