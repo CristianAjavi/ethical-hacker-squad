@@ -464,7 +464,27 @@ mutate() {  # <label> <sed-expr> <case-dir> <args...> ; prints rc of the tool
   local label="$1" expr="$2" dd="$3"; shift 3
   local m="$LAB/mut"; rm -rf "$m"; cp -R "$dd" "$m"
   sed -i.bak "$expr" "$m/scripts/gh/merge-preview.sh" && rm -f "$m/scripts/gh/merge-preview.sh.bak"
-  ( cd "$m" && bash "$m/scripts/gh/merge-preview.sh" --base main "$@" >"$LAB/out.txt" 2>&1 ); echo $?
+  local r=0
+  ( cd "$m" && bash "$m/scripts/gh/merge-preview.sh" --base main "$@" >"$LAB/out.txt" 2>&1 ) || r=$?
+  # A mutant has to die of the DEFECT it introduces, not of incoherence. A
+  # mutation that breaks the shell - an unbound variable, a syntax error - stops
+  # the tool before it can decide anything, and the exit code it leaves behind
+  # says nothing about the control being tested.
+  #
+  # This is measured history, not caution. M7's first form deleted TWO lines
+  # with one pattern: the wiring AND the counter the report prints. The tool then
+  # aborted on `n_unk: unbound variable` - on BOTH platforms - and the exit code
+  # diverged, because bash 3.2 leaves the status of the last command that ran
+  # (a printf, 0) while bash 5 exits 1. So this battery read a crash as "the
+  # prediction came true" on macOS and as a red on ubuntu, and the mutant never
+  # exercised the wiring it was written to remove. A green that depends on the
+  # bash version is not a measurement.
+  if grep -qE 'unbound variable|syntax error|command not found|: line [0-9]+: ' "$LAB/out.txt"; then
+    printf '  mutant %s CRASHED the tool instead of changing its verdict: %s\n' \
+      "$label" "$(grep -m1 -E 'unbound variable|syntax error|command not found|: line [0-9]+: ' "$LAB/out.txt" 2>/dev/null || true)" >&2
+    printf 'MUTANT-CRASHED\n'; return 0
+  fi
+  echo "$r"
 }
 
 # M1. attribution reports nothing. PREDICTION: C2 stops being rc 1 and comes
@@ -515,9 +535,12 @@ res "M6 the confirmation never agrees -> a real break is explained away" \
 #     chain passes anyway, which is the exact shape of every defect this file
 #     was written against. (The mutation deletes the WIRING, not the label: a
 #     mutant that renamed the label and a control that grepped for the label
-#     would be the control reading itself.)
+#     would be the control reading itself. It also deletes the wiring and ONLY
+#     the wiring: the first form of this pattern matched the counter line too,
+#     which left the tool aborting on an unbound variable instead of deciding
+#     anything - see the crash guard in mutate.)
 res "M7 an unconfirmable transition stops counting -> N3 goes green" \
-    "$(mutate M7 '/UNCONFIRMABLE . <<</d' "$LAB/chain-twin" --chain chain/twin)" 0
+    "$(mutate M7 '/UNCONFIRMABLE . <<<"$out" && CHAIN_UNMEAS/d' "$LAB/chain-twin" --chain chain/twin)" 0
 
 # M8. The confirmation stops narrowing the runner, so it re-measures the whole
 #     POINT to settle one name. PREDICTION: every verdict above stays exactly
