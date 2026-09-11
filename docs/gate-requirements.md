@@ -22,7 +22,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
 | `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
 | triage rules | running | `gate-triage-rules.sh` + self-test |
-| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
+| triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) <!-- cases: scripts/gates/gate-triage-stage.selftest.sh --> |
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
@@ -30,7 +30,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
-| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
+| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) <!-- cases: scripts/gates/gate-reproduction.selftest.sh --> |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
@@ -40,14 +40,16 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
+| the case counts this document quotes about a battery | running | `gate-case-counts.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
-| budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
-| the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
-| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
+| budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (14 cases) <!-- cases: scripts/gates/gate-budget-ledger.sh --> |
+| the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (16 cases) <!-- cases: scripts/gates/gate-alert-surface.sh --> |
+| the alert surface of the live repository, alert by alert | running in a live repo | `gate-alert-live.sh` + self-test (8 cases) <!-- cases: scripts/gates/gate-alert-live.sh --> |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) <!-- cases: scripts/gates/gate-handover-contract.sh --> |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
-| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
-| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) <!-- cases: scripts/gates/gate-corpus-identifiers.selftest.sh --> |
+| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) <!-- cases: scripts/gates/gate-bench-blinding.selftest.sh --> |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
@@ -70,14 +72,14 @@ This document has asked, since it was written, that **every** gate be proved in 
 
 | Gate | What goes wrong silently without it | Cases now |
 |---|---|---|
-| `gate-plugin-version.sh` | a frozen `version` in `plugin.json` makes `/plugin update` skip the plugin: commits merge for months and no installed user receives them, with no error | 13 |
-| `gate-plugin-integrity.sh` | the shape of everything a user loads — frontmatter, links, symlinks, the execute bit, the size budget | 20 |
-| `gate-verdict-vocabulary.sh` | the five-spellings drift this vocabulary was written to end, coming back | 12 |
-| `gate-labels-taxonomy.sh` | GitHub **drops** an undeclared label without a word and the issue arrives unclassified | 12 |
+| `gate-plugin-version.sh` | a frozen `version` in `plugin.json` makes `/plugin update` skip the plugin: commits merge for months and no installed user receives them, with no error | 13 <!-- cases: scripts/gates/gate-plugin-version.selftest.sh --> |
+| `gate-plugin-integrity.sh` | the shape of everything a user loads — frontmatter, links, symlinks, the execute bit, the size budget | 22 <!-- cases: scripts/gates/gate-plugin-integrity.selftest.sh --> |
+| `gate-verdict-vocabulary.sh` | the five-spellings drift this vocabulary was written to end, coming back | 12 <!-- cases: scripts/gates/gate-verdict-vocabulary.selftest.sh --> |
+| `gate-labels-taxonomy.sh` | GitHub **drops** an undeclared label without a word and the issue arrives unclassified | 12 <!-- cases: scripts/gates/gate-labels-taxonomy.selftest.sh --> |
 
 Three of the four run on a throwaway tree built by the battery; `gate-verdict-vocabulary.selftest.sh` copies the real corpus instead, because a hand-written vocabulary would drift from the one the gate polices. `gate-labels-taxonomy.sh` resolves its root from its own location and takes no override, so its battery copies the gate into the throwaway tree rather than changing the gate to be testable.
 
-Two of those 57 cases are worth naming. `gate-plugin-integrity.sh` states in a comment that a `grep '^allowed-tools:'` was *demonstrated evadable* — `"allowed-tools": Bash(*)` and `allowed-tools : Bash(*)` are the same key to any YAML parser and neither starts with the literal. All three spellings are now measured, plus the `EHS_ALLOW_TOOLS_FRONTMATTER=1` escape hatch that must still let a human say yes. And the only route into `gate-plugin-version.sh`'s base-ref lookup is channel `latest` *with* a version declared; on `stable` there is no diff to compute and on a versionless `latest` there is nothing to bump. Two drafts of that battery asserted `2` from those dead ends and were wrong about the gate, not the other way round.
+Two of those 59 cases are worth naming. `gate-plugin-integrity.sh` states in a comment that a `grep '^allowed-tools:'` was *demonstrated evadable* — `"allowed-tools": Bash(*)` and `allowed-tools : Bash(*)` are the same key to any YAML parser and neither starts with the literal. All three spellings are now measured, plus the `EHS_ALLOW_TOOLS_FRONTMATTER=1` escape hatch that must still let a human say yes. And the only route into `gate-plugin-version.sh`'s base-ref lookup is channel `latest` *with* a version declared; on `stable` there is no diff to compute and on a versionless `latest` there is nothing to bump. Two drafts of that battery asserted `2` from those dead ends and were wrong about the gate, not the other way round.
 
 ### And the check that keeps it that way
 
@@ -184,7 +186,7 @@ What it enforces:
 
 **What it does not measure.** Whether a procedure is correct, whether an identifier maps to what the standard actually says, and whether the traceability matrix lists every procedure that cites a family — 28 of 139 procedures are absent from that matrix today, which is open work, not a passing check.
 
-Proved in the negative by `gate-corpus-contract.selftest.sh`: 26 cases, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
+Proved in the negative by `gate-corpus-contract.selftest.sh`: 26 cases <!-- cases: scripts/gates/gate-corpus-contract.selftest.sh -->, each breaking exactly one thing on a throwaway copy, asserting the exit code **and** the reason, including a control case on the untouched repository and two cases that must exit `2`.
 
 ## The triage rules
 
@@ -198,7 +200,7 @@ Half the value of this corpus is knowing when **not** to report, and until now t
 
 `gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. **All eight packs are converted and all eight are `required`: 154 of 154 procedures.** It took one editorial pass per pack, because citing the right rules for a procedure is a judgement and a bulk substitution would have been false rigour. Four procedures declare `Rules: none (reason)` — `AI-22` and three `VER-*` — because their class genuinely admits no exculpation, and the gate counts and prints those rather than letting them pass as citations.
 
-Proved in the negative by 11 cases, including a control run and two that must exit `2`.
+Proved in the negative by 16 cases <!-- cases: scripts/gates/gate-triage-rules.selftest.sh -->, including a control run and two that must exit `2`.
 
 ## The served-tree delta
 
@@ -211,7 +213,7 @@ Proved in the negative by 11 cases, including a control run and two that must ex
 
 Deletions are never a failure: removing corpus is a decision a person makes, and this gate has no opinion on it. A shallow clone that cannot reach the merge base is exit `2`, which is why the `gates` job checks out with full history — an unmeasured delta is not a small one.
 
-Proved in the negative by 7 cases built on throwaway repositories, because a delta gate can only be exercised by making a delta.
+Proved in the negative by 7 cases <!-- cases: scripts/gates/gate-tree-delta.selftest.sh --> built on throwaway repositories, because a delta gate can only be exercised by making a delta.
 
 ## The promotion invariant — who judges is always main
 
@@ -273,7 +275,7 @@ Backlog item 7 of `docs/competitive-analysis.md`, and the one that unlocks the r
 5. Every `traceability` identifier matches a known family, the same list `gate-corpus-contract.sh` uses.
 6. No high-precision secret format travels inside the file, exactly as `gate-report-contract.sh` refuses them in the prose.
 
-**The negative fixtures carry their own reason.** Each file under `fixtures/findings/bad/` has an `.expected` sidecar naming the defect it stands for, and the gate fails if a fixture is rejected for an unrelated cause — a battery whose cases fail for the wrong reason proves that the validator runs, not that it catches anything. Ten negative fixtures, one conforming, and a self-test of 10 cases including four that must exit `2`.
+**The negative fixtures carry their own reason.** Each file under `fixtures/findings/bad/` has an `.expected` sidecar naming the defect it stands for, and the gate fails if a fixture is rejected for an unrelated cause — a battery whose cases fail for the wrong reason proves that the validator runs, not that it catches anything. Ten negative fixtures, one conforming, and a self-test of 12 cases <!-- cases: scripts/gates/gate-findings-artifact.selftest.sh --> including four that must exit `2`.
 
 ## The evaluation bench
 
@@ -287,7 +289,7 @@ The bench holds small targets written to be read, and an answer key that names, 
 
 `scripts/bench/score.py` reports detected, missed, decoys reported (each a false positive with an id and the rule that should have caught it), and unlabelled findings, which are **not** counted against a run because the bench does not claim to be exhaustive. Thresholds are opt-in: without them the scorer measures and does not judge.
 
-Both are proved in the negative: 9 cases for the gate, 6 for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
+Both are proved in the negative: 23 cases <!-- cases: scripts/gates/gate-bench-integrity.selftest.sh --> for the gate, 6 <!-- cases: scripts/bench/score.selftest.sh --> for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
@@ -306,7 +308,7 @@ The gate enforces what is mechanically enforceable:
 
 **The denylist is stored as hashes, not phrases.** A list built to stop us copying somebody's words should not itself be a copy of them, so `scripts/gates/data/verbatim-denylist.json` holds SHA-256 prefixes of normalised eight-word windows, and `scripts/licence/add-verbatim-phrase.py` turns a phrase into entries without ever writing it down. The list is empty today and its size is printed on every run, because an empty denylist that passes silently is decoration.
 
-Proved in the negative by `gate-licence-hygiene.selftest.sh`: 9 cases — a pasted attributed quotation, the same quotation inside the exempt region (which must stay green), an identifier owner nobody attributed, an allowlisted source with no licence recorded, a denylisted phrase present in the corpus, and three cases that must exit `2`.
+Proved in the negative by `gate-licence-hygiene.selftest.sh`: 9 cases <!-- cases: scripts/gates/gate-licence-hygiene.selftest.sh --> — a pasted attributed quotation, the same quotation inside the exempt region (which must stay green), an identifier owner nobody attributed, an allowlisted source with no licence recorded, a denylisted phrase present in the corpus, and three cases that must exit `2`.
 
 ## G6 — Secret scanning
 
@@ -360,7 +362,7 @@ So the prefix stays, demoted from *the* classifier to one signal among several, 
 
 **The exemption this replaced was measured and refused.** A task stood open to take those fixture inputs *out* of `scripts/gates/**` altogether, on the argument that they are negative proof rather than limits. Half of that argument holds — the three ways such a fixture can be weakened are all watched: deletion by `gate-negative-proof-census.sh`, neutering in place by the family's own self-test, which names the rule the fixture stopped tripping and caps the verdict at `2`. The other half does not. In **0 of those 28 changes** did G7 fire on fixtures alone, so the exemption would have cost 38 paths their protection and prevented not one firing. And the gates that do watch them answer a different question: the census asks whether the proof is still *there*, the self-test whether it still *trips*, and neither asks **who moved it**, which is the only question G7 asks. *Covered by another gate* is not *covered*. The refusal is recorded in `protected-paths.json` next to the list it declined to shorten, because the next reader will ask.
 
-It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 25 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 32 cases <!-- cases: scripts/gates/gate-protected-paths.selftest.sh --> — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
 
 **The control went green because its input went missing, 2026-09-01.** The first push of the
 `alert-surface` branch had G7 **passing** on a diff that moved three protected paths. Nothing was
@@ -416,7 +418,7 @@ Three properties are worth stating because each has a case in the battery:
   and it would have been trivial to build it that way here.
 
 Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
-allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+allowed to pass** (32 cases <!-- cases: scripts/gates/gate-protected-paths.selftest.sh --> in total, 0 failures). The other twenty-five were unchanged by the
 work: with no diff there is no exemption, so every verdict written before exemptions existed still
 holds.
 
@@ -435,7 +437,7 @@ Measured over the whole history: **15 budget constants moved, 13 of them tighter
 
 **What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Both are printed on every run.
 
-Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
+Proved in the negative by its inline self-test, 14 cases <!-- cases: scripts/gates/gate-budget-ledger.sh -->: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
 
 ## G7c — The file that tells you how to read an alert has to be right
 
@@ -481,7 +483,7 @@ alert would be **real**, installed with `npm ci` by `release.yml` — had no `up
 argument this config already makes for keeping action SHAs current applies to it, and nobody had
 made it.
 
-Self-test: 13 cases, each proved in the negative against a synthetic tree, plus one that runs the
+Self-test: 16 cases <!-- cases: scripts/gates/gate-alert-surface.sh -->, each proved in the negative against a synthetic tree, plus one that runs the
 gate against this repository as it stands.
 
 
@@ -581,7 +583,7 @@ The aggregate is recorded as informational with a **no-regression** rule: it may
 - **The aggregate is judged by movement, and the baseline lives in `docs/scorecard-baseline.json`, edited by hand in a pull request.** A workflow that can rewrite its own baseline can ratchet itself down one run at a time. No baseline recorded yet is printed as *nothing to compare*, never treated as fine.
 - **The table above is the gate.** It is parsed and compared, check for check and number for number, against `scripts/gates/data/scorecard-thresholds.json`, with a self-test case for the drift.
 
-It does not run in the offline suite, because its input needs the network and a repository token; `run-all.sh` names it in the deferred list with the workflow that does run it, since a gate that is quietly absent is indistinguishable from a gate that passed. Proved in the negative by `gate-scorecard-threshold.selftest.sh`: 11 cases, including a check below its minimum, a check absent from the results, a check that came back inconclusive, an aggregate falling just within the contract and one falling past it.
+It does not run in the offline suite, because its input needs the network and a repository token; `run-all.sh` names it in the deferred list with the workflow that does run it, since a gate that is quietly absent is indistinguishable from a gate that passed. Proved in the negative by `gate-scorecard-threshold.selftest.sh`: 16 cases <!-- cases: scripts/gates/gate-scorecard-threshold.selftest.sh -->, including a check below its minimum, a check absent from the results, a check that came back inconclusive, an aggregate falling just within the contract and one falling past it.
 
 ## Label taxonomy
 
