@@ -42,6 +42,29 @@ build() { # build <dir>
   cp "$ROOT/docs/gate-requirements.md" "$d/docs/gate-requirements.md" || return 1
 }
 
+# A fixture that declares a cost lane must declare it EXACTLY ONCE. The tree
+# under test may already declare one - the branch that introduced the lane does -
+# and appending a second is a genuine could-not-measure, so five cases below were
+# measuring the fixture instead of the gate: on the combined tree they answered
+# 1 and 2 where they must answer 2 and 1. Any existing declaration is removed
+# first, and the count is asserted afterwards rather than assumed beforehand.
+cost_lane() { # cost_lane <dir> [line...]  -> declare the lane, fill its file
+  local d="$1"; shift
+  python3 - "$d/scripts/gates/run-all.sh" "$d/scripts/gates/data/slow-scoped.txt" "$@" <<'PY'
+import os, re, sys
+runall, lanefile, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+t = open(runall).read()
+t = re.sub(r"(?m)^SLOW_SCOPED(?:_FILE)?=.*\n", "", t)
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
+n = len(re.findall(r"(?m)^SLOW_SCOPED(?:_FILE)?=", t))
+assert n == 1, "the fixture declares the cost lane %d times, not once" % n
+open(runall, "w").write(t)
+os.makedirs(os.path.dirname(lanefile), exist_ok=True)
+if names:
+    open(lanefile, "w").write("\n".join(names) + "\n")
+PY
+}
+
 check() { # check <label> <expected rc> <dir> [gate to run: default the fixture's own copy]
   # one `local` per line: bash expands every word of a `local` BEFORE running it,
   # so a default written as "${4:-$dir/...}" on the same line reads $dir unset.
@@ -56,9 +79,28 @@ check() { # check <label> <expected rc> <dir> [gate to run: default the fixture'
   fi
 }
 
-# --- 1. the control: an untouched copy must be green ------------------------
+# --- 1. the control -------------------------------------------------------
+# Two halves, because they are two different claims.
+#
+# The tree as it SHIPS may answer 0 - the sentence is current - or 1 - the tree
+# moved and nobody has re-emitted the sentence, which is the normal state of a
+# tree that merges several branches and is exactly what this gate is for. What
+# it may never answer here is 2: a census that cannot measure makes every case
+# below meaningless, and that is the answer this battery must not swallow.
+# Demanding 0 made this battery red on every combined tree, where the sentence
+# is stale by construction - a control that fails on the healthy case.
 D="$TMP/control"; build "$D" || die "could not build the control fixture"
-check "an untouched tree agrees with its census" 0 "$D"
+rc=0; ( cd "$D" && EHS_REPO_ROOT="$D" bash "$D/$GATE" ) >"$TMP/out.txt" 2>&1 || rc=$?
+if [ "$rc" = "0" ] || [ "$rc" = "1" ]; then
+  printf 'ok       %-48s rc=%s\n' "the shipped tree can be measured" "$rc"; pass=$((pass + 1))
+else
+  printf 'FAIL     %-48s rc=%s (wanted 0 or 1)\n' "the shipped tree can be measured" "$rc"
+  sed 's/^/        | /' "$TMP/out.txt" | tail -8; fail=$((fail + 1))
+fi
+# and the hermetic half: once the sentence is emitted, the same tree is green.
+( cd "$D" && EHS_REPO_ROOT="$D" python3 "$D/$LIB" --root "$D" --write ) >"$TMP/w0.txt" 2>&1 \
+  || die "--write answered rc=$? on the control fixture"
+check "and once its sentence is emitted, it agrees" 0 "$D"
 
 # --- 2. the tree moves and the document does not ----------------------------
 D="$TMP/extra-gate"; build "$D" || die "fixture"
@@ -170,19 +212,18 @@ check "a tree with no gates in it at all" 2 "$D" "$ROOT/$GATE"
 # the lane list comes from the runner rather than from this module's memory.
 
 D="$TMP/lane-in-a-file"; build "$D" || die "fixture"
-python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
-import sys
-runall, lanefile = sys.argv[1], sys.argv[2]
-t = open(runall).read()
-assert "SLOW_SCOPED_FILE=" not in t, "the fixture already had the lane"
-t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
-open(runall, "w").write(t)
-open(lanefile, "w").write("# deferred for cost\ngate-agent-roster.sh\n")
-PY
-# The fixture's runner does not honour the lane it now declares, so `--list`
-# still names that gate. The census reading the file is exactly what makes the
-# two disagree: before the lane was read, this tree was green.
-check "a cost lane in a file the runner ignores" 2 "$D"
+cost_lane "$D" "# deferred for cost" gate-agent-roster.sh
+# The disagreement is BUILT here, never borrowed from the base tree. Written as
+# "the runner does not honour this lane" it measured a property of whatever
+# run-all.sh happened to be copied in: on the tree that merges the branch which
+# TAUGHT the runner the lane, the two agreed and the case went red over a tree
+# where nothing was wrong. Asking the runner to run the cost lane instead makes
+# it list a name the census defers - on a runner that honours the lane and on
+# one that has never heard of it - and a census that disagrees with `--list`
+# about one name is a 2.
+export EHS_SLOW_GATES=1
+check "a cost lane the runner does not defer" 2 "$D"
+unset EHS_SLOW_GATES
 
 # and the positive half: the names in that file are the ones the reader returns.
 LANES="$(cd "$D" && python3 - 2>&1 <<'PY'
@@ -206,14 +247,7 @@ fi
 # not a lane pointing at nothing. Both halves are measured: the name that is
 # there, and the name that is not.
 D="$TMP/lane-with-a-battery"; build "$D" || die "fixture"
-python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
-import sys
-runall, lanefile = sys.argv[1], sys.argv[2]
-t = open(runall).read()
-t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
-open(runall, "w").write(t)
-open(lanefile, "w").write("gate-agent-tools.selftest.sh\n")
-PY
+cost_lane "$D" gate-agent-tools.selftest.sh
 # rc=1, not 2: the lane is legal and READ - a battery in a cost lane is not a
 # lane pointing at nothing - and what is now wrong is the sentence, which the
 # emitter can fix. Before the lanes were discovered this same tree answered 2.
@@ -234,25 +268,11 @@ else
 fi
 
 D="$TMP/lane-with-a-ghost-battery"; build "$D" || die "fixture"
-python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
-import sys
-runall, lanefile = sys.argv[1], sys.argv[2]
-t = open(runall).read()
-t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
-open(runall, "w").write(t)
-open(lanefile, "w").write("gate-nobody.selftest.sh\n")
-PY
+cost_lane "$D" gate-nobody.selftest.sh
 check "a cost lane that defers a battery nobody has" 2 "$D"
 
 D="$TMP/lane-unreadable"; build "$D" || die "fixture"
-python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
-import sys
-runall, lanefile = sys.argv[1], sys.argv[2]
-t = open(runall).read()
-t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
-open(runall, "w").write(t)
-open(lanefile, "w").write("gate-agent-roster.sh\n")
-PY
+cost_lane "$D" gate-agent-roster.sh
 chmod 000 "$D/scripts/gates/data/slow-scoped.txt"
 if [ "$(id -u)" = "0" ]; then
   printf 'SKIPPED  %-48s %s\n' "a lane file that cannot be read" "running as root: no file is unreadable"
@@ -263,10 +283,13 @@ chmod 644 "$D/scripts/gates/data/slow-scoped.txt" 2>/dev/null || true
 
 D="$TMP/lane-unknown-shape"; build "$D" || die "fixture"
 python3 - "$D/scripts/gates/run-all.sh" <<'PY'
-import sys
+import re, sys
 p = sys.argv[1]
 t = open(p).read()
+t = re.sub(r"(?m)^SLOW_SCOPED(?:_FILE)?=.*\n", "", t)
 t = t.replace("PR_SCOPED='", 'SLOW_SCOPED="gate-agent-roster.sh"\nPR_SCOPED=\'', 1)
+n = len(re.findall(r"(?m)^SLOW_SCOPED(?:_FILE)?=", t))
+assert n == 1, "the fixture declares the lane %d times, not once" % n
 open(p, "w").write(t)
 PY
 check "a lane written in a shape nobody reads" 2 "$D"
@@ -285,17 +308,26 @@ check "a lane this census has no name for" 2 "$D"
 # Without this, --write could be writing something the gate would call wrong,
 # and every green above would only prove the two were frozen together.
 D="$TMP/rewrite"; build "$D" || die "fixture"
+# The number is a DELTA, never a constant. Written as `40 gate scripts` this
+# case asserted the size of the tree it was born in, so it goes red on any tree
+# that grew - including the one that merges the open branches, where nothing is
+# wrong. What it means to say is that the emitter counted ONE MORE, so it counts
+# before and after and compares the two.
+( cd "$D" && EHS_REPO_ROOT="$D" python3 "$D/$LIB" --root "$D" --write ) >"$TMP/w1.txt" 2>&1 \
+  || die "--write answered rc=$? on a tree it must be able to write"
+n0="$(grep -oE '[0-9]+ gate scripts' "$D/docs/gate-requirements.md" | head -1 | grep -oE '^[0-9]+')"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$D/scripts/gates/gate-zz-fixture.sh"
 chmod +x "$D/scripts/gates/gate-zz-fixture.sh"
 check "before --write, the extra gate is a failure" 1 "$D"
 ( cd "$D" && EHS_REPO_ROOT="$D" python3 "$D/$LIB" --root "$D" --write ) >"$TMP/w.txt" 2>&1 \
   || die "--write answered rc=$? on a tree it must be able to write"
 check "after --write, the same tree is green" 0 "$D"
-if grep -qE '^> .*\b40 gate scripts' "$D/docs/gate-requirements.md"; then
-  printf 'ok       %-48s %s\n' "--write counted the new gate" "40 gate scripts"; pass=$((pass + 1))
+n1="$(grep -oE '[0-9]+ gate scripts' "$D/docs/gate-requirements.md" | head -1 | grep -oE '^[0-9]+')"
+if [ -n "$n0" ] && [ -n "$n1" ] && [ "$n1" = "$((n0 + 1))" ]; then
+  printf 'ok       %-48s %s\n' "--write counted the new gate" "$n0 -> $n1"; pass=$((pass + 1))
 else
   printf 'FAIL     %-48s %s\n' "--write counted the new gate" \
-    "$(grep -oE '[0-9]+ gate scripts' "$D/docs/gate-requirements.md" | head -1)"; fail=$((fail + 1))
+    "before='${n0:-unreadable}' after='${n1:-unreadable}'"; fail=$((fail + 1))
 fi
 
 printf -- '--- %d passed, %d failed ---\n' "$pass" "$fail"
