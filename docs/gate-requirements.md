@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Forty gates exist. **Thirty-six** execute on every push and pull request through `.github/workflows/ci.yml`; **two** run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; **one** runs where its input exists, in `.github/workflows/scorecard.yml`; and **one**, `gate-governance-drift.sh`, reads live branch protection, which needs an `administration` scope a workflow token cannot be granted, so it is deferred **by name with that reason** and a person runs it. Twenty-five have their own self-test battery beside them; the other fifteen carry one inline. These figures are what `scripts/gates/run-all.sh --list` and the tree report; if they and this sentence disagree, the sentence is the one that is wrong. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -28,7 +28,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | bench index | running | `gate-bench-index.sh` + self-test |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
-| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
+| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (13 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
@@ -38,17 +38,21 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
+| a capture of `$?` the shell never reaches | running | `gate-errexit-rc-capture.sh` + self-test (18 cases, 8 mutants) |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
-| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (17 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| tooling completeness | running | `gate-tooling-blindspot.sh` + self-test (12 cases) — a procedure that sends the auditor at a path `rg`/`fd` hide by default carries at least one invocation able to reach it |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| the discovery sweep can see | running | `gate-discovery-controls.sh` + self-test (15 cases) |
+| pack routing reachability | running | `gate-pack-routing.sh` + self-test (12 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -66,7 +70,7 @@ Every gate must be **proved in the negative**: a fixture that makes it exit `1`,
 
 ### The four that had never been observed failing
 
-This document has asked, since it was written, that **every** gate be proved in the negative. Measured against `run-all.sh --list`, four of seventeen had no negative proof of any kind — no battery, no fixtures, no inline self-test:
+This document has asked, since it was written, that **every** gate be proved in the negative. Measured against `run-all.sh --list` **when this section was written, with seventeen gates in the tree**, four had no negative proof of any kind — no battery, no fixtures, no inline self-test. The tree has grown since; the standing count is in the Status note above, and this section records what that measurement found:
 
 | Gate | What goes wrong silently without it | Cases now |
 |---|---|---|
@@ -89,8 +93,8 @@ A gate proves itself in exactly one of two shapes, and the gate accepts only tho
 
 | | Shape | Gates using it |
 |---|---|---|
-| sibling | a non-empty `<gate>.selftest.sh` beside it, which the CI step discovers | 14 |
-| inline | the gate READS `${GATE_SELFTEST:-1}` — the switch whose only effect is to cap its verdict at `2` when the self-test is skipped, so a gate that has not measured itself can never sign a green | 4 |
+| sibling | a non-empty `<gate>.selftest.sh` beside it, which the CI step discovers | 25 |
+| inline | the gate READS `${GATE_SELFTEST:-1}` — the switch whose only effect is to cap its verdict at `2` when the self-test is skipped, so a gate that has not measured itself can never sign a green | 15 |
 
 **The marker is a parameter expansion, not a substring**, and a mutant is why: renaming the variable inside a gate to `GATE_SELFTEST_RENAMED` left the first version of this check green, because `grep GATE_SELFTEST` matches that too — as it matches a comment that merely mentions the switch. Both spellings are now negative fixtures.
 
@@ -140,7 +144,7 @@ Progressive disclosure only works if the entry point stays small.
 | `SKILL.md` | 12 KiB | 500 | Loaded whole every time the skill fires; its cost is not amortisable. |
 | Any single file under `references/` | 32 KiB | 600 | Loaded one at a time on demand. Beyond this, split the file - do not raise the limit. |
 | Total corpus under `references/knowledge/` | - | 3,500 | Loading everything must remain obviously wrong. |
-| Whole served tree (`skills` + `agents`) | 512 KiB, 64 files | - | Security threshold: bounds the blast radius of the knowledge loop. Re-baselined 2026-08; see the gate's own comment for why, and for why a delta guard is the better instrument. |
+| Whole served tree (`skills` + `agents`) | 768 KiB, 64 files | - | Security threshold: bounds the blast radius of the knowledge loop. Re-baselined 2026-08; see the gate's own comment for why, and for why a delta guard is the better instrument. |
 | Any single `agents/*.md` | - | 120 | An agent definition is a contract, not a manual. |
 
 Exceeding a limit fails with the file and its line count.
@@ -196,7 +200,7 @@ Half the value of this corpus is knowing when **not** to report, and until now t
 2. `HOLDS` and `UNKNOWN` require a reason naming the artifact.
 3. Absence of evidence is never `HOLDS`. `FP-08` exists because "the platform handles it" is the most common way a real finding disappears.
 
-`gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. **All eight packs are converted and all eight are `required`: 154 of 154 procedures.** It took one editorial pass per pack, because citing the right rules for a procedure is a judgement and a bulk substitution would have been false rigour. Four procedures declare `Rules: none (reason)` — `AI-22` and three `VER-*` — because their class genuinely admits no exculpation, and the gate counts and prints those rather than letting them pass as citations.
+`gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. **All eight packs are converted and all eight are `required`: 154 of 154 procedures.** It took one editorial pass per pack, because citing the right rules for a procedure is a judgement and a bulk substitution would have been false rigour. Four procedures declare `Rules: none (reason)` — `AI-22` and three `VER-*` — because their class genuinely admits no exculpation, and the gate counts and prints those rather than letting them pass as citations. The ratchet half of that sentence was a promise rather than a measurement until 2026-09-10: the floor test hung off an `elif` at the same indent as `if policy.get("required"):`, so it was evaluated only for packs whose `required` is false — and all eight are required, so it had never once fired. Its battery was green throughout because `ratchet-turned-backwards` sets a pack to `required: false` to reach the floor at all, which is to say it tested the one branch in which the broken code still worked. `ratchet-also-binds-a-required-pack` is the case that would have caught it.
 
 Proved in the negative by 11 cases, including a control run and two that must exit `2`.
 
@@ -288,6 +292,34 @@ The bench holds small targets written to be read, and an answer key that names, 
 `scripts/bench/score.py` reports detected, missed, decoys reported (each a false positive with an id and the rule that should have caught it), and unlabelled findings, which are **not** counted against a run because the bench does not claim to be exhaustive. Thresholds are opt-in: without them the scorer measures and does not judge.
 
 Both are proved in the negative: 9 cases for the gate, 6 for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
+
+## The lane the comparison is drawn from
+
+`competitive-freshness.sh` asks whether each measured pin is still its repository's tip. `competitive-discovery.sh` asks the prior question — whether the list is still the field — and exits `1` when a candidate is neither pinned nor declined. Both were answering honestly about products they could reach.
+
+**Measured 2026-09-10.** The five text queries then declared in `docs/competitive-baseline.json` returned **39 distinct repositories, and none of them was `trailofbits/skills`** — 7,033 stars, a security firm's own Claude Code skills for vulnerability detection and audit workflows — **or `cloudflare/security-audit-skill`** — 3,267 stars, MIT, a multi-phase audit skill whose description states two of this repository's own axes. `gh search repos` ranks on name and description, so a product owned by an organisation and named `skills` is unreachable by every phrasing of this lane, at any star count. The previous run had exited `0` with the sentence *every candidate in the lane is named*. That sentence was true about the candidates it saw and false about the field, and nothing in the check could tell the difference.
+
+Two repairs, and they only work together.
+
+**A topic-qualified sweep.** `discovery.topic_queries` pairs a term with a GitHub topic — metadata the owner sets rather than prose a ranker reads. It orders by stars *inside one query's limit*, which is not a popularity bar creeping back in: every candidate it surfaces still has to carry a skill marker to count, a zero-star repository that carries one is a candidate exactly as before, and the text queries are not star-ordered, so the tail stays reachable. The sweep of 2026-09-10 surfaced 66 candidates and 18 unresolved names; all 18 are now pinned or declined in one line each.
+
+**Known-positive controls.** `discovery.controls` names products the baseline has *already* resolved and that the sweep must therefore return. A control that comes back missing does not mean the product is gone — it means this instrument can no longer see a thing it is pointed at, and nothing it says about the rest of the lane survives that. The run prints `controls seen N of M` and exits `2`. Controls outrank an unresolved candidate: an unresolved name is a fact about the list, an unseen control is a fact about the instrument the list-fact came from, so the names are still printed and marked **provisional** while the verdict is `2`.
+
+`gate-discovery-controls.sh` is what stops the repair from being emptied out later. Offline, from the baseline alone: at least one control exists; every control is already named in `products` or `declined` (an unresolved name is a candidate wearing a label, not a control); every control names a `found_by` that matches a declared query, so a red control says which query to repair; no control is this repository, which the sweep skips by design; no control is declared twice; and `max_candidates` is at least `sweeps × per_query`, because a run that stops at the cap never reaches its controls and a missing control then means nothing. Fifteen self-test cases, eleven of them mutants that must go red, and one that runs the gate against the **real** baseline — a rule nobody can satisfy is not a rule.
+
+### Can anyone be sent to the procedure?
+
+This corpus is reachable **only through prose**. A specialist opens the pack file its agent definition names, and opens a sibling only because the entry file's header says the sibling exists and says what is in it. Nothing scans `knowledge/` at runtime. That makes routing a load-bearing claim written in English, and English drifts silently.
+
+It had. Measured 2026-09-10: six pack headers and two agent definitions still carried the ranges from before their pack was split, and **nine procedures** — `INF-19`..`INF-23`, `AI-23`, `SUP-26`, `LOC-11`..`LOC-14` among them — were defined, numbered, traced, counted, unique and unreachable. Every other gate was green and every one of them was right: the file was present, the identifiers were unique, the counts matched, the traceability row existed. None of them asks whether anyone is ever sent there.
+
+`gate-pack-routing.sh` asks. For every pack with more than one file it reads both routers — the entry file's header and the agent's `First actions` — and compares what they name against the `### <ID>` headings the sibling files actually carry: a router that never names a sibling (`UNNAMED`), one that names it but not everything in it (`MISSING`), one that sends a reader for an id no file of the pack defines (`PHANTOM`), a router with no region to read or no file at all (`ROUTER`), a pack table naming a file that is gone (`TABLE`), and a pack whose entry cannot be identified (`SHAPE`).
+
+The two halves are deliberately of different strength, and the asymmetry is the honest part. `MISSING` reads the whole line and is generous. `PHANTOM` reports only an id that **no** file of the pack defines, so it catches a range that outlived its last procedure but **not** two siblings whose ranges are swapped with each other. Attribution was tried twice while this was being written — first by reading the whole line for each file named on it, then by reading from a file's name to the end of the line — and **both accused a correct router**, because the corpus's own headers name two siblings in one sentence and put the range before the name as often as after it. An instrument that invents a defect is worse than one that misses it, so the guess was dropped rather than shipped. That limit is written into the gate's header and into `lib/pack_routing.py`.
+
+Twelve self-test cases: ten mutants that must go red (a router that stops naming the file, either router keeping the pre-split range, a range running past the last procedure, a renamed `First actions`, a deleted agent file, a table row pointing at nothing) including two that must exit `2` rather than pass — no pack table, and a table that parses to zero rows — plus a baseline built in the two shapes the real corpus uses, and the real repository itself, which passes. The baseline is also a control against this instrument: its header names two siblings on one line with both ranges and ends with a sentence about neither, which is exactly what the two discarded versions got wrong.
+
+Four controls are declared today, chosen so the set cannot pass for the wrong reason: `trailofbits/skills` (the case that motivated it), `cloudflare/security-audit-skill`, `anthropics/claude-code-security-review` (which carries no skill marker at all — a control asks whether the *search* can see, and the marker test is a later question), and `maxgfr/ultrasec`, which has zero stars and is the control that proves the bar is not popularity.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
@@ -437,6 +469,63 @@ Measured over the whole history: **15 budget constants moved, 13 of them tighter
 
 Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
 
+## The measurement that dies mute exactly when there is something to measure
+
+GitHub Actions runs every `run:` block under `bash --noprofile --norc -eo pipefail {0}`. So this,
+which reads like careful code, is not:
+
+```bash
+bash scripts/run-batteries.sh --jobs 1 > one.out 2>&1; r1=$?
+```
+
+Under `-e` the command tears the step down the moment it returns non-zero. The capture never
+executes, the comparison it was feeding never happens, and the step ends **with no error title**:
+a reader of the run sees a job that stopped, not a measurement that failed. `set -e` does not care
+that you were about to read `$?` — reading it is not a suppressor.
+
+**Measured 2026-09-10 on branch `measure/battery-workers`.** `.github/workflows/battery-workers-ab.yml`
+carried six of these. The arm whose entire job was to catch a disagreement between a serial and a
+parallel run of the same suite died at ~295 s — exactly one serial pass — having caught nothing,
+and the run reported no error. The timing arm, which could not fail this way, worked fine and
+published its medians. One half of the experiment was silently missing and the other half looked
+healthy.
+
+This is the most expensive class of defect this repository can carry, because it is the instrument
+going quiet in precisely the case it exists for. Two forms survive `-e`, and only two:
+
+| Form | Why it survives |
+|---|---|
+| `cmd \|\| rc=$?` | `\|\|` suppresses errexit for that command |
+| `set +e` … `cmd`; `rc=$?` … `set -e` | errexit is explicitly off for that stretch |
+
+`gate-errexit-rc-capture.sh` reads every `run:` block under `.github/workflows/**`, tracks whether
+errexit is on at each point — `set +e`/`set -e`, and a `shell:` template that drops `-e` — and
+fails on a capture of `$?` that nothing suppressed. It recognises the two safe forms **as safe**
+rather than merely not-flagging them, so the output says how many captures it examined, not just
+how many it disliked. `release.yml:321` is the repository's live instance of the bracketed form and
+the gate reports it as such.
+
+**Scope, stated so it is not mistaken for a hole.** Shell scripts outside the workflows run under
+`set -uo pipefail` *without* `-e`, where `cmd; rc=$?` is correct and idiomatic; a gate that flagged
+them would be accusing the files that comply. Whether a correctly captured code is then read by
+anything is a different defect and not this gate's. A workflow that sets `defaults.run.shell` for a
+whole job is declared **unmeasurable** rather than measured against a shell nobody read.
+
+**The control that runs every time.** Before the gate says anything about the tree, the checker
+runs its detector over five strings embedded in its own source — two that must come out red, three
+that must come out clean. A sweep reporting zero because it has gone blind is indistinguishable
+from a clean tree, and this repository has already paid for that once, in the competitor sweep. If
+a control case disagrees the verdict is `2` and no claim is made. On top of that, `run-all.sh`
+parsing a workflow directory and finding not one `run:` block is reported as the extractor being
+blind, never as the tree being clean.
+
+**Reachability, both directions, measured 2026-09-10.** Over `origin/main`: 8 files, 33 `run:`
+blocks, 11 captures — 10 written `|| rc=$?`, one bracketed by `set +e` — `VERDICT 0`. Over the
+workflows of `origin/measure/battery-workers`, materialised read-only out of the object store:
+`VERDICT 1`, naming `battery-workers-ab.yml` lines 143, 144, 145, 227, 229 and 231. The battery
+adds eight mutants of the detector, each of which must make one of the 18 cases go red; a mutant
+that survives fails the battery, because a bank whose cases cannot catch a sabotage is not a bank.
+
 ## G7c — The file that tells you how to read an alert has to be right
 
 `.github/dependabot.yml` carries the comment a triager reads before deciding whether a red
@@ -525,6 +614,52 @@ What this gate does **not** measure, and says so on every run: whether the leade
 the block. No static check makes a model obey an instruction. That is a `bench/` question, and
 calling this gate's `0` "the handover works" would be exactly the substitution the block itself
 forbids.
+
+## G7e — The search that reports an absence it never looked at
+
+`references/tooling.md:19` already says it: `rg` honours `.gitignore` and `.ignore` and
+skips hidden files, `fd` does the same, and so a search that comes back empty has
+searched a **filtered** view of the tree — "a false-negative source, not a
+false-positive one, so nothing in the output warns you". Nothing read that rule back
+against the procedures obliged to obey it.
+
+Measured on 2026-09-10 against `origin/main @ 6066048`: **90** `rg`/`fd` invocations
+across the knowledge corpus, **4** of them carrying any completeness flag, and
+`grep -rlE 'no-ignore|--hidden|-uu' scripts/gates/` empty — not one of the gates was
+watching. Seven procedures sent the auditor at a path the defaults hide with no
+invocation able to reach it: `AI-25` at `.claude-plugin`, `AI-28` at `.cursor`, `AI-30`
+and `INF-08` at `.env`, `LOC-07` at the dotfile layer it discovers by walking up,
+`AI-22` at `.cursor/rules/**` with `-H` but without `-I`, and `SUP-23` at readers that
+live in `vendor/`. Each returns zero findings on a tree where the file exists, and zero
+findings is exactly what a clean audit looks like.
+
+**The unit of judgement is the PROCEDURE, not the command.** One that sweeps source with
+the defaults and then points a second, explicit invocation at the dotted file is
+correct, and a per-command rule accused three of those (`INF-08`, `INF-20`, `INF-24`)
+before it was calibrated. Two other accusations were withdrawn under measurement rather
+than kept to round a number up: `LOC-01`'s only hidden token is
+`../../.ssh/authorized_keys` inside a **archive entry name** — the attacker's payload,
+not a path in the audited tree — and `AI-20`'s `.git` appears inside `-g '!.git'`, an
+exclusion, because excluding a path is not visiting it.
+
+Two properties the battery had to learn the hard way, and they are written into it:
+
+- **The mutant runs against the COPY of the gate, not the installed one.** `core-crashes`
+  survived its first draft because the gate resolves its core from `$HERE`: mutating
+  `scripts/gates/lib/` in the working tree hit a file nobody executed. The battery now
+  invokes `"$work/scripts/gates/gate-tooling-blindspot.sh"`. The neighbouring batteries
+  do not have this problem because they only mutate data.
+- **Red with no finding is a crash, not a failure.** The gate turns an `rc=1` carrying
+  zero `FINDING` lines into a `2`.
+
+`corrected-procedure-regressed` and `premise-no-longer-declared` assert their target
+exists before mutating it, so a mutant whose subject was deleted says it no longer bites
+instead of going quiet and reading as coverage.
+
+**What it does not measure:** that `rg` and `fd` behave as their documentation says.
+Neither is installed on the machine that wrote this, so the claim that those defaults are
+blind comes from the tools' own documentation, not from an execution here. The gate says
+so in its own header rather than letting the omission pass for a measurement.
 
 ## G8 — Regression guard on quality issues
 

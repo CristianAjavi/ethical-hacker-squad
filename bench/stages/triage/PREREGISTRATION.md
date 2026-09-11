@@ -1,5 +1,16 @@
 # Pre-registration — the triage stage, before anybody runs it
 
+> **Superseded on the facts, not on the criteria — the eval was run on 2026-08-24.**
+> The score arrived: [`bench/runs/2026-08-24-triage-stage/`](../../runs/2026-08-24-triage-stage/),
+> twelve runs, six per arm. The primary metric could not measure — over-affirmation
+> happened zero times in both arms — so the ceiling rule below was followed and no
+> difference is reported.
+>
+> **Nothing under this banner has been edited.** The text is frozen as it was
+> committed, including the sentences that are now out of date, because the point of
+> the file is that the reader can check the criteria predate the numbers. Rewriting
+> it to match the result would destroy the only thing it is for.
+
 Committed with the cases and the key, and before a single model call. **Nothing
 in this directory has been run.** There is no score anywhere in this repository
 for this eval, and this file exists so that when one arrives, the reader can see

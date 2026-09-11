@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory has a vector store, embeddings, an ingestion job or persistent agent memory; or model output reaches code, SQL, shell, HTML or rendered markdown; or the system prompt carries business rules or credentials; or an agentic loop runs without caps; or you are about to ingest text a human only reviews visually. §10 applies to every engagement without exception, because you also ingest the target's content.
 > **Do not load it if:** the work is confined to the per-agent capability inventory, the instruction/data boundary, tool authorization or the MCP tool chain — those are `ai-safety.md` §0-§3.
-> **Cost:** ~350 lines. Load by section using the index. The pack's entry point, `ai-safety.md`, holds §0-§3 (`AI-01`..`AI-11`) plus the identifier compatibility and severity calibration notes; its third file, `ai-safety-agent-runtime.md`, holds §11-§13 (`AI-25`..`AI-28`, `AI-30`) for installable agent packages, the agent's execution boundary, inter-agent handoff, attribution and the inference endpoint. `AI-01`, the lethal-trifecta check, orders everything in this file too.
+> **Cost:** ~350 lines. Load by section using the index. The pack's entry point, `ai-safety.md`, holds §0-§3 (`AI-01`..`AI-11`, `AI-29`) plus the identifier compatibility and severity calibration notes; its third file, `ai-safety-agent-runtime.md`, holds §11-§13 (`AI-25`..`AI-28`, `AI-30`) for installable agent packages, the agent's execution boundary, inter-agent handoff, attribution and the inference endpoint. `AI-01`, the lethal-trifecta check, orders everything in this file too.
 
 ## Selective loading index
 
@@ -347,4 +347,4 @@ Rules: none (this class admits no exculpation: only the user can change these ru
 Before starting, run the AI-20 sweep over the target and list the instruction files present. That tells you from minute one whether you are auditing a repository that is also trying to talk to you.
 
 **Traceability**: `LLM01:2026` · `ASI01` · `ASI09` · `ASI10` · `AML.T0051.001`
-**Tooling**: `fd -H -t f 'CLAUDE.md|AGENTS.md|\.mcp\.json|copilot-instructions' <target>` → an inventory of files that speak to agents. Their presence does not imply malice; the absence of review over them is a finding.
+**Tooling**: `fd -H -I -t f 'CLAUDE.md|AGENTS.md|\.mcp\.json|copilot-instructions' <target>` → an inventory of files that speak to agents. **The `-H -I` is the pair, not one of the two**: `-H` alone still honours `.gitignore`, and these files live under `.cursor/rules/**` and `.github/`, which a repository routinely ignores — so the half-invocation returns a short inventory wearing the face of a complete one. Their presence does not imply malice; the absence of review over them is a finding.

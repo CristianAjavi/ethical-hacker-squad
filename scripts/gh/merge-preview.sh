@@ -209,6 +209,12 @@ while IFS= read -r t; do
   esac
 done < <(cd "$WT/tree" && find scripts -type d -name fixtures -prune -o -type f -name '*.selftest.sh' -print | LC_ALL=C sort)
 printf '  %d battery(ies), worst = %d\n' "$bat_n" "$bat_worst"
+if [ "$bat_n" -eq 0 ]; then
+  printf '  COULD NOT MEASURE: the merged tree carries no self-test battery at all.\n'
+  printf '  scripts/run-batteries.sh refuses this same shape; a worst-of over zero\n'
+  printf '  batteries is not a green, it is an instrument that measured nothing.\n'
+  [ "$RC" -eq 1 ] || RC=2
+fi
 case "$bat_worst" in
   1) RC=1 ;;
   2) [ "$RC" -eq 1 ] || RC=2 ;;
