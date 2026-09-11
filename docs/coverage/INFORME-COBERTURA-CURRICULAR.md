@@ -1,6 +1,6 @@
 # Informe de cobertura curricular — ethical-hacker-squad
 
-**Fecha:** 2026-08-16 · **Modo:** solo lectura sobre `/Users/cristianajavi/ethical-hacker-squad`. Cero escrituras en el repo.
+**Fecha:** 2026-08-16 · **Modo:** solo lectura sobre la raíz del repositorio. Cero escrituras en el repo.
 **Corpus medido:** 122 procedimientos verificados en disco — `WEB-01..22` (22), `MOB-01..15` (15), `INF-01..18` (18), `SUP-01..20` (20), `AI-01..22` (22), `PRV-01..11` (11), `REM-01..07` + `VER-01..07` (14 encabezados en `remediation.md`).
 **Entrada:** 5 áreas que mapearon currículos profesionales (PortSwigger · certs cloud MS/AWS/GCP · OpenSSF/SLSA/S2C2F · certs ofensivas + NICE · OWASP AI + MAS) y los contrastaron contra el corpus.
 
