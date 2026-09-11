@@ -1061,3 +1061,72 @@ spirit. Run against the real artifacts, it accused four of the best runs in the 
 `not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
 absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
 first is the only reason it is not in this repository.
+
+## Third reading, 2026-09-11 — four of the nine pins moved, and none of them moved a claim
+
+`scripts/gh/competitive-freshness.sh` returned `1`: **still the tip 5 · moved 4 · could not
+measure 0**. Four subjects had been pushed since the photograph — `Tencent/AI-Infra-Guard`
+(`4908db1` → `036c39b`), `google/mantis` (`5f76be0` → `d13c93f`), `maxgfr/ultrasec`
+(`f28d59f` → `fdcf3de`) and `braydos-h/BreachPilot` (`120c45b` → `371d067`). Movement is not
+improvement, so each was read commit by commit through `repos/{owner}/{repo}/compare/{old}...{new}`
+before anything was written here. Nothing was re-pinned: a pin records the commit a measurement
+was taken at, and no measurement was taken on 2026-09-11.
+
+**AI-Infra-Guard, 65 commits.** Thirty-two of them were already read on 2026-09-01 — that reading
+is where `LOC-16` came from. Of the rest, two are worth naming: `70824ef` stops `skill-scan`
+silently hiding `.pyc` files and skip-dir payloads, and `39692dd` marks a scan with empty output
+`possibly-incomplete` rather than clean. The second one is this repository's own doctrine arriving
+independently in a competitor: an unmeasured thing is not a passed thing. It is convergent
+evidence, not a counter-example, and it does not touch the `SkillTrustBench` figures this document
+cites.
+
+**mantis, 6 commits, five of them already read.** The one new commit is `d13c93f`, and
+`27467b3...d13c93f` is **1 commit over 9 files**, all inside `reference/core/environments/*.py`,
+`reference/scripts/configure.py`, `launch.py`, `test_suite.py` and `tools/research_tools.py`:
+hardening of the sandbox layer already described above. No new eval dataset, no change to the
+dedupe ladder, no change to the per-stage floor.
+
+**ultrasec, 41 commits over 214 files.** The product visibly grew — sink/source/sanitizer recall
+across JVM, Go, .NET, PHP and Ruby, unpinned-action and token-permission vectors, partial scanner
+evidence retained instead of dropped, duplicate finding identities rejected. The claim this
+document makes about it is narrow and was checked by name rather than by impression:
+`src/coverage.ts`, where `engineCovers` is computed from the kinds present anywhere in the run with
+no denominator, **does not appear anywhere in the 214-file diff**. The hole named here is the hole
+that is still there.
+
+**BreachPilot, 139 commits.** The compare API caps its `files` array at 300 and this diff hits the
+cap, so this is a reading of the commit list and says so rather than pretending to a file-level
+answer. Killchain and attack-graph work, AD delegation, a sandboxed Playwright toolchain, egress
+and audit hardening. The note here was never a capability band, it was a posture — same class of
+product, opposite posture — and 139 commits of exploit-chaining deepen that posture rather than
+narrowing the distance.
+
+### What "pinned but never benchmarked" was costing, and what it costs now
+
+`competitive-freshness.sh` has printed, since 2026-09-01, that six comparable products are pinned
+and never benchmarked. That sentence was true and useless: it named a backlog with no owner and no
+price. Six readings of the products' own documentation put a price on each, and the baseline now
+carries it as `harness_fit`, which the freshness report prints beside every name:
+
+| Product | Fit | Why |
+|---|---|---|
+| `maxgfr/ultrasec` | deterministic layer runnable here, no spend | its own README: a deterministic, zero-dependency engine run with `node`, no `npm install`, no API keys — only its adversarial-verification judging needs a model |
+| `prasannasalunkhe18/ThreatLens` | deterministic layer runnable here, no spend | its Discover stage is Semgrep/CodeQL with no LLM and no API key; the Investigate stage that issues the verdict needs a provider |
+| `wrsmith108/claude-skill-security-auditor` | runnable, but a different surface | it is an `npm audit` wrapper end to end; `bench/ground-truth.json` plants first-party code defects, not registry CVEs, so a score would measure a question it never claimed to answer |
+| `dungnotnull/web-app-security-audit-agent-skill` | needs model spend | a model-driven harness whose six steps all run through a model — the followed-prompt shape already used for AIG and mantis |
+| `kalpmodi/akira` | no live target in this harness | every finding needs a reproducible HTTP response body; `bench/cases/*` are source trees |
+| `braydos-h/BreachPilot` | no live target in this harness | domain-aware recon against a live host, with an IP allowlist lock |
+
+Two of those are the interesting ones. `ultrasec` and `ThreatLens` each ship a deterministic layer
+that could be pointed at `bench/cases/*` today for zero model spend, and the number it would
+produce — raw findings against planted defects — is one this repository has never asked of an
+external tool. What stops it being a measurement is the other half: `bench/reproduction/` matches a
+planted defect to a report written in this project's own shape, and no run has ever cross-checked
+an outside tool's raw output against `ground-truth.json` by file and line. That plumbing is the
+work, not the model budget, and it is written here as the next candidate rather than claimed as a
+result.
+
+The seventh entry is the one that matters for next time: a product discovered, pinned and **not
+triaged at all** now reads differently from one that was considered and set aside. The freshness
+report counts the untriaged separately and says so in words, so the next discovery run cannot add a
+name that quietly joins a list nobody owns.

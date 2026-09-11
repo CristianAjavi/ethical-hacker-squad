@@ -45,15 +45,17 @@ case "$LAB_MODE:$path" in
   *:repos/org/alpha/commits*)     emit '[{"sha":"aaaaaaa000000000000000000000000000000000"}]' ;;
   moved:repos/org/beta/commits*)  emit '[{"sha":"9999999000000000000000000000000000000000"}]' ;;
   *:repos/org/beta/commits*)      emit '[{"sha":"bbbbbbb000000000000000000000000000000000"}]' ;;
+  *:repos/org/known/commits*)     emit '[{"sha":"ccccccc000000000000000000000000000000000"}]' ;;
+  *:repos/org/fresh/commits*)     emit '[{"sha":"ddddddd000000000000000000000000000000000"}]' ;;
   *:repos/org/*)                  emit '{"pushed_at":"2026-08-24T00:00:00Z"}' ;;
   *) emit '{}' ;;
 esac
 GH
 chmod +x "$LAB/bin/gh"
 
-res() {  # <label> <mode> <expected rc> [needle]
-  local label="$1" mode="$2" want="$3" needle="${4:-}" rc=0
-  LAB_MODE="$mode" PATH="$LAB/bin:$PATH" bash "$TOOL" --baseline "$LAB/baseline.json" >"$LAB/out.txt" 2>&1 || rc=$?
+res() {  # <label> <mode> <expected rc> [needle] [baseline]
+  local label="$1" mode="$2" want="$3" needle="${4:-}" base="${5:-$LAB/baseline.json}" rc=0
+  LAB_MODE="$mode" PATH="$LAB/bin:$PATH" bash "$TOOL" --baseline "$base" >"$LAB/out.txt" 2>&1 || rc=$?
   if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -qi -- "$needle" "$LAB/out.txt"; }; then
     printf '  PASS  %-50s rc=%s\n' "$label" "$rc"; pass=$((pass+1))
   else
@@ -73,6 +75,34 @@ res "no repository answers -> rc 2"          silent  2 "COULD NOT MEASURE"
 grep -q "DOUBLE ERROR" "$LAB/out.txt" \
   && { printf '  FAIL  %-50s\n' "queried a product it says it never measured"; fail=$((fail+1)); } \
   || { printf '  PASS  %-50s\n' "never queries a non-comparable product"; pass=$((pass+1)); }
+
+# A pin that was never benchmarked is a backlog item. Since 2026-09-11 each one
+# also carries what benchmarking it here would cost, and the one nobody has
+# triaged yet must not read like one that was considered and set aside.
+cat > "$LAB/triaged.json" <<'JSON'
+{ "measured_on": "2026-01-01",
+  "products": [
+    { "repo": "org/alpha", "pinned": "aaaaaaa", "comparable": true, "rounds": [] },
+    { "repo": "org/beta",  "pinned": "bbbbbbb", "comparable": true, "rounds": [] },
+    { "repo": "org/known", "pinned": "ccccccc", "comparable": true, "rounds": [],
+      "benchmarked": false,
+      "harness_fit": { "verdict": "needs-model-spend", "why": "every stage runs through a model" } } ] }
+JSON
+cat > "$LAB/untriaged.json" <<'JSON'
+{ "measured_on": "2026-01-01",
+  "products": [
+    { "repo": "org/alpha", "pinned": "aaaaaaa", "comparable": true, "rounds": [] },
+    { "repo": "org/beta",  "pinned": "bbbbbbb", "comparable": true, "rounds": [] },
+    { "repo": "org/fresh", "pinned": "ddddddd", "comparable": true, "rounds": [],
+      "benchmarked": false } ] }
+JSON
+res "a triaged pin prints what it would cost"  current 0 "needs-model-spend"  "$LAB/triaged.json"
+res "an untriaged pin says so"                 current 0 "NOT TRIAGED"        "$LAB/untriaged.json"
+res "and it is counted, not just listed"       current 0 "have NOT been triaged" "$LAB/untriaged.json"
+res "a triaged baseline still verdicts 0"      current 0 "" "$LAB/triaged.json"
+grep -q "have NOT been triaged" "$LAB/out.txt" \
+  && { printf '  FAIL  %-50s\n' "counted a triaged pin as untriaged"; fail=$((fail+1)); } \
+  || { printf '  PASS  %-50s\n' "a triaged pin is not counted as untriaged"; pass=$((pass+1)); }
 
 rc=0; PATH="$LAB/bin:$PATH" bash "$TOOL" --baseline "$LAB/nope.json" >"$LAB/out.txt" 2>&1 || rc=$?
 if [ "$rc" -eq 2 ]; then printf '  PASS  %-50s rc=2\n' "no baseline -> rc 2"; pass=$((pass+1))

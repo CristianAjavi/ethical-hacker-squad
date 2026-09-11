@@ -84,8 +84,18 @@ printf '\n  still the tip %d · moved %d · could not measure %d\n' "$same" "$mo
 never="$(jq -r '[.products[] | select(.comparable and (.benchmarked == false))] | length' "$BASELINE" 2>/dev/null || echo 0)"
 if [ "${never:-0}" -gt 0 ]; then
   printf '  %s comparable product(s) are PINNED BUT NEVER BENCHMARKED - a pin says where to look,\n' "$never"
-  printf '  not what was found. They are named in the baseline with `benchmarked: false`:\n'
-  jq -r '.products[] | select(.comparable and (.benchmarked == false)) | "    " + .repo' "$BASELINE"
+  printf '  not what was found. They are named in the baseline with `benchmarked: false`, each with\n'
+  printf '  what benchmarking it here would actually cost (`harness_fit`):\n'
+  jq -r '.products[] | select(.comparable and (.benchmarked == false))
+         | "    " + .repo + "  ->  " + (.harness_fit.verdict // "NOT TRIAGED")' "$BASELINE"
+  # A product discovered and pinned but never triaged reads exactly like one that
+  # was considered and set aside. It is not the same thing, so it is counted.
+  untriaged="$(jq -r '[.products[] | select(.comparable and (.benchmarked == false)
+                      and (.harness_fit | not))] | length' "$BASELINE" 2>/dev/null || echo 0)"
+  if [ "${untriaged:-0}" -gt 0 ]; then
+    printf '  %s of them have NOT been triaged: nobody has said whether this harness can run them\n' "$untriaged"
+    printf '  at all. Until that is written down, "never benchmarked" is a backlog item with no owner.\n'
+  fi
 fi
 
 if [ "$unmeas" -gt 0 ] && [ "$moved" -eq 0 ]; then
