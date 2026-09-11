@@ -42,10 +42,11 @@ set -uo pipefail
 #
 # SKILL.md (12 KiB ~= 3,000 tokens)
 #   SKILL.md is loaded whole into context EVERY time the skill fires; its cost is
-#   neither optional nor amortisable. The current file weighs ~8.7 KiB, so 12 KiB
-#   leaves ~40% headroom to grow without the threshold getting in the way, and it
-#   stops the real degradation pattern: a skill that fattens commit after commit
-#   until the model stops reading it carefully. If a change needs more than
+#   neither optional nor amortisable. The threshold was set when the file weighed
+#   ~8.7 KiB and it has since grown into it: 12,278 B on 2026-09-10, 10 bytes of
+#   headroom. That is the threshold working, not failing - it stops the real
+#   degradation pattern, a skill that fattens commit after commit until the model
+#   stops reading it carefully. If a change needs more than
 #   12 KiB, the correct answer is to move that text to references/ (loaded on
 #   demand), not to raise the threshold.
 #

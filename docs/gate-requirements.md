@@ -141,7 +141,7 @@ Progressive disclosure only works if the entry point stays small.
 | `SKILL.md` | 12 KiB | 500 | Loaded whole every time the skill fires; its cost is not amortisable. |
 | Any single file under `references/` | 32 KiB | 600 | Loaded one at a time on demand. Beyond this, split the file - do not raise the limit. |
 | Total corpus under `references/knowledge/` | - | 3,500 | Loading everything must remain obviously wrong. |
-| Whole served tree (`skills` + `agents`) | 512 KiB, 64 files | - | Security threshold: bounds the blast radius of the knowledge loop. Re-baselined 2026-08; see the gate's own comment for why, and for why a delta guard is the better instrument. |
+| Whole served tree (`skills` + `agents`) | 768 KiB, 64 files | - | Security threshold: bounds the blast radius of the knowledge loop. Re-baselined 2026-08; see the gate's own comment for why, and for why a delta guard is the better instrument. |
 | Any single `agents/*.md` | - | 120 | An agent definition is a contract, not a manual. |
 
 Exceeding a limit fails with the file and its line count.
