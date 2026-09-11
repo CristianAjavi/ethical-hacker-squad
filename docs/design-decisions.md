@@ -4,9 +4,29 @@ The non-obvious choices, with the reasoning and the cost. Written so a future ma
 
 ## Status: what exists today
 
-The corpus, the plugin and this documentation exist on `main`. **The automation that enforces the rules described in `docs/gate-requirements.md`, `docs/knowledge-loop.md` and `docs/release-channels.md` is being built and has not landed yet.** There is no `stable` branch, no tagged release, and no CI.
+The corpus, the plugin and this documentation exist on `main`. The machinery is now partly landed, and this paragraph says which part, because the whole reason it exists is that a security repository may not describe controls it does not run.
 
-Those documents are written in the present tense because they are specifications — the contract the machinery is built to satisfy. Read them as design until the first `stable` release exists. This note is here because a security repository that describes controls it does not yet run is committing the exact error its own corpus teaches readers to detect, and a disclaimer buried in one file is not enough.
+**Landed and running.** CI runs on every push and every pull request:
+`.github/workflows/ci.yml` and seven further workflows on `main`. The gates in
+`docs/gate-requirements.md` are executed by `scripts/gates/run-all.sh`, the
+batteries by `scripts/run-batteries.sh`, and both are called by CI — a gate that
+only ever ran on a maintainer's laptop is not a monitored one. Each contract row
+in that document names the control that enforces it, and a control discovered by
+the runner but named in no row fails `gate-contract-inventory.sh`.
+
+**Specified and NOT running.** The refresh loop of `docs/knowledge-loop.md` — no
+automation reads `docs/sources-allowlist.json` today, and the corpus is updated by
+hand. The release channels of `docs/release-channels.md` — measured on
+2026-09-11: **no `stable` branch and zero tags**. `.github/workflows/release.yml`
+exists and has never promoted anything.
+
+Those two documents are written in the present tense because they are
+specifications — the contract the machinery is built to satisfy. Read them as
+design until the first `stable` release exists. The rest of the sentence used to
+read "and no CI", which stopped being true when CI landed and stayed on the page
+for several releases of work: a claim about this repository's own state that
+nothing measured. That is the same failure the corpus teaches readers to look
+for, pointing the other way, and a disclaimer buried in one file is not enough.
 
 ## 1. Ship subagents in the plugin, rather than injecting role prompts from the leader
 
