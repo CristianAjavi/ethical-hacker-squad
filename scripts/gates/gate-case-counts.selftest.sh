@@ -168,6 +168,85 @@ check a-bare-integer-in-a-table-cell-agrees    "$d" 0 "cites 12 and runs 12"
 d="$(new_tree cell-off)";    scen_cell "$d" 11
 check a-bare-integer-in-a-table-cell-off-by-one "$d" 1 "is cited as 11 cases and runs 12"
 
+# --- A SKIPPED CASE IS STILL A CASE ------------------------------------------
+# The bug CI found and this Mac could not: gate-reproduction.selftest.sh has 33
+# cases, one of which needs sandbox-exec. On macOS 33 run. On ubuntu that one
+# prints a skip with its reason and the battery prints `32 passed`, so a gate
+# comparing against `passed` alone called a TRUE citation false there and true
+# here. Everything below is measured on a synthetic battery, so it proves the
+# same thing on either machine — which is the whole point.
+
+# One case per skip spelling the tree actually emits, each counted.
+SKIPS=(
+  'leading-word|skip     the sandbox denies the network'
+  'indented|  skip  unreadable agent   (running as root: chmod 000 would not deny)'
+  'shouted|  SKIP  T09 could not build a python3-free PATH on this machine'
+)
+for entry in "${SKIPS[@]}"; do
+  label="${entry%%|*}"; line="${entry#*|}"
+  d="$(new_tree "skip-$label")"
+  battery "$d" s.selftest.sh "$line" '--- 31 passed, 0 failed ---'
+  printf 'Proved in the negative by 32 cases <!-- cases: b/s.selftest.sh -->.\n' > "$d/docs/d.md"
+  data "$d" 0
+  check "skip-spelling-$label-counts" "$d" 0 "runs 32 = 31 run + 1 skipped"
+done
+
+# The arithmetic has to be ON SCREEN. `cites 31 and runs 32` with no breakdown
+# reads like a bug in the gate rather than a skip in the battery.
+scen_two_skips() {
+  local dir="$1" cited="$2"
+  battery "$dir" s.selftest.sh \
+    'skip     the sandbox denies the network   {"skip": "not macOS"}' \
+    '  SKIP  T09 could not build a python3-free PATH' \
+    '--- 31 passed, 0 failed ---'
+  printf 'Proved in the negative by %s cases <!-- cases: b/s.selftest.sh -->.\n' \
+    "$cited" > "$dir/docs/d.md"
+  data "$dir" 0
+}
+d="$(new_tree skip-total-agrees)";  scen_two_skips "$d" 33
+check a-skipped-case-counts-toward-the-total "$d" 0 "cites 33 and runs 33 = 31 run + 2 skipped"
+
+d="$(new_tree skip-total-ignored)"; scen_two_skips "$d" 31
+check counting-only-what-ran-would-read-31 "$d" 1 "is cited as 31 cases and runs 33 = 31 run + 2 skipped"
+
+# ...and the half almost nobody writes: the comparator must still KNOW how to go
+# red once skips are in play. A gate that starts passing everything the moment a
+# skip appears has not been fixed, it has been blinded.
+d="$(new_tree skip-still-red)";     scen_two_skips "$d" 40
+check a-skip-does-not-blind-the-comparator "$d" 1 "is cited as 40 cases and runs 33 = 31 run + 2 skipped"
+
+# A failing case is a case too — the figure is the SIZE of the battery.
+d="$(new_tree failures-count)"
+battery "$d" f.selftest.sh 'Summary: 5 ok, 2 failures'
+printf 'Proved in the negative by 7 cases <!-- cases: b/f.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+check a-failing-case-is-still-a-case "$d" 0 "cites 7 and runs 7"
+
+# The two skip-shaped lines that are NOT a battery case: gate-plugin-integrity.sh
+# and gate-plugin-version.sh print both while a battery runs them. No battery
+# surfaces them today (measured: zero in 23 logs), and if one ever does this gate
+# says so rather than quietly returning a smaller total.
+d="$(new_tree skip-bracketed)"
+battery "$d" s.selftest.sh "  [SKIP] not a git repo: using find instead of 'git ls-files'" 'Summary: 5 ok, 0 failures'
+printf 'Proved in the negative by 5 cases <!-- cases: b/s.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+check a-bracketed-skip-is-a-shape-i-cannot-read "$d" 2 "shape I cannot read"
+
+d="$(new_tree skip-footer)"
+battery "$d" s.selftest.sh '  skipped in this run: 2' 'Summary: 5 ok, 0 failures'
+printf 'Proved in the negative by 5 cases <!-- cases: b/s.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+check a-skip-count-footer-is-a-shape-i-cannot-read "$d" 2 "lies DOWNWARD"
+
+# CONTROL against over-matching: gate-reproduction.selftest.sh has a case NAMED
+# "a gate that skipped its self-test cannot sign". It is a pass, not a skip, and
+# it must not be counted as one.
+d="$(new_tree skip-in-a-case-name)"
+battery "$d" s.selftest.sh 'ok       a gate that skipped its self-test cannot sign  rc=2' 'Summary: 5 ok, 0 failures'
+printf 'Proved in the negative by 5 cases <!-- cases: b/s.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+check the-word-skipped-inside-a-case-name-is-not-a-skip "$d" 0 "cites 5 and runs 5"
+
 # --- the ratchet, in both directions ---------------------------------------
 scen_ratchet() {   # one unmarked citation, ceiling 0
   local dir="$1"
@@ -265,6 +344,17 @@ fi
 #        -> the unknown-shape case returns 0. Predicted red.
 #   C. the ratchet is not applied
 #        -> the unmarked-over-the-ceiling case returns 0. Predicted red.
+#   D. skipped cases are dropped from the total (`distinct[0] + skipped` becomes
+#      `distinct[0]`) — this is verbatim the bug CI found on ubuntu
+#        -> the battery prints 31 passed + 2 skips and the document cites 33, so
+#           the mutant compares 31 against 33 and returns 1 where the honest
+#           gate returns 0. Predicted red.
+#   E. a skip shape the gate cannot read is passed over instead of stopping the
+#      measurement (`if puzzling:` becomes `if False:`)
+#        -> the bracketed-skip case falls through to the summary line, compares
+#           5 against 5 and returns 0 where the honest gate returns 2. Predicted
+#           red. This is the one that matters most: its failure mode is a total
+#           that is quietly too SMALL, which reads as a clean pass.
 #
 # The mutant is a COPY. The original is never edited: a harness that mutates the
 # file it is measuring leaves the mutation behind when it dies.
@@ -310,10 +400,24 @@ d="$(new_tree mutant-c)"; scen_ratchet "$d"
 mutant ratchet-not-applied \
   "OLD=r'if len\(unmarked_all\) > ceiling:'; NEW='if False:'; $SUB" "$d" 1
 
+# D and E guard the skip arithmetic. D is the bug CI actually found, turned into
+# a mutant so it cannot come back quietly.
+d="$(new_tree mutant-d)"; scen_two_skips "$d" 33
+mutant skipped-cases-not-counted \
+  "OLD=r'distinct\[0\] \+ skipped, shown\[0\]'; NEW='distinct[0], shown[0]'; $SUB" "$d" 0
+
+d="$(new_tree mutant-e)"
+battery "$d" s.selftest.sh "  [SKIP] not a git repo: using find instead" 'Summary: 5 ok, 0 failures'
+printf 'Proved in the negative by 5 cases <!-- cases: b/s.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+mutant unreadable-skip-shape-passed-over \
+  "OLD=r'if puzzling:'; NEW='if False:'; $SUB" "$d" 2
+
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
-echo "Result: OK. The gate reads all five spellings of a battery total, refuses the shapes"
-echo "        it does not know instead of passing them, counts the citations nobody marked"
-echo "        against a declared ceiling, and will not run the battery that runs it."
+echo "Result: OK. The gate reads all five spellings of a battery total, counts a skipped"
+echo "        case as a case so its verdict does not depend on the runner, refuses the"
+echo "        shapes it does not know instead of passing them, counts the citations nobody"
+echo "        marked against a declared ceiling, and will not run the battery that runs it."
 exit 0

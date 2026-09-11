@@ -40,6 +40,19 @@
 #      one. That is also what makes adding a sixth spelling visible instead of
 #      silent.
 #
+#      THE TOTAL IS passed + failed + skipped, NOT passed. A failing case is
+#      still a case, and so is one skipped with a declared reason: the documents
+#      quote the SIZE of a battery, not how much of it ran on today's machine.
+#      This was not foresight, it was a bug this gate shipped with and CI found:
+#      gate-reproduction.selftest.sh has 33 cases, one of which asks sandbox-exec
+#      to deny the network. On macOS 33 run; on Linux that one prints a skip with
+#      its reason and the battery prints `32 passed`. Comparing against `passed`
+#      alone, this gate called a TRUE citation false on ubuntu and would have
+#      called it true here — a verdict that depends on the runner, which is not
+#      a measurement. See CASE_SKIP / LEAD_SKIP below for the spellings, which
+#      were swept out of the tree rather than guessed, and for why a skip shape
+#      this gate cannot read is exit 2 instead of a silently smaller total.
+#
 #      How a battery is invoked is derived from its name, in one place: a file
 #      named `*.selftest.sh` is run as `bash PATH`; anything else is a gate
 #      carrying an inline self-test and is run as `bash PATH --self-test`.
@@ -204,6 +217,37 @@ FAMILIES = (
 )
 FAMILY_NAMES = " | ".join(name for name, _ in FAMILIES)
 
+# A SKIPPED CASE IS STILL A CASE. The figure the documents quote is the SIZE of
+# a battery, not how many of its cases happened to run on today's machine, and
+# the difference is not academic: gate-reproduction.selftest.sh has 33 cases, of
+# which one asks sandbox-exec to deny the network. On macOS all 33 run. On Linux
+# that one prints a skip with its reason and the battery prints `32 passed`, so
+# a gate comparing against `passed` alone called a TRUE citation false on CI and
+# would have called it true on this Mac. A verdict that depends on the runner is
+# not a measurement. The total is therefore passed + failed + skipped.
+#
+# The two expressions below were derived by SWEEPING the tree for every spelling
+# it emits (2026-09-11), not by guessing one:
+#   `skip     <case name>`     gate-reproduction.selftest.sh
+#   `  skip  <case name>`      gate-agent-tools.selftest.sh
+#   `  SKIP  <case name>`      scripts/meter/meter.selftest.sh
+# In all three the skip is printed INSTEAD of running the case and the battery's
+# own counter is not incremented — verified by reading each branch. The verdict
+# word leads the line bare, exactly as `ok` and `FAILED` do in those same files.
+CASE_SKIP = re.compile(r"^\s*skip\b[ \t]+\S", re.I)
+
+# And the shapes that are skip-ish but are NOT a battery case. Measured on this
+# tree: gate-plugin-integrity.sh and gate-plugin-version.sh print `  [SKIP] ...`
+# per check and a `  skipped in this run: N` footer — those belong to a GATE,
+# not to the battery running it, and counting them would inflate a true citation
+# into a false one. Today no battery surfaces them (their batteries capture gate
+# stdout; measured: zero occurrences in all 23 battery logs). If one ever does,
+# this gate must say SO rather than guess: a total that silently drops skips it
+# cannot read is a total that lies DOWNWARD, which is the failure this whole
+# block exists to prevent. Anything skip-shaped at the head of a line that
+# CASE_SKIP did not claim is therefore exit 2, never a quiet pass.
+LEAD_SKIP = re.compile(r"^\s*[\[(]?\s*skip\w*\b", re.I)
+
 try:
     spec = json.loads(DATA.read_text(encoding="utf-8"))
 except Exception as exc:
@@ -247,16 +291,29 @@ def measure(rel):
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   timeout=TIMEOUT)
             text = ANSI.sub("", proc.stdout.decode("utf-8", "replace"))
-            totals, shown = [], []
+            totals, shown, skipped, puzzling = [], [], 0, []
             for line in text.splitlines():
+                hit = None
                 for _, rx in FAMILIES:
                     hit = rx.match(line)
                     if hit:
-                        totals.append(int(hit.group(1)))
-                        shown.append(line.strip())
                         break
+                if hit:
+                    # A failing case is still a case: the figure is the SIZE.
+                    totals.append(int(hit.group(1)) + int(hit.group(2)))
+                    shown.append(line.strip())
+                elif CASE_SKIP.match(line):
+                    skipped += 1
+                elif LEAD_SKIP.match(line):
+                    puzzling.append(line.strip())
             distinct = sorted(set(totals))
-            if not distinct:
+            if puzzling:
+                result = ("err", "%s printed %d line(s) that look like a skipped case "
+                                 "in a shape I cannot read, the first being `%s`. A "
+                                 "total that drops skips it does not understand lies "
+                                 "DOWNWARD, so this is not measured, not a pass"
+                                 % (rel, len(puzzling), puzzling[0]))
+            elif not distinct:
                 result = ("err", "%s printed no summary line I recognise (%s). An "
                                  "output shape I do not know is NOT a pass" % (rel, FAMILY_NAMES))
             elif len(distinct) > 1:
@@ -264,7 +321,8 @@ def measure(rel):
                                  "which one is this battery's" %
                                  (rel, len(distinct), ", ".join(str(d) for d in distinct)))
             else:
-                result = ("ok", distinct[0], shown[0], proc.returncode)
+                result = ("ok", distinct[0] + skipped, shown[0], proc.returncode,
+                          distinct[0], skipped)
         except subprocess.TimeoutExpired:
             result = ("err", "%s did not finish within %ds" % (rel, TIMEOUT))
         except OSError as exc:
@@ -322,15 +380,20 @@ for doc in docs:
                 emit("WARN", "%s:%d  %s" % (doc, lineno, result[1]))
                 unmeasurable = True
                 continue
-            _, total, summary, battery_rc = result
+            _, total, summary, battery_rc, ran, skipped = result
             checked += 1
             agree = (cited == total)
+            # With a skip in play, the bare total does not explain itself: the
+            # summary line says 32 and the gate says 33. Show the arithmetic, or
+            # the reader cannot tell a correct verdict from a broken one.
+            how = ("%d = %d run + %d skipped" % (total, ran, skipped)) if skipped \
+                else str(total)
             if agree:
-                emit("OK", "%s:%d  `%s` cites %d and runs %d  [%s, battery rc=%d]"
-                           % (doc, lineno, rel, cited, total, summary, battery_rc))
+                emit("OK", "%s:%d  `%s` cites %d and runs %s  [%s, battery rc=%d]"
+                           % (doc, lineno, rel, cited, how, summary, battery_rc))
             else:
-                emit("FAIL", "%s:%d  `%s` is cited as %d cases and runs %d  [%s, "
-                             "battery rc=%d]" % (doc, lineno, rel, cited, total,
+                emit("FAIL", "%s:%d  `%s` is cited as %d cases and runs %s  [%s, "
+                             "battery rc=%d]" % (doc, lineno, rel, cited, how,
                                                  summary, battery_rc))
                 failed = True
 
