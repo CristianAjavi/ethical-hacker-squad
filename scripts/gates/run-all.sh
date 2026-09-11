@@ -96,7 +96,12 @@ LIVE_SCOPED='gate-governance-drift.sh gate-alert-live.sh'
 # They are deferred here BY NAME with the cost, and they run in their own CI job
 # in parallel with this one - ci.yml, job `counts` - where they cost the person
 # who pushed no wall clock at all. EHS_SLOW_GATES=1 runs them locally.
-SLOW_SCOPED='gate-case-counts.sh gate-case-counts.selftest.sh'
+SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"
+if [ ! -f "$SLOW_SCOPED_FILE" ]; then
+  printf 'COULD NOT MEASURE: the declared scope %s is not there, so I cannot tell a control that runs elsewhere from one that stopped running at all\n' "$SLOW_SCOPED_FILE" >&2
+  exit 2
+fi
+SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
