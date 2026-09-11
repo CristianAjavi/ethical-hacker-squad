@@ -5,7 +5,7 @@ Fecha de extracción: 2026-08-11.
 
 ## Reglas aplicadas a este documento
 
-- **Solo lectura sobre el repo.** No se tocó nada dentro de `/Users/cristianajavi/ethical-hacker-squad`.
+- **Solo lectura sobre el repo.** No se tocó nada dentro del repositorio.
 - **No se leyó el corpus** (`references/knowledge/*.md`) antes de escribir este mapa, por instrucción explícita: primero el temario, sin contaminación.
 - **Nada de texto copiado.** Aquí sólo hay: nombres de curso, códigos de curso, nombres de módulo/capítulo, nombres de check/requisito e **IDs**. Eso es *estructura del temario como hecho*, no la redacción del vendor. Donde un título original era largo y descriptivo (S2C2F) se anota una **etiqueta corta parafraseada** y se marca como tal.
 - Todo bloque lleva la **URL realmente abierta**.
