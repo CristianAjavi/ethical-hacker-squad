@@ -42,7 +42,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
-| negative proof, its OTHER HALF | running | `gate-refutation.sh` + self-test (12 cases) |
+| negative proof, its OTHER HALF | running | `gate-refutation.sh` + self-test (12 cases) <!-- cases: scripts/gates/gate-refutation.selftest.sh --> |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
 | the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
