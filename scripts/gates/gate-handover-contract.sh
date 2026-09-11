@@ -285,11 +285,29 @@ i=t.index("### 9.")
 head,tail=t[:i],t[i:]
 p.write_text(head+tail.replace("`references/report.md`","the report specification",1))'
 
+  # The lookahead carries `|\Z` because the reader at the top of this file does.
+  # Without it the mutation is a no-op the day step 9 becomes the last section,
+  # the case returns 0 where it wants 1, and the negative proof of this gate's
+  # most important assertion disappears with nothing else going red. On
+  # 2026-09-10 the margin was one heading: `### 9.` at SKILL.md:113, the next
+  # `## ` at :121, the file ending at :129.
   run_case step9-deleted-entirely 1 "no .### 9" '
 import os,pathlib,re
 p=pathlib.Path(os.environ["EHS_SKILL"])
 t=p.read_text()
-p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## )","",t))'
+p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## |\Z)","",t))'
+
+  # And the same deletion in the geometry that used to defeat it: step 9 last,
+  # nothing after it. A case that only passes while a later heading happens to
+  # exist is proving the heading, not the deletion.
+  run_case step9-deleted-when-it-is-the-last-section 1 "no .### 9" '
+import os,pathlib,re
+p=pathlib.Path(os.environ["EHS_SKILL"])
+t=p.read_text()
+i=t.index("### 9.")
+nxt=t.find("\n## ",i)
+t=t[:i]+(t[i:nxt] if nxt!=-1 else t[i:])
+p.write_text(re.sub(r"(?ms)^### 9\..*?(?=^## |\Z)","",t))'
 
   echo "  == the specification loses a field =="
   run_case a-declared-field-loses-its-marker 1 "has no marker in report.md" '

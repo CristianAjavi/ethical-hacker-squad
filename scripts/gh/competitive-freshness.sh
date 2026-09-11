@@ -168,6 +168,18 @@ done < <(jq -r '
 printf '\n  still the tip %d · moved and read %d · MOVED %d · could not measure %d\n' \
   "$same" "$acked" "$moved" "$unmeas"
 
+# A verdict over zero subjects is not a verdict. labels.sh already refuses this
+# exact shape - "an rc=0 that meant I reviewed nothing" - and so does
+# scripts/run-batteries.sh. This loop runs zero times whenever the baseline loses
+# `products`, or no entry is both `comparable` and `pinned`, and the fall-through
+# was VERDICT 0.
+if [ $((same + moved + unmeas)) -eq 0 ]; then
+  printf '  %s declares no product that is both `comparable` and `pinned`, so this run\n' "$BASELINE"
+  printf '  compared nothing. "Every pin is still the tip" over zero pins is not a pass.\n'
+  printf '  VERDICT: 2 (COULD NOT MEASURE - there was nothing to compare)\n'
+  exit 2
+fi
+
 # A pin is not a measurement. competitive-discovery.sh added six comparable
 # products on 2026-09-01 that have never been run, and a freshness report that
 # lists them beside the benchmarked three would read as though it had.

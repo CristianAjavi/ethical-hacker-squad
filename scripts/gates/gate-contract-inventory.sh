@@ -203,7 +203,7 @@ self_test() {
 main() {
   gate_header "contract-inventory (the document and the gates name the same set)"
   gate_scope "every gate \`run-all.sh --list\` discovers is named in docs/gate-requirements.md, every gate named there exists, and every \`*.selftest.sh\` battery the document names is one \`run-batteries.sh --list\` discovers"
-  gate_out_of_scope "WHICH row a gate belongs to, whether the row's status word is accurate, and whether the requirement text matches what the gate does - all three are a person's judgement; whether a battery the document does NOT name exists, which is 29 of them and is not a defect; and the CASE COUNTS the document quotes next to a battery (\"10 cases\", \"26 cases\"), which go stale the moment a battery grows and which nothing here measures - the batteries report their totals in five different formats and a parser over all five would fail for its own reasons"
+  gate_out_of_scope "WHICH row a gate belongs to, whether the row's status word is accurate, and whether the requirement text matches what the gate does - all three are a person's judgement; whether a battery the document does NOT name exists, which is most of them and is not a defect; and the CASE COUNTS the document quotes next to a battery (\"10 cases\", \"26 cases\"), which go stale the moment a battery grows and which nothing here measures - the batteries report their totals in five different formats and a parser over all five would fail for its own reasons"
 
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     self_test

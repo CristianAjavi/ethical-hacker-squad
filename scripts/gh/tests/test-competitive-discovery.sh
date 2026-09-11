@@ -11,6 +11,17 @@
 # had none, so a popularity floor would have hidden it exactly as the closed
 # list did, and this proves the bar is the marker and not the stars.
 #
+# `a-control-the-search-cannot-see` is the third, and it is about the instrument
+# rather than the lane. On 2026-09-10 the five text queries then in place
+# returned 39 repositories and none of them was `trailofbits/skills`, a product
+# in this exact lane with 7,033 stars: a text search ranks on name and
+# description, and that repository is called `skills`. The run before had exited
+# 0. `discovery.controls` names products the file has already resolved and that
+# the sweep must therefore return; when one does not come back the run says so
+# and exits 2, because a zero from an instrument that cannot see is not a zero.
+# This case is the proof that it goes red - without it the control block could be
+# deleted and every test here would stay green.
+#
 # Zero network.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
@@ -51,6 +62,11 @@ fi
 case "$path" in
   */git/trees/HEAD*)
     repo="${path#repos/}"; repo="${repo%%/git/trees/HEAD*}"
+    # TREE_DEAD names the repos whose tree call FAILS: a rate limit, a 403, a
+    # repository that went private between the search and this call. Without this
+    # the double can only ever say "no marker", which is a different statement
+    # from "I could not look", and the suite could not tell them apart.
+    case " ${TREE_DEAD:-} " in *" $repo "*) echo "gh: API rate limit exceeded" >&2; exit 1 ;; esac
     # TREES gives one repo a literal tree: `repo|path path path`, entries
     # separated by ';', a leading '!' on the repo meaning the tree came back
     # truncated. Without it every tree in this file is one of two shapes and a
@@ -225,6 +241,30 @@ echo "== the bar has to exist"
 # for. Same family as the empty search above.
 jq 'del(.discovery.skill_markers)' "$LAB/baseline.json" > "$LAB/b3.json" && mv "$LAB/b3.json" "$LAB/baseline.json"
 case_run no-markers-declared 2 "declares no discovery.skill_markers" "org/known" "org/known"
+# The controls, in both directions. A declared control that the search returns
+# changes nothing; one it does not return takes the run to 2 even though every
+# candidate that WAS seen is named - the lane looks clean and the instrument is
+# what failed.
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-control-the-search-returns 0 "controls seen 1 of 1" \
+  "org/known" "org/known"
+
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-control-the-search-cannot-see 2 "no query returned org/known" \
+  "org/other" "org/other"
+
+# ...and it outranks an unresolved candidate: the unresolved name is real and is
+# still printed, but it came out of a sweep that has just been shown to be blind,
+# so the verdict is 2 and the name is marked provisional.
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-blind-sweep-outranks-an-unresolved-name 2 "Provisional" \
+  "org/newcomer" "org/newcomer"
+
+# A topic query is swept exactly like a text query - same counters, same marker
+# test - or the two halves of the lane are not measured the same way.
+base '{"discovery":{"topic_queries":[{"term":"security","topic":"agent-skills"}]}}'
+case_run a-topic-query-is-swept-too 1 "UNRESOLVED  org/newcomer" \
+  "org/known org/newcomer" "org/known org/newcomer"
 
 # A silent instrument is not an empty field. This is the rule that fires when a
 # query dies, and it fired on the first real run.
@@ -241,8 +281,25 @@ case_run cap-reached-is-not-a-pass 2 "COULD NOT MEASURE the whole lane" \
 jq 'del(.discovery)' "$LAB/baseline.json" > "$LAB/b2.json" && mv "$LAB/b2.json" "$LAB/baseline.json"
 case_run no-lane-declared 2 "declares no discovery queries" "org/known" "org/known"
 
+# A tree call that does not answer is not a repo without a marker. Same rule as
+# empty-search above, one level down - and it is ONE call per candidate, so a
+# rate-limited run used to drop every candidate and still print "every candidate
+# in the lane is named" with rc 0.
+base
+case_run tree-silence-is-not-an-answer 2 "did not answer for its tree" \
+  "org/known org/newcomer" "org/known org/newcomer" TREE_DEAD=org/newcomer
+
+# "Already known" is an EXACT repository name. `$known` is a newline-joined blob
+# and a substring test made the candidate `org/know` disappear into the declared
+# `org/known`, which is a different repository.
+base
+case_run a-near-name-is-not-the-known-one 1 "unresolved 1" \
+  "org/known org/know" "org/known org/know"
+
 printf '\n  Summary: %d ok, %d failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 echo "  Result: OK. The check names a new entrant, ignores what is not the same kind of"
-echo "          thing, honours a written decline, and never reads silence as a clean field."
+echo "          thing, honours a written decline, sweeps a topic query like a text one,"
+echo "          refuses to sign a lane it has just been shown it cannot see, and never"
+echo "          reads silence as a clean field."
 exit 0
