@@ -26,6 +26,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | findings artifact | running | `gate-findings-artifact.sh` + self-test |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test |
 | bench index | running | `gate-bench-index.sh` + self-test |
+| an outside tool's number still reproduces | running | `gate-external-crosscheck.sh` + self-test (24 cases) <!-- cases: scripts/gates/gate-external-crosscheck.selftest.sh --> |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
@@ -288,6 +289,18 @@ The bench holds small targets written to be read, and an answer key that names, 
 `scripts/bench/score.py` reports detected, missed, decoys reported (each a false positive with an id and the rule that should have caught it), and unlabelled findings, which are **not** counted against a run because the bench does not claim to be exhaustive. Thresholds are opt-in: without them the scorer measures and does not judge.
 
 Both are proved in the negative: 9 cases for the gate, 6 for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
+
+### An outside tool's raw output, crossed against the key by file and line
+
+The bench had been scored against this project's own runs and against rivals judged on prose. It had never taken the **raw output of a third-party scanner** and crossed it against the answer key the way our own runs are crossed. `bench/external/<tool>-<date>/` now holds one such run: the tool's output byte for byte, a `provenance.json` naming the tool, its repository, the **40-hex commit it was pinned at**, the version string as the tool reports it, the exact command line, the repo-relative scan roots, the date, the runner OS and **what was not exercised**, and a `scorecard.json` with the numbers `scripts/bench/score.py` produced from it.
+
+`scripts/bench/adapt-external.py` is the only new piece of plumbing: it converts SARIF, or the native shape of a recorded tool, into the findings artifact the existing scorer reads. No second scorer was written — matching by path and span was already `score.py`'s job. Two rules govern the adapter and both are enforced by its self-test and by the gate: an input whose format it does not recognise exits **2**, never 0-with-nothing-found; and a finding whose path it cannot place in this checkout is **named on stderr**, never dropped in silence.
+
+`gate-external-crosscheck.sh` re-derives every recorded number from the committed raw output on each run, verifies each raw file against its recorded sha256, counts the raw records **itself, without the adapter** — so an adapter that starts dropping findings is caught even when the record was regenerated to agree with it — checks provenance is complete and its pin is a sha rather than a movable tag, refuses any absolute path of the machine that produced the run, and probes on every run that the adapter can still say *one* and still refuses to say *zero* blind.
+
+**What it does not measure, stated because the number is worth less without it:** file-and-line agreement is **location** agreement, not semantic agreement. A foreign finding that lands inside a planted span counts as a hit whatever it says about the code, and one that describes the right defect at the wrong line counts as a miss. Nothing here judges the recorded number against a threshold either — the gate keeps it honest, a reader decides what it is worth, which is why the raw output is committed rather than summarised.
+
+24 cases <!-- cases: scripts/gates/gate-external-crosscheck.selftest.sh --> prove it in the negative: a raw file edited without moving a score, a recorded number changed, the answer key moved under the record, a raw file added or deleted, a provenance field removed, a pin replaced by a tag, a date that disagrees with the directory it is in, a scan root that no longer exists, **a case directory renamed while its raw output stays put** - which the first version of this gate answered with a 2, publishing as an instrument failure a defect it had already measured - a machine path planted in an artifact, an adapter that guesses instead of refusing, an adapter that reads a one-result SARIF as zero, an adapter that drops a finding it cannot place **without naming it** - which moves no number at all and is caught only because the gate reads the adapter's text as well as its counts - an adapter that drops one finding per file — and the same drop **baked into the record as well**, which only the independent count catches. Five more assert the difference between a defect and an instrument that cannot run, and three are controls, one of them a false-positive control writing `/tmp/report.csv` and `~/.cache` as ordinary prose, because a machine-path rule that fires on a legitimate file gets switched off within a week.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
