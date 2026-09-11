@@ -42,7 +42,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
 | routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
-| reproduction cross-check | running | `gate-reproduction.sh` + self-test (36 cases) |
+| reproduction cross-check | running | `gate-reproduction.sh` + self-test (36 cases) <!-- cases: scripts/gates/gate-reproduction.selftest.sh --> |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
 | verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
 | promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
@@ -61,7 +61,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| the census this document makes of itself | running | `gate-doc-census.sh` + self-test (17 cases <!-- cases: scripts/gates/gate-doc-census.selftest.sh -->) — the figures in the status block are counted from the tree by `scripts/gates/lib/doc_census.py`, never typed |
+| the census this document makes of itself | running | `gate-doc-census.sh` + self-test (27 cases <!-- cases: scripts/gates/gate-doc-census.selftest.sh -->) — the figures in the status block are counted from the tree by `scripts/gates/lib/doc_census.py`, never typed |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
