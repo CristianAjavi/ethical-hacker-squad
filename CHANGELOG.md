@@ -8,6 +8,64 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **`competitive-freshness.sh` had no green a reader could ever reach.** It compared one
+  repository-wide `reviewed_at` against the newest commit of every rival, so the moment any one
+  of them moved the whole baseline was stale and the only way back was to re-review all of them
+  on the same day. A control that can only ever be red is not a control. Freshness is now
+  per-product: each carries its own `reviewed_at` and `reviewed_head`, and a product goes stale
+  only when the head it was reviewed against is no longer the head. Four subjects had genuinely
+  moved; they were read on 2026-09-10 and change no cell of the comparison.
+
+- **`protection-check.sh` announced fifteen fields and compared seven.** The eight it did not
+  compare were the ones nobody thinks about until they are gone, and its battery fabricated the
+  protection block from the same seven — a subject built by the judge, which is why the gap had
+  survived. The fixtures are now a captured copy of the real block on `main`, and all fifteen
+  fields are compared.
+
+- **The competitive sweep only ever looked at the top of the tree.** `competitive-discovery.sh`
+  asked GitHub for a non-recursive tree and matched markers against that listing, so a product
+  packaging its skill below the root could not match — and it did not fail loudly: it left
+  through `continue`, printing nothing, so the run ended `unresolved 0` and read as *the lane is
+  named*. Measured over the 98 repositories this file's own queries return on 2026-09-10: the
+  old rule admitted 42, the new one admits 55, thirteen entering and none leaving. The marker is
+  now matched as a path segment at a depth derived from the marker itself — one carrying a dot
+  (`SKILL.md`, `.claude-plugin`) at any depth, an ordinary English word (`agents`, `skills`)
+  only at the root, under `.claude/` or under `plugins/<x>/` — so a Python package named
+  `agents` and a TypeScript service directory named `skills` are not reported as competitors.
+  A marker that appears only under `fixtures/`, `evals/` or `tests/` does not count: that is
+  what a scanner is fed, not the product, and four real candidates are exactly that. A
+  truncated tree is `2` rather than a silent absence, and a baseline declaring no
+  `skill_markers` is `2` rather than a clean lane. Six mutants, one of them not hypothetical:
+  passing the marker list through `awk -v` dies on BSD awk, and the wired code matched 0 of 98
+  where the prototype said 13. Battery 11 → 24 cases.
+
+- **`budget-ledger.json` said where each bound is enforced and nobody read that column.**
+  `enforced_in` could name any file at all: repointing `EHS_MAX_TREE_BYTES` at a real gate that
+  does not read it left `gate-budget-ledger.sh` green, and a reader who follows that address
+  opens a file with no such bound in it. A fifth check resolves every `${EHS_*:-<number>}` back
+  to the file that reads it, JSON against source. All 11 resolve today. Self-test 10 → 16.
+
+- **`handover-contract.json` named the two files and the gate had its own copy.** `skill_md` and
+  `report_md` were declarations with no consumer: repointing `skill_md` at another file that
+  really exists left the gate green, and deleting `report_md` did too. The literals are gone
+  rather than a comparison added, with no fallback. Self-test 16 → 20.
+
+- **The n-gram window was written down three times and compared nowhere.** `ngram: 8` in the
+  denylist, `NGRAM = 8` in the sweep, `NGRAM = 8` in the producer. A hash built over one width
+  is invisible to a sweep looking for another, so the two halves disagreeing costs nothing you
+  can see — the list parses, the size prints, the run is green, and every phrase on the list has
+  quietly stopped being forbidden. Both consumers now read the width from the list, neither with
+  a default. The producer's window is measured by running it over a probe, not by reading its
+  source. Self-test 9 → 13.
+
+- **The contract could name a battery that does not exist.** `gate-contract-inventory.sh` matched
+  the gates in `docs/gate-requirements.md` in both directions and said in its own out-of-scope
+  line that `*.selftest.sh` batteries were not covered. Five are named there as the negative
+  proof behind a control and nothing checked they still exist. Now checked one way — named
+  implies discovered — because the runner finds 29 and the document names 5, and requiring the
+  reverse would be a rule with more reach than it is owed. Three mutants: a phantom battery
+  `0 → 1`, a runner that does not answer `0 → 2`, and the call removed from `main` `1 → 0`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
@@ -24,6 +82,19 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **A written plan for measuring against a third-party-labelled corpus**
+  (`docs/external-corpus-plan.md`). `bench/README.md` opens with the empty row: no product in
+  this field publishes how much it actually finds, this one included, because every detection
+  number here came from cases the repository planted itself. This is the plan for closing that
+  and it is **only** a plan — nothing in it has been run, because running it spends model runs
+  and that decision is the owner's. It carries what a spending decision needs: the corpus and
+  why three alternatives were rejected, a sample of 40 cases with the interval width that buys
+  (±0.15 at p = 0.5), a cost of 360 model runs staged so 72 of them decide whether the rest can
+  answer the question at all, a stopping rule fixed before the first call — including the two
+  that forbid stopping on a good number or adding cases after a bad one — and the exact shape of
+  the table that would be published, with `reached` kept out of the denominator and every rate
+  carrying its 95% interval and its `n`.
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must

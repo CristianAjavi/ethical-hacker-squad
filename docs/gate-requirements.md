@@ -39,12 +39,12 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
-| contract inventory | running | `gate-contract-inventory.sh` + self-test |
+| contract inventory: the gates, and the batteries this document names | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
-| budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
+| budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (16 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
-| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (20 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
@@ -304,9 +304,11 @@ The gate enforces what is mechanically enforceable:
 
 **Implemented 2026-08-21** as `gate-licence-hygiene.sh`. Four measurements, and two of them found something the first time they ran: **OpenSSF** was absent from `NOTICE.md` while the corpus cited `SLSA Build L2`/`L3`, and `docs/coverage/mapa-microsoft.md` carried five verbatim quotations of Microsoft, AWS and Google terms-of-use text while `NOTICE.md` stated in the present tense that the repository contains no copied text. The first is fixed with an attribution section; the second is a real exception and is now declared as one — a `licence:quoted-terms` region for the case where the wording of a licence **is** the evidence for a licence determination, counted and printed on every run, with `NOTICE.md` narrowed to say exactly that.
 
-**The denylist is stored as hashes, not phrases.** A list built to stop us copying somebody's words should not itself be a copy of them, so `scripts/gates/data/verbatim-denylist.json` holds SHA-256 prefixes of normalised eight-word windows, and `scripts/licence/add-verbatim-phrase.py` turns a phrase into entries without ever writing it down. The list is empty today and its size is printed on every run, because an empty denylist that passes silently is decoration.
+**The denylist is stored as hashes, not phrases.** A list built to stop us copying somebody's words should not itself be a copy of them, so `scripts/gates/data/verbatim-denylist.json` holds SHA-256 prefixes of normalised windows, and `scripts/licence/add-verbatim-phrase.py` turns a phrase into entries without ever writing it down. The list is empty today and its size is printed on every run, because an empty denylist that passes silently is decoration.
 
-Proved in the negative by `gate-licence-hygiene.selftest.sh`: 9 cases — a pasted attributed quotation, the same quotation inside the exempt region (which must stay green), an identifier owner nobody attributed, an allowlisted source with no licence recorded, a denylisted phrase present in the corpus, and three cases that must exit `2`.
+**The width of that window is declared once, in the list.** It used to be written down three times — `ngram: 8` in the data file, `NGRAM = 8` in `lib/licence_hygiene.py`, `NGRAM = 8` in `add-verbatim-phrase.py` — and compared nowhere. That disagreement is the quiet kind: a hash built over a window of one width is invisible to a sweep looking for another, so the list still parses, the gate still prints its size, the run is still green, and every phrase on the list has silently stopped being forbidden. Both consumers now read the window from the list and **neither carries a default**, because a default is how one number comes to live in three places without anyone deciding to. A fifth measurement checks the half that can still drift: the producer's window is measured by **running** it over a 24-word probe and counting the windows it emits, not by reading its source. Declared 8; the producer was measured cutting 8. Both numbers are printed on every run, beside the list's size.
+
+Proved in the negative by `gate-licence-hygiene.selftest.sh`: 13 cases — a pasted attributed quotation, the same quotation inside the exempt region (which must stay green), an identifier owner nobody attributed, an allowlisted source with no licence recorded, a denylisted phrase present in the corpus, the declared window moving with the sweep following it, the producer cutting a window of its own, and four cases that must exit `2` — including `ngram` not declared at all and the producer missing from disk. The denylist case takes its window from the list, so the day the width legitimately moves it does not have to be re-typed, and the discriminating case derives its width as declared-minus-two rather than a literal, so it keeps discriminating whatever the repository declares.
 
 ## G6 — Secret scanning
 
@@ -426,16 +428,17 @@ G7 asks **who** moved a limit. It does not ask whether the number that moved sti
 
 Measured over the whole history: **15 budget constants moved, 13 of them tighter.** Exactly two loosened, and both were the same knob — `EHS_MAX_TREE_BYTES`, raised `524288 → 655360 → 786432`. The discipline around those raises is genuinely good; the third is written up in `gate-plugin-integrity.sh` with the figure that forced it (653,513 B served against a 655,360 B cap — **1,847 bytes of headroom**, less than a tenth of one procedure). This gate does not exist because the discipline is missing. It exists because **nothing enforced it**, and the practice already had one measured failure: the same file's environment table still read `default 524288` while `786432` was enforced — stale since the second of the three re-baselines, and the number a contributor gets from the usage block rather than the rationale. **One knob of eleven had drifted, and it was the only one that had ever been raised.** The fix that raises a number makes the note that states it false, and no test saw that.
 
-`scripts/gates/data/budget-ledger.json` is the single home. Four checks:
+`scripts/gates/data/budget-ledger.json` is the single home. Five checks:
 
 1. **classification** — every `${EHS_*:-<number>}` any gate reads is named in the ledger, as a `budget` or explicitly as `not_a_budget`. A knob nobody classified **fails**: a ledger listing only what someone remembered cannot see what nothing points at, and 3 of the 11 knobs really are mode switches, which is a decision someone writes down rather than a gap.
 2. **agreement** — the ledger's `value` equals the value the source enforces, in both directions, so raising a budget is an edit to a file under `scripts/gates/**` that G7 puts in front of a reviewer, with the justification on the next line. A declaration that outlives its knob fails too.
 3. **no drift** — every comment stating `default <N>` for that knob names the same number. This is the check that was already red.
 4. **justification** — every `budget` carries a non-empty `why` and `measured`.
+5. **the address** — every `${EHS_*:-<number>}` is resolved back to the file that reads it and compared to the ledger's `enforced_in`. That column is what a reader consults to find the control behind a number, and until 2026-09-10 the only place the string appeared outside the JSON was inside a mutation in this gate's own self-test: nothing compared it to the source. So the declaration could name any file at all — repointing `EHS_MAX_TREE_BYTES` at `gate-tree-delta.sh`, a real gate that really does not read that knob, left the gate at `0`, and a reader following that address opens a file with no such bound in it. Check 2 proves the **number** agrees; this proves the **address** does. The comparison is JSON against source, never JSON against itself. The frame of reference — how the ledger spells the gates directory — is derived from `--gates-dir` and the repository root; an absolute or empty one is reported as could-not-measure rather than guessed, because a prefix this gate invented would either pass everything or fail everything. All 11 addresses resolve today.
 
-**What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Both are printed on every run.
+**What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Nor whether the file named in `enforced_in` makes the bound **bite**: check 5 proves it is the file that *reads* the knob, and a gate that read a budget and never compared anything to it would satisfy that and enforce nothing. All three are printed on every run.
 
-Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
+Proved in the negative by its inline self-test, 16 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, an address pointed at a different gate, one knob's address emptied, the same knob read in two gates, and five that must exit `2` — a missing ledger, an unparseable one, nobody declaring where any bound is enforced, and two with no frame of reference. That last pair exists because `run_case` always supplies a good frame, so the branch where the gate refuses to work without one is a branch `run_case` can never reach; it is driven separately. The `enforced_in` mutations are `0 → 1` and `0 → 2` respectively, and the second is `2` rather than `1` on purpose: a ledger that stopped declaring where anything is enforced is a check that read nothing, and reading nothing is not finding nothing wrong. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
 
 ## G7c — The file that tells you how to read an alert has to be right
 
@@ -512,6 +515,20 @@ specification, and that specification complete in both directions against
 an absent deliverable and requires the answer `2` — because the handover block tells the leader
 to print those exit codes, and a named script that answered `0` on nothing would make the
 printed number mean the opposite of what the block says it means.
+
+**Which two files those are comes from the contract, not from the gate.** `skill_md` and
+`report_md` had been in the data file since the gate was written while the caller passed both
+paths as literals: two independent statements of one fact, compared by nothing. The keys read
+as the contract and were decoration — repointing `skill_md` at `references/report.md`, a file
+that is really there and is really not `SKILL.md`, left the gate at `0`, and deleting
+`report_md` outright left it at `0` too. The fix removes the literal rather than adding a
+comparison, and there is deliberately **no fallback**: a default would put the truth back in
+two places, which is the defect being removed. Missing or off-disk is `2`, not `1`. The
+self-test seeds a small tree laid out the way the real repository is, so all twenty cases
+exercise the resolution rather than one new case covering it — and the layout is spelled out
+in the harness on purpose, because a seed that read the path back out of the data file would
+follow every mutation of it and catch none. If `SKILL.md` legitimately moves, the harness is
+the second place that has to say so, and it failing is the conversation.
 
 **Step 9 grew by moving something out, not by raising a cap.** `SKILL.md` was 12,281 B against
 a 12,288 B ceiling — seven bytes — and that is the real reason delivery was the shortest step in
@@ -628,7 +645,11 @@ The inventory comes from `run-all.sh --list`, never from a glob of `scripts/gate
 
 Three things are deliberately **not** checked, because all three are a person's judgement: which row a gate belongs to, whether the row's status word is accurate, and whether the requirement text describes what the gate actually does.
 
-`*.selftest.sh` is excluded. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
+`*.selftest.sh` is excluded **from the gate comparison**. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it as a gate made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
+
+It does, since 2026-09-10, check those batteries in **one** direction: a `*.selftest.sh` this document names as the negative proof behind a control has to be one `scripts/run-batteries.sh --list` discovers. A battery that is renamed or deleted otherwise leaves the sentence about it standing, and that sentence is what a reader trusts when they ask whether a claim was ever proved in the negative. The reverse is deliberately not required: the runner discovers 29 batteries and this document names 5, so demanding that every battery appear here would be a rule with more reach than it is owed — it would go red on a repository that is behaving. A runner that does not answer, or a repository with no batteries at all, is `2`. Measured 2026-09-10: 29 discovered, 5 named, 5 found.
+
+**The case counts this document quotes beside a battery are still not measured.** Where it says *16 cases* or *24 cases*, nothing compares that number to what the battery reports, and this branch alone made four of them false before they were corrected by hand. It is the same shape as every other number the repository has learned not to write twice, and it is open: the batteries print their totals in five different formats, so the check is a design decision rather than a regex.
 
 Proved in the negative by 6 fixtures — 2 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation.
 ## The contract inside governance.json
