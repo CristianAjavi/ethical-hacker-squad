@@ -184,9 +184,11 @@ verification gate of backlog item 2 expressible at all.
 
 ## Cross-dimension invariants
 
-These are rules between dimensions. They are **doctrine, not yet gated**: no automation
-reads a finding today, because we do not emit a machine-readable finding yet (backlog item
-7). Stated here so that the schema, when it lands, has something to encode.
+These are rules between dimensions. The machine-readable finding they were waiting on has
+landed — `references/findings.schema.json`, documented in `references/findings-artifact.md`
+and checked by `scripts/gates/gate-findings-artifact.sh`, and this vocabulary is its enum.
+The invariants below are still **doctrine, not yet gated**: the schema encodes the terms,
+and nothing yet rejects an artifact that satisfies the schema and breaks one of these.
 
 - `status: confirmed` requires `confidence: high`. Confirmed means demonstrated; if
   something is inferred, the status is `probable` and the inference is named.
@@ -319,7 +321,9 @@ comes to measure nothing.
 - This file is excluded from the rejected-term scan, since it necessarily contains every
   rejected term. In exchange the gate checks this file against itself: no term may be
   declared in two dimensions, and no term may be both declared and rejected.
-- The gate reads **specifications**, not deliverables. It cannot check an actual audit
-  report, because we do not yet emit one in a machine-readable form. That arrives with the
-  findings artifact of backlog item 7, and this vocabulary is its enum.
+- The gate reads **specifications**, not deliverables: it checks that this file and the
+  documents citing it agree, not that any particular report obeys them. The
+  machine-readable form has arrived — `references/findings.schema.json`, with
+  `scripts/gates/gate-findings-artifact.sh` checking the schema and this vocabulary as its
+  enum — so a produced artifact can now be checked; that is that gate's job, not this one's.
 - The cross-dimension invariants above are not checked by anything today.

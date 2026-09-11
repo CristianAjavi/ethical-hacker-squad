@@ -498,9 +498,16 @@ fi
 section "Vulnerability alerts"
 want_va="$(jq -r '.vulnerability_alerts' <<<"$STATE")"
 va_rc=0
-gh api "repos/$REPO/vulnerability-alerts" >/dev/null 2>&1 || va_rc=$?
-if [[ $va_rc -eq 0 ]]; then have_va="true"; else have_va="false"; fi
-if [[ "$have_va" == "$want_va" ]]; then
+va_err="$(gh api "repos/$REPO/vulnerability-alerts" 2>&1 >/dev/null)" || va_rc=$?
+# 204 = enabled, 404 = disabled. ANY OTHER failure - a 401, a network error, a
+# rate limit - is not "disabled": collapsing it into false reports DRIFT over a
+# state nobody measured, and under --apply fires a PUT on the strength of it.
+if   [[ $va_rc -eq 0 ]];              then have_va="true"
+elif [[ "$va_err" == *"HTTP 404"* ]]; then have_va="false"
+else                                       have_va="unknown"; fi
+if [[ "$have_va" == "unknown" ]]; then
+  unmeas "I could not read repos/$REPO/vulnerability-alerts (gh rc=$va_rc): ${va_err//$'\n'/ }"
+elif [[ "$have_va" == "$want_va" ]]; then
   ok "vulnerability_alerts = $have_va"
 else
   drift "vulnerability_alerts: actual=$have_va desired=$want_va"

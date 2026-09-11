@@ -35,7 +35,7 @@ each, `mobile`, `local-app`, `supply-chain`, `infra-cloud` and
 `` `infra-cloud` + `supply-chain` `` with two. The commonest class is 4 of 22, so
 a stub that always answers the same thing scores 18%.
 
-## The measurement that shaped the set, reported before anybody ran anything
+## What the table-word router scores, reported before anybody ran anything
 
 A routing case whose text repeats the words of the row that routes it measures
 string matching. So the gate builds a router out of the table's own vocabulary —
@@ -44,25 +44,31 @@ not spread over more than three rows — and reports what it scores:
 
 | Instrument | Score |
 |---|---|
-| Table-word router, role only | **13 / 22** |
-| Table-word router, role **and** sections | **11 / 22** |
+| Table-word router, role only | **14 / 22** |
+| Table-word router, role **and** sections | **12 / 22** |
 | Generic separability floor (`gate-stage-eval-floor.sh`), bag of words over the case text | **18% of 22**, exactly the majority-class rate |
 
 **The first draft held fifteen cases and the router scored 12 of 15 on the role.**
 Nine of ten cases carrying signal is not a set; it is three cases and some
 scaffolding. Seven cases were added from rows the set had not used, the router
-was run once more, and the number that came back — 13 of 22 — is the one printed
-above and by the gate on every run. Nothing was removed, no case was reworded to
-move the number, and no model has seen any of it.
+was run once more, and the number that came back — thirteen of twenty-two at the
+time — is the one this table carried. Nothing was removed, no case was reworded
+to move the number, and no model has seen any of it.
+
+**The number moved once, and not because the dataset did.** The router is built
+out of `references/coverage.md`, which gained seven rows 48 minutes after this
+dataset was sealed. The score above is the one the gate prints today;
+`PREREGISTRATION.md` records what the first registration froze, why it was
+superseded, and the check that now fails when this table and the gate disagree.
 
 Only the degenerate outcome is enforced: a set the router answers **perfectly**
 fails the gate, because it has nothing left to say. A threshold picked after
 seeing the number would be the number.
 
-## Two instruments that disagree, and why both are right
+## Two instruments that disagree: the table-word router and the generic floor
 
 The generic floor says the case text carries no signal at all — 18%, which is
-what always answering `ai-safety` would score. The table-word router says 13 of
+what always answering `ai-safety` would score. The table-word router says 14 of
 22. Both are correct, and the gap between them is the point:
 
 - The floor asks whether **the cases sort themselves**: pool every other case by
