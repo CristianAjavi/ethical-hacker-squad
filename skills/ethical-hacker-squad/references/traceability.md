@@ -111,8 +111,7 @@ Six packs ship as more than one file — `web-api`, `mobile`, `infra-cloud`, `su
 | `AML.T0010`, `LLM04:2026` (model artifacts) | ai-safety | `ai-safety-data-output.md` §4 | `AI-23` |
 | `AML.T0068` | ai-safety | `ai-safety-data-output.md` §8 | `AI-20` |
 | `CCM DSP` (where the data lands) | privacy-abuse | `privacy-abuse.md` §10 | `PRV-12` |
-| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud + supply-chain | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 / `supply-chain.md` §1, §7 + `supply-chain-source-lifecycle.md` §10, §11 | `INF-01`..`INF-17`, `SUP-02`, `SUP-13`..`SUP-15`, `SUP-21`..`SUP-25` |
-
+| `CIS v8.1 Control *`, `CCM *`, `NIST 800-53 *` | infra-cloud + supply-chain | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §4, §5 / `supply-chain.md` §1, §7 + `supply-chain-source-lifecycle.md` §10, §11 | `INF-01`..`INF-17`, `SUP-02`, `SUP-13`..`SUP-15`, `SUP-21`..`SUP-26` |
 | `CWE-22`, `CWE-59`, `CWE-61`, `CAPEC-126`, `CAPEC-27` | local-app | `local-app.md` §1 | `LOC-01`, `LOC-02` |
 | `CWE-367`, `CWE-377`..`CWE-379`, `CAPEC-29` | local-app | `local-app.md` §2 | `LOC-03`, `LOC-04` |
 | `CWE-88`, `CWE-426`, `CWE-427`, `CAPEC-6`, `CAPEC-38`, `CAPEC-471`, `ATT&CK T1574` | local-app | `local-app.md` §3 | `LOC-05`..`LOC-07` |
