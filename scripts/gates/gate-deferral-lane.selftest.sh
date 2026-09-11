@@ -102,6 +102,17 @@ p.write_text(t.replace("        run: ./scripts/gates/gate-alpha.sh --branch x",
 case_run a-skip-is-not-a-lane 1 "no workflow line names it" "$PY_WF"'
 p.write_text(t.replace("--only \x27gate-beta.sh\x27", "--skip \x27gate-beta.sh\x27"))'
 
+# The rule this case owns was missing until a run over the real tree found it:
+# renaming a control leaves the workflow line that invokes it by path naming a
+# file that is no longer there, and question 1 is satisfied by a lane that cannot
+# run. The control here is deliberately one NOTHING defers, so only this rule can
+# turn the case red.
+case_run lane-invokes-a-path-that-is-gone 1 "which is not a file in this tree" "$PY_WF"'
+p.write_text(t.replace("        run: ./scripts/gates/gate-alpha.sh --branch x",
+                       "        run: ./scripts/gates/gate-alpha.sh --branch x\n"
+                       "      - name: a control that was renamed and nobody told the job\n"
+                       "        run: ./scripts/gates/gate-delta.sh"))'
+
 case_run scoped-name-with-no-lane 1 "no workflow line names it" '
 import os, pathlib
 p = pathlib.Path(os.environ["EHS_WORK"]) / "scripts/gates/run-all.sh"

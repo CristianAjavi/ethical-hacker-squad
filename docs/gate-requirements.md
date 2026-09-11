@@ -49,7 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| deferred controls have a lane | running | `gate-deferral-lane.sh` + self-test (18 cases) |
+| deferred controls have a lane | running | `gate-deferral-lane.sh` + self-test (19 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -681,9 +681,15 @@ The gate asks three questions, over the tree, with no git and no network:
    with `--skip` — must be named by some **other** non-comment line under `.github/workflows/**`, or
    matched there by an `--only` glob. A `--skip` is never a lane: two workflows skipping the same
    control is not one workflow running it.
-2. **The pattern resolves.** Every `--only` and `--skip` glob must match at least one control that
-   exists. A glob that matches nothing is a lane that runs nothing, and it reads exactly like one
-   that works.
+2. **The pattern resolves, and so does the path.** Every `--only` and `--skip` glob must match at
+   least one control that exists; and every workflow line that invokes a control by path —
+   `run: ./scripts/gates/gate-x.sh` — must name a file that is in the tree. A glob that matches
+   nothing is a lane that runs nothing, and it reads exactly like one that works. The second half
+   of this rule was missing until a run over the **real** tree went looking for it: rename a
+   control and the job that calls it by path still *names* it, so question 1 is satisfied by a
+   lane that cannot execute. The bank had eighteen cases on throwaway trees and every one of them
+   passed; it took three edits a person could make on an ordinary day, applied to the delivered
+   tree, to find the hole.
 3. **The exemptions are honest.** A control whose lane is deliberately outside CI is named in
    `scripts/gates/data/deferred-lanes.json` with a written reason, and printed by name on every
    run. Today that is one entry: `gate-governance-drift.sh`, whose lane needs the `administration`
@@ -698,14 +704,20 @@ a job that re-runs a deferred control without naming it — `run-all.sh --pr-con
 instead of passing one that does not, which is the direction a control is allowed to be wrong in,
 and the fix is one word in the step or one entry in the JSON.
 
-Proved in the negative by 18 cases on throwaway trees — a gate about declarations can only be
-exercised by writing declarations — of which 11 must come back `1` (a lane deleted, a lane that is
-only a comment, a `--skip` standing in for a lane, a glob that resolves to nothing, an exemption
-with no reason, an exemption nothing defers, an exemption that has acquired a lane) and 6 must come
-back `2` rather than pass (a declaration shape the gate does not recognise, no workflows at all, a
-data file that will not parse or has the wrong shape, a runner that is gone, a declaration file
-that is there and cannot be read). The bank was then checked against a weakened instrument: six
-mutations of the gate's own engine — crediting a `--skip` as a lane, reading comment lines as live,
-dropping the backwards check on exemptions, treating an unrecognised declaration shape as "nothing
-deferred", ignoring a glob that resolves to nothing, never reading `slow-scoped.txt` — were each
-killed by the case that owns that rule, `6/6`.
+Proved in the negative by 19 cases on throwaway trees — a gate about declarations can only be
+exercised by writing declarations — of which 12 must come back `1` (a lane deleted, a lane that is
+only a comment, a `--skip` standing in for a lane, a glob that resolves to nothing, a lane that
+invokes a path that is gone, an exemption with no reason, an exemption nothing defers, an exemption
+that has acquired a lane) and 6 must come back `2` rather than pass (a declaration shape the gate
+does not recognise, no workflows at all, a data file that will not parse or has the wrong shape, a
+runner that is gone, a declaration file that is there and cannot be read). The bank was then
+checked against a weakened instrument: seven mutations of the gate's own engine — crediting a
+`--skip` as a lane, reading comment lines as live, dropping the backwards check on exemptions,
+treating an unrecognised declaration shape as "nothing deferred", ignoring a glob that resolves to
+nothing, never reading `slow-scoped.txt`, crediting a path lane without resolving the path — were
+each killed by the case that owns that rule, `7/7`.
+
+And the bank was checked a second way, because a bank of throwaway trees only proves the gate can
+go red on trees the bank itself wrote. Five edits over the **delivered** tree: one of two lanes
+deleted (stays `0` — the other lane still runs it), both deleted (`1`), a named control renamed
+(`1`, and this is the case that found the missing rule), and the exempted control deleted (`1`).

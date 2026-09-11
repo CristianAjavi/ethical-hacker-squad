@@ -26,6 +26,10 @@ OK, FAIL, UNMEASURABLE = 0, 1, 2
 ARG_RE = re.compile(r"--(skip|only)[= ]+(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
 # PR_SCOPED='gate-a.sh gate-b.sh'   — the runner's deferral lists.
 SCOPED_RE = re.compile(r"^([A-Z][A-Z0-9_]*_SCOPED)='([^']*)'", re.M)
+# ./scripts/gates/gate-x.sh — a lane that invokes a control by path rather than
+# by a --only glob. Renaming the control leaves this line naming a file that is
+# no longer there, and the lane reads exactly like one that works.
+PATH_RE = re.compile(r"(?<![\w/.-])(?:\./)?(scripts/gates/[\w./-]+\.sh)")
 
 
 def arg_of(match: re.Match) -> str:
@@ -172,6 +176,22 @@ def main(argv: list[str]) -> int:
                     f"{name}:{number} --{kind} '{pattern}' matches no control in "
                     f"scripts/gates/: the lane runs nothing and reads like one that works"
                 )
+
+    # QUESTION 2b — a lane that invokes a control by path has a path that resolves.
+    # A --only glob is checked above; a workflow that calls the file directly was
+    # not, and that is how a rename breaks a lane in silence: the line still NAMES
+    # the control, so question 1 is satisfied by a lane that cannot run.
+    for name, number, line in live:
+        for match in PATH_RE.finditer(line):
+            rel = match.group(1)
+            if "*" in rel or "?" in rel:
+                continue
+            if (root / rel).is_file():
+                continue
+            rep.fail(
+                f"{name}:{number} runs {rel}, which is not a file in this tree: "
+                "the lane names a control it cannot execute"
+            )
 
     # a --skip is itself a declaration that the control does not run there
     for name, number, pattern in skips:
