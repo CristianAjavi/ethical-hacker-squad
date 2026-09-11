@@ -38,6 +38,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | benign control | running | `gate-benign-control.sh` + self-test |
 | report contract | running | `gate-report-contract.sh` |
 | workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
+| a capture of `$?` the shell never reaches | running | `gate-errexit-rc-capture.sh` + self-test (18 cases, 8 mutants) |
 | label taxonomy | running | `gate-labels-taxonomy.sh` |
 | contract inventory | running | `gate-contract-inventory.sh` + self-test |
 | negative proof | running | `gate-negative-proof.sh` + self-test |
@@ -436,6 +437,63 @@ Measured over the whole history: **15 budget constants moved, 13 of them tighter
 **What it does not measure, and does not pretend to.** Whether a `measured` claim is *true*: a gate cannot re-run the reasoning that justified a number, and one that implied it could would be worse than this one. Nor the **direction** of a change — it has no history at gate time, so it does not claim to tell a raise from a tightening. Both are printed on every run.
 
 Proved in the negative by its inline self-test, 10 cases: the repository as it stands, the enforced value raised behind the ledger and the ledger lowered behind the code, the stated default disagreeing with the code (the defect this shipped with, reproduced), a new knob nobody classified, a declaration that outlived its knob, a budget with an empty `measured`, a budget relabelled `not_a_budget` still having its value checked, and two that must exit `2` — a missing ledger and an unparseable one. The self-test found one bug in the gate itself before it shipped: the scanner read a knob literal out of the gate's own mutation string, so the mutation is now assembled from parts.
+
+## The measurement that dies mute exactly when there is something to measure
+
+GitHub Actions runs every `run:` block under `bash --noprofile --norc -eo pipefail {0}`. So this,
+which reads like careful code, is not:
+
+```bash
+bash scripts/run-batteries.sh --jobs 1 > one.out 2>&1; r1=$?
+```
+
+Under `-e` the command tears the step down the moment it returns non-zero. The capture never
+executes, the comparison it was feeding never happens, and the step ends **with no error title**:
+a reader of the run sees a job that stopped, not a measurement that failed. `set -e` does not care
+that you were about to read `$?` — reading it is not a suppressor.
+
+**Measured 2026-09-10 on branch `measure/battery-workers`.** `.github/workflows/battery-workers-ab.yml`
+carried six of these. The arm whose entire job was to catch a disagreement between a serial and a
+parallel run of the same suite died at ~295 s — exactly one serial pass — having caught nothing,
+and the run reported no error. The timing arm, which could not fail this way, worked fine and
+published its medians. One half of the experiment was silently missing and the other half looked
+healthy.
+
+This is the most expensive class of defect this repository can carry, because it is the instrument
+going quiet in precisely the case it exists for. Two forms survive `-e`, and only two:
+
+| Form | Why it survives |
+|---|---|
+| `cmd \|\| rc=$?` | `\|\|` suppresses errexit for that command |
+| `set +e` … `cmd`; `rc=$?` … `set -e` | errexit is explicitly off for that stretch |
+
+`gate-errexit-rc-capture.sh` reads every `run:` block under `.github/workflows/**`, tracks whether
+errexit is on at each point — `set +e`/`set -e`, and a `shell:` template that drops `-e` — and
+fails on a capture of `$?` that nothing suppressed. It recognises the two safe forms **as safe**
+rather than merely not-flagging them, so the output says how many captures it examined, not just
+how many it disliked. `release.yml:321` is the repository's live instance of the bracketed form and
+the gate reports it as such.
+
+**Scope, stated so it is not mistaken for a hole.** Shell scripts outside the workflows run under
+`set -uo pipefail` *without* `-e`, where `cmd; rc=$?` is correct and idiomatic; a gate that flagged
+them would be accusing the files that comply. Whether a correctly captured code is then read by
+anything is a different defect and not this gate's. A workflow that sets `defaults.run.shell` for a
+whole job is declared **unmeasurable** rather than measured against a shell nobody read.
+
+**The control that runs every time.** Before the gate says anything about the tree, the checker
+runs its detector over five strings embedded in its own source — two that must come out red, three
+that must come out clean. A sweep reporting zero because it has gone blind is indistinguishable
+from a clean tree, and this repository has already paid for that once, in the competitor sweep. If
+a control case disagrees the verdict is `2` and no claim is made. On top of that, `run-all.sh`
+parsing a workflow directory and finding not one `run:` block is reported as the extractor being
+blind, never as the tree being clean.
+
+**Reachability, both directions, measured 2026-09-10.** Over `origin/main`: 8 files, 33 `run:`
+blocks, 11 captures — 10 written `|| rc=$?`, one bracketed by `set +e` — `VERDICT 0`. Over the
+workflows of `origin/measure/battery-workers`, materialised read-only out of the object store:
+`VERDICT 1`, naming `battery-workers-ab.yml` lines 143, 144, 145, 227, 229 and 231. The battery
+adds eight mutants of the detector, each of which must make one of the 18 cases go red; a mutant
+that survives fails the battery, because a bank whose cases cannot catch a sabotage is not a bank.
 
 ## G7c — The file that tells you how to read an alert has to be right
 
