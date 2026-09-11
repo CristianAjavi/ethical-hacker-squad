@@ -83,7 +83,75 @@ printf '            be declined in one line; what it may not be is unnamed.\n\n'
 known="$(jq -r '[(.products[]?.repo), (.declined[]?.repo)] | .[] | ascii_downcase' "$BASELINE" | sort -u)"
 PATTERNS="$(jq -r '.declined_patterns[]?.pattern' "$BASELINE")"
 
-seen=""; found=0; unresolved=0; capped=0; absorbed=0
+# The bar itself. With no marker declared, nothing can ever match and the run
+# would end at `unresolved 0` -- a verdict of "the lane is named" produced by an
+# instrument with nothing to look for.
+MARKERS="$(jq -r '.discovery.skill_markers[]?' "$BASELINE")"
+[ -n "$MARKERS" ] || {
+  printf 'COULD NOT MEASURE: %s declares no discovery.skill_markers, so nothing can match\n' "$BASELINE" >&2
+  exit 2; }
+
+# Reads paths on stdin, prints `MARKER<TAB>WHERE` for the first hit and nothing
+# for none. The SCOPE of each marker is derived from the marker, so the baseline
+# stays the only place that names one:
+#
+#   A marker carrying a dot -- `SKILL.md`, `.claude-plugin` -- is a name nobody
+#   reaches for by accident, so it counts at any depth.
+#
+#   A marker that is an ordinary English word -- `agents`, `skills` -- counts
+#   only at the repository root, under `.claude/`, or under `plugins/<x>/`: the
+#   three places where packaging is the directory's only job. Without that
+#   bound, `backend/app/agents/__init__.py` and
+#   `mcpx/packages/mcpx-server/src/services/skills` -- a Python package and a
+#   TypeScript service, both measured in the real sweep -- would read as
+#   competitors, which is the same failure as the old line in the other
+#   direction: a rule with more reach than it is owed. This bound is the ONLY
+#   thing deciding it. A second filter that also excluded any path under
+#   `src/`, `backend/` and friends was written first and then removed, because
+#   no case could make it fail: the bound had already answered, so the filter
+#   was cover, not measurement -- and it would have thrown out a legitimate
+#   plugin named `api`.
+#
+#   And a marker that only ever appears under `fixtures/`, `evals/`, `tests/`
+#   and their kin is the material a scanner is FED, not the product. Four real
+#   candidates are exactly that -- a skill scanner's eval corpus, a guard's test
+#   fixtures. Counting them counts the judge as the subject.
+#
+# The marker list travels in the environment, not in `-v`: awk runs escape
+# processing on a `-v` assignment and the BSD awk on macOS dies outright on the
+# newline between two markers ("newline in string"). It dies to stderr and the
+# function then prints nothing, which this file reads as "carries no marker" --
+# a silent zero from a crashed instrument. Measured: with `-v`, 0 of 98 real
+# candidates matched; through ENVIRON, 55.
+marker_hit() {
+  EHS_MARKERS="$1" awk '
+    BEGIN {
+      n = split(ENVIRON["EHS_MARKERS"], M, "\n")
+      split("fixtures fixture test tests testdata test-data eval evals bench \
+             benchmarks sd-bench samples examples example corpus corpora \
+             node_modules vendor third_party dist build", C, /[ \t\n]+/)
+      for (i in C) if (C[i] != "") CORPUS[C[i]] = 1
+    }
+    {
+      d = split($0, S, "/")
+      corpus = 0
+      for (i = 1; i < d; i++) if (tolower(S[i]) in CORPUS) corpus = 1
+      if (corpus) next
+      for (j = 1; j <= n; j++) {
+        m = M[j]; if (m == "") continue
+        for (i = 1; i <= d; i++) {
+          if (S[i] != m) continue
+          if (index(m, ".") > 0) { print m "\t" $0; exit }
+          if (i == 1 || (i == 2 && S[1] == ".claude") || (i == 3 && S[1] == "plugins")) {
+            w = S[1]; for (k = 2; k <= i; k++) w = w "/" S[k]
+            print m "\t" w; exit
+          }
+        }
+      }
+    }'
+}
+
+seen=""; found=0; unresolved=0; capped=0; absorbed=0; blind=0
 while IFS= read -r q; do
   [ -n "$q" ] || continue
   hits="$(gh search repos "$q" --limit "$PER_QUERY" --json fullName \
@@ -112,24 +180,40 @@ while IFS= read -r q; do
       printf '%s' "$lower" | grep -Eq -- "$pat" && { by_pattern="$pat"; break; }
     done <<< "$PATTERNS"
     if [ -n "$by_pattern" ]; then absorbed=$((absorbed + 1)); continue; fi
-    # One call, non-recursive: a marker at the top of the tree is enough to say
-    # this is the same kind of artefact, and `skills` catches a nested SKILL.md.
-    top="$(gh api "repos/$repo/git/trees/HEAD" --jq '.tree[].path' 2>/dev/null)" || top=""
-    [ -n "$top" ] || continue
-    marker=""
-    while IFS= read -r m; do
-      [ -n "$m" ] || continue
-      printf '%s\n' "$top" | grep -Fxq -- "$m" && { marker="$m"; break; }
-    done < <(jq -r '.discovery.skill_markers[]?' "$BASELINE")
-    [ -n "$marker" ] || continue
+    # One call, recursive, and the marker is matched as a path SEGMENT at the
+    # depth where that marker means something. The old line read a NON-recursive
+    # tree, so it only ever saw the top level. Measured on 2026-09-10 over the 98
+    # repositories this file's own queries return, that cost thirteen products of
+    # this exact lane -- packaged as `.claude/skills`, `.claude/agents`,
+    # `<skill-name>/SKILL.md`, `plugins/<x>/skills/<y>/SKILL.md` or
+    # `compliance/auditing/<x>/SKILL.md` -- and it cost them through `continue`,
+    # which is to say in silence.
+    tree_json="$(gh api "repos/$repo/git/trees/HEAD?recursive=1" 2>/dev/null)" || tree_json=""
+    paths="$(printf '%s' "$tree_json" | jq -r '.tree[]?.path' 2>/dev/null)"
+    [ -n "$paths" ] || continue
+    hit="$(printf '%s\n' "$paths" | marker_hit "$MARKERS")"
+    marker="${hit%%$'\t'*}"
+    if [ -z "$marker" ]; then
+      # A tree GitHub would not hand over whole cannot establish an absence. The
+      # old code could not reach this branch: a non-recursive tree is never
+      # truncated, so the one candidate whose packaging is too deep to see was
+      # indistinguishable from one that carries nothing.
+      if [ "$(printf '%s' "$tree_json" | jq -r '.truncated // false' 2>/dev/null)" = true ]; then
+        printf '  COULD NOT MEASURE  %s has a tree too large to read whole; I cannot say it\n' "$repo"
+        printf '                     carries no marker, only that I did not reach one\n'
+        blind=$((blind + 1))
+      fi
+      continue
+    fi
+    where="${hit#*$'\t'}"
     unresolved=$((unresolved + 1))
     desc="$(gh api "repos/$repo" --jq '"\(.stargazers_count) stars · pushed \(.pushed_at[0:10]) · \(.description // "no description")"' 2>/dev/null || echo '?')"
-    printf '  UNRESOLVED  %s\n              carries `%s` · %s\n' "$repo" "$marker" "${desc:0:150}"
+    printf '  UNRESOLVED  %s\n              carries `%s` at `%s` · %s\n' "$repo" "$marker" "$where" "${desc:0:150}"
   done <<< "$hits"
 done < <(jq -r '.discovery.queries[]' "$BASELINE")
 
-printf '\n  candidates seen %d · absorbed by a written pattern %d · unresolved %d\n' \
-  "$found" "$absorbed" "$unresolved"
+printf '\n  candidates seen %d · absorbed by a written pattern %d · unresolved %d · unreadable %d\n' \
+  "$found" "$absorbed" "$unresolved" "$blind"
 while IFS=$'\t' read -r pat n; do
   [ -n "$pat" ] || continue
   printf '  pattern covered %s when written: %s\n' "$n" "$pat"
@@ -140,6 +224,11 @@ if [ "$capped" -eq 1 ]; then
   printf '  run did not see the whole lane. Raise discovery.max_candidates or narrow the\n'
   printf '  queries; do not read this as a clean result.\n'
   printf '  VERDICT: 2 (COULD NOT MEASURE the whole lane)\n'; exit 2
+fi
+if [ "$blind" -gt 0 ]; then
+  printf '  %d candidate(s) had a tree too large to read whole. A candidate nobody could look\n' "$blind"
+  printf '  at is not a candidate that carries nothing, and this run may not be read as one.\n'
+  printf '  VERDICT: 2 (COULD NOT MEASURE every candidate)\n'; exit 2
 fi
 if [ "$unresolved" -gt 0 ]; then
   printf '  Each one is either a product to pin in `products` or a line in `declined` saying\n'
