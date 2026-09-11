@@ -1061,3 +1061,57 @@ spirit. Run against the real artifacts, it accused four of the best runs in the 
 `not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
 absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
 first is the only reason it is not in this repository.
+
+---
+
+## 2026-09-11 — the third state has stopped being the differential, and what is left of it
+
+Iteration 8 recorded that two products in this field added a third state in three weeks:
+`maxgfr/ultrasec` (`needs-human`) and `braydos-h/BreachPilot` (a `TrialStatus` that separates
+`VERIFIED` / `FAILED` / `FALSE_POSITIVE` / `TIMEOUT` / `INFRASTRUCTURE_ERROR`). It recorded it as
+prose read off their trees. The sentence this document then leaned on — *ours is wired and theirs
+is declared* — was itself unmeasured, which is the exact shape of claim this repository refuses
+from anyone else. So it was measured, from a shallow clone of each product's tip, by file and by
+line count.
+
+**Their third state is wired, not declared.** Measured on the clones at `ultrasec@4b9db6f` and
+`BreachPilot@371d067` (2026-09-11):
+
+| | ultrasec | BreachPilot |
+|---|---|---|
+| files tracked | 695 | 1,940 |
+| test files | 120 (`*.test.ts` / `*.spec.ts`) | 354 (`test_*.py`) |
+| the runner | `"test": "vitest run"` in `package.json`, and `engine:gate` chains typecheck, lint, test, build and an offline demo | `pytest`, run from `.github/workflows/ci.yml` |
+| the third state in the tree | `needs-human`: 301 hits over 62 files | `INFRASTRUCTURE_ERROR`: 56 hits over 23 files; `TrialStatus` declared at `tools/benchmark/models.py:56` |
+| the third state inside test files | 45 hits | 18 hits over 7 test files |
+
+`git grep -I -i -c` for each term, summed; `git ls-files` for the counts. On that evidence the
+claim that their uncertainty state is documentation rather than behaviour does not survive: both
+products execute it on every push.
+
+**What neither of them has is evidence that those tests can fail.** Searching the CONTENT of both
+trees for the vocabulary of mutation testing — `stryker`, `mutmut`, `cosmic-ray`, `mutation test`,
+`mutation score`, `mutant` — returns:
+
+```
+ultrasec@4b9db6f      0 hits over 0 files   (695 files searched)
+BreachPilot@371d067   0 hits over 0 files   (1,940 files searched)
+this repository@6066048  43 hits over 18 files, and 67 files whose name carries
+                         `selftest` or `negative`
+```
+
+The third line is the point. A zero from an instrument that has never returned anything is not a
+measurement, so the same search was run against this tree, where the answer is known: it finds the
+mutant banks. That makes the two zeros a reading rather than a blind spot.
+
+**So the claim narrows, and it is narrower than it was.** Having a third state is now table stakes
+in this field. What is still not table stakes is proving the control that reports it can go red:
+here every gate carries a self-test whose cases are mutants with the verdict each must produce, and
+`gate-negative-proof.sh` is what keeps that from quietly lapsing. That is the whole of the
+differential, and it should be stated that narrowly — including in `README.md`, where any sentence
+that sells the three-state verdict itself as distinctive is now out of date.
+
+**What was NOT measured.** Whether their suites are any good; whether `needs-human` fires on the
+right findings; whether either product would score better than this one on anything. Reading a tree
+is not running a product, and neither was re-run — `benchmarked: false` still holds for both in
+`docs/competitive-baseline.json`.
