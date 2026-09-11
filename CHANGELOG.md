@@ -25,6 +25,28 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **The sweep that asks whether the competitor list is still the field could not see the two
+  largest products in it.** `competitive-discovery.sh` exits `0` when every candidate its queries
+  returned is named in the baseline. Measured 2026-09-10: the five text queries it declared
+  returned **39 distinct repositories and not one of them was `trailofbits/skills`** (7,033 stars,
+  a security firm's own Claude Code skills for vulnerability detection and audit workflows) **or
+  `cloudflare/security-audit-skill`** (3,267 stars, MIT). `gh search repos` ranks on name and
+  description, so a repository owned by an organisation and named `skills` is unreachable by every
+  phrasing of this lane, at any star count. The run before had exited `0` saying *every candidate
+  in the lane is named* — true about what it saw, false about the field, and nothing could tell the
+  two apart. Two repairs that only work together: **`discovery.topic_queries`**, which pairs a term
+  with a GitHub topic (metadata the owner sets, not prose a ranker reads) and keeps the marker,
+  not stars, as the bar; and **`discovery.controls`**, known positives already resolved in the same
+  file that the sweep must return, with `controls seen N of M` printed on every run and rc `2` when
+  one is missing — a control outranks an unresolved candidate, because an unresolved name is a fact
+  about the list and an unseen control is a fact about the instrument the list came from. The new
+  sweep surfaced **66 candidates and 18 unresolved names**; all 18 are resolved here, thirteen
+  pinned and five declined in one line each, taking the file from 11 products to 24. Guarded by
+  `gate-discovery-controls.sh` (15 self-test cases, 11 of them mutants that must go red, plus one
+  that runs the gate against the real baseline) and by four new cases in the hermetic
+  `test-competitive-discovery.sh`, one of which proves the run goes to `2` when a declared control
+  does not come back. See `docs/gate-requirements.md` § *The lane the comparison is drawn from*.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad

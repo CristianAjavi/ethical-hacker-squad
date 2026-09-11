@@ -49,6 +49,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| the discovery sweep can see | running | `gate-discovery-controls.sh` + self-test (15 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
 
@@ -288,6 +289,22 @@ The bench holds small targets written to be read, and an answer key that names, 
 `scripts/bench/score.py` reports detected, missed, decoys reported (each a false positive with an id and the rule that should have caught it), and unlabelled findings, which are **not** counted against a run because the bench does not claim to be exhaustive. Thresholds are opt-in: without them the scorer measures and does not judge.
 
 Both are proved in the negative: 9 cases for the gate, 6 for the scorer, including a near-miss case asserting that pointing at the decoy next door is not scored as a detection.
+
+## The lane the comparison is drawn from
+
+`competitive-freshness.sh` asks whether each measured pin is still its repository's tip. `competitive-discovery.sh` asks the prior question — whether the list is still the field — and exits `1` when a candidate is neither pinned nor declined. Both were answering honestly about products they could reach.
+
+**Measured 2026-09-10.** The five text queries then declared in `docs/competitive-baseline.json` returned **39 distinct repositories, and none of them was `trailofbits/skills`** — 7,033 stars, a security firm's own Claude Code skills for vulnerability detection and audit workflows — **or `cloudflare/security-audit-skill`** — 3,267 stars, MIT, a multi-phase audit skill whose description states two of this repository's own axes. `gh search repos` ranks on name and description, so a product owned by an organisation and named `skills` is unreachable by every phrasing of this lane, at any star count. The previous run had exited `0` with the sentence *every candidate in the lane is named*. That sentence was true about the candidates it saw and false about the field, and nothing in the check could tell the difference.
+
+Two repairs, and they only work together.
+
+**A topic-qualified sweep.** `discovery.topic_queries` pairs a term with a GitHub topic — metadata the owner sets rather than prose a ranker reads. It orders by stars *inside one query's limit*, which is not a popularity bar creeping back in: every candidate it surfaces still has to carry a skill marker to count, a zero-star repository that carries one is a candidate exactly as before, and the text queries are not star-ordered, so the tail stays reachable. The sweep of 2026-09-10 surfaced 66 candidates and 18 unresolved names; all 18 are now pinned or declined in one line each.
+
+**Known-positive controls.** `discovery.controls` names products the baseline has *already* resolved and that the sweep must therefore return. A control that comes back missing does not mean the product is gone — it means this instrument can no longer see a thing it is pointed at, and nothing it says about the rest of the lane survives that. The run prints `controls seen N of M` and exits `2`. Controls outrank an unresolved candidate: an unresolved name is a fact about the list, an unseen control is a fact about the instrument the list-fact came from, so the names are still printed and marked **provisional** while the verdict is `2`.
+
+`gate-discovery-controls.sh` is what stops the repair from being emptied out later. Offline, from the baseline alone: at least one control exists; every control is already named in `products` or `declined` (an unresolved name is a candidate wearing a label, not a control); every control names a `found_by` that matches a declared query, so a red control says which query to repair; no control is this repository, which the sweep skips by design; no control is declared twice; and `max_candidates` is at least `sweeps × per_query`, because a run that stops at the cap never reaches its controls and a missing control then means nothing. Fifteen self-test cases, eleven of them mutants that must go red, and one that runs the gate against the **real** baseline — a rule nobody can satisfy is not a rule.
+
+Four controls are declared today, chosen so the set cannot pass for the wrong reason: `trailofbits/skills` (the case that motivated it), `cloudflare/security-audit-skill`, `anthropics/claude-code-security-review` (which carries no skill marker at all — a control asks whether the *search* can see, and the marker test is a later question), and `maxgfr/ultrasec`, which has zero stars and is the control that proves the bar is not popularity.
 
 ## G5 — Licence hygiene (anti-verbatim)
 
