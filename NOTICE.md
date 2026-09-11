@@ -14,7 +14,7 @@ This work cites **SLSA** build and source levels (`SLSA Build L2`, `SLSA Build L
 
 | Work | Version cited | Canonical URL |
 |---|---|---|
-| SLSA (Supply-chain Levels for Software Artifacts) | v1.0 | <https://slsa.dev/> |
+| SLSA (Supply-chain Levels for Software Artifacts) | v1.2 | <https://slsa.dev/> |
 
 ---
 
