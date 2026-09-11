@@ -179,6 +179,23 @@ res "and names the file on that very line" \
 res "no --union, no disclosure" \
     "$(run_tool "$d" feat/row2 >/dev/null; grep -c 'RESOLVED BY UNION' "$LAB/out.txt")" 0
 
+# 3c. --union on a file with a SHAPE. Two branches each add a key to the same
+#     JSON object; keeping both sides leaves a file that does not parse. The
+#     tool used to print `merged` for it and then measure the tree, and the
+#     gates that read that file failed - a defect manufactured by the
+#     resolution, attributed to whichever branch happened to be in the list.
+d="$LAB/unionjson"; build_repo "$d"
+printf '{\n  "a": 1\n}\n' > "$d/shape.json"; G "$d" add -A; G "$d" commit -qm shape
+G "$d" checkout -q -b feat/j2; printf '{\n  "a": 1,\n  "b": 2\n}\n' > "$d/shape.json"
+G "$d" add -A; G "$d" commit -qm j2
+G "$d" checkout -q main; G "$d" checkout -q -b feat/j3; printf '{\n  "a": 1,\n  "c": 3\n}\n' > "$d/shape.json"
+G "$d" add -A; G "$d" commit -qm j3
+G "$d" checkout -q main
+res "a JSON both sides edited, no --union -> rc 2" "$(run_tool "$d" feat/j2 feat/j3)" 2 "CONFLICT"
+res "the same WITH --union -> still rc 2" "$(run_tool "$d" --union feat/j2 feat/j3)" 2 "no longer parses as JSON"
+res "and it does not claim to have resolved it" \
+    "$(grep -c 'RESOLVED BY UNION.*shape\.json' "$LAB/out.txt")" 0
+
 # 4. a ref that does not exist is not silently skipped
 d="$LAB/ghost"; build_repo "$d"
 res "a branch that does not exist -> rc 2" "$(run_tool "$d" feat/nowhere)" 2 "does not exist"

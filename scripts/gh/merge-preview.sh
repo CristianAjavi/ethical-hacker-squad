@@ -546,6 +546,24 @@ for b in "${BRANCHES[@]}"; do
     continue
   fi
 
+# A union keeps both sides of every conflicting hunk, which is a LINE operation.
+# For a file that has a SHAPE - JSON, here - both sides kept is very often a file
+# that no longer parses, and this tool would then print `merged` and measure a
+# tree nobody could ship. That is not a hypothesis: the first --union run over
+# this repository's own open branches reported two gate failures that came from
+# a competitive-baseline.json the union had broken, and they read exactly like a
+# defect in a branch. A shape it cannot verify is not unioned; if python3 is not
+# there to check, the answer is still no, because a check that cannot run is not
+# a check that passed.
+union_keeps_shape() {  # <path> -> 0 when the union result is still readable
+  case "$1" in
+    *.json) ;;
+    *) return 0 ;;
+  esac
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$1" >/dev/null 2>&1
+}
+
   # Union resolution, by git's own implementation: stages 1/2/3 of each
   # conflicted path are handed to `git merge-file --union`, which keeps both
   # sides of every conflicting hunk in order. Anything it cannot resolve that
@@ -558,6 +576,12 @@ for b in "${BRANCHES[@]}"; do
     git -C "$WT/tree" show ":3:$f" > "$WT/theirs" 2>/dev/null || { union_ok=0; break; }
     if git merge-file --union "$WT/ours" "$WT/base" "$WT/theirs" >/dev/null 2>&1; then
       cp "$WT/ours" "$WT/tree/$f"
+      if ! union_keeps_shape "$WT/tree/$f"; then
+        printf '  NOT UNIONED %-44s %s\n' "$b" "$f"
+        printf '              keeping both sides left a file that no longer parses as JSON:\n'
+        printf '              a union is a LINE operation and this file has a shape.\n'
+        union_ok=0; break
+      fi
       git -C "$WT/tree" add -- "$f" >/dev/null 2>&1 || union_ok=0
       printf '  union       %s :: %s\n' "$b" "$f"
       UNIONED="$UNIONED $f"
