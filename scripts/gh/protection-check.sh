@@ -84,7 +84,14 @@ APP_ID="$(jq -r '.actions_app_id // empty' "$STATE")"
 [ -n "$APP_ID" ] || { printf 'COULD NOT MEASURE: governance.json declares no actions_app_id\n' >&2; exit 2; }
 
 printf '\n=== protection-check: %s ===\n' "$REPO"
-printf 'SCOPE     : the protection block of every branch declared under `branches`, read live\n'
+printf 'SCOPE     : of the protection block of every branch declared under `branches`, read live:\n'
+printf '            required checks (pinned to the app id), strict, linear history, force pushes,\n'
+printf '            deletions, conversation resolution, and WHETHER reviews are required at all.\n'
+printf 'NOT COMPARED, though `branches.*.protection` declares them: enforce_admins, block_creations,\n'
+printf '            lock_branch, allow_fork_syncing, and every field INSIDE required_pull_request_reviews\n'
+printf '            (dismiss_stale_reviews, require_code_owner_reviews, required_approving_review_count,\n'
+printf '            require_last_push_approval). apply-governance.sh compares all fifteen; a green\n'
+printf '            here is a green over seven.\n'
 printf 'OUT       : repository settings, topics, labels and vulnerability alerts - reading those\n'
 printf '            needs admin, which a workflow token does not have. apply-governance.sh is the\n'
 printf '            whole picture; this is the part that can run unattended.\n\n'
