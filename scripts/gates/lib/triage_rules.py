@@ -183,7 +183,7 @@ def main() -> int:
                     f"pack `{name}` is declared converted and {total - cited} of {total} "
                     "procedures cite no triage rule in their false-positive field"
                 )
-        elif cited < policy.get("floor", 0):
+        if cited < policy.get("floor", 0):
             findings.append(
                 f"pack `{name}` fell to {cited} procedures citing triage rules, below its "
                 f"floor of {policy['floor']}; the ratchet only turns forwards"

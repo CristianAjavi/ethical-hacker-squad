@@ -16,7 +16,12 @@
 #   2. an n-gram denylist stored as hashes, so the list forbidding a phrase is
 #      not itself a copy of it - its size is printed on every run;
 #   3. every identifier-family OWNER the corpus cites has a NOTICE.md section;
-#   4. every allowlisted source records id, name, url, licence and reuse.
+#   4. every allowlisted source records id, name, url, licence and reuse;
+#   5. the tool that PRODUCES those hashes cuts the same window the list
+#      declares - measured by running it, not by reading its source. The number
+#      was written down three times (the list, the sweep, the producer) and
+#      compared nowhere; two of them disagreeing costs nothing visible, because
+#      the list goes on parsing and passing while forbidding nothing.
 #
 # WHAT IT DOES NOT MEASURE
 #   Paraphrase. It catches pasting - a control description, a checklist, a
@@ -35,7 +40,7 @@ ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 CORE="$HERE/lib/licence_hygiene.py"
 
 gate_header "licence-hygiene (no third-party text travels under our MIT)"
-gate_scope "quoted spans near an attributed source under skills/ and docs/, the phrase denylist, NOTICE.md against the identifier owners cited, and the source allowlist"
+gate_scope "quoted spans near an attributed source under skills/ and docs/, the phrase denylist and the window its producer actually cuts, NOTICE.md against the identifier owners cited, and the source allowlist"
 gate_out_of_scope "paraphrase: this gate catches pasting, not derivation"
 
 if ! command -v python3 >/dev/null 2>&1; then
