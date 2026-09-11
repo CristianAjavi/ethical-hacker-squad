@@ -1,6 +1,6 @@
 # The evaluation bench
 
-Five neighbouring products publish stars. **None of them publishes a number for how much it actually finds** — the competitive analysis checked, and the honest entry in that row is empty for every product in the field, this one included. This directory is the machinery for filling it in.
+Five neighbouring products publish stars. **One of them publishes a number for how much it actually finds** — `Tencent/AI-Infra-Guard`, with F1, precision, recall and FPR on a named benchmark. This repository said nobody did, and [the field-transparency round](runs/2026-08-21-field-transparency/) refuted that while checking it; the competitive analysis was corrected and now says so. For the other four the honest entry in that row is still empty. This directory is the machinery for filling in ours.
 
 ## The triage stage, run and unmeasured
 
@@ -12,7 +12,7 @@ a ceiling was followed and no difference is reported. What the round did establi
 hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
 other one is what both arms actually did.
 
-## A blinded audit of the vibecoding case — pre-registered, not yet run
+## A blinded audit of the vibecoding case — the prediction held, and `P-52` was matched in 0 of 6
 
 [2026-08-25, vibecoding blind](runs/2026-08-25-vibecoding-blind/) — six blinded runs, the
 criteria committed before the first. The hiding class was reported 4 of 4 in every run and
@@ -26,7 +26,7 @@ deferred `%s` idiom, and the probe shows one call still emits two lines in a lin
 log. Six auditors held up a planted defect as the benign twin of the planted defect beside
 it — a false negative measured against a prediction that predates it.
 
-## Three arms on the vibecoding case — pre-registered, competitors not yet run
+## Three arms on the vibecoding case — zero in all fourteen runs, and both competitors' zeros are silence
 
 [2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — three arms
 on the same blinded tree. **`P-52` is zero in all fourteen runs, and the round still cannot
@@ -39,7 +39,7 @@ Recall on this case came out 0.83 for this corpus against 0.48 and 0.20 — **re
 weak and claimed as nothing**, because the case was planted here. The round that speaks to
 detection ran against code nobody here wrote, and every arm scored 0 of 4 there.
 
-## A published advisory, on code nobody here wrote — pre-registered, not yet run
+## A published advisory, on code nobody here wrote — refuted, 0 of 4 in every arm
 
 [2026-08-25, external log injection](runs/2026-08-25-external-log-injection/) — three arms
 on `pyload/pyload` at the parent of its own fix commit, 569 Python files, key read from the
@@ -54,7 +54,7 @@ weak. Recorded there too: a competitor found that `UnTar.py`'s guard against `CV
 is broken by a `commonprefix` check — *a control that runs and cannot fail*, in real code,
 found by somebody else. The class this project named is not one it has to itself.
 
-## The same advisory, after the procedure changed — pre-registered, not yet run
+## The same advisory, after the procedure changed — refuted, 1 of 3 against a band of 2 of 4
 
 [2026-08-25, external retest](runs/2026-08-25-external-retest/) — an A/B with one variable.
 Same target, same key, same scoring, same arm; the only change is that `WEB-28` now opens
@@ -62,7 +62,15 @@ with a mandatory enumeration step that lists every logging call whose message is
 literal. On this target that query returns 218 sites and the advisory is one of them.
 Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
 
-## The same advisory, with the step where the agent starts — pre-registered, not yet run
+**The prediction is refuted.** One of three valid runs recovered the advisory, against a
+band of two of four committed beforehand. Reading `0 of 4 → 1 of 3` as a win after seeing it
+is the fitting this apparatus exists to prevent, so it is published as a refutation. The
+enumeration step is not reverted — it changed the outcome once in three, below the band, and
+one recovery is not evidence against it either. What it corrects is the *previous* round's
+page, in its own words: an instruction to enumerate does not reliably make an auditor
+enumerate, and the next round tests delivery rather than text.
+
+## The same advisory, with the step where the agent starts — refuted, 0 of 4 against a band of 3 of 4
 
 [2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **refuted, 0 of 4
 against a band of 3 of 4.** Three rounds have failed to move this and the target is retired
@@ -74,7 +82,7 @@ past it toward the web UI, while the advisory sits in the RPC layer behind the b
 permission for adding a download. That hypothesis has three rounds behind it and **no
 pre-registration**, so it is the next round's question, on a different target.
 
-## Is it ranking? — pre-registered, target not yet fetched
+## Is it ranking? — refuted, 1 of 4 against a band of 2 of 4
 
 [2026-08-26, ranking hypothesis](runs/2026-08-26-ranking-hypothesis/) — **refuted, 1 of 4
 against a band of 2 of 4** on Django `CVE-2025-48432`, 2,839 files, key pinned from the fix
@@ -223,7 +231,7 @@ Declared before the run: the new arm's own `code-auditor` asks for `model: sonne
 
 ## A second target: each competitor falls outside a band, this corpus does not
 
-[2026-08-22, second target](runs/2026-08-22-second-target/) — `express-invoices`, an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. The same three arms, six runs each, 85 claims in one blinded batch, inter-pass agreement 98%.
+[2026-08-22, second target](runs/2026-08-22-second-target/) — `express-invoices`, an ordinary Node HTTP API, 5 planted defects and 6 decoys, picked by a rule written before it was applied. The same three arms, six runs each, 91 claims in one blinded batch, inter-pass agreement 100%.
 
 | Arm | claims | refuted by both | recall |
 |---|---|---|---|
@@ -505,9 +513,8 @@ None of these was designed. Each one is what a retraction or a near-miss cost, a
 4. **A dead run is not a zero.** A run whose agent died is *not measured*, and its partial output is preserved unscored. This rule was first applied when it cost us and has since been applied when it favoured us.
 5. **Never report precision without recall.** An arm that reports nothing is never refuted. A drop in refuted claims that arrives with a drop in ground-truth recall is suppression, and gets that word.
 6. **Two passes, or it is not an instrument.** A single blind judge disagreed with a second one on the two verdicts that decided a case, and a published result had to be withdrawn. Inter-pass agreement is reported as the resolution of the instrument, and no difference smaller than it is reportable.
-8. **Verify the defect is in the checkout before any arm runs.** A whole-repository round was published and retracted the same night: the targets were cloned at the default branch, which is *after* each fix, so both arms audited code the defects had been removed from and 0/3 was reported as detection. The case file recorded the pre-fix `parent` commit and it was ignored. `scripts/bench/verify-target-checkout.py` now refuses a case whose checkout is not at its parent, or whose files carry a marker the fix introduces — five negative cases, including the exact mistake. **It was caught only because one arm named the control that made the defect impossible; a silent non-finding looks identical to a miss, and a bench cannot depend on luck.**
-
 7. **Check the artifact before you believe the number.** A pre-registered prediction landed exactly on target while *all three runs failed validation* — the intervention had never been applied. Only the machine-checked contract caught it.
+8. **Verify the defect is in the checkout before any arm runs.** A whole-repository round was published and retracted the same night: the targets were cloned at the default branch, which is *after* each fix, so both arms audited code the defects had been removed from and 0/3 was reported as detection. The case file recorded the pre-fix `parent` commit and it was ignored. `scripts/bench/verify-target-checkout.py` now refuses a case whose checkout is not at its parent, or whose files carry a marker the fix introduces — five negative cases, including the exact mistake. **It was caught only because one arm named the control that made the defect impossible; a silent non-finding looks identical to a miss, and a bench cannot depend on luck.**
 9. **A prediction met by a result whose cause is absent is not a confirmation — run the control.** A procedure was written from a diagnosed blind spot, pre-registered at ≥1 of 3, and scored 3 of 3. Removing the procedure and changing nothing else also scored 3 of 3. The prediction was met and the explanation was false. Worse, the blind spot itself was an artefact of rule 8: the round that diagnosed it had audited patched code, so the "miss" was correct behaviour. **A change ships as an improvement only against an arm that lacks it**, and one that cannot be shown to do anything is discarded *before* it ships rather than kept for being reasonable. This one never reached a commit; `VER-09` v1 did, and had to be pulled back out after it cost a true defect per run.
 
 ## What the numbers are worth
@@ -529,11 +536,10 @@ Today the bench exercises `web-api`, `local-app`, `infra-cloud`, `supply-chain`,
 A round whose criteria are committed and whose numbers do not exist. It is listed here from the moment it is written, because a pre-registration a reader cannot find before the result arrives proves nothing about the order the two were written in — which is the whole point of writing it first.
 
 - [2026-08-24, the near-miss round](runs/2026-08-24-chain-completion/) — three rounds record the same shape of miss: the right file open, something true reported, and the defect beside it missed. The candidate procedure is **frozen in the run directory and is not in the corpus**, and moves into `references/` only if the pre-registered band is met.
-- [2026-08-24, the triage stage on its own](stages/triage/) — fifteen cases that ask one stage of the squad, not the whole of it, and whose **key is auditable by machine**: the consequence of every answer is forced by the table in `references/triage.md`, and `gate-triage-stage.sh` re-derives all of them and fails the case when the key and the table disagree. Nothing has been run; the criteria are frozen beside the cases.
 
 ## Measuring one stage instead of the whole squad
 
-Every round above asks whether the squad found the defect, which is the question a reader cares about and is blunt about where a miss happened. `stages/` holds evals that ask a single stage. The first is [the triage stage](stages/triage/), and it carries a check the rounds do not need: a gate that rejects any case whose statement contains the rule id, the answer token or the consequence terms its own key declares, or that prescribes the remedy. **That second family is not hypothetical** — pointed at the eight per-stage eval sets a neighbouring product publishes, it finds one row of twenty-five that names the fix inside the field naming the defect, and that row is the whole of that stage's dataset. The measurement, its limits and how to reproduce it are in that directory's `README.md`.
+Every round above asks whether the squad found the defect, which is the question a reader cares about and is blunt about where a miss happened. `stages/` holds evals that ask a single stage; there are two, [the triage stage](stages/triage/) and [the routing stage](stages/routing/). The first is the triage stage — fifteen cases that ask one stage of the squad, not the whole of it, and whose **key is auditable by machine**: the consequence of every answer is forced by the table in `references/triage.md`, and `gate-triage-stage.sh` re-derives all of them and fails the case when the key and the table disagree. It has been run once, and the round is the first section on this page: [2026-08-24, triage stage](runs/2026-08-24-triage-stage/), twelve runs whose primary metric could not measure. It carries a check the rounds do not need: a gate that rejects any case whose statement contains the rule id, the answer token or the consequence terms its own key declares, or that prescribes the remedy. **That second family is not hypothetical** — pointed at the eight per-stage eval sets a neighbouring product publishes, it finds one row of twenty-five that names the fix inside the field naming the defect, and that row is the whole of that stage's dataset. The measurement, its limits and how to reproduce it are in that directory's `README.md`.
 
 ## Growing it
 

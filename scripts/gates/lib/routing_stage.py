@@ -3,11 +3,15 @@
 Prints `rc|message` lines: 0 informational, 1 measured failure, 2 could not
 measure. Nothing here scores a model; see PREREGISTRATION.md in the dataset.
 
-The two halves are deliberately different in kind. The first re-derives the key
+The three parts are deliberately different in kind. The first re-derives the key
 from `references/coverage.md`, so a key that drifts from the table is a failure
 rather than a second opinion. The second builds a router out of the table's own
 words and reports what it scores: a routing set the trivial router answers
-perfectly measures string matching, not routing.
+perfectly measures string matching, not routing. The third takes that reported
+score back to the pre-registration and the dataset README and fails when they
+disagree with it -- the number is derived from `coverage.md`, which is free to
+change, and a document that froze an older value is a document this gate was
+refuting on screen and never comparing.
 """
 
 import hashlib
@@ -19,6 +23,20 @@ from pathlib import Path
 
 BACKTICK = re.compile(r"`([^`]+)`")
 WORD = re.compile(r"[a-z][a-z0-9_.-]{3,}")
+
+# Where the two documents that quote this gate's score declare it. Both are
+# SECTIONS, not whole files: a pre-registration keeps its superseded record and
+# a README counts other things out of twenty-two, and a scan over a whole file
+# would accuse prose that is right.
+REGISTRATION_HEADING = "## Registration in force"
+SUPERSEDED_HEADING = "## Superseded registrations"
+# In the dataset README the scanned scope is every section whose heading names
+# the router, so a second section quoting the score is read without anyone
+# having to remember to register it -- and the sections counting other things
+# out of the same total are left alone.
+ROUTER_HEADING_MARK = "table-word router"
+FENCE = re.compile(r"```json\n(.*?)```", re.S)
+FRACTION = re.compile(r"\b(\d{1,3})\s*(?:/|\bof\b)\s*(\d{1,3})\b")
 
 # A word that names many rows cannot separate them. Derived from the table
 # rather than listed here, so the baseline has no hand-tuned vocabulary.
@@ -88,6 +106,173 @@ def predict(router, text):
         if score > best_score:
             best, best_score = entry["row"], score
     return best
+
+
+def section(text, heading):
+    """The body under a `## ` heading, up to the next one. None if absent."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            body = []
+            for nxt in lines[i + 1:]:
+                if nxt.startswith("## "):
+                    break
+                body.append(nxt)
+            return "\n".join(body)
+    return None
+
+
+def without_section(text, heading):
+    """The file with one `## ` section removed. The superseded record is history
+    and is meant to keep the numbers it froze; scanning it would accuse it of
+    being what it says it is."""
+    lines, out, skip = text.splitlines(), [], False
+    for line in lines:
+        if line.startswith("## "):
+            skip = line.strip() == heading
+        if not skip:
+            out.append(line)
+    return "\n".join(out)
+
+
+def sections_naming(text, mark):
+    """Every `## ` section whose heading contains `mark`, as one string."""
+    lines, out, keep, seen = text.splitlines(), [], False, 0
+    for line in lines:
+        if line.startswith("## "):
+            keep = mark.lower() in line.lower()
+            seen += keep
+        if keep:
+            out.append(line)
+    return ("\n".join(out), seen) if seen else (None, 0)
+
+
+def prose_of(body):
+    """The section body with its fenced JSON removed, so the block this gate
+    parses is not also scanned as prose quoting it."""
+    return FENCE.sub(" ", body)
+
+
+def stray_fractions(prose, total, allowed):
+    """Fractions over `total` whose numerator is not a score this gate printed.
+    A denominator that is not the case count is somebody counting something
+    else, and is left alone."""
+    out = set()
+    for num, den in FRACTION.findall(prose):
+        if int(den) == total and int(num) not in allowed:
+            out.add(f"{num}/{den}")
+    return sorted(out)
+
+
+def check_registration(root, prereg_rel, readme_rel, dataset_dir,
+                       case_ids, total, role_right, full_right, hard):
+    """The pre-registered primary metric still describes the set just measured,
+    and the dataset README still quotes the score just printed.
+
+    Returns True when something failed. A registration that cannot be read is
+    reported as could-not-measure, never as fine.
+    """
+    bad = False
+    prereg = root / prereg_rel
+    if not prereg.is_file():
+        emit(2, f"missing {prereg_rel}, so the pre-registered primary metric cannot be compared "
+                f"with what this gate just measured")
+        return bad
+    body = section(prereg.read_text(encoding="utf-8"), REGISTRATION_HEADING)
+    if body is None:
+        emit(2, f"{prereg_rel} has no `{REGISTRATION_HEADING}` section, so there is no "
+                f"registration to compare the score against and its silence means nothing")
+        return bad
+    block = FENCE.search(body)
+    if not block:
+        emit(2, f"`{REGISTRATION_HEADING}` in {prereg_rel} carries no ```json block")
+        return bad
+    try:
+        reg = json.loads(block.group(1))
+    except ValueError as exc:
+        emit(2, f"the registration block in {prereg_rel} does not parse: {exc}")
+        return bad
+    scored = reg.get("table_word_router")
+    primary = reg.get("primary_cases")
+    if not isinstance(scored, dict) or not isinstance(primary, list):
+        emit(2, f"the registration block in {prereg_rel} needs `table_word_router` and "
+                f"`primary_cases`")
+        return bad
+
+    declared_total = scored.get("total")
+    if declared_total != total:
+        bad = True
+        emit(1, f"{prereg_rel} registers {declared_total} case(s) and the dataset holds {total}")
+    for field, measured, what in (("role", role_right, "the role"),
+                                  ("role_and_sections", full_right, "role and sections")):
+        if scored.get(field) != measured:
+            bad = True
+            emit(1, f"{prereg_rel} registers {scored.get(field)}/{declared_total} on {what} and "
+                    f"this run measured {measured}/{total} -- the registration was frozen against "
+                    f"a routing table that has changed since, and a gate printing one number "
+                    f"beside a document declaring another is refuting it on screen without ever "
+                    f"comparing them")
+    if sorted(primary) != sorted(hard):
+        bad = True
+        gone = sorted(set(primary) - set(hard))
+        new = sorted(set(hard) - set(primary))
+        emit(1, f"{prereg_rel} registers the primary set as "
+                f"{', '.join(sorted(primary)) or 'none'} and this run measured "
+                f"{', '.join(sorted(hard)) or 'none'}"
+                + (f" -- no longer hard: {', '.join(gone)}" if gone else "")
+                + (f" -- newly hard: {', '.join(new)}" if new else ""))
+
+    # Everything the pre-registration says outside its superseded record is in
+    # force, not just the block: the sentence that contradicted this gate on
+    # 2026-09-10 lived four sections away from it.
+    live = without_section(prereg.read_text(encoding="utf-8"), SUPERSEDED_HEADING)
+    allowed = {role_right, full_right}
+    readme_body, readme_n = None, 0
+    if (root / readme_rel).is_file():
+        readme_body, readme_n = sections_naming(
+            (root / readme_rel).read_text(encoding="utf-8"), ROUTER_HEADING_MARK)
+    for rel, text, heading in (
+            (prereg_rel, live, f"everything outside `{SUPERSEDED_HEADING}`"),
+            (readme_rel, readme_body, f"the {readme_n} section(s) naming the "
+                                      f"`{ROUTER_HEADING_MARK}`")):
+        if text is None:
+            emit(2, f"{rel} has no section heading naming the `{ROUTER_HEADING_MARK}`, so what "
+                    f"it says about this gate's score is not being read")
+            continue
+        stray = stray_fractions(prose_of(text), total, allowed)
+        if stray:
+            bad = True
+            emit(1, f"{heading} in {rel} states {', '.join(stray)} over {total} and this run "
+                    f"measured {role_right}/{total} on the role and {full_right}/{total} on role "
+                    f"and sections together")
+
+    prose = prose_of(live)
+    cited = sorted(c for c in case_ids
+                   if re.search(rf"(?<![A-Za-z0-9-]){re.escape(c)}(?![A-Za-z0-9-])", prose))
+    if cited and cited != sorted(primary):
+        bad = True
+        emit(1, f"{prereg_rel} names {', '.join(cited)} outside `{SUPERSEDED_HEADING}` and "
+                f"registers {', '.join(sorted(primary))} in its block")
+
+    # Re-registering after a result exists is fitting the registration to the
+    # result. Superseding before anything has been run costs nothing; after, it
+    # is the whole failure a pre-registration exists to prevent.
+    if reg.get("supersedes"):
+        results = sorted(
+            str(f.relative_to(root)) for f in (root / dataset_dir).rglob("*")
+            if f.is_file() and ("score" in f.name.lower()
+                                or "/runs/" in "/" + f.relative_to(root).as_posix() + "/"))
+        if results:
+            bad = True
+            emit(1, f"{prereg_rel} supersedes an earlier registration while {dataset_dir} already "
+                    f"holds a result ({', '.join(results[:3])}) -- a registration rewritten after "
+                    f"a number exists is fitted to that number")
+
+    if not bad:
+        emit(0, f"the registration in force still describes the set: {role_right}/{total} on the "
+                f"role, {full_right}/{total} on role and sections, and the {len(hard)} primary "
+                f"case(s) named under `{REGISTRATION_HEADING}`")
+    return bad
 
 
 def main(argv):
@@ -227,6 +412,13 @@ def main(argv):
             emit(1, f"the table-word router answers every case -- {total}/{total} on role and "
                     f"sections. A routing set solvable by matching the table it was drawn from "
                     f"measures string matching, and has nothing left to say about routing")
+
+        # 4. The documents that quote that score still agree with it.
+        dataset_dir = Path(cases_rel).parent.as_posix()
+        if check_registration(root, (Path(dataset_dir) / "PREREGISTRATION.md").as_posix(),
+                              (Path(dataset_dir) / "README.md").as_posix(), dataset_dir,
+                              sorted(by_case), total, len(role_right), len(full_right), hard):
+            bad = True
 
     if not bad:
         emit(0, f"{len(by_case)} case(s), every key row taken from {cov_rel} cell for cell, no "

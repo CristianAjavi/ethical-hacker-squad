@@ -52,6 +52,26 @@ LIST="$TMPD/batteries.txt"
 find "$ROOT" -type d -name fixtures -prune -o \
      -type f -name '*.selftest.sh' -print | LC_ALL=C sort > "$LIST"
 
+# The same declaration run-all.sh reads, and for the same reason: a battery
+# whose own measurement costs more than the push path allows runs in its own CI
+# job instead. It is deferred BY NAME and printed below, never dropped - the
+# header of this file is about exactly this failure, two runners with different
+# reach, and a list that only one of them can see is that failure again.
+SLOW_SCOPED_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gates/data/slow-scoped.txt"
+# Absent and unreadable are different states and only one of them is a 2. The
+# reason, and the suite that measured it, are written out in scripts/gates/run-all.sh.
+if [ -e "$SLOW_SCOPED_FILE" ] && [ ! -r "$SLOW_SCOPED_FILE" ]; then
+  err "COULD NOT MEASURE" "the scope declaration $SLOW_SCOPED_FILE is there and I cannot read it, so I cannot tell which batteries run elsewhere"
+  exit 2
+fi
+if [ -f "$SLOW_SCOPED_FILE" ]; then
+  SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+else
+  SLOW_SCOPED=""
+  echo "no scope declaration at $SLOW_SCOPED_FILE: nothing is deferred for cost, every battery found runs here"
+fi
+deferred=""
+
 if [ "$LIST_ONLY" -eq 1 ]; then cat "$LIST"; exit 0; fi
 
 worst=0; found=0; failed=""; unmeasured=""
@@ -62,6 +82,13 @@ worst=0; found=0; failed=""; unmeasured=""
 # declaring green what it never ran.
 while IFS= read -r t <&3; do
   [ -n "$t" ] || continue
+  case " $SLOW_SCOPED " in
+    *" $(basename "$t") "*)
+      if [ -z "${EHS_SLOW_GATES:-}" ]; then
+        deferred="$deferred $(basename "$t")(costs-more-than-the-push-path)"
+        continue
+      fi ;;
+  esac
   found=$((found + 1))
   group "$t"
   rc=0
@@ -83,6 +110,7 @@ fi
 
 echo ""
 echo "batteries run: $found"
+[ -n "$deferred" ] && echo "NOT RUN HERE (declared, not silenced):$deferred - ci.yml job 'counts' runs them, EHS_SLOW_GATES=1 runs them here"
 [ -n "$failed" ]     && echo "did not behave:$failed"
 [ -n "$unmeasured" ] && echo "could not measure:$unmeasured"
 [ "$worst" -eq 0 ]   && echo "every battery behaved"

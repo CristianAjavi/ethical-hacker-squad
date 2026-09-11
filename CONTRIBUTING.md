@@ -37,7 +37,7 @@ The question that decides it: *if someone reintroduces this tomorrow, does somet
 
 A `false-positive` "fixed" by rewording a paragraph is not fixed. Prose does not execute and nothing watches it. The fix is a corrected pattern or a sharpened false-positive criterion, **plus** a case in the corpus or a gate that fails if the old behaviour returns.
 
-This is meant to be enforced, not requested: gate `G8` specifies that a pull request closing a `false-positive` or `false-negative` issue must also touch `scripts/gates/`, `tests/` or `references/knowledge/**`. Until CI lands, treat it as a review rule you apply by hand. If a case genuinely cannot be guarded, say so in the pull request and let the override happen in the open.
+This is enforced, not requested: gate `G8` requires that a pull request closing a `false-positive` or `false-negative` issue also touch `scripts/gates/`, `tests/` or `references/knowledge/**`, and `scripts/gates/gate-issue-closure.sh` runs it on every pull request through `.github/workflows/issue-closure-gate.yml`. If a case genuinely cannot be guarded, say so in the pull request and let the override happen in the open.
 
 Every pull request declares which gate, test or corpus case now watches the regression, and uses `Fixes #N`.
 

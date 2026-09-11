@@ -182,15 +182,24 @@ discover.
    Neither number supports a claim about which product triages better, and none
    is made.
 
-## What has not happened
+## What has happened, and what it did not settle
 
-**This eval has not been run.** No model has seen these cases, no score exists,
-and none is claimed anywhere in this repository. Building an instrument is not
-using it: running it costs model calls, and that is a spending decision for the
-owner of the repository, not something a construction pass gets to make.
+**This eval has been run once**, on 2026-08-24: twelve runs, six per arm, against
+the pre-registration frozen in this directory. The artifacts — the answers, the
+prompts and `score.json` — are in
+[`bench/runs/2026-08-24-triage-stage/`](../../runs/2026-08-24-triage-stage/), and
+the round is summarised in the first section of [`bench/README.md`](../../README.md).
 
-The procedure is written down first and frozen, in `PREREGISTRATION.md` in this
-directory — what will be run, what counts as a result, what refutes it, and what
+**The primary metric could not measure.** Over-affirmation was defined as
+answering `HOLDS` where nothing could be established, and that happened zero times
+in both arms. The pre-registration's own ceiling rule was followed and no
+difference is reported. What the round did establish is a hole in the metric:
+`HOLDS` is one of two ways to conclude past the evidence, and the other one is
+what both arms actually did. A score exists; a difference between the arms does
+not, and none is claimed.
+
+The procedure was written down first and frozen, in `PREREGISTRATION.md` in this
+directory — what would be run, what counts as a result, what refutes it, and what
 each outcome forces. A pre-registration a reader can only find after the numbers
 arrive proves nothing about the order the two were written in.
 

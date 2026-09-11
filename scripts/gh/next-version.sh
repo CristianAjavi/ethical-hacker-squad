@@ -65,8 +65,9 @@ fi
 # the body carries its own line breaks, so each line of the body was read as if
 # it were another commit. MEASURED: a single `docs:` commit whose body contained
 # the line `feat!: ...` was counted as 3 commits and forced a MAJOR bump. The
-# commit body is untrusted text (it comes from PRs of the knowledge loop), so it
-# cannot decide the version.
+# commit body is untrusted text (it comes from PRs of the knowledge loop), so
+# only its FOOTER decides: `BREAKING CHANGE:` at the START of a line, which is
+# what the spec defines. A mention anywhere else in the prose decides nothing.
 # Commits are enumerated by SHA first, and subject and body are requested separately.
 SHAS=$(git log --no-merges --format='%H' "$RANGE" 2>/dev/null)
 LOG_RC=$?
@@ -79,11 +80,16 @@ while IFS= read -r sha; do
   [[ -n "$sha" ]] || continue
   COUNT=$((COUNT + 1))
   subject=$(git show -s --format='%s' "$sha")
-  # the body is flattened to a single line: only a marker is searched inside it.
-  body=$(git show -s --format='%b' "$sha" | tr '\r\n' '  ')
-  # BREAKING: `type!:` in the subject or `BREAKING CHANGE:` in the body.
+  # The body is NOT flattened for this test. Conventional Commits puts
+  # `BREAKING CHANGE:` in a FOOTER, at the start of its own line. Flattening the
+  # newlines into spaces and then accepting the marker after any whitespace let
+  # every mid-sentence mention decide the version. MEASURED: a body reading
+  # "this is not a BREAKING CHANGE: no API moved" and a body quoting somebody
+  # else's changelog both produced bump=major, over text nobody here wrote.
+  body=$(git show -s --format='%b' "$sha")
+  # BREAKING: `type!:` in the subject or a `BREAKING CHANGE:` FOOTER in the body.
   if printf '%s' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:'; then HAS_MAJOR=1; fi
-  if printf '%s' "$body" | grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:'; then HAS_MAJOR=1; fi
+  if printf '%s\n' "$body" | grep -qE '^BREAKING[ -]CHANGE:'; then HAS_MAJOR=1; fi
   if printf '%s' "$subject" | grep -qE '^feat(\([^)]*\))?!?:'; then HAS_MINOR=1; fi
 done <<<"$SHAS"
 
