@@ -398,6 +398,45 @@ Routing was not the failure. Both arms read a comparable slice, and the corpus a
 
 The external run above it hands the auditor the affected module. This one does not, and it is the answer to the objection that follows from that. It is also one repository and one advisory, with a second target that never produced an artifact — the run's README says both.
 
+## An outside tool's raw output, crossed against this key by file and line
+
+Every round above compares this corpus to a rival through a judge reading prose. None of them
+ever took the **raw output of a third-party scanner** and crossed it against
+`ground-truth.json` the way our own runs are crossed — by file and by line, with the same
+scorer. [`external/ultrasec-2026-09-11/`](external/ultrasec-2026-09-11/) is the first that does.
+
+`maxgfr/ultrasec`, pinned at commit `4b9db6fc682f53c7e7a3b96908e5de17fc247026`, version
+`1.48.4` as the tool reports it, run once per case over all eleven, **with nothing installed**.
+Its `findings.json` is committed byte for byte. `../scripts/bench/adapt-external.py` turns that
+raw output into a findings artifact and `../scripts/bench/score.py` — the scorer our own runs
+use, unchanged — does the scoring.
+
+| Arm | Raw findings | Detected of 54 | Recall | Decoys reported of 50 |
+|---|---|---|---|---|
+| default, `--offline --tools none` | 17 | **9** | 16.7% | 5 |
+| recall, `--sinks --log-hygiene --budget thorough` | 36 | **13** | 24.1% | 12 |
+
+Two arms because reporting only the first would have under-sold the rival by half.
+
+**What this number is not.** It is not a head-to-head. The rows in *The measured result so far*
+are per-pack scores from squads pointed at one case at a time; this arm swept all eleven in one
+pass, and one automated engine against eleven cases is a different task from a squad against one.
+A hit here is **location agreement, not semantic agreement** — a finding that lands inside the
+span the key declares counts, whatever it says about it, and one that describes the right defect
+at the wrong line does not. And the run exercised the tool's **deterministic engine only**: its
+orchestration of third-party scanners could not run (semgrep, bandit, gitleaks, trufflehog,
+osv-scanner and trivy are all absent on the runner, so `--tools none` was passed to make the run
+reproducible rather than a function of what happens to be installed) and its adversarial AI
+verification stage was not run, because this project spends no model budget on a rival's
+pipeline. These are therefore pre-verification numbers, which cuts **both** ways: candidates its
+verifier would have discarded are counted here as decoys reported. `provenance.json` records all
+of it, along with the one thing that touched the network — the tool's own grammar cache.
+
+`../scripts/gates/gate-external-crosscheck.sh` re-derives every number in that table from the
+committed raw output on each run, checks the raw files against their recorded hashes, and counts
+the raw records itself rather than trusting the adapter. A number published once and never
+re-derived is a screenshot.
+
 ## The patch bench
 
 Detection is half the job. The other half is telling a fix from something that looks like one, and it has its own key, its own scorer and its own run:
@@ -413,7 +452,10 @@ Detection is half the job. The other half is telling a fix from something that l
 | `cases/` | Small targets written to be **read**, not run. Each contains planted defects and, deliberately, constructs that look like defects and are ruled out. |
 | `ground-truth.json` | The answer key: what was planted, which procedure should catch it, which decoys exist and which triage rule rules each one out. |
 | `../scripts/bench/score.py` | Scores a `findings.json` against the key. |
+| `external/` | An outside tool's **raw** output, committed byte for byte with its provenance — tool, pinned commit, version, command, scan roots, and what was not exercised — plus the numbers it scored against the key. One directory per recorded run, named `<tool>-<date>`. |
+| `../scripts/bench/adapt-external.py` | Turns a third-party scanner's raw output (SARIF, or the native shape of the tool recorded) into a findings artifact `score.py` reads. It refuses to answer zero to a format it does not recognise, and names every finding it could not place. |
 | `../scripts/gates/gate-bench-integrity.sh` | Checks the bench itself: a rotting answer key produces confident nonsense. |
+| `../scripts/gates/gate-external-crosscheck.sh` | Re-derives every number under `external/` from the raw output on every run, so a published external number cannot quietly stop being true. |
 
 ## The protocol, and the one rule that makes a run mean anything
 
