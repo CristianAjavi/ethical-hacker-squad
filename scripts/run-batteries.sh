@@ -58,11 +58,18 @@ find "$ROOT" -type d -name fixtures -prune -o \
 # header of this file is about exactly this failure, two runners with different
 # reach, and a list that only one of them can see is that failure again.
 SLOW_SCOPED_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gates/data/slow-scoped.txt"
-if [ ! -f "$SLOW_SCOPED_FILE" ]; then
-  err "COULD NOT MEASURE" "the declared scope $SLOW_SCOPED_FILE is not there, so I cannot tell a battery that runs elsewhere from one that stopped running at all"
+# Absent and unreadable are different states and only one of them is a 2. The
+# reason, and the suite that measured it, are written out in scripts/gates/run-all.sh.
+if [ -e "$SLOW_SCOPED_FILE" ] && [ ! -r "$SLOW_SCOPED_FILE" ]; then
+  err "COULD NOT MEASURE" "the scope declaration $SLOW_SCOPED_FILE is there and I cannot read it, so I cannot tell which batteries run elsewhere"
   exit 2
 fi
-SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+if [ -f "$SLOW_SCOPED_FILE" ]; then
+  SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+else
+  SLOW_SCOPED=""
+  echo "no scope declaration at $SLOW_SCOPED_FILE: nothing is deferred for cost, every battery found runs here"
+fi
 deferred=""
 
 if [ "$LIST_ONLY" -eq 1 ]; then cat "$LIST"; exit 0; fi

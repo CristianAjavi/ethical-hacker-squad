@@ -97,11 +97,32 @@ LIVE_SCOPED='gate-governance-drift.sh gate-alert-live.sh'
 # in parallel with this one - ci.yml, job `counts` - where they cost the person
 # who pushed no wall clock at all. EHS_SLOW_GATES=1 runs them locally.
 SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"
-if [ ! -f "$SLOW_SCOPED_FILE" ]; then
-  printf 'COULD NOT MEASURE: the declared scope %s is not there, so I cannot tell a control that runs elsewhere from one that stopped running at all\n' "$SLOW_SCOPED_FILE" >&2
+# Absent and unreadable are different states, and only one of them is a 2.
+#
+# ABSENT is not a measurement I could not take. With no declaration nothing is
+# deferred and every control discovered runs here: more measuring, not less, and
+# the direction that cannot hide a red. The first version of this guard exited 2
+# on absence and scripts/gh/tests/test-gates-loop.sh went from 11 green to 7 red
+# -- that suite copies this runner into a throwaway lab where no declaration
+# belongs, precisely so the negative tests cannot drift from what CI runs. Worse
+# than the 7: its four remaining PASSes all expect rc 2 and were passing because
+# of the defect. A guard that answers 2 to a question nobody asked has more
+# reach than its job.
+#
+# UNREADABLE is the opposite, and stays a 2: the file is there, so somebody
+# declared something, and I cannot tell what. Reading it as empty would run what
+# was declared costly; reading it as "everything" would defer controls nobody
+# named. Neither is a measurement.
+if [ -e "$SLOW_SCOPED_FILE" ] && [ ! -r "$SLOW_SCOPED_FILE" ]; then
+  printf 'COULD NOT MEASURE: the scope declaration %s is there and I cannot read it, so I cannot tell which controls run elsewhere\n' "$SLOW_SCOPED_FILE" >&2
   exit 2
 fi
-SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+if [ -f "$SLOW_SCOPED_FILE" ]; then
+  SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+else
+  SLOW_SCOPED=""
+  printf 'no scope declaration at %s: nothing is deferred for cost, every gate found runs here\n' "$SLOW_SCOPED_FILE"
+fi
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
