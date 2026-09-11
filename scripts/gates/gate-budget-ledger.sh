@@ -35,6 +35,90 @@
 #                      that knob names the same number. This is check 3 because
 #                      it is the one that was already red.
 #   4. justification   every `budget` carries a non-empty `why` and `measured`.
+#   5. bite            every `budget` is MOVED to its extremes and the gate named
+#                      in its `enforced_in` is re-run. Checks 1-4 all pass for a
+#                      gate that reads `${EHS_*:-<number>}` into a variable and
+#                      never compares anything with it (a literal knob cannot be
+#                      written here: check 1 scans this file too, and would report
+#                      the example as an unclassified knob): the ledger would agree
+#                      with the source, the source would agree with its comments,
+#                      the `why` would be eloquent, and the bound would decide
+#                      nothing. This is the only check here that runs another
+#                      gate, so it carries a recursion guard and a timeout.
+#
+# HOW CHECK 5 DECIDES, and why the bound is moved to THREE points
+#   A bound bites if and only if MOVING IT changes the verdict of the gate that
+#   applies it. The probe needs neither the magnitude being measured nor whether
+#   the knob is a ceiling or a floor: it moves the number to the extremes and
+#   watches the exit code. The points are tried in order and it stops at the first
+#   one that moves the verdict - 0, then 999999999, then -1.
+#
+#   -1 is there because it was MEASURED to be necessary, not for symmetry.
+#   EHS_TREE_DELTA_HUMAN_BYTES is compared with `-gt` against a delta that is
+#   itself 0 on a branch that adds nothing, and `0 -gt 0` is false: at a low
+#   extreme of 0 the gate still answers rc 0, and a probe that stopped at 0 and
+#   999999999 would have reported a live bound as decoration. At -1 it answers
+#   rc 1. One notch was the whole difference between a true and a false
+#   accusation. -1 is tried LAST because it is also the point a gate is most
+#   likely to reject outright (gate-agent-tools.sh refuses a non-digit knob and
+#   answers 2), and a point that never has to be reached cannot misfire.
+#
+#   Three verdicts, never two:
+#     bites          some extreme moved the verdict between 0 and 1
+#     does NOT bite  every extreme was measured, none of them moved the verdict,
+#                    and the entry DECLARES that the probe reached the comparison
+#                    - `probe_env`, the environment that opens the path the knob
+#                    guards, empty when the default run already reaches it -> rc 1
+#     NOT MEASURED   the gate could not answer somewhere (rc 2, a timeout, a
+#                    missing `enforced_in`, no baseline); or nothing moved and the
+#                    entry declares no `probe_env`, so a decorative bound and a
+#                    comparison this run never reaches cannot be told apart
+#                    -> rc 2. Never rc 0: an unprobed bound is not a proved
+#                    one, and this check exists precisely because an unexercised
+#                    number looks exactly like an enforced one.
+#
+# WHERE CHECK 5 RUNS, decided by measuring it rather than by taste
+#   The rule for this repository is that a probe costing more than ~30 s does not
+#   belong on the path that runs on every push. So it was timed, twice, and the
+#   figure is a RANGE because it turned out to depend on what else the machine is
+#   doing:
+#
+#     probing all eight budgets   9.5 s   idle machine (load ~1)
+#                                21-24 s  three runs at load average 5
+#     the whole battery, run-all.sh  31 s  same machine, low load
+#
+#   17 runs produce that: one baseline per enforcing gate (4) plus 13 probe runs,
+#   the early exit having saved 3. gate-plugin-integrity.sh is 5 of the 17 and
+#   1.5-3.0 s of each, which is most of the total; the other three gates together
+#   cost under 3 s. Both figures are under 30 s, so check 5 runs on the gate path
+#   and the answer lands in front of whoever moved the number, in the same run
+#   that told them the ledger agreed with the source. The margin at load is thin -
+#   if gate-plugin-integrity.sh gets slower, re-time this before assuming it still
+#   fits, and put the new figure here.
+#
+#   There is a second reason, and it is the stronger one: moving check 5 "into the
+#   self-test" would save the push path nothing. This gate runs its self-test
+#   INLINE on every invocation (see GATE_SELFTEST below) and refuses to report if
+#   it fails, so its self-test is already on the push path. Taking the probe off
+#   that path would mean a separate scripts/gates/gate-budget-ledger.selftest.sh,
+#   which run-all.sh only executes with --selftests - a different decision, about
+#   a different file, with a different cost.
+#
+#   Its two negative-proof cases are built on the CHEAPEST enforcing gate
+#   (gate-benign-control.sh, 0.1-0.2 s a run) rather than on
+#   gate-plugin-integrity.sh (1.5-3.0 s) on purpose: the mutant proves exactly the
+#   same thing for ~2 s instead of ~11 s.
+#
+# WHY `not_a_budget` KNOBS ARE OUT OF CHECK 5, said out loud instead of skipped
+#   Check 5 probes the eight `budget` knobs and deliberately not the three
+#   `not_a_budget` ones. Those are not bounds, they are switches:
+#   EHS_ALLOW_TOOLS_FRONTMATTER and EHS_REQUIRE_CLAUDE_CLI select a MODE, and
+#   EHS_SELFTEST_CHILD marks an invocation launched by the battery. "Moving a
+#   switch to its extremes" has no meaning - to a switch, 0 and 999999999 are the
+#   same not-1 - so probing them would measure nothing and still print something,
+#   which is the failure mode this whole file exists to prevent. What keeps them
+#   honest is check 1: a switch is in the ledger because a person classified it,
+#   and flipping one shows up in the run, not in a threshold.
 #
 # WHAT IT DOES NOT MEASURE, and will not pretend to
 #   Whether a `measured` claim is TRUE. A gate cannot re-run the reasoning that
@@ -44,12 +128,33 @@
 #   the DIRECTION of a change - it has no history at gate time - so it does not
 #   claim to distinguish a raise from a tightening.
 #
+#   Check 5 has a limit of its own, and `probe_env` is where it is answered. The
+#   probe moves the THRESHOLD; it cannot move the QUANTITY being compared, and it
+#   runs the enforcing gate in one environment. A bound that moves nothing is
+#   therefore two facts wearing one face: a decorative bound, or a comparison
+#   this run never reaches. gate-tree-delta.sh is the live example - it picks its
+#   budget by branch name, so on a human branch no value of the bot budget can
+#   move a verdict, and calling that a failing bound would be an accusation this
+#   probe cannot support. Reporting it as a failure is also how a check like this
+#   one gets switched off: a red that no change caused, on every run, for ever.
+#
+#   So the ledger says how to reach it. `probe_env` is exported for the BASELINE
+#   and for every extreme, which is what keeps the two runs comparable; for the
+#   bot budget it is GITHUB_HEAD_REF=bot/..., the same variable the enforcing
+#   gate reads to choose. With a path declared, "moved nothing" is a measured
+#   failure and worth 1. With none declared it is worth 2 and says so, and the
+#   remedy is to declare the environment that opens the comparison - or to delete
+#   a knob nobody can show doing anything. An empty `probe_env` is a declaration
+#   too: it asserts that the default run already reaches the comparison, and it
+#   puts the entry back on the hook for a 1.
+#
 # Usage:
 #   scripts/gates/gate-budget-ledger.sh [--gates-dir DIR] [--ledger FILE]
 #   scripts/gates/gate-budget-ledger.sh --self-test
 #
 # EXIT CODES (repo contract): 0 measured fine · 1 measured FAILS · 2 could not
-# measure (no python3, no gates directory, a missing or unusable ledger).
+# measure (no python3, no gates directory, a missing or unusable ledger, or a
+# bound whose bite could not be probed).
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -66,7 +171,7 @@ while [ $# -gt 0 ]; do
     --gates-dir) GATES_DIR="${2:-}"; shift 2 ;;
     --ledger)    LEDGER="${2:-}"; shift 2 ;;
     --self-test) ONLY_SELFTEST=1; shift ;;
-    -h|--help)   sed -n '2,52p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,143p' "$0"; exit 0 ;;
     *)           shift ;;
   esac
 done
@@ -174,6 +279,143 @@ if fails:
 PY
 }
 
+# bite <repo-root> <ledger> [only-knob] — check 5.
+#
+# Moves every `budget` knob to its extremes and re-runs the gate its `enforced_in`
+# names. Speaks the same `rc|message` protocol as measure(), so the caller reads
+# both with one loop. It is the only part of this gate that executes another gate:
+# it exports EHS_BITE_PROBE=1 so a probed gate can tell it is being probed, it
+# refuses to probe a knob whose `enforced_in` is this file, and every run has a
+# timeout - a gate that hangs is a 2, not a wait.
+bite() {
+  python3 - "$1" "$2" "${3:-}" <<'PY'
+import json, os, pathlib, subprocess, sys
+
+root = pathlib.Path(sys.argv[1]).resolve()
+ledger_path = pathlib.Path(sys.argv[2])
+only = sys.argv[3]
+
+SELF = "gate-budget-ledger.sh"
+TIMEOUT = 120
+# Tried in this order, stopping at the first point that moves the verdict. 0 and
+# 999999999 first because they are the two a gate is least likely to reject; -1
+# last because it is both the rarest winner and the likeliest to be refused
+# outright, and a point that is never reached cannot misfire. See the header.
+POINTS = ("0", "999999999", "-1")
+
+def out(rc, msg):
+    print(f"{rc}|{msg}")
+
+try:
+    knobs = json.loads(ledger_path.read_text(encoding="utf-8"))["knobs"]
+    if not isinstance(knobs, dict):
+        raise ValueError("`knobs` is not an object")
+except (OSError, ValueError, KeyError) as exc:
+    out(2, f"the bite probe could not read the ledger ({ledger_path}): {exc}")
+    raise SystemExit
+
+budgets = [(k, v) for k, v in sorted(knobs.items())
+           if isinstance(v, dict) and v.get("kind") == "budget" and (not only or k == only)]
+if not budgets:
+    named = f" named {only}" if only else ""
+    out(2, f"the bite probe found no `budget` knob to probe{named}: it read nothing, which is "
+           f"not the same as finding nothing wrong")
+    raise SystemExit
+
+def run(target, knob=None, value=None, extra=None):
+    """rc of the enforcing gate, or None if it could not be run to completion."""
+    env = dict(os.environ)
+    for name in knobs:          # a knob exported in the caller's shell must not
+        env.pop(name, None)     # become the baseline this probe measures against
+    env["EHS_BITE_PROBE"] = "1"
+    # The declared path is opened for the BASELINE as well as for the extremes.
+    # Opening it only for the extremes would compare two different runs and read
+    # the difference between them as a bite.
+    for name, val in (extra or {}).items():
+        env[str(name)] = str(val)
+    if knob is not None:
+        env[knob] = value
+    try:
+        return subprocess.run(["bash", str(target)], cwd=str(root), env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              timeout=TIMEOUT).returncode
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+bites = blunt = unmeasured = 0
+for knob, entry in budgets:
+    rel = str(entry.get("enforced_in") or "")
+    target = root / rel if rel else None
+    if not rel or not target.is_file():
+        out(2, f"{knob}: `enforced_in` says {rel!r} and no such file exists under {root.name}/, so "
+               f"whether this bound bites was NOT MEASURED - which is not the same as it biting")
+        unmeasured += 1
+        continue
+    if target.name == SELF:
+        out(2, f"{knob}: `enforced_in` is this gate itself and probing it would recurse, so whether "
+               f"this bound bites was NOT MEASURED")
+        unmeasured += 1
+        continue
+
+    pe = entry.get("probe_env")
+    if pe is not None and not isinstance(pe, dict):
+        out(2, f"{knob}: `probe_env` is {type(pe).__name__} and not an object of environment "
+               f"variables, so the probe does not know what to export and whether this bound "
+               f"bites was NOT MEASURED")
+        unmeasured += 1
+        continue
+
+    base = run(target, extra=pe)
+    if base not in (0, 1):
+        seen = "a timeout or a failure to start" if base is None else f"rc={base}"
+        out(2, f"{knob}: {rel} answered {seen} at the declared value, so there is no verdict for the "
+               f"bound to move and whether it bites was NOT MEASURED")
+        unmeasured += 1
+        continue
+
+    trail, moved = [], None
+    for value in POINTS:
+        rc = run(target, knob, value, extra=pe)
+        trail.append(f"{value}->{'timeout' if rc is None else rc}")
+        if rc in (0, 1) and rc != base:
+            moved = (value, rc)
+            break
+    trail = " ".join(trail)
+
+    shown = " ".join(f"{k}={v}" for k, v in sorted(pe.items())) if pe else ""
+    if moved:
+        value, rc = moved
+        via = f" on the declared path [{shown}]" if shown else ""
+        out(0, f"{knob} bites{via}: {rel} answers rc={base} at the declared {entry.get('value')!r} "
+               f"and rc={rc} with the knob at {value}  [{trail}]")
+        bites += 1
+    elif "->2" in trail or "->timeout" in trail:
+        out(2, f"{knob}: {rel} could not measure at one or more extremes [{trail}] and no other "
+               f"extreme moved its verdict, so whether this bound bites was NOT MEASURED. An "
+               f"unprobed bound is not a proved one")
+        unmeasured += 1
+    elif pe is None:
+        out(2, f"{knob}: {rel} answers rc={base} at the declared {entry.get('value')!r} and rc={base} "
+               f"at every extreme [{trail}], and the ledger declares no `probe_env`. A bound that "
+               f"decides nothing and a comparison this run never reaches look identical from here, "
+               f"so whether this bound bites was NOT MEASURED. Declare the environment that opens "
+               f"the comparison - empty if the default run already reaches it - or delete a knob "
+               f"nobody can show doing anything")
+        unmeasured += 1
+    else:
+        opened = (f" with the declared path open [{shown}]" if shown
+                  else " and the entry declaring the default run already reaches the comparison")
+        out(1, f"{knob}: {rel} answers rc={base} at the declared {entry.get('value')!r} and rc={base} "
+               f"at every extreme [{trail}]{opened}. The comparison was declared reachable and "
+               f"moving the bound still changed nothing, so the bound decides nothing. Checks 1-4 "
+               f"pass in that case, which is the whole reason this one exists")
+        blunt += 1
+
+out(0, f"bite probe: {len(budgets)} budget knob(s) moved to 0 / 999999999 / -1 - {bites} bite, "
+       f"{blunt} do not, {unmeasured} NOT MEASURED")
+PY
+}
+
 selftest() {
   command -v python3 >/dev/null 2>&1 || { echo "  UNMEASURABLE python3 is missing"; return 2; }
   local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/ehs-budget-XXXXXX")"
@@ -265,6 +507,113 @@ import os,pathlib
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json").write_text("{")'
 
+  # -- check 5, proved in the negative ---------------------------------------
+  # run_case copies scripts/gates/ and that is enough for measure(), which only
+  # READS files. The bite probe RUNS gates, and those gates read skills/, agents/
+  # and the rest, so its cases need a copy of the whole tree. .git is left out:
+  # nothing probed here needs it, and in a work tree it is a file, not a
+  # directory. Both cases are filtered to ONE knob on the cheapest enforcing gate
+  # (gate-benign-control.sh, 0.1 s a run), so the negative proof costs ~2 s.
+  run_bite_case() {
+    local name="$1" knob="$2" want="$3" needle="$4" mut="$5"
+    local w="$tmp/$name"
+    command rm -rf "$w"; mkdir -p "$w"
+    (cd "$ROOT" && tar -cf - --exclude .git . 2>/dev/null) | (cd "$w" && tar -xf - 2>/dev/null)
+    if [ ! -f "$w/scripts/gates/data/budget-ledger.json" ]; then
+      printf '  HARNESS  %-44s the copy of the tree did not arrive\n' "$name"; f=$((f+1)); return
+    fi
+    if [ -n "$mut" ] && ! EHS_WORK="$w" python3 -c "$mut" >/dev/null 2>&1; then
+      printf '  HARNESS  %-44s the mutation itself failed\n' "$name"; f=$((f+1)); return
+    fi
+    local out rc
+    out="$(bite "$w" "$w/scripts/gates/data/budget-ledger.json" "$knob" 2>&1)"; rc=0
+    printf '%s' "$out" | grep -q '^1|' && rc=1
+    printf '%s' "$out" | grep -q '^2|' && rc=2
+    if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+      printf '  PASS  %-46s rc=%s\n' "$name" "$rc"; p=$((p+1))
+    else
+      printf '  FAIL  %-46s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
+      printf '%s\n' "$out" | sed 's/^/        /' | head -4; f=$((f+1))
+    fi
+  }
+
+  echo "  == a bound that bites, and the same bound with its comparison removed =="
+  # The control comes first on purpose. Without it, the mutant's red proves only
+  # that something in a copied tree is unhappy; with it, the red is attributable
+  # to the one line the mutation changed.
+  run_bite_case bite-sees-a-live-floor EHS_MIN_XREFS 0 "bites" ""
+
+  # PREDICTION, written before this was first run: with the comparison replaced
+  # by a test that is always favourable, EHS_MIN_XREFS stops deciding anything,
+  # no extreme moves gate-benign-control.sh off rc 0, and the probe must go RED
+  # saying so. If it survived this, it would not be measuring bite at all.
+  #
+  # The mutant also writes an empty `probe_env` on the entry, which is the ledger
+  # asserting that the default run already reaches the comparison. That assertion
+  # is what makes a dead bound a measured FAILURE here rather than the 2 of the
+  # case below: the probe never has to guess which of the two it is looking at.
+  #
+  # SC2016 is disabled deliberately: `$N_XREFS` and `$MIN_XREFS` below must reach
+  # python UNEXPANDED, because they are the literal bash text this mutant looks
+  # for in gate-benign-control.sh. Double quotes here would expand them to the
+  # empty string, `old` would not be found, and the assert would turn that into a
+  # loud HARNESS failure instead of a quiet mutation that changed nothing.
+  # shellcheck disable=SC2016
+  run_bite_case bite-catches-a-neutralised-comparison EHS_MIN_XREFS 1 \
+    "moving the bound still changed nothing" '
+import os,pathlib,json
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"scripts/gates/gate-benign-control.sh"
+t=p.read_text()
+old="if [ \"$N_XREFS\" -ge \"$MIN_XREFS\" ]; then"
+assert t.count(old)==1, "the comparison to neutralise is not where this mutant thinks it is"
+p.write_text(t.replace(old,"if [ 1 -eq 1 ]; then",1))
+lp=w/"scripts/gates/data/budget-ledger.json"
+d=json.loads(lp.read_text())
+d["knobs"]["EHS_MIN_XREFS"]["probe_env"]={}
+lp.write_text(json.dumps(d,indent=2))'
+
+  # PREDICTION, written before this was first run: the SAME neutralised
+  # comparison with no `probe_env` on the entry must come back 2, not 1. From
+  # inside the probe a bound nothing reaches and a bound nothing compares look
+  # identical, and the older code called both of them a failure - which is how
+  # gate-tree-delta.sh's bot budget, unreachable on any branch that is not
+  # bot/*, was accused of deciding nothing on a repository where it decides
+  # plenty. If this case ever comes back 1, the probe is once more claiming a
+  # measurement it does not have.
+  # shellcheck disable=SC2016
+  run_bite_case bite-will-not-call-an-unreached-bound-dead EHS_MIN_XREFS 2 \
+    "look identical from here" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/gate-benign-control.sh"
+t=p.read_text()
+old="if [ \"$N_XREFS\" -ge \"$MIN_XREFS\" ]; then"
+assert t.count(old)==1, "the comparison to neutralise is not where this mutant thinks it is"
+p.write_text(t.replace(old,"if [ 1 -eq 1 ]; then",1))'
+
+  # PREDICTION, written before this was first run: with the comparison put
+  # behind an environment variable and that variable declared in `probe_env`,
+  # the probe must REACH it and report the bound as biting - rc 0. Unreached,
+  # this same tree is the case above and answers 2, so a 0 here can only come
+  # from the declared environment being exported on both the baseline and the
+  # extremes. This is the whole mechanism, proved in the one direction that
+  # cannot be faked by the gate simply being lenient.
+  # shellcheck disable=SC2016
+  run_bite_case bite-reaches-a-comparison-behind-a-declared-context EHS_MIN_XREFS 0 \
+    "on the declared path" '
+import os,pathlib,json
+w=pathlib.Path(os.environ["EHS_WORK"])
+p=w/"scripts/gates/gate-benign-control.sh"
+t=p.read_text()
+old="if [ \"$N_XREFS\" -ge \"$MIN_XREFS\" ]; then"
+assert t.count(old)==1, "the comparison to gate is not where this mutant thinks it is"
+new="if [ \"${EHS_BITE_PATH:-shut}\" != \"open\" ] || [ \"$N_XREFS\" -ge \"$MIN_XREFS\" ]; then"
+p.write_text(t.replace(old,new,1))
+lp=w/"scripts/gates/data/budget-ledger.json"
+d=json.loads(lp.read_text())
+d["knobs"]["EHS_MIN_XREFS"]["probe_env"]={"EHS_BITE_PATH":"open"}
+lp.write_text(json.dumps(d,indent=2))'
+
   command rm -rf "$tmp"
   echo "  $p PASS / $f FAIL"
   [ "$f" -eq 0 ] || return 1
@@ -276,8 +625,8 @@ if [ "$ONLY_SELFTEST" -eq 1 ]; then
 fi
 
 gate_header "budget-ledger (a bound may not move without the figure that moved it)"
-gate_scope "every \${EHS_*:-<number>} a gate reads, against scripts/gates/data/budget-ledger.json and against every comment in the source that states a default for it"
-gate_out_of_scope "whether a 'measured' claim is TRUE, and the DIRECTION of a change - this gate has no history at gate time and does not pretend to tell a raise from a tightening"
+gate_scope "every \${EHS_*:-<number>} a gate reads, against scripts/gates/data/budget-ledger.json, against every comment in the source that states a default for it, and - for each \`budget\` - against the verdict of the gate its \`enforced_in\` names, with the bound moved to its extremes"
+gate_out_of_scope "whether a 'measured' claim is TRUE, and the DIRECTION of a change - this gate has no history at gate time and does not pretend to tell a raise from a tightening. The bite probe is also out of scope for the three \`not_a_budget\` knobs: they are mode switches, not bounds, and moving a switch to an extreme measures nothing"
 
 if ! command -v python3 >/dev/null 2>&1; then
   gate_warn "python3 is not installed: nothing was checked"
@@ -308,9 +657,29 @@ while IFS= read -r line; do
   esac
 done < <(measure "$GATES_DIR" "$LEDGER")
 
+echo "== does each declared bound actually BITE? =="
+if [ "${EHS_BITE_PROBE:-}" = "1" ]; then
+  # Only ever set by this gate's own probe. Seeing it here means something is
+  # running this gate from inside a probe, and probing on would recurse.
+  gate_warn "EHS_BITE_PROBE=1: this run is already inside a bite probe, so check 5 did NOT run"
+  [ "$RC" -eq 0 ] && RC=2
+else
+  while IFS= read -r line; do
+    code="${line%%|*}"; msg="${line#*|}"
+    case "$code" in
+      0) [ -n "$msg" ] && gate_info "$msg" ;;
+      1) gate_fail "$msg"; RC=1 ;;
+      2) gate_warn "$msg"; [ "$RC" -eq 0 ] && RC=2 ;;
+    esac
+  done < <(bite "$ROOT" "$LEDGER" "")
+fi
+
 echo "NOT MEASURED: whether a 'measured' claim is true. A gate cannot re-run the reasoning that"
 echo "              justified a number; it enforces that the claim exists beside it and that the"
 echo "              number is the same everywhere this repository states it."
+echo "NOT MEASURED: whether a bound that bites bites at the RIGHT number. Check 5 proves the bound"
+echo "              reaches a live comparison; the figure itself is argued for in \`measured\`, and"
+echo "              no gate can re-run that argument."
 
 if [ "$SELFTEST_SKIPPED" -eq 1 ] && [ "$RC" -eq 0 ]; then RC=2; fi
 gate_verdict "$RC"; exit "$RC"
