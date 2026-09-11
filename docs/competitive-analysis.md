@@ -92,9 +92,11 @@ finding marked `VALID` while any triage rule is `FAIL`. Ours is free prose that 
 reads and no agent is required to answer. Distributed hygiene beats a single final
 reviewer only if the distributed hygiene is checked. Right now it is not.
 
-**Measured quality is where the whole field is empty, us included.** Five products,
-28,477 stars between the four popular ones, and not one publishes precision, recall, or
-a false-positive rate for its own detection. Our PCC is the closest thing to a public
+**Measured quality is where the field is nearly empty, us included.** Five products,
+28,477 stars between the four popular ones, and exactly one of them publishes
+precision, recall, F1 and a false-positive rate for a detector of its own:
+`AI-Infra-Guard`, on a named benchmark, with the two qualifications recorded in the
+correction further down this page. The other four publish nothing of the kind. Our PCC is the closest thing to a public
 self-assessment in the comparison set — and by our own baseline file it is a
 self-assessed upper bound with a documented false positive (`NICE DD-WRL-005` scored as
 covered by `SUP-02`, which measures a different thing). Being least-bad here is worth
