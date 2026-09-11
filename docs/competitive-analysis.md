@@ -9,7 +9,18 @@ should we build next.
 
 This document mixes two grades of evidence and never blurs them.
 
-**Verified by me, today (2026-08-16), on this machine:**
+> **The field this document describes is larger than this document, as of 2026-09-10.**
+> The five projects below were read on 2026-08-16 and re-pinned on 2026-08-22; six more were
+> added by the discovery sweep of 2026-09-01; **thirteen more on 2026-09-10**, when the sweep
+> gained topic-qualified queries and stopped being blind to organisation-owned repositories with
+> generic names — among them `trailofbits/skills` (7,033 stars) and `cloudflare/security-audit-skill`
+> (3,267 stars, MIT), neither of which any text query in this lane had ever returned. None of the
+> nineteen has been benchmarked, and for most of them **nothing has been read**: they are named
+> from description, licence and tree metadata. `docs/competitive-baseline.json` is the authority on
+> which grade of evidence each product carries; this document is only current for the five read in
+> depth below. See `docs/gate-requirements.md` § *The lane the comparison is drawn from*.
+
+**Verified by me, on this machine, on 2026-08-16:**
 
 - every figure about **this** repository, produced by `scripts/meter/meter.sh` and by
   independent probes recorded below;

@@ -4,7 +4,7 @@ The leader staffs only the relevant roles. Every specialist returns evidence, im
 
 Status, severity, confidence and verification outcome are a **closed vocabulary**, defined once in [vocabulary.md](vocabulary.md). Every role uses those exact terms; a role that needs a term the vocabulary does not have reports that as a defect instead of coining one.
 
-Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Seven packs are stored as **more than one file** for size reasons — `web-api`, `mobile`, `infra-cloud`, `supply-chain` and `ai-safety` as three, `remediation` and `local-app` as two — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
+Each role owns exactly one knowledge pack. The pack is the role's procedural memory: the specialist loads it itself, reads only the sections its inventory justifies, and cites the procedure ID (`WEB-07`, `AI-01`, `SUP-14`) in every finding so the leader can trace it. Six packs are stored as **more than one file** for size reasons — `web-api`, `mobile`, `infra-cloud`, `supply-chain` and `ai-safety` as three, `local-app` as two — and every file of a pack belongs to the same role and shares one procedure numbering; the first file names its siblings in its header.
 
 | Role | Plugin subagent | Knowledge pack | Procedure IDs |
 |---|---|---|---|

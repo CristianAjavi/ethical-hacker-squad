@@ -2,8 +2,9 @@
 
 > **When to load this file:** when the target inventory contains infrastructure as code (Terraform, Bicep, CloudFormation), Dockerfiles or images, Kubernetes/Helm manifests, or CI/CD workflows. This is the *configuration* pack, not the application-code one.
 > **Do not load it if:** the target is only application code, an APK with no backend of its own, or an analysis of dependencies and repository secrets (that lives in `supply-chain.md`).
-> **Cost:** ~287 lines. Load by section using the index; you almost never need all three.
+> **Cost:** ~288 lines. Load by section using the index; you almost never need all three.
 > **Second file of this pack:** `infra-cloud-cicd-exposure.md` holds §4-§6 and `INF-13`..`INF-18` plus `INF-24` — CI/CD and GitHub Actions, environment separation, Terraform state and deployment secrets, and verification of effective network exposure. Open it whenever the inventory has pipelines, several environments or a live host in scope; it carries its own index.
+> **Third file of this pack:** `infra-cloud-cicd-platforms.md` holds §7 and `INF-19`..`INF-23` — who can make a pipeline run and with what attached, on GitLab, Jenkins, Azure Pipelines, CircleCI and Bitbucket. Open it as soon as the inventory has a `.gitlab-ci.yml`, a `Jenkinsfile`, `azure-pipelines.yml`, `.circleci/config.yml` or `bitbucket-pipelines.yml`; it carries its own index. Without it a reader walks into a non-GitHub pipeline with the right questions and nothing to grep for, and reports nothing — silence indistinguishable from a clean pipeline.
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |
@@ -12,7 +13,7 @@
 | §2 Containers and images | `Dockerfile*`, `Containerfile`, `docker-compose.y*ml` | INF-07 … INF-09 |
 | §3 Kubernetes and Helm | `*.yaml` with `kind:`, `charts/`, `kustomization.yaml` | INF-10 … INF-12 |
 
-Sections §4 to §6 (`INF-13`..`INF-18`, `INF-24`) are in `infra-cloud-cicd-exposure.md`.
+Sections §4 to §6 (`INF-13`..`INF-18`, `INF-24`) are in `infra-cloud-cicd-exposure.md`. Section §7 (`INF-19`..`INF-23`) is in `infra-cloud-cicd-platforms.md`.
 
 ## How to use a procedure
 First locate the files listed under **Where to look**: if the pattern is not in the repo, the procedure does not apply and nothing gets reported. Run the **Minimal test** — always local, always non-destructive — to move from "the scanner flagged it" to "I verified it". Check it against **What rules it out**: if one of those conditions holds, the finding drops to informational or disappears. **Traceability** feeds the report matrix, and **Tooling** tells you what to read in the output and what *not* to conclude from it. Any action against a cloud account or a remote cluster is marked `REQUIRES AUTHORIZATION` and is delivered as a proposed local patch, never applied. Prioritization: Verizon's DBIR 2026 reports that **31% of breaches start with vulnerability exploitation** — for the first time in 19 years ahead of credential abuse at 13% — and that **48% involve a third party**. Google Cloud Threat Horizons H1 2026 puts third-party software vulnerabilities at **44.5% of initial access** in H2-2025 (2.9% in H1-2025). Configuration is the multiplier: `A02:2025 Security Misconfiguration`.

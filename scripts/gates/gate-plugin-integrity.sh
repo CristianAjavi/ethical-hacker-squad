@@ -43,19 +43,22 @@ set -uo pipefail
 # SKILL.md (12 KiB ~= 3,000 tokens)
 #   SKILL.md is loaded whole into context EVERY time the skill fires; its cost is
 #   neither optional nor amortisable. The threshold was set when the file weighed
-#   ~8.7 KiB and it has since grown into it: 12,278 B on 2026-09-10, 10 bytes of
-#   headroom. That is the threshold working, not failing - it stops the real
-#   degradation pattern, a skill that fattens commit after commit until the model
-#   stops reading it carefully. If a change needs more than
-#   12 KiB, the correct answer is to move that text to references/ (loaded on
-#   demand), not to raise the threshold.
+#   ~8.7 KiB and 12 KiB was roomy. IT IS NO LONGER ROOMY: measured 2026-09-10,
+#   SKILL.md is 12,278 B against the 12,288 B cap - TEN BYTES of headroom, 0.08%.
+#   The next sentence added to SKILL.md turns this gate red, and that is the
+#   threshold working, not misfiring: it stops the real degradation pattern, a
+#   skill that fattens commit after commit until the model stops reading it
+#   carefully. The correct answer when a change needs more than 12 KiB is to move
+#   text out to references/ (loaded on demand), not to raise the threshold - that
+#   is how the room for the last change was found, and it is how the next one
+#   will be. Do not read this comment as spare capacity.
 #
 # Each file under references/ (32 KiB ~= 8,000 tokens)
 #   They are loaded one by one and on demand, so they tolerate more. 32 KiB is
 #   still a single-pass read; beyond that the file should be split so the model
 #   does not have to swallow irrelevant material.
 #
-# Whole tree served to the user (512 KiB) and file count (64)
+# Whole tree served to the user (768 KiB after three re-baselines) and file count (64)
 #   This is the SECURITY threshold, not the ergonomics one: it bounds the blast
 #   radius of the knowledge loop, turning "a bot PR drops 3 MB of text scraped
 #   from the internet into what gets installed for everyone" into a CI failure
