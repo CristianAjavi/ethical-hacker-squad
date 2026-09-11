@@ -11,6 +11,17 @@
 # had none, so a popularity floor would have hidden it exactly as the closed
 # list did, and this proves the bar is the marker and not the stars.
 #
+# `a-control-the-search-cannot-see` is the third, and it is about the instrument
+# rather than the lane. On 2026-09-10 the five text queries then in place
+# returned 39 repositories and none of them was `trailofbits/skills`, a product
+# in this exact lane with 7,033 stars: a text search ranks on name and
+# description, and that repository is called `skills`. The run before had exited
+# 0. `discovery.controls` names products the file has already resolved and that
+# the sweep must therefore return; when one does not come back the run says so
+# and exits 2, because a zero from an instrument that cannot see is not a zero.
+# This case is the proof that it goes red - without it the control block could be
+# deleted and every test here would stay green.
+#
 # Zero network.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
@@ -126,6 +137,31 @@ case_run a-pattern-absorbs-a-cluster 0 "absorbed by a written pattern 2" \
 case_run a-pattern-does-not-absorb-the-rest 1 "UNRESOLVED  org/real" \
   "org/known org/farm-1 org/real" "org/known org/farm-1 org/real"
 
+# The controls, in both directions. A declared control that the search returns
+# changes nothing; one it does not return takes the run to 2 even though every
+# candidate that WAS seen is named - the lane looks clean and the instrument is
+# what failed.
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-control-the-search-returns 0 "controls seen 1 of 1" \
+  "org/known" "org/known"
+
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-control-the-search-cannot-see 2 "no query returned org/known" \
+  "org/other" "org/other"
+
+# ...and it outranks an unresolved candidate: the unresolved name is real and is
+# still printed, but it came out of a sweep that has just been shown to be blind,
+# so the verdict is 2 and the name is marked provisional.
+base '{"discovery":{"controls":[{"repo":"org/known","found_by":"q one","why":"w"}]}}'
+case_run a-blind-sweep-outranks-an-unresolved-name 2 "Provisional" \
+  "org/newcomer" "org/newcomer"
+
+# A topic query is swept exactly like a text query - same counters, same marker
+# test - or the two halves of the lane are not measured the same way.
+base '{"discovery":{"topic_queries":[{"term":"security","topic":"agent-skills"}]}}'
+case_run a-topic-query-is-swept-too 1 "UNRESOLVED  org/newcomer" \
+  "org/known org/newcomer" "org/known org/newcomer"
+
 # A silent instrument is not an empty field. This is the rule that fires when a
 # query dies, and it fired on the first real run.
 base
@@ -159,5 +195,7 @@ case_run a-near-name-is-not-the-known-one 1 "unresolved 1" \
 printf '\n  Summary: %d ok, %d failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 echo "  Result: OK. The check names a new entrant, ignores what is not the same kind of"
-echo "          thing, honours a written decline, and never reads silence as a clean field."
+echo "          thing, honours a written decline, sweeps a topic query like a text one,"
+echo "          refuses to sign a lane it has just been shown it cannot see, and never"
+echo "          reads silence as a clean field."
 exit 0

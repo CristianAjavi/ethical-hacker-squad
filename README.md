@@ -45,11 +45,11 @@ Still **one model scale**, both targets authored here, and every competitor run 
 
 The second dimension is not capability at all.
 
- Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,556 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,557 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -74,7 +74,7 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 
 ## Knowledge
 
-Eight packs, one per role. Five of them are stored as **more than one file** (`mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
+Eight packs, one per role. Six of them are stored as **more than one file** — `web-api`, `mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three, `local-app` as two — so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
 
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
@@ -150,7 +150,7 @@ Every finding comes back with an ID, the procedure that produced it, status (con
 
 ## How it stays current
 
-Security knowledge decays. A daily deterministic job checks the pinned sources and opens an issue when something moves; a weekly job reviews a rotating slice of the corpus and opens a narrow pull request. Both read only from an allowlist, attach provenance to every item, and are structurally unable to modify the safety contract, the manifest, the allowlist or the workflows.
+Security knowledge decays. The design is a daily deterministic job that checks the pinned sources and opens an issue when something moves, and a weekly job that reviews a rotating slice of the corpus and opens a narrow pull request — both reading only from an allowlist, attaching provenance to every item, and structurally unable to modify the safety contract, the manifest, the allowlist or the workflows. **Neither job runs yet**: no workflow schedules them. What does run today is `competitive-freshness.yml`, which re-checks the pinned competitor set.
 
 That loop is also the most dangerous thing in this repository — a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. [`docs/knowledge-loop.md`](docs/knowledge-loop.md) documents the threat model and the controls, including what they do **not** cover. Until the `stable` channel has its first tagged release, read that document as the design the automation is being built to, not as a description of controls already running.
 

@@ -18,12 +18,51 @@
 #   re-checks the products it already knows reads, to a reader, as a comparison
 #   against the field.
 #
+# THE SECOND BLINDNESS, MEASURED ON 2026-09-10
+#   The first blindness was a closed list. This one is in the sweep itself.
+#   `gh search repos <words>` ranks on the words in a repository's name and
+#   description, so a product owned by an organisation and named `skills` is
+#   invisible to every phrasing of this lane, however large it is. Measured:
+#   the five text queries in place returned 39 distinct repositories and not one
+#   of them was `trailofbits/skills` (7,033 stars, Claude Code skills for
+#   vulnerability detection and audit workflows) or `cloudflare/security-audit-
+#   skill` (3,267 stars, MIT). The run before that one had exited 0 - every
+#   candidate in the lane is named - and the sentence was true about the
+#   candidates it saw and false about the lane.
+#
+#   Two things follow, and only together.
+#
+#   1. A topic-qualified sweep. `topic_queries` pairs a term with a GitHub topic,
+#      which is metadata the owner sets rather than prose the ranker reads, and
+#      it is how a generically named repository becomes reachable at all.
+#   2. Known-positive controls. `discovery.controls` names products this file
+#      has already resolved as being in the lane and that the sweep must return.
+#      A control that comes back missing does not mean the product is gone; it
+#      means this instrument can no longer see a thing it is pointed at, and
+#      nothing it says about the rest of the lane survives that. The run exits 2.
+#      Without controls, "no new entrant" and "I could not see" produce the same
+#      exit code, which is the failure this check was built to refuse one level
+#      up. A zero of a blind instrument is not a zero.
+#
+#   Controls take precedence over an unresolved candidate: an unresolved name is
+#   a fact about the list, an unseen control is a fact about the instrument the
+#   list-fact was derived from. The unresolved names are still printed, marked
+#   provisional, because they are real; the verdict is 2 because the set they
+#   belong to was not established.
+#
 # THE BAR, AND WHY IT IS NOT POPULARITY
 #   A candidate counts when its default branch carries one of the skill or agent
 #   markers named in the baseline. Stars are NOT the bar: the product that
 #   motivated this file had zero, and a popularity floor would have hidden it
 #   exactly as the closed list did. The bar is "is it the same kind of thing",
 #   which is answerable from the tree in one call.
+#
+#   A topic sweep orders by stars, and that is not a popularity bar creeping in
+#   through the ordering: every candidate it surfaces still has to carry a
+#   marker, and a zero-star repository that carries one is a candidate exactly as
+#   before. Stars decide who gets looked at first inside one query's limit, never
+#   who counts - and the text queries, which are not star-ordered, keep the tail
+#   reachable.
 #
 # WHAT IT DOES AND DOES NOT SAY
 #   It says a candidate is UNRESOLVED: neither pinned in `products` nor written
@@ -38,8 +77,10 @@
 #
 # Exit codes: 0 = every candidate is resolved | 1 = at least one is not
 #             | 2 = could not measure (no gh/jq, no baseline, no discovery
-#                   block, the search did not answer, or the cap was hit before
-#                   the queries were exhausted)
+#                   block, the search did not answer, the cap was hit before the
+#                   queries were exhausted, or a declared control was not
+#                   returned by any query - the sweep is blind and its silence
+#                   about everything else proves nothing)
 #
 # Usage:
 #   scripts/gh/competitive-discovery.sh
@@ -71,6 +112,7 @@ jq -e '.discovery.queries | length > 0' "$BASELINE" >/dev/null 2>&1 || {
 PER_QUERY="$(jq -r '.discovery.per_query // 8' "$BASELINE")"
 MAX="$(jq -r '.discovery.max_candidates // 30' "$BASELINE")"
 SELF="$(jq -r '.discovery.self // ""' "$BASELINE")"
+CONTROLS="$(jq -r '.discovery.controls[]?.repo | ascii_downcase' "$BASELINE")"
 
 printf '\n=== competitive discovery ===\n'
 printf 'SCOPE     : is the set of products we compare against still the field?\n'
@@ -84,13 +126,27 @@ known="$(jq -r '[(.products[]?.repo), (.declined[]?.repo)] | .[] | ascii_downcas
 PATTERNS="$(jq -r '.declined_patterns[]?.pattern' "$BASELINE")"
 
 NL=$'\n'
-seen=""; found=0; unresolved=0; capped=0; absorbed=0; blind=0
-while IFS= read -r q; do
+
+# One line per sweep: KIND<TAB>TERM<TAB>TOPIC. A text query and a topic query
+# differ only in the arguments handed to `gh search`, so they share the body -
+# the counters, the cap and the marker test have to be the same for both or the
+# two halves of the lane are not measured the same way.
+SPECS="$( { jq -r '.discovery.queries[]? | "text\t\(.)\t"' "$BASELINE";
+            jq -r '.discovery.topic_queries[]? | "topic\t\(.term)\t\(.topic)"' "$BASELINE"; } )"
+
+seen=""; found=0; unresolved=0; capped=0; absorbed=0; provisional=""; blind=0
+while IFS=$'\t' read -r kind q topic; do
   [ -n "$q" ] || continue
-  hits="$(gh search repos "$q" --limit "$PER_QUERY" --json fullName \
-            -q '.[].fullName' 2>/dev/null)" || hits=""
+  case "$kind" in
+    topic) label="$q +topic:$topic"
+           hits="$(gh search repos "$q" --topic "$topic" --sort stars \
+                     --limit "$PER_QUERY" --json fullName -q '.[].fullName' 2>/dev/null)" || hits="" ;;
+    *)     label="$q"
+           hits="$(gh search repos "$q" --limit "$PER_QUERY" --json fullName \
+                     -q '.[].fullName' 2>/dev/null)" || hits="" ;;
+  esac
   if [ -z "$hits" ]; then
-    printf '  COULD NOT MEASURE  the search for %s returned nothing\n' "$q"
+    printf '  COULD NOT MEASURE  the search for %s returned nothing\n' "$label"
     printf '\n  VERDICT: 2 (a silent instrument is not an empty field)\n'
     exit 2
   fi
@@ -137,10 +193,11 @@ while IFS= read -r q; do
     done < <(jq -r '.discovery.skill_markers[]?' "$BASELINE")
     [ -n "$marker" ] || continue
     unresolved=$((unresolved + 1))
+    provisional="$provisional $repo"
     desc="$(gh api "repos/$repo" --jq '"\(.stargazers_count) stars · pushed \(.pushed_at[0:10]) · \(.description // "no description")"' 2>/dev/null || echo '?')"
     printf '  UNRESOLVED  %s\n              carries `%s` · %s\n' "$repo" "$marker" "${desc:0:150}"
   done <<< "$hits"
-done < <(jq -r '.discovery.queries[]' "$BASELINE")
+done <<< "$SPECS"
 
 printf '\n  candidates seen %d · absorbed by a written pattern %d · unresolved %d · unreadable %d\n' \
   "$found" "$absorbed" "$unresolved" "$blind"
@@ -148,6 +205,30 @@ while IFS=$'\t' read -r pat n; do
   [ -n "$pat" ] || continue
   printf '  pattern covered %s when written: %s\n' "$n" "$pat"
 done < <(jq -r '.declined_patterns[]? | "\(.pattern)\t\(.covered_when_written // "?")"' "$BASELINE")
+
+# The controls. Checked against what the sweep SAW, before any of the reasons a
+# candidate is dropped afterwards - a control is a question about visibility, not
+# about whether it would have counted.
+missing_controls=""; n_controls=0
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  n_controls=$((n_controls + 1))
+  case " $seen " in *" $c "*) ;; *) missing_controls="$missing_controls $c" ;; esac
+done <<< "$CONTROLS"
+if [ "$n_controls" -eq 0 ]; then
+  printf '  no controls declared - this run cannot tell an empty lane from a blind sweep\n'
+else
+  printf '  controls seen %d of %d\n' "$((n_controls - $(printf '%s' "$missing_controls" | wc -w | tr -d ' ')))" "$n_controls"
+fi
+if [ -n "$missing_controls" ]; then
+  for c in $missing_controls; do
+    printf '  BLIND      no query returned %s, a product this file already names\n' "$c"
+  done
+  printf '  The sweep cannot see something it is pointed at, so it has established nothing\n'
+  printf '  about what it did not return. Fix the queries, not this line.\n'
+  [ -n "$provisional" ] && printf '  Provisional (real, but from an incomplete sweep):%s\n' "$provisional"
+  printf '  VERDICT: 2 (COULD NOT MEASURE - a control was invisible)\n'; exit 2
+fi
 
 if [ "$capped" -eq 1 ]; then
   printf '  The cap of %d candidates was reached before the queries were exhausted, so this\n' "$MAX"
