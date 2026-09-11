@@ -16,7 +16,7 @@ Two results are larger than the comparison. Across three arms, fifteen runs and 
 
 What *is* measured, and is narrower than "finds more":
 
-- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format has no field for;
+- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format had no field for — *narrowed 2026-09-10, against us: AIG now marks an empty-output scan `possibly-incomplete` and carries a free-text `scanNote` in the SARIF `invocations[].properties` (`39692dd`, 2026-08-31, with `pytests/test_scan_completeness.py` beside it). That is the tool reporting its own emptiness at run level, not a per-finding verdict, and it is not a coverage declaration — but "no field for" is no longer true of the field, and the sentence now holds only per finding*;
 - a **coverage declaration** that must resolve every surface it inventories as read or not-read, so a reader can tell silence from a clean bill — a blinded reader test caught one of our own reports failing exactly that, which is why a validator now enforces it;
 - **zero decoys reported** on eleven constructs built to be mistaken for the defect beside them.
 
