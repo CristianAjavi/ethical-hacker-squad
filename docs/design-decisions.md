@@ -10,7 +10,7 @@ Those documents are written in the present tense because they are specifications
 
 ## 1. Ship subagents in the plugin, rather than injecting role prompts from the leader
 
-**Decision:** publish eight subagents under `agents/`.
+**Decision:** publish nine subagents under `agents/`.
 
 **Alternative considered:** keep the original design, where the leader spawns `general-purpose` agents and copies the role order, the coverage rows and the safety contract into each prompt. That is simpler, has no plugin-schema dependency, and works identically whether the skill is installed as a plugin or copied into a skills directory.
 
@@ -18,7 +18,7 @@ Those documents are written in the present tense because they are specifications
 
 Second argument: the safety contract travels with the agent. A subagent inherits neither the skill nor the leader's context, so under the injection approach every constraint depends on the leader remembering to copy it into every prompt, every time. One forgotten paragraph and a specialist operates without its contract. Baking it into the definition makes that failure impossible rather than unlikely.
 
-**The cost, stated plainly.** Subagents ship only through the plugin install path. A user who copies the skill into `~/.claude/skills/` gets none of them, which is why `SKILL.md` documents an explicit fallback. Eight agents also appear in the user's agent roster, which is visible clutter, and each carries a `description` that makes it auto-invocable outside the squad — a specialist could be summoned without the leader's inventory and scope. That is a real downside; it is accepted because a specialist reading its own pack and refusing to act outside its contract still behaves safely on its own.
+**The cost, stated plainly.** Subagents ship only through the plugin install path. A user who copies the skill into `~/.claude/skills/` gets none of them, which is why `SKILL.md` documents an explicit fallback. Nine agents also appear in the user's agent roster, which is visible clutter, and each carries a `description` that makes it auto-invocable outside the squad — a specialist could be summoned without the leader's inventory and scope. That is a real downside; it is accepted because a specialist reading its own pack and refusing to act outside its contract still behaves safely on its own.
 
 **What would overturn this:** if tool restrictions on plugin subagents turned out to be advisory rather than enforced, the enforcement argument collapses and the simpler injection design wins.
 
@@ -62,7 +62,7 @@ Two channels rather than one because the audiences differ: someone auditing thei
 
 **Why.** During construction, the procedure count was written as 137 in two files when the real number was 122, and the protected-path list was enumerated in three places and had already diverged before the first release. Both are the same failure: a fact restated by hand drifts, and the copy is usually the one someone trusts. Where duplication cannot be removed, `G3b` measures it.
 
-**Deliberate exception:** the eight agent definitions repeat the safety contract and the return format. That is not drift — a subagent inherits nothing, so the repetition is what makes each one safe alone. It is duplication with a reason, and the reason is written down here so nobody "cleans it up".
+**Deliberate exception:** the nine agent definitions repeat the safety contract and the return format. That is not drift — a subagent inherits nothing, so the repetition is what makes each one safe alone. It is duplication with a reason, and the reason is written down here so nobody "cleans it up".
 
 ## 7. Keep the plugin at the repository root; do not split it into a `plugin/` subdirectory
 

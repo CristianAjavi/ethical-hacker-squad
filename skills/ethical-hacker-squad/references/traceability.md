@@ -53,7 +53,7 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
-Five packs ship as more than one file (`mobile` and `supply-chain` as three). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+Six packs ship as more than one file — `web-api`, `mobile`, `infra-cloud`, `supply-chain` and `ai-safety` as three, `local-app` as two. The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md` / `web-api-logging.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md` / `ai-safety-agent-runtime.md`, `local-app.md` / `local-app-desktop-ipc.md`.
 
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|

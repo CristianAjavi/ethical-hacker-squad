@@ -4,7 +4,7 @@ The specification the CI gates implement. This file states **what must be true**
 
 Written as a contract on purpose: the corpus and the machinery that guards it are maintained separately, and this is the interface between them. If a gate and this document disagree, the disagreement is itself a bug — fix both in the same pull request.
 
-> **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
+> **Status.** Partly running, partly specification, and the table below says which is which. Thirty-nine gates exist. **Thirty-five** execute on every push and pull request through `.github/workflows/ci.yml`; **two** run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; **one** runs where its input exists, in `.github/workflows/scorecard.yml`; and **one**, `gate-governance-drift.sh`, reads live branch protection, which needs an `administration` scope a workflow token cannot be granted, so it is deferred **by name with that reason** and a person runs it. Twenty-four have their own self-test battery beside them; the other fifteen carry one inline. These figures are what `scripts/gates/run-all.sh --list` and the tree report; if they and this sentence disagree, the sentence is the one that is wrong. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
 ## What runs today
 
@@ -67,7 +67,7 @@ Every gate must be **proved in the negative**: a fixture that makes it exit `1`,
 
 ### The four that had never been observed failing
 
-This document has asked, since it was written, that **every** gate be proved in the negative. Measured against `run-all.sh --list`, four of seventeen had no negative proof of any kind — no battery, no fixtures, no inline self-test:
+This document has asked, since it was written, that **every** gate be proved in the negative. Measured against `run-all.sh --list` **when this section was written, with seventeen gates in the tree**, four had no negative proof of any kind — no battery, no fixtures, no inline self-test. The tree has grown since; the standing count is in the Status note above, and this section records what that measurement found:
 
 | Gate | What goes wrong silently without it | Cases now |
 |---|---|---|
@@ -90,8 +90,8 @@ A gate proves itself in exactly one of two shapes, and the gate accepts only tho
 
 | | Shape | Gates using it |
 |---|---|---|
-| sibling | a non-empty `<gate>.selftest.sh` beside it, which the CI step discovers | 14 |
-| inline | the gate READS `${GATE_SELFTEST:-1}` — the switch whose only effect is to cap its verdict at `2` when the self-test is skipped, so a gate that has not measured itself can never sign a green | 4 |
+| sibling | a non-empty `<gate>.selftest.sh` beside it, which the CI step discovers | 24 |
+| inline | the gate READS `${GATE_SELFTEST:-1}` — the switch whose only effect is to cap its verdict at `2` when the self-test is skipped, so a gate that has not measured itself can never sign a green | 15 |
 
 **The marker is a parameter expansion, not a substring**, and a mutant is why: renaming the variable inside a gate to `GATE_SELFTEST_RENAMED` left the first version of this check green, because `grep GATE_SELFTEST` matches that too — as it matches a comment that merely mentions the switch. Both spellings are now negative fixtures.
 
