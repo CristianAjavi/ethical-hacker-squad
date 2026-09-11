@@ -9,7 +9,18 @@ should we build next.
 
 This document mixes two grades of evidence and never blurs them.
 
-**Verified by me, today (2026-08-16), on this machine:**
+> **The field this document describes is larger than this document, as of 2026-09-10.**
+> The five projects below were read on 2026-08-16 and re-pinned on 2026-08-22; six more were
+> added by the discovery sweep of 2026-09-01; **thirteen more on 2026-09-10**, when the sweep
+> gained topic-qualified queries and stopped being blind to organisation-owned repositories with
+> generic names — among them `trailofbits/skills` (7,033 stars) and `cloudflare/security-audit-skill`
+> (3,267 stars, MIT), neither of which any text query in this lane had ever returned. None of the
+> nineteen has been benchmarked, and for most of them **nothing has been read**: they are named
+> from description, licence and tree metadata. `docs/competitive-baseline.json` is the authority on
+> which grade of evidence each product carries; this document is only current for the five read in
+> depth below. See `docs/gate-requirements.md` § *The lane the comparison is drawn from*.
+
+**Verified by me, on this machine, on 2026-08-16:**
 
 - every figure about **this** repository, produced by `scripts/meter/meter.sh` and by
   independent probes recorded below;
@@ -67,7 +78,7 @@ Cells are statements of fact, not scores.
 | **False-positive management** | Emergent per engagement; typed state machine only | Dedicated adversarial reviewer with a coded FP taxonomy, zero-tolerance rule | Dynamic only: run a PoC against a live host | 13 named rules, **required by JSON schema**, each needs PASS/FAIL/UNKNOWN + reason | None. 30 refusal substrings; `"illegal"` in a jailbroken reply scores as *safe* | `What rules it out` in all 122 procedures — but free prose, unchecked, no shared rule set |
 | **Independent verification** | Explicit exploitation is the proof | Dynamic verification stage builds real exploits; graded verdicts | `fix-verifier` 4-condition contract (class not payload, sibling surfaces, function survives) | Strongest in the field: benign-control, unpatched baseline, ≥3 variants, sink-reached proof, all schema-enforced | Absent | Separate `ehs-verifier` agent, no Edit/Write, 5 outcome classes, must list what it did *not* check — but static and unenforced |
 | **Standards traceability** | Absent from the shipped knowledge | CVE ids in the rule corpus; no framework mapping in the detectors | MITRE ATT&CK technique ids inline **and** a queryable `mitre_id` column | Absent (grep for CWE/OWASP finds only incidental mentions) | Sells `owasp-llm-top-10` as a keyword; **0 hits** for OWASP across README and 21 docs | 117/122 procedures cite ≥1 identifier; 234 distinct ids across 20 families; counted by the meter |
-| **Report format** | Sample report includes an explicit *Non-Vulnerable Features* section | Single-file HTML template + spec: full attempt log, positive-defence evidence, in-situ `REDACTED_*` | PTES/OWASP/SANS structure, full CVSS v3.1 vector, executive+technical registers | Mandatory non-authoritative banners, per-finding evidence-snapshot label, redaction pass before writing | `failures.csv`, `full_scan_log.csv`, `GET /failures` | `references/report.md`: mandatory coverage declaration, severity re-judged locally, "clean scan is a fact about the tool" — prose only, no schema, no machine artifact |
+| **Report format** | Sample report includes an explicit *Non-Vulnerable Features* section | Single-file HTML template + spec: full attempt log, positive-defence evidence, in-situ `REDACTED_*`; **since `39692dd` (2026-08-31)** an empty-output scan is emitted as `possibly-incomplete` with a free-text `scanNote` in the SARIF `invocations[].properties` — run-level, not per finding | PTES/OWASP/SANS structure, full CVSS v3.1 vector, executive+technical registers | Mandatory non-authoritative banners, per-finding evidence-snapshot label, redaction pass before writing | `failures.csv`, `full_scan_log.csv`, `GET /failures` | `references/report.md`: mandatory coverage declaration, severity re-judged locally, "clean scan is a fact about the tool" — prose only, no schema, no machine artifact |
 | **Orchestration** | Go orchestrator, ~13 roles, Postgres-backed, autonomous loop | Coded pipeline: recon → N parallel skill workers (`asyncio.gather`) → review | Claude Code delegation by `description`, plus 2 routing slash-commands | Planner writes `plan.json` and **pre-binds** which KB files each investigation may read; two-wave cost design | Marketing. The only "agent" is a demo with a hardcoded model and empty specs | Leader-in-main-thread, 8 harness-enforced subagents dispatched in parallel; orchestration is prose in `SKILL.md`, not a scheduler |
 | **Real tooling** | Full Kali arsenal, msfvenom, C2, reverse shells, live exploitation | Live scanning; verification agent holds `write_file`/`execute_shell`; 79 jailbreak operators | nmap/ffuf/sqlmap/BloodHound/Impacket via Bash; 13 agents hold Bash+Write+Edit at once | gVisor container, `--network=none`, no host mounts, output truncated to 16 KB | HTTP client firing prompt payloads; downloads payloads at import time from an unpinned URL | Read/Grep/Glob/Bash for auditors; `tooling.md` documents licence, network posture and the typical false positive of each tool before it may be invoked |
 | **Distribution & update** | `docker compose up -d` one-liner + TUI installer | Claude Code skill + plugin marketplace + hosted WebUI + pip, EN/ZH | Plugin marketplace + `install.sh` (incl. `curl \| bash`) + Docker + `doctor.sh` + `handoff.sh` | `npx skills add google/mantis`; **no CI at all**, no `.github/`; external PRs refused | PyPI on tag, Docker, mkdocs site, Vue UI | Claude Code plugin marketplace, `latest`/`stable` channels, 6 workflows, 18/18 actions SHA-pinned — channels still specified, not yet landed |
@@ -92,15 +103,54 @@ finding marked `VALID` while any triage rule is `FAIL`. Ours is free prose that 
 reads and no agent is required to answer. Distributed hygiene beats a single final
 reviewer only if the distributed hygiene is checked. Right now it is not.
 
-**Measured quality is where the whole field is empty, us included.** Five products,
-28,477 stars between the four popular ones, and not one publishes precision, recall, or
-a false-positive rate for its own detection. Our PCC is the closest thing to a public
+**Measured quality is where the field is nearly empty, us included.** Five products,
+28,477 stars between the four popular ones, and exactly one of them publishes
+precision, recall, F1 and a false-positive rate for a detector of its own:
+`AI-Infra-Guard`, on a named benchmark, with the two qualifications recorded in the
+correction further down this page. The other four publish nothing of the kind. Our PCC is the closest thing to a public
 self-assessment in the comparison set — and by our own baseline file it is a
 self-assessed upper bound with a documented false positive (`NICE DD-WRL-005` scored as
 covered by `SUP-02`, which measures a different thing). Being least-bad here is worth
 saying out loud, and worth nothing beyond that.
 
 **Update, 2026-08-21.** No longer empty on our side, and the honest version of that sentence is narrow: `bench/` now holds targets with planted defects *and* decoys, a protocol that keeps the answer key away from the auditing context, and a first run scored 10/10 detected with 0/11 decoys reported. That measures whether the corpus routes and matches on code shaped like the cases, not detection on code nobody here has seen. The rest of the field still publishes stars.
+
+**Update, 2026-09-10 — the sentence above was already false when it was written, and this
+correction costs us the row.** `maxgfr/ultrasec` ships `docs/BENCHMARK.md`, and it was
+there at the commit this baseline pins: `contents/docs/BENCHMARK.md?ref=f28d59f` returns
+2,665 bytes, generated 2026-08-06. It scores engine `1.21.0` against **OWASP Benchmark
+v1.2 (Java), 2,740 cases, fetched and never vendored**, and publishes TP / FN / FP / TN,
+**TPR, FPR and F1 per CWE** across eleven CWEs — CWE-78 at 91.3% TPR, CWE-89 at 67.3%,
+CWE-90 at 40.7% — plus a column counting the false positives handed over with the
+mitigating evidence attached, and a paragraph explaining why it does not auto-suppress
+them. Its own README for that file says the in-repo fixtures are a regression gate
+written by the people who wrote the rules, so a perfect score there proves the rules did
+not change, not that they are good.
+
+That is a third-party labelled corpus with a published false-positive rate. **We have
+never scored against one.** Our bench is self-authored, and the one measurement that is
+not ours — five published advisories at pre-fix commits — is nine cases against 2,740 and
+has no FPR at all. The 2026-08-21 sentence was written after ultrasec's numbers existed
+and before this document had heard of the product; it was added to
+`docs/competitive-baseline.json` on 2026-09-01 and read for its coverage matrix, and
+nobody opened the benchmark file beside it. The fault is not that the field moved. It is
+that the claim was about the field and the reading was about five repositories.
+
+The paragraph above it — *"Five products, 28,477 stars between the four popular ones, and
+not one publishes precision, recall, or a false-positive rate"* — is left standing
+because its scope is the five products in §1's table, and that is still true of those
+five. The claim that is retracted is the one that generalised.
+
+**Also 2026-09-10, and pointing the other way:** `braydos-h/BreachPilot` has added a
+benchmark subsystem — XBEN targets provisioned into the existing sandbox, an
+**independent oracle** verifying outcomes, a `TrialStatus` that distinguishes `VERIFIED`
+/ `FAILED` / **`FALSE_POSITIVE`** / `TIMEOUT` / `INFRASTRUCTURE_ERROR`, and Wilson 95%
+confidence intervals over repeated trials. `docs/benchmarks.md` at `371d067` describes
+the instrument and publishes **no number**: grepping it for TPR, FPR, recall, precision
+or a percentage returns one line, and that line is the confidence-interval formula. So
+the field now has one rival with numbers and no harness we can re-run, and one with a
+harness and no numbers. Neither was re-run here; reading a design is not measuring a
+product.
 
 ---
 
@@ -1061,3 +1111,72 @@ spirit. Run against the real artifacts, it accused four of the best runs in the 
 `not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
 absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
 first is the only reason it is not in this repository.
+
+## Third reading, 2026-09-11 — four of the nine pins moved, and none of them moved a claim
+
+`scripts/gh/competitive-freshness.sh` returned `1`: **still the tip 5 · moved 4 · could not
+measure 0**. Four subjects had been pushed since the photograph — `Tencent/AI-Infra-Guard`
+(`4908db1` → `036c39b`), `google/mantis` (`5f76be0` → `d13c93f`), `maxgfr/ultrasec`
+(`f28d59f` → `fdcf3de`) and `braydos-h/BreachPilot` (`120c45b` → `371d067`). Movement is not
+improvement, so each was read commit by commit through `repos/{owner}/{repo}/compare/{old}...{new}`
+before anything was written here. Nothing was re-pinned: a pin records the commit a measurement
+was taken at, and no measurement was taken on 2026-09-11.
+
+**AI-Infra-Guard, 65 commits.** Thirty-two of them were already read on 2026-09-01 — that reading
+is where `LOC-16` came from. Of the rest, two are worth naming: `70824ef` stops `skill-scan`
+silently hiding `.pyc` files and skip-dir payloads, and `39692dd` marks a scan with empty output
+`possibly-incomplete` rather than clean. The second one is this repository's own doctrine arriving
+independently in a competitor: an unmeasured thing is not a passed thing. It is convergent
+evidence, not a counter-example, and it does not touch the `SkillTrustBench` figures this document
+cites.
+
+**mantis, 6 commits, five of them already read.** The one new commit is `d13c93f`, and
+`27467b3...d13c93f` is **1 commit over 9 files**, all inside `reference/core/environments/*.py`,
+`reference/scripts/configure.py`, `launch.py`, `test_suite.py` and `tools/research_tools.py`:
+hardening of the sandbox layer already described above. No new eval dataset, no change to the
+dedupe ladder, no change to the per-stage floor.
+
+**ultrasec, 41 commits over 214 files.** The product visibly grew — sink/source/sanitizer recall
+across JVM, Go, .NET, PHP and Ruby, unpinned-action and token-permission vectors, partial scanner
+evidence retained instead of dropped, duplicate finding identities rejected. The claim this
+document makes about it is narrow and was checked by name rather than by impression:
+`src/coverage.ts`, where `engineCovers` is computed from the kinds present anywhere in the run with
+no denominator, **does not appear anywhere in the 214-file diff**. The hole named here is the hole
+that is still there.
+
+**BreachPilot, 139 commits.** The compare API caps its `files` array at 300 and this diff hits the
+cap, so this is a reading of the commit list and says so rather than pretending to a file-level
+answer. Killchain and attack-graph work, AD delegation, a sandboxed Playwright toolchain, egress
+and audit hardening. The note here was never a capability band, it was a posture — same class of
+product, opposite posture — and 139 commits of exploit-chaining deepen that posture rather than
+narrowing the distance.
+
+### What "pinned but never benchmarked" was costing, and what it costs now
+
+`competitive-freshness.sh` has printed, since 2026-09-01, that six comparable products are pinned
+and never benchmarked. That sentence was true and useless: it named a backlog with no owner and no
+price. Six readings of the products' own documentation put a price on each, and the baseline now
+carries it as `harness_fit`, which the freshness report prints beside every name:
+
+| Product | Fit | Why |
+|---|---|---|
+| `maxgfr/ultrasec` | deterministic layer runnable here, no spend | its own README: a deterministic, zero-dependency engine run with `node`, no `npm install`, no API keys — only its adversarial-verification judging needs a model |
+| `prasannasalunkhe18/ThreatLens` | deterministic layer runnable here, no spend | its Discover stage is Semgrep/CodeQL with no LLM and no API key; the Investigate stage that issues the verdict needs a provider |
+| `wrsmith108/claude-skill-security-auditor` | runnable, but a different surface | it is an `npm audit` wrapper end to end; `bench/ground-truth.json` plants first-party code defects, not registry CVEs, so a score would measure a question it never claimed to answer |
+| `dungnotnull/web-app-security-audit-agent-skill` | needs model spend | a model-driven harness whose six steps all run through a model — the followed-prompt shape already used for AIG and mantis |
+| `kalpmodi/akira` | no live target in this harness | every finding needs a reproducible HTTP response body; `bench/cases/*` are source trees |
+| `braydos-h/BreachPilot` | no live target in this harness | domain-aware recon against a live host, with an IP allowlist lock |
+
+Two of those are the interesting ones. `ultrasec` and `ThreatLens` each ship a deterministic layer
+that could be pointed at `bench/cases/*` today for zero model spend, and the number it would
+produce — raw findings against planted defects — is one this repository has never asked of an
+external tool. What stops it being a measurement is the other half: `bench/reproduction/` matches a
+planted defect to a report written in this project's own shape, and no run has ever cross-checked
+an outside tool's raw output against `ground-truth.json` by file and line. That plumbing is the
+work, not the model budget, and it is written here as the next candidate rather than claimed as a
+result.
+
+The seventh entry is the one that matters for next time: a product discovered, pinned and **not
+triaged at all** now reads differently from one that was considered and set aside. The freshness
+report counts the untriaged separately and says so in words, so the next discovery run cannot add a
+name that quietly joins a list nobody owns.

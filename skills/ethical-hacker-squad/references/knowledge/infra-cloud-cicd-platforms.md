@@ -2,7 +2,7 @@
 
 > **When to load this file:** the inventory contains `.gitlab-ci.yml`, a `Jenkinsfile` or `jobs/*/config.xml`, `azure-pipelines.yml`, `.circleci/config.yml` or `bitbucket-pipelines.yml`.
 > **Do not load it if:** the only pipeline is GitHub Actions — that is `infra-cloud-cicd-exposure.md` §4, `INF-13`..`INF-16`.
-> **Cost:** ~146 lines. The other files of this pack are `infra-cloud.md` (`INF-01`..`INF-12`) and `infra-cloud-cicd-exposure.md` (`INF-13`..`INF-18`).
+> **Cost:** ~146 lines. The other files of this pack are `infra-cloud.md` (`INF-01`..`INF-12`) and `infra-cloud-cicd-exposure.md` (`INF-13`..`INF-18`, `INF-24`).
 
 ## Selective loading index
 | Section | Load it if the inventory has | Procedures |

@@ -11,6 +11,8 @@ Five advisories from the **GitHub Advisory Database**, reviewed, high severity, 
 | `GHSA-cfh6-pv5c-38jv` / `CVE-2026-71308` | unchecked `replaces[]` silences notifications on certificates the caller does not own | case A |
 | `GHSA-pxmc-2ffp-8j67` / `CVE-2026-71417` | arbitrary certificate revocation at the CA via a duplicate row | case A |
 | `GHSA-6c8m-q6g9-vrw3` / `CVE-2026-71307` | authenticated low-privilege users read plaintext destination credentials | case B |
+| `GHSA-2xhg-73j7-rrgx` / `CVE-2026-53957` | model-supplied `host`/`proxy` spread into the config carrying the management token | case mcp |
+| `GHSA-2jp7-wwpg-3p9w` / `CVE-2026-55090` | hook-supplied tag and data-attribute values concatenated into exported markup | case etherpad |
 
 Two specialists, fresh contexts, given only the affected modules and the packs. **Neither was told a vulnerability existed**, neither was allowed to use the network, and neither was told what the project was.
 
@@ -18,10 +20,13 @@ Two specialists, fresh contexts, given only the affected modules and the packs. 
 
 | | |
 |---|---|
-| Published advisories in scope | 3 |
-| **Found blind** | **2** |
+| Published advisories in scope | 5 |
+| **Found blind** | **4** |
 | Missed | 1 |
-| Additional findings not matching any published advisory | 7 |
+| Additional findings not matching any published advisory | 21 |
+
+Scored in two halves and published as one number: `score.txt` reports **2 of 3** on
+`Netflix/lemur` and `score-npm.txt` reports **2 of 2** on the two npm targets.
 
 **`CVE-2026-71308` — found.** The specialist traced `replacements` from three write schemas, through `service.upload/create/update`, to the SQLAlchemy append event that sets `notify = False` on the *appended* certificate — a row belonging to someone else — and noted that every other operation on a foreign certificate is guarded by `CertificatePermission` in eight places while this one is not. The upstream fix added exactly that authorization. It was reported `probable`, not `confirmed`, for one named reason: the schema that resolves the id lives outside the files it was given.
 
@@ -35,9 +40,9 @@ Two specialists, fresh contexts, given only the affected modules and the packs. 
 
 ## What is published here, and what is not
 
-`findings-matching-published-advisories.json` holds the three findings that correspond to advisories **already public and already fixed upstream**.
+`findings-matching-published-advisories.json` holds the five findings that correspond to the four advisories **already public and already fixed upstream**.
 
-The other seven are **withheld** — `withheld-summary.json` records their class and severity and nothing else. They are defects in a third party's code that may still be live; publishing their location or mechanism in this repository would be disclosure by us, which the safety contract forbids without the maintainer's involvement. What happens to them is the maintainer's decision to make, through the project's own channel, and this file exists so that the decision is visible rather than quietly skipped.
+The other twenty-one are **withheld** — `withheld-summary.json` records their class and severity and nothing else. They are defects in a third party's code that may still be live; publishing their location or mechanism in this repository would be disclosure by us, which the safety contract forbids without the maintainer's involvement. What happens to them is the maintainer's decision to make, through the project's own channel, and this file exists so that the decision is visible rather than quietly skipped.
 
 ## The comparison was taken out of our hands
 
