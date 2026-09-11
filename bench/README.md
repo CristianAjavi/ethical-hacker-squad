@@ -12,7 +12,7 @@ a ceiling was followed and no difference is reported. What the round did establi
 hole in the metric — `HOLDS` is one of two ways to conclude past the evidence, and the
 other one is what both arms actually did.
 
-## A blinded audit of the vibecoding case — pre-registered, not yet run
+## A blinded audit of the vibecoding case — pre-registered, run
 
 [2026-08-25, vibecoding blind](runs/2026-08-25-vibecoding-blind/) — six blinded runs, the
 criteria committed before the first. The hiding class was reported 4 of 4 in every run and
@@ -26,7 +26,7 @@ deferred `%s` idiom, and the probe shows one call still emits two lines in a lin
 log. Six auditors held up a planted defect as the benign twin of the planted defect beside
 it — a false negative measured against a prediction that predates it.
 
-## Three arms on the vibecoding case — pre-registered, competitors not yet run
+## Three arms on the vibecoding case — pre-registered, all three arms run
 
 [2026-08-25, vibecoding comparative](runs/2026-08-25-vibecoding-comparative/) — three arms
 on the same blinded tree. **`P-52` is zero in all fourteen runs, and the round still cannot
@@ -39,7 +39,7 @@ Recall on this case came out 0.83 for this corpus against 0.48 and 0.20 — **re
 weak and claimed as nothing**, because the case was planted here. The round that speaks to
 detection ran against code nobody here wrote, and every arm scored 0 of 4 there.
 
-## A published advisory, on code nobody here wrote — pre-registered, not yet run
+## A published advisory, on code nobody here wrote — pre-registered, run, **refuted**
 
 [2026-08-25, external log injection](runs/2026-08-25-external-log-injection/) — three arms
 on `pyload/pyload` at the parent of its own fix commit, 569 Python files, key read from the
@@ -62,7 +62,7 @@ with a mandatory enumeration step that lists every logging call whose message is
 literal. On this target that query returns 218 sites and the advisory is one of them.
 Predicted: at least 2 of 4 runs recover what 4 of 4 missed without it.
 
-## The same advisory, with the step where the agent starts — pre-registered, not yet run
+## The same advisory, with the step where the agent starts — pre-registered, run, **refuted**
 
 [2026-08-25, external delivery](runs/2026-08-25-external-delivery/) — **refuted, 0 of 4
 against a band of 3 of 4.** Three rounds have failed to move this and the target is retired
@@ -74,7 +74,7 @@ past it toward the web UI, while the advisory sits in the RPC layer behind the b
 permission for adding a download. That hypothesis has three rounds behind it and **no
 pre-registration**, so it is the next round's question, on a different target.
 
-## Is it ranking? — pre-registered, target not yet fetched
+## Is it ranking? — pre-registered, run, **refuted**
 
 [2026-08-26, ranking hypothesis](runs/2026-08-26-ranking-hypothesis/) — **refuted, 1 of 4
 against a band of 2 of 4** on Django `CVE-2025-48432`, 2,839 files, key pinned from the fix
@@ -487,11 +487,10 @@ Today the bench exercises `web-api`, `local-app`, `infra-cloud`, `supply-chain`,
 A round whose criteria are committed and whose numbers do not exist. It is listed here from the moment it is written, because a pre-registration a reader cannot find before the result arrives proves nothing about the order the two were written in — which is the whole point of writing it first.
 
 - [2026-08-24, the near-miss round](runs/2026-08-24-chain-completion/) — three rounds record the same shape of miss: the right file open, something true reported, and the defect beside it missed. The candidate procedure is **frozen in the run directory and is not in the corpus**, and moves into `references/` only if the pre-registered band is met.
-- [2026-08-24, the triage stage on its own](stages/triage/) — fifteen cases that ask one stage of the squad, not the whole of it, and whose **key is auditable by machine**: the consequence of every answer is forced by the table in `references/triage.md`, and `gate-triage-stage.sh` re-derives all of them and fails the case when the key and the table disagree. Nothing has been run; the criteria are frozen beside the cases.
 
 ## Measuring one stage instead of the whole squad
 
-Every round above asks whether the squad found the defect, which is the question a reader cares about and is blunt about where a miss happened. `stages/` holds evals that ask a single stage. The first is [the triage stage](stages/triage/), and it carries a check the rounds do not need: a gate that rejects any case whose statement contains the rule id, the answer token or the consequence terms its own key declares, or that prescribes the remedy. **That second family is not hypothetical** — pointed at the eight per-stage eval sets a neighbouring product publishes, it finds one row of twenty-five that names the fix inside the field naming the defect, and that row is the whole of that stage's dataset. The measurement, its limits and how to reproduce it are in that directory's `README.md`.
+Every round above asks whether the squad found the defect, which is the question a reader cares about and is blunt about where a miss happened. `stages/` holds evals that ask a single stage; there are two, [the triage stage](stages/triage/) and [the routing stage](stages/routing/). The first is the triage stage — run on 2026-08-24, and the round returned **could not measure** rather than a difference it happened to see ([the run](runs/2026-08-24-triage-stage/)) — and it carries a check the rounds do not need: a gate that rejects any case whose statement contains the rule id, the answer token or the consequence terms its own key declares, or that prescribes the remedy. **That second family is not hypothetical** — pointed at the eight per-stage eval sets a neighbouring product publishes, it finds one row of twenty-five that names the fix inside the field naming the defect, and that row is the whole of that stage's dataset. The measurement, its limits and how to reproduce it are in that directory's `README.md`.
 
 ## Growing it
 

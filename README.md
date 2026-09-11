@@ -45,7 +45,7 @@ Still **one model scale**, both targets authored here, and every competitor run 
 
 The second dimension is not capability at all.
 
- Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 
@@ -150,7 +150,7 @@ Every finding comes back with an ID, the procedure that produced it, status (con
 
 ## How it stays current
 
-Security knowledge decays. A daily deterministic job checks the pinned sources and opens an issue when something moves; a weekly job reviews a rotating slice of the corpus and opens a narrow pull request. Both read only from an allowlist, attach provenance to every item, and are structurally unable to modify the safety contract, the manifest, the allowlist or the workflows.
+Security knowledge decays. The design is a daily deterministic job that checks the pinned sources and opens an issue when something moves, and a weekly job that reviews a rotating slice of the corpus and opens a narrow pull request — both reading only from an allowlist, attaching provenance to every item, and structurally unable to modify the safety contract, the manifest, the allowlist or the workflows. **Neither job runs yet**: no workflow schedules them. What does run today is `competitive-freshness.yml`, which re-checks the pinned competitor set.
 
 That loop is also the most dangerous thing in this repository — a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. [`docs/knowledge-loop.md`](docs/knowledge-loop.md) documents the threat model and the controls, including what they do **not** cover. Until the `stable` channel has its first tagged release, read that document as the design the automation is being built to, not as a description of controls already running.
 

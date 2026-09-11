@@ -4,9 +4,9 @@ The non-obvious choices, with the reasoning and the cost. Written so a future ma
 
 ## Status: what exists today
 
-The corpus, the plugin and this documentation exist on `main`. **The automation that enforces the rules described in `docs/gate-requirements.md`, `docs/knowledge-loop.md` and `docs/release-channels.md` is being built and has not landed yet.** There is no `stable` branch, no tagged release, and no CI.
+The corpus, the plugin and this documentation exist on `main`, **and so does the automation that enforces `docs/gate-requirements.md`**: thirty-nine gates run across seven workflows on every push and pull request. What has **not** landed is the rest: there is no `stable` branch, no tagged release (`git tag` is empty), and the knowledge loop of `docs/knowledge-loop.md` runs nothing — no workflow schedules it.
 
-Those documents are written in the present tense because they are specifications — the contract the machinery is built to satisfy. Read them as design until the first `stable` release exists. This note is here because a security repository that describes controls it does not yet run is committing the exact error its own corpus teaches readers to detect, and a disclaimer buried in one file is not enough.
+`docs/knowledge-loop.md` and `docs/release-channels.md` are written in the present tense because they are specifications — the contract the machinery is built to satisfy. Read those two as design until the first `stable` release exists; `docs/gate-requirements.md` describes what runs, and its own Status note says which rows are which. This note is here because a security repository that describes controls it does not yet run is committing the exact error its own corpus teaches readers to detect, and a disclaimer buried in one file is not enough.
 
 ## 1. Ship subagents in the plugin, rather than injecting role prompts from the leader
 
