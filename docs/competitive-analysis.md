@@ -9,7 +9,18 @@ should we build next.
 
 This document mixes two grades of evidence and never blurs them.
 
-**Verified by me, today (2026-08-16), on this machine:**
+> **The field this document describes is larger than this document, as of 2026-09-10.**
+> The five projects below were read on 2026-08-16 and re-pinned on 2026-08-22; six more were
+> added by the discovery sweep of 2026-09-01; **thirteen more on 2026-09-10**, when the sweep
+> gained topic-qualified queries and stopped being blind to organisation-owned repositories with
+> generic names — among them `trailofbits/skills` (7,033 stars) and `cloudflare/security-audit-skill`
+> (3,267 stars, MIT), neither of which any text query in this lane had ever returned. None of the
+> nineteen has been benchmarked, and for most of them **nothing has been read**: they are named
+> from description, licence and tree metadata. `docs/competitive-baseline.json` is the authority on
+> which grade of evidence each product carries; this document is only current for the five read in
+> depth below. See `docs/gate-requirements.md` § *The lane the comparison is drawn from*.
+
+**Verified by me, on this machine, on 2026-08-16:**
 
 - every figure about **this** repository, produced by `scripts/meter/meter.sh` and by
   independent probes recorded below;
@@ -92,9 +103,11 @@ finding marked `VALID` while any triage rule is `FAIL`. Ours is free prose that 
 reads and no agent is required to answer. Distributed hygiene beats a single final
 reviewer only if the distributed hygiene is checked. Right now it is not.
 
-**Measured quality is where the whole field is empty, us included.** Five products,
-28,477 stars between the four popular ones, and not one publishes precision, recall, or
-a false-positive rate for its own detection. Our PCC is the closest thing to a public
+**Measured quality is where the field is nearly empty, us included.** Five products,
+28,477 stars between the four popular ones, and exactly one of them publishes
+precision, recall, F1 and a false-positive rate for a detector of its own:
+`AI-Infra-Guard`, on a named benchmark, with the two qualifications recorded in the
+correction further down this page. The other four publish nothing of the kind. Our PCC is the closest thing to a public
 self-assessment in the comparison set — and by our own baseline file it is a
 self-assessed upper bound with a documented false positive (`NICE DD-WRL-005` scored as
 covered by `SUP-02`, which measures a different thing). Being least-bad here is worth

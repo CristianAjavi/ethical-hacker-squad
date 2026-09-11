@@ -56,7 +56,8 @@ project installs nothing in order to measure. So `P-48` carries no probe and `PX
 and the run prints the reason on every pass.
 
 **A green here is sixteen defects proved, not a bench reproduced.** Twenty-one measurements: sixteen
-probes on the unpatched cases, four on the patched variants.
+probes on the unpatched cases, five on the patched variants — four on `cli-packer`, one on
+`intake-portal`.
 
 ## Not every probe proves the same thing
 
