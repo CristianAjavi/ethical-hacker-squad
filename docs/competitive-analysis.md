@@ -1061,3 +1061,55 @@ spirit. Run against the real artifacts, it accused four of the best runs in the 
 `not_read` entries are descriptive sentences ("Collaborators referenced by `ValueReader.java` but
 absent from the target tree: …") that no prose declaration would ever repeat verbatim. Measuring
 first is the only reason it is not in this repository.
+
+## Four of nine moved, and two of them grew our differentiator — 2026-09-11
+
+`scripts/gh/competitive-freshness.sh` signs `VERDICT: 1` — measured, the comparison is stale: **5
+still the tip, 4 moved, 0 could not measure.** That verdict is the instrument working, not a
+defect, and the fix for it is not to move the pins. A pin records the commit a measurement was
+taken at; re-pointing it at today's tip would turn the gate green and leave the `README.md`
+comparison exactly as old as it was. The pins therefore stay where they are, `benchmarked: false`
+stays false for the two newcomers below, and what moved is written down in each product's
+`moved_since` block in `docs/competitive-baseline.json`.
+
+**How deep this reading goes, said before the findings.** Every commit since each pin was listed
+with `gh api` — 65, 6, 42 and 139 subjects respectively — together with the per-file change
+statistics of the compare page. That is a reading of subjects and of what was touched, not of
+diffs. One claim was taken further because this document rests on it: `maxgfr/ultrasec`'s
+`src/coverage.ts` is byte-identical at the pinned commit and at today's tip (blob `3e4e034`, 27114
+bytes), so the passage above about its opening comment has not quietly gone false under 42 commits.
+
+**The finding that costs us a sentence.** Section 3.3 of this document claims the 0/1/2 doctrine —
+a third outcome for *could not measure*, distinct from *measured and fine* — as a real advantage.
+In the last three weeks two rivals, independently and in opposite corners of the field, added one:
+
+- `maxgfr/ultrasec` **`327c9e0`** (2026-09-07), *"retain partial scanner evidence and report all
+  incomplete gates"* — a scanner that dies half-way now yields its partial evidence and a named
+  incomplete gate instead of a silence indistinguishable from a clean result.
+- `braydos-h/BreachPilot` **`e10c9e8`** (2026-09-04), *"mark queued module outputs as
+  inconclusive"* — a module that never ran reports `inconclusive`, not absence of findings.
+
+Neither is as far along as the contract in `docs/gate-requirements.md`, and neither is proved in
+the negative anywhere a reader can check. But *having* the third state has stopped being the
+differentiator. What remains ours is narrower and more defensible, and the document should say the
+narrower thing: the third state is **wired into every gate, and each gate has been observed
+producing it** — 39 gates, 24 sibling batteries and the mutation banks behind them, versus a
+commit message. The advantage was never the idea; it is the proof, and the proof is the part nobody copies by accident.
+
+**Two things worth stealing, ranked.**
+
+1. **`tests/sink-refutation.test.ts`, 560 new lines in `ultrasec`.** A test suite whose subject is
+   *refutation* — proving a candidate sink is not one. This corpus has `VER-09` and the benign
+   control, both of which ask the same question from the other side, and it has no equivalent body
+   of cases that fails when a refutation stops working.
+2. **Generated reference documentation, in `BreachPilot`.** The bulk of its 300 files is a tool
+   catalogue, a configuration reference and a source map emitted by the build
+   (`*-generated.md`). This repository's recurring defect is the opposite one: a fix lands and the
+   prose describing the old behaviour stays true-looking. Documentation a build regenerates cannot
+   drift in silence; documentation a person maintains drifts every time.
+
+**And one to read rather than steal.** `google/mantis` **`179d1c7`** adds hash verification and
+manifests to its own harness's `pip` installs. The equivalent question here is not `pip` — nothing
+in this repository installs anything at run time — but it is the same question: what does the
+machinery that measures trust without checking. That is `gate-workflow-hardening.sh` and
+`gate-actions-lint.sh` today, and it is worth asking once more whether they cover the whole surface.
