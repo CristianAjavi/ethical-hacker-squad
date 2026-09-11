@@ -83,7 +83,8 @@ printf '            be declined in one line; what it may not be is unnamed.\n\n'
 known="$(jq -r '[(.products[]?.repo), (.declined[]?.repo)] | .[] | ascii_downcase' "$BASELINE" | sort -u)"
 PATTERNS="$(jq -r '.declined_patterns[]?.pattern' "$BASELINE")"
 
-seen=""; found=0; unresolved=0; capped=0; absorbed=0
+NL=$'\n'
+seen=""; found=0; unresolved=0; capped=0; absorbed=0; blind=0
 while IFS= read -r q; do
   [ -n "$q" ] || continue
   hits="$(gh search repos "$q" --limit "$PER_QUERY" --json fullName \
@@ -101,7 +102,11 @@ while IFS= read -r q; do
     seen="$seen $lower"
     found=$((found + 1))
     if [ "$found" -gt "$MAX" ]; then capped=1; break 2; fi
-    case "$known" in *"$lower"*) continue ;; esac
+    # EXACT repo name, not substring. `$known` is a newline-joined blob, so
+    # `*"$lower"*` made the candidate `acme/scanner` count as already known
+    # because the blob held `acme/scanner-pro`. The `seen` guard four lines up
+    # already compares the delimited way; this one did not.
+    case "$NL$known$NL" in *"$NL$lower$NL"*) continue ;; esac
     # A pattern decline, reported by count. A per-repo line for an auto-generated
     # cluster is how a check becomes noise and stops being read; a pattern that
     # quietly starts eating the lane is how it stops being a check. The count is
@@ -114,8 +119,17 @@ while IFS= read -r q; do
     if [ -n "$by_pattern" ]; then absorbed=$((absorbed + 1)); continue; fi
     # One call, non-recursive: a marker at the top of the tree is enough to say
     # this is the same kind of artefact, and `skills` catches a nested SKILL.md.
-    top="$(gh api "repos/$repo/git/trees/HEAD" --jq '.tree[].path' 2>/dev/null)" || top=""
-    [ -n "$top" ] || continue
+    tree_rc=0
+    top="$(gh api "repos/$repo/git/trees/HEAD" --jq '.tree[].path' 2>/dev/null)" || tree_rc=$?
+    if [ "$tree_rc" -ne 0 ] || [ -z "$top" ]; then
+      # Same rule as the empty search above: a silent instrument is not an empty
+      # field. This used to `continue`, so a rate-limited run - one call per
+      # candidate, up to max_candidates of them - dropped every candidate and
+      # still printed "every candidate in the lane is named".
+      printf '  COULD NOT MEASURE  %s did not answer for its tree; I cannot say what it carries\n' "$repo"
+      blind=$((blind + 1))
+      continue
+    fi
     marker=""
     while IFS= read -r m; do
       [ -n "$m" ] || continue
@@ -128,8 +142,8 @@ while IFS= read -r q; do
   done <<< "$hits"
 done < <(jq -r '.discovery.queries[]' "$BASELINE")
 
-printf '\n  candidates seen %d · absorbed by a written pattern %d · unresolved %d\n' \
-  "$found" "$absorbed" "$unresolved"
+printf '\n  candidates seen %d · absorbed by a written pattern %d · unresolved %d · unreadable %d\n' \
+  "$found" "$absorbed" "$unresolved" "$blind"
 while IFS=$'\t' read -r pat n; do
   [ -n "$pat" ] || continue
   printf '  pattern covered %s when written: %s\n' "$n" "$pat"
@@ -139,6 +153,11 @@ if [ "$capped" -eq 1 ]; then
   printf '  The cap of %d candidates was reached before the queries were exhausted, so this\n' "$MAX"
   printf '  run did not see the whole lane. Raise discovery.max_candidates or narrow the\n'
   printf '  queries; do not read this as a clean result.\n'
+  printf '  VERDICT: 2 (COULD NOT MEASURE the whole lane)\n'; exit 2
+fi
+if [ "$blind" -gt 0 ]; then
+  printf '  %d candidate(s) could not be read at all. A candidate nobody could look at is not\n' "$blind"
+  printf '  a candidate that turned out not to be comparable.\n'
   printf '  VERDICT: 2 (COULD NOT MEASURE the whole lane)\n'; exit 2
 fi
 if [ "$unresolved" -gt 0 ]; then

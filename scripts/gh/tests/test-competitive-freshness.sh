@@ -78,6 +78,22 @@ rc=0; PATH="$LAB/bin:$PATH" bash "$TOOL" --baseline "$LAB/nope.json" >"$LAB/out.
 if [ "$rc" -eq 2 ]; then printf '  PASS  %-50s rc=2\n' "no baseline -> rc 2"; pass=$((pass+1))
 else printf '  FAIL  %-50s rc=%s (expected 2)\n' "no baseline -> rc 2" "$rc"; fail=$((fail+1)); fi
 
+# A readable baseline that names no subject. The loop then runs ZERO times and
+# the fall-through used to be "every pin is still the tip", rc 0 - a verdict over
+# nothing. `org/never` is the double's tripwire: it exits 9 if ever queried, so
+# this case also proves nothing was asked.
+cat > "$LAB/empty.json" <<'JSON'
+{ "measured_on": "2026-01-01",
+  "products": [ { "repo": "org/never", "pinned": null, "comparable": false, "rounds": [] } ] }
+JSON
+rc=0; PATH="$LAB/bin:$PATH" bash "$TOOL" --baseline "$LAB/empty.json" >"$LAB/out.txt" 2>&1 || rc=$?
+if [ "$rc" -eq 2 ] && grep -qi "nothing to compare" "$LAB/out.txt"; then
+  printf '  PASS  %-50s rc=2\n' "no comparable+pinned product -> rc 2"; pass=$((pass+1))
+else
+  printf '  FAIL  %-50s rc=%s (expected 2)\n' "no comparable+pinned product -> rc 2" "$rc"
+  sed 's/^/        | /' "$LAB/out.txt" | tail -10; fail=$((fail+1))
+fi
+
 echo
 echo "  $pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1

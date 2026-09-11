@@ -127,6 +127,17 @@ grep -q 'gate-tree-delta' "$LAB/out.txt" \
   && { printf '  PASS  %-52s\n' "the skipped gate is named in the output"; pass=$((pass+1)); } \
   || { printf '  FAIL  %-52s\n' "the skipped gate is NOT named in the output"; fail=$((fail+1)); }
 
+# 7. a combination that leaves NO battery in the tree. `bat_worst` is a worst-of
+#    over an empty set, so it stayed 0 and the verdict never moved: a merge that
+#    deletes every battery came back green. scripts/run-batteries.sh refuses this
+#    same shape and this tool did not.
+d="$LAB/nobattery"; build_repo "$d"
+G "$d" checkout -q -b feat/drop
+G "$d" rm -q scripts/gates/stub.selftest.sh
+G "$d" commit -qm "drop the only battery"
+G "$d" checkout -q main
+res "the merged tree has no battery -> rc 2" "$(run_tool "$d" feat/drop)" 2 "no self-test battery"
+
 echo
 echo "  $pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1

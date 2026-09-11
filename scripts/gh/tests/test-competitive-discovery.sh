@@ -51,6 +51,11 @@ fi
 case "$path" in
   */git/trees/HEAD)
     repo="${path#repos/}"; repo="${repo%/git/trees/HEAD}"
+    # TREE_DEAD names the repos whose tree call FAILS: a rate limit, a 403, a
+    # repository that went private between the search and this call. Without this
+    # the double can only ever say "no marker", which is a different statement
+    # from "I could not look", and the suite could not tell them apart.
+    case " ${TREE_DEAD:-} " in *" $repo "*) echo "gh: API rate limit exceeded" >&2; exit 1 ;; esac
     case " $MARKED " in
       *" $repo "*) emit '{"tree":[{"path":"README.md"},{"path":"SKILL.md"}]}' ;;
       *)           emit '{"tree":[{"path":"README.md"},{"path":"src"}]}' ;;
@@ -135,6 +140,21 @@ case_run cap-reached-is-not-a-pass 2 "COULD NOT MEASURE the whole lane" \
 # No lane declared at all: the check cannot run, and must not say it did.
 jq 'del(.discovery)' "$LAB/baseline.json" > "$LAB/b2.json" && mv "$LAB/b2.json" "$LAB/baseline.json"
 case_run no-lane-declared 2 "declares no discovery queries" "org/known" "org/known"
+
+# A tree call that does not answer is not a repo without a marker. Same rule as
+# empty-search above, one level down - and it is ONE call per candidate, so a
+# rate-limited run used to drop every candidate and still print "every candidate
+# in the lane is named" with rc 0.
+base
+case_run tree-silence-is-not-an-answer 2 "did not answer for its tree" \
+  "org/known org/newcomer" "org/known org/newcomer" TREE_DEAD=org/newcomer
+
+# "Already known" is an EXACT repository name. `$known` is a newline-joined blob
+# and a substring test made the candidate `org/know` disappear into the declared
+# `org/known`, which is a different repository.
+base
+case_run a-near-name-is-not-the-known-one 1 "unresolved 1" \
+  "org/known org/know" "org/known org/know"
 
 printf '\n  Summary: %d ok, %d failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
