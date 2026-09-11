@@ -76,7 +76,12 @@ EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 # locally, against an authenticated gh. Putting them in CI needs a fine-grained
 # PAT with Administration:read, and that is the owner's decision, written down
 # here rather than left as a silent hole.
-LIVE_SCOPED='gate-governance-drift.sh'
+# gate-alert-live.sh is here for the same reason and a narrower one: it reads the
+# Dependabot alerts of the live repository, and whether a workflow's GITHUB_TOKEN
+# can read them at all has NOT been measured. Deferred by name, run locally, and
+# this line is where that unmeasured question is recorded instead of becoming a
+# gate that reports 2 in every CI run until somebody deletes it.
+LIVE_SCOPED='gate-governance-drift.sh gate-alert-live.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.

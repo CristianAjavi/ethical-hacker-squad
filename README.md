@@ -154,6 +154,14 @@ Security knowledge decays. A daily deterministic job checks the pinned sources a
 
 That loop is also the most dangerous thing in this repository — a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. [`docs/knowledge-loop.md`](docs/knowledge-loop.md) documents the threat model and the controls, including what they do **not** cover. Until the `stable` channel has its first tagged release, read that document as the design the automation is being built to, not as a description of controls already running.
 
+Dependency alerts are read the same way. Every open Dependabot alert on this repository is expected to sit on a bench fixture, never on shipped code. The fixtures under
+`bench/cases/` carry deliberately vulnerable dependencies as the answer key the squad is
+measured against; `scripts/gates/gate-alert-live.sh` places every open alert against the record
+in `scripts/gates/data/alert-surface.json` and fails on any that lands anywhere else. The count
+itself is nobody's gate - it moves when an upstream advisory is published. Measured on
+2026-09-11: five open, all five on fixtures. [`SECURITY.md`](.github/SECURITY.md) says how to
+re-measure it.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). The two first-class issue types are `false-positive` and `false-negative` — audit-quality errors, not crashes. And the closure rule: an issue is closed by the fix **plus the check that stops it recurring**, which CI enforces.
