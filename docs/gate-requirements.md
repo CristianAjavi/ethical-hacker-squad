@@ -28,7 +28,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | bench index | running | `gate-bench-index.sh` + self-test |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
-| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
+| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (13 fixtures) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
 | reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
 | served-tree delta | running | `gate-tree-delta.sh` + self-test |
@@ -44,10 +44,11 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
-| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
+| the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (17 cases) |
 | governance contract | running | `gate-governance-contract.sh` + self-test |
 | `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| tooling completeness | running | `gate-tooling-blindspot.sh` + self-test (12 cases) — a procedure that sends the auditor at a path `rg`/`fd` hide by default carries at least one invocation able to reach it |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
@@ -196,7 +197,7 @@ Half the value of this corpus is knowing when **not** to report, and until now t
 2. `HOLDS` and `UNKNOWN` require a reason naming the artifact.
 3. Absence of evidence is never `HOLDS`. `FP-08` exists because "the platform handles it" is the most common way a real finding disappears.
 
-`gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. **All eight packs are converted and all eight are `required`: 154 of 154 procedures.** It took one editorial pass per pack, because citing the right rules for a procedure is a judgement and a bulk substitution would have been false rigour. Four procedures declare `Rules: none (reason)` — `AI-22` and three `VER-*` — because their class genuinely admits no exculpation, and the gate counts and prints those rather than letting them pass as citations.
+`gate-triage-rules.sh` enforces the rule set (contiguous ids, no stubs, the four answers declared), that every `FP-` id cited anywhere resolves, that `team.md` and `report.md` point at the rules and use the vocabulary, and **conformance per pack, ratcheted**: a pack marked `required` in `scripts/gates/data/triage-conformance.json` cites rules in every procedure, and a pack still being converted may never fall below the count it has reached. **All eight packs are converted and all eight are `required`: 154 of 154 procedures.** It took one editorial pass per pack, because citing the right rules for a procedure is a judgement and a bulk substitution would have been false rigour. Four procedures declare `Rules: none (reason)` — `AI-22` and three `VER-*` — because their class genuinely admits no exculpation, and the gate counts and prints those rather than letting them pass as citations. The ratchet half of that sentence was a promise rather than a measurement until 2026-09-10: the floor test hung off an `elif` at the same indent as `if policy.get("required"):`, so it was evaluated only for packs whose `required` is false — and all eight are required, so it had never once fired. Its battery was green throughout because `ratchet-turned-backwards` sets a pack to `required: false` to reach the floor at all, which is to say it tested the one branch in which the broken code still worked. `ratchet-also-binds-a-required-pack` is the case that would have caught it.
 
 Proved in the negative by 11 cases, including a control run and two that must exit `2`.
 
@@ -525,6 +526,52 @@ What this gate does **not** measure, and says so on every run: whether the leade
 the block. No static check makes a model obey an instruction. That is a `bench/` question, and
 calling this gate's `0` "the handover works" would be exactly the substitution the block itself
 forbids.
+
+## G7e — The search that reports an absence it never looked at
+
+`references/tooling.md:19` already says it: `rg` honours `.gitignore` and `.ignore` and
+skips hidden files, `fd` does the same, and so a search that comes back empty has
+searched a **filtered** view of the tree — "a false-negative source, not a
+false-positive one, so nothing in the output warns you". Nothing read that rule back
+against the procedures obliged to obey it.
+
+Measured on 2026-09-10 against `origin/main @ 6066048`: **90** `rg`/`fd` invocations
+across the knowledge corpus, **4** of them carrying any completeness flag, and
+`grep -rlE 'no-ignore|--hidden|-uu' scripts/gates/` empty — not one of the gates was
+watching. Seven procedures sent the auditor at a path the defaults hide with no
+invocation able to reach it: `AI-25` at `.claude-plugin`, `AI-28` at `.cursor`, `AI-30`
+and `INF-08` at `.env`, `LOC-07` at the dotfile layer it discovers by walking up,
+`AI-22` at `.cursor/rules/**` with `-H` but without `-I`, and `SUP-23` at readers that
+live in `vendor/`. Each returns zero findings on a tree where the file exists, and zero
+findings is exactly what a clean audit looks like.
+
+**The unit of judgement is the PROCEDURE, not the command.** One that sweeps source with
+the defaults and then points a second, explicit invocation at the dotted file is
+correct, and a per-command rule accused three of those (`INF-08`, `INF-20`, `INF-24`)
+before it was calibrated. Two other accusations were withdrawn under measurement rather
+than kept to round a number up: `LOC-01`'s only hidden token is
+`../../.ssh/authorized_keys` inside a **archive entry name** — the attacker's payload,
+not a path in the audited tree — and `AI-20`'s `.git` appears inside `-g '!.git'`, an
+exclusion, because excluding a path is not visiting it.
+
+Two properties the battery had to learn the hard way, and they are written into it:
+
+- **The mutant runs against the COPY of the gate, not the installed one.** `core-crashes`
+  survived its first draft because the gate resolves its core from `$HERE`: mutating
+  `scripts/gates/lib/` in the working tree hit a file nobody executed. The battery now
+  invokes `"$work/scripts/gates/gate-tooling-blindspot.sh"`. The neighbouring batteries
+  do not have this problem because they only mutate data.
+- **Red with no finding is a crash, not a failure.** The gate turns an `rc=1` carrying
+  zero `FINDING` lines into a `2`.
+
+`corrected-procedure-regressed` and `premise-no-longer-declared` assert their target
+exists before mutating it, so a mutant whose subject was deleted says it no longer bites
+instead of going quiet and reading as coverage.
+
+**What it does not measure:** that `rg` and `fd` behave as their documentation says.
+Neither is installed on the machine that wrote this, so the claim that those defaults are
+blind comes from the tools' own documentation, not from an execution here. The gate says
+so in its own header rather than letting the omission pass for a measurement.
 
 ## G8 — Regression guard on quality issues
 
