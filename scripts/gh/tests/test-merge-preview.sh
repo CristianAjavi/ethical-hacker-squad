@@ -196,6 +196,41 @@ res "the same WITH --union -> still rc 2" "$(run_tool "$d" --union feat/j2 feat/
 res "and it does not claim to have resolved it" \
     "$(grep -c 'RESOLVED BY UNION.*shape\.json' "$LAB/out.txt")" 0
 
+# 3d. --union on a markdown TABLE. Two branches appending different rows is the
+#     case --union exists for and must still pass. Two branches EDITING the same
+#     row is not: the union keeps both, the row exists twice with two different
+#     figures, and nothing in the file is syntactically wrong. That is not a
+#     hypothesis either - it happened to docs/gate-requirements.md on this
+#     repository, and the counter that reads it reported failures over figures
+#     no branch ships.
+d="$LAB/uniontable"; build_repo "$d"
+printf '| item | cases |\n|---|---|\n| alpha | 10 |\n| beta | 20 |\n' > "$d/matrix.md"
+G "$d" add -A; G "$d" commit -qm matrix
+G "$d" checkout -q -b feat/addrow
+printf '| gamma | 30 |\n' >> "$d/matrix.md"; G "$d" add -A; G "$d" commit -qm gamma
+G "$d" checkout -q main; G "$d" checkout -q -b feat/addrow2
+printf '| delta | 40 |\n' >> "$d/matrix.md"; G "$d" add -A; G "$d" commit -qm delta
+G "$d" checkout -q main
+res "a table both sides APPENDED to, with --union -> rc 0" \
+    "$(run_tool "$d" --union feat/addrow feat/addrow2)" 0 "union"
+
+d="$LAB/uniontableedit"; build_repo "$d"
+printf '| item | cases |\n|---|---|\n| alpha | 10 |\n| beta | 20 |\n' > "$d/matrix.md"
+G "$d" add -A; G "$d" commit -qm matrix
+G "$d" checkout -q -b feat/count11
+printf '| item | cases |\n|---|---|\n| alpha | 11 |\n| beta | 20 |\n' > "$d/matrix.md"
+G "$d" add -A; G "$d" commit -qm eleven
+G "$d" checkout -q main; G "$d" checkout -q -b feat/count12
+printf '| item | cases |\n|---|---|\n| alpha | 12 |\n| beta | 20 |\n' > "$d/matrix.md"
+G "$d" add -A; G "$d" commit -qm twelve
+G "$d" checkout -q main
+res "the same row edited on both sides -> rc 2" \
+    "$(run_tool "$d" --union feat/count11 feat/count12)" 2 "the same table row twice"
+res "and it names the row it refused to invent" \
+    "$(grep -c 'the same table row twice: alpha' "$LAB/out.txt")" 1
+res "and it does not claim to have resolved it" \
+    "$(grep -c 'RESOLVED BY UNION.*matrix\.md' "$LAB/out.txt")" 0
+
 # 4. a ref that does not exist is not silently skipped
 d="$LAB/ghost"; build_repo "$d"
 res "a branch that does not exist -> rc 2" "$(run_tool "$d" feat/nowhere)" 2 "does not exist"

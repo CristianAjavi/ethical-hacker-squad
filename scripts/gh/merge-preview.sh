@@ -555,6 +555,59 @@ for b in "${BRANCHES[@]}"; do
 # defect in a branch. A shape it cannot verify is not unioned; if python3 is not
 # there to check, the answer is still no, because a check that cannot run is not
 # a check that passed.
+# The other half of the same lesson, for a file with no parser to offend. A
+# markdown TABLE is a shape too: its rows are keyed by the first cell, and a
+# union that keeps both sides where one branch EDITED a row the other's hunk
+# touched leaves that row TWICE, with the old figure beside the new one. There
+# is no syntax error to catch it - the file still renders - and the two rows
+# contradict each other in silence.
+#
+# MEASURED on this repository, over its own open branches: the union of
+# docs/gate-requirements.md left four rows duplicated, each citing a stale case
+# count beside the current one, and the gate that counts citations then failed
+# over figures NO BRANCH SHIPS. Three of its four findings were manufactured
+# here.
+#
+# The test is a multiplicity, not a duplicate line: a key may legitimately
+# repeat, and one that repeats on either side is left alone. Only a key the
+# union made MORE frequent than either side had it is a resolution nobody wrote.
+union_keeps_table_keys() {  # <result> <ours-before> <theirs> -> 0, else the keys
+  case "$1" in
+    *.md|*.markdown) ;;
+    *) return 0 ;;
+  esac
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$1" "$2" "$3" <<'PY'
+import collections, sys
+
+def keys(path):
+    c = collections.Counter()
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                s = line.strip()
+                if not s.startswith("|"):
+                    continue
+                cells = s.split("|")
+                if len(cells) < 3:
+                    continue
+                k = cells[1].strip()
+                if not k or set(k) <= set("-: "):   # the header rule is not a row
+                    continue
+                c[k] += 1
+    except OSError:
+        sys.exit(1)
+    return c
+
+res, ours, theirs = (keys(p) for p in sys.argv[1:4])
+worse = sorted(k for k, n in res.items() if n > max(ours[k], theirs[k]))
+if worse:
+    print(", ".join(worse[:4]) + ("" if len(worse) <= 4 else ", ..."))
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
 union_keeps_shape() {  # <path> -> 0 when the union result is still readable
   case "$1" in
     *.json) ;;
@@ -574,8 +627,16 @@ union_keeps_shape() {  # <path> -> 0 when the union result is still readable
     git -C "$WT/tree" show ":1:$f" > "$WT/base" 2>/dev/null || : > "$WT/base"
     git -C "$WT/tree" show ":2:$f" > "$WT/ours" 2>/dev/null || { union_ok=0; break; }
     git -C "$WT/tree" show ":3:$f" > "$WT/theirs" 2>/dev/null || { union_ok=0; break; }
+    cp "$WT/ours" "$WT/ours.pre"
     if git merge-file --union "$WT/ours" "$WT/base" "$WT/theirs" >/dev/null 2>&1; then
       cp "$WT/ours" "$WT/tree/$f"
+      if ! dupes="$(union_keeps_table_keys "$WT/tree/$f" "$WT/ours.pre" "$WT/theirs")"; then
+        printf '  NOT UNIONED %-44s %s\n' "$b" "$f"
+        printf '              keeping both sides left the same table row twice: %s\n' "${dupes:-a key python3 could not read}"
+        printf '              one side edited a row the other side had too, so the union\n'
+        printf '              kept the old figure beside the new one.\n'
+        union_ok=0; break
+      fi
       if ! union_keeps_shape "$WT/tree/$f"; then
         printf '  NOT UNIONED %-44s %s\n' "$b" "$f"
         printf '              keeping both sides left a file that no longer parses as JSON:\n'
