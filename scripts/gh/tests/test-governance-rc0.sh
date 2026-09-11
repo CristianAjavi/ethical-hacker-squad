@@ -71,7 +71,15 @@ case "$path" in
     out=$(grep -E '^[a-z]+/[a-z0-9-]+\|[0-9a-f]{6}\|' "$TAXONOMY" \
           | jq -R -s -c 'split("\n") | map(select(length > 0) | split("|")
                          | {name: .[0], color: .[1], description: .[2]})') ;;
-  repos/*/vulnerability-alerts) exit 0 ;;
+  repos/*/vulnerability-alerts)
+    # 204 enabled / 404 disabled / anything else = the endpoint did not answer.
+    # LAB_VA picks which, so the suite can tell "Dependabot is off" apart from
+    # "I could not ask" - they used to be the same value.
+    case "${LAB_VA:-ok}" in
+      ok)  exit 0 ;;
+      404) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+      *)   echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1 ;;
+    esac ;;
   repos/*/commits/*/check-runs)
     # DERIVED from governance.json, never hardcoded. A lab that knows about one
     # context reports every other one as "never observed", so the anti-lockout
@@ -121,6 +129,24 @@ OUT=$(LAB_HIDE_CONTEXT=workflow-hardening PATH="$LAB/bin:$PATH" \
 res "a required context never observed -> rc 1 (anti-lockout)" "$RC" 1 "$OUT"
 case "$OUT" in *"NEVER been observed"*) echo "        (it names the context it refuses to declare)";;
   *) echo "        FAIL: it does not name the unobserved context"; FAIL=$((FAIL+1));; esac
+
+# The alerts endpoint answers 204 when enabled and 404 when disabled. Every OTHER
+# failure - 401, network, rate limit - used to collapse into "disabled", so the
+# script reported DRIFT over a state nobody measured and --apply would have fired
+# a PUT on the strength of it.
+OUT=$(LAB_VA=403 PATH="$LAB/bin:$PATH" \
+      "$LAB/repo/scripts/gh/apply-governance.sh" --no-color 2>&1); RC=$?
+res "the alerts endpoint does not answer -> rc 2" "$RC" 2 "$OUT"
+case "$OUT" in *"I could not read"*"vulnerability-alerts"*) echo "        (it says it could not read the endpoint)";;
+  *) echo "        FAIL: it does not say the endpoint was unreadable"; FAIL=$((FAIL+1));; esac
+
+# ...and a genuine 404 still has to read as DISABLED, or the fix would have
+# bought silence by turning a real finding into an unmeasured one.
+OUT=$(LAB_VA=404 PATH="$LAB/bin:$PATH" \
+      "$LAB/repo/scripts/gh/apply-governance.sh" --no-color 2>&1); RC=$?
+res "a real 404 is still DISABLED -> rc 1 (drift)" "$RC" 1 "$OUT"
+case "$OUT" in *"vulnerability_alerts: actual=false desired=true"*) echo "        (it names the drifted field)";;
+  *) echo "        FAIL: a 404 no longer reads as disabled"; FAIL=$((FAIL+1));; esac
 
 echo ""
 echo "  $PASS PASS / $FAIL FAIL"

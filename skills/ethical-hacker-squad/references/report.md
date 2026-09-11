@@ -163,6 +163,7 @@ List the commands or tests executed and their result. Give every one of them a v
 - `verified`;
 - `partially verified`, with the class, variant or environment that stays open;
 - `refuted`, when the check established that the finding did not hold;
+- `not fixed`, when the check reached the code and the original case still reproduces after the patch;
 - `inconclusive`, when the check ran and settled nothing;
 - `not executed`, when nothing prevented it and it was not run;
 - `blocked`, with what would unblock it.

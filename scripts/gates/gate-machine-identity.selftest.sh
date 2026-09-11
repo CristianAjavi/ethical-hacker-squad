@@ -321,6 +321,11 @@ else
   say_fail "a declaration with no reason is caught" "rc=$rc23"
 fi
 
-printf '\ncases: %s | ok: %s | FAILED: %s\n' "$((pass+fail))" "$pass" "$fail"
+# The house grammar for a battery total: this file used to spell it
+# `cases: N | ok: M | FAILED: K`, a shape no other battery emits and
+# gate-case-counts.sh cannot read, so the figure this battery answers could not
+# be bound to it - the same correction gate-pack-routing.selftest.sh took in
+# iteration 4, recorded in scripts/gates/data/case-counts.json.
+printf '\nSummary: %s ok, %s failures\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

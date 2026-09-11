@@ -78,6 +78,30 @@ agreed. The reporter is credited in the advisory unless they prefer to stay anon
   own channels.
 - Raw scanner output against this repository with no exploitability analysis in context.
 
+## Open Dependabot alerts on this repository
+
+Every open Dependabot alert on this repository is expected to sit on a bench fixture, never on shipped code. The fixtures live under `bench/cases/` and carry deliberately vulnerable
+dependencies on purpose: they are the answer key the squad is measured against, they are read
+as cases, and nothing in them is installed, built or published. The manifests that belong to
+code this repository does ship - `tooling/claude-cli/package.json` and its lock file - are the
+ones Dependabot is configured to update, and an alert on either of them is a real finding, not
+a fixture.
+
+That difference is not left to whoever reads the alert list next.
+`scripts/gates/data/alert-surface.json` records, per manifest, whether an open alert on it is
+expected and why; `scripts/gates/gate-alert-live.sh` places every open alert against that
+record and fails on any that sits on an undeclared path or on shipped code. No gate asserts
+**how many** alerts are open: that number moves when an upstream advisory is published and
+nobody here did anything.
+
+Measured on 2026-09-11: five open alerts, all five under `bench/cases/**` - three pip in
+`intake-portal`, one npm in `node-supply`, one npm in `express-invoices`. That is a dated
+measurement, not a claim about today. Re-measure it with:
+
+```bash
+EHS_LIVE_REPO=1 scripts/gates/run-all.sh --only gate-alert-live.sh
+```
+
 ## Ethical use scope
 
 The plugin exists to audit, harden and verify systems that are **your own or explicitly
