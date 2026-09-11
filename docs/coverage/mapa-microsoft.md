@@ -33,7 +33,7 @@ Fecha de extracción: 2026-08-11. Todas las páginas listadas fueron abiertas re
 | O | Google site policies (licencia de contenido) | https://cloud.google.com/site-policies → https://developers.google.com/terms/site-policies | — |
 
 Extractos crudos de los PDF (texto plano, uso interno):
-`/private/tmp/.../scratchpad/curriculum/aws-raw.txt` (28.146 car.) y `gcp-raw.txt` (8.125 car.).
+`curriculum/aws-raw.txt`, en un scratchpad fuera del repositorio, (28.146 car.) y `gcp-raw.txt` (8.125 car.).
 
 ---
 

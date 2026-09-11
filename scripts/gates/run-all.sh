@@ -76,7 +76,53 @@ EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 # locally, against an authenticated gh. Putting them in CI needs a fine-grained
 # PAT with Administration:read, and that is the owner's decision, written down
 # here rather than left as a silent hole.
-LIVE_SCOPED='gate-governance-drift.sh'
+# gate-alert-live.sh is here for the same reason and a narrower one: it reads the
+# Dependabot alerts of the live repository, and whether a workflow's GITHUB_TOKEN
+# can read them at all has NOT been measured. Deferred by name, run locally, and
+# this line is where that unmeasured question is recorded instead of becoming a
+# gate that reports 2 in every CI run until somebody deletes it.
+LIVE_SCOPED='gate-governance-drift.sh gate-alert-live.sh'
+
+# Gates whose own measurement costs more than the ~30 s this repository allows on
+# the path that runs on every push - the figure gate-budget-ledger.sh cites in
+# its own header, and the reason its bite probe was timed before it was wired.
+# gate-case-counts.sh RUNS every battery it finds a citation for; that is the
+# whole point of it, a figure about a battery settled by running the battery,
+# and it is 301 s measured on this tree (411 s on a loaded run) against the 45 s
+# the `gates` job takes today. Its own battery carries a control over the real
+# tree and so costs the same 313 s, which is why both names are here. Left in
+# the serial set they would multiply the wall clock of every push by seven, and
+# a gate that makes every push slower is a gate somebody eventually deletes.
+# They are deferred here BY NAME with the cost, and they run in their own CI job
+# in parallel with this one - ci.yml, job `counts` - where they cost the person
+# who pushed no wall clock at all. EHS_SLOW_GATES=1 runs them locally.
+SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"
+# Absent and unreadable are different states, and only one of them is a 2.
+#
+# ABSENT is not a measurement I could not take. With no declaration nothing is
+# deferred and every control discovered runs here: more measuring, not less, and
+# the direction that cannot hide a red. The first version of this guard exited 2
+# on absence and scripts/gh/tests/test-gates-loop.sh went from 11 green to 7 red
+# -- that suite copies this runner into a throwaway lab where no declaration
+# belongs, precisely so the negative tests cannot drift from what CI runs. Worse
+# than the 7: its four remaining PASSes all expect rc 2 and were passing because
+# of the defect. A guard that answers 2 to a question nobody asked has more
+# reach than its job.
+#
+# UNREADABLE is the opposite, and stays a 2: the file is there, so somebody
+# declared something, and I cannot tell what. Reading it as empty would run what
+# was declared costly; reading it as "everything" would defer controls nobody
+# named. Neither is a measurement.
+if [ -e "$SLOW_SCOPED_FILE" ] && [ ! -r "$SLOW_SCOPED_FILE" ]; then
+  printf 'COULD NOT MEASURE: the scope declaration %s is there and I cannot read it, so I cannot tell which controls run elsewhere\n' "$SLOW_SCOPED_FILE" >&2
+  exit 2
+fi
+if [ -f "$SLOW_SCOPED_FILE" ]; then
+  SLOW_SCOPED="$(sed -e 's/#.*//' "$SLOW_SCOPED_FILE" | tr '\n' ' ')"
+else
+  SLOW_SCOPED=""
+  printf 'no scope declaration at %s: nothing is deferred for cost, every gate found runs here\n' "$SLOW_SCOPED_FILE"
+fi
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
@@ -182,6 +228,14 @@ while IFS= read -r g <&3; do
     n_deferred=$((n_deferred + 1))
     DEFERRED="$DEFERRED $name(needs-PR)"
     gate_info "$name needs PR context: it does not run here, issue-closure-gate.yml runs it"
+    continue
+  fi
+
+  # Gates that cost more than the push path allows.
+  if in_list "$name" "$SLOW_SCOPED" && [ -z "${EHS_SLOW_GATES:-}" ]; then
+    n_deferred=$((n_deferred + 1))
+    DEFERRED="$DEFERRED $name(costs-more-than-the-push-path)"
+    gate_info "$name runs every battery it cites (301 s measured): ci.yml job 'counts' runs it in parallel, not here. EHS_SLOW_GATES=1 ./scripts/gates/run-all.sh --selftests --only 'gate-case-counts*' runs it locally"
     continue
   fi
 
