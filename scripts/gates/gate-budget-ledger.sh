@@ -35,6 +35,16 @@
 #                      that knob names the same number. This is check 3 because
 #                      it is the one that was already red.
 #   4. justification   every `budget` carries a non-empty `why` and `measured`.
+#   5. where           the ledger's `enforced_in` names the file that actually
+#                      reads the knob. The ledger already said where each bound
+#                      is made to bite, for eleven knobs, and nothing read that
+#                      field: it could name a gate that had stopped enforcing
+#                      the knob, or a gate that never did, and the run stayed
+#                      green. A reader consults that column to find the control;
+#                      pointing it at the wrong file sends them to a gate that
+#                      does not contain the bound and lets them conclude there
+#                      is none. Check 2 proves the NUMBER agrees; this one
+#                      proves the ADDRESS does.
 #
 # WHAT IT DOES NOT MEASURE, and will not pretend to
 #   Whether a `measured` claim is TRUE. A gate cannot re-run the reasoning that
@@ -46,10 +56,19 @@
 #
 # Usage:
 #   scripts/gates/gate-budget-ledger.sh [--gates-dir DIR] [--ledger FILE]
+#                                       [--gates-rel REL]
 #   scripts/gates/gate-budget-ledger.sh --self-test
 #
+#   --gates-rel is the path of the gates directory AS THE LEDGER SPELLS IT, i.e.
+#   relative to the repository root. Check 5 compares a declaration written that
+#   way against a file found by walking an absolute directory, so it needs the
+#   frame of reference; it is derived from --gates-dir and the repo root, and an
+#   absolute or empty value is reported as could-not-measure rather than guessed.
+#
 # EXIT CODES (repo contract): 0 measured fine · 1 measured FAILS · 2 could not
-# measure (no python3, no gates directory, a missing or unusable ledger).
+# measure (no python3, no gates directory, a missing or unusable ledger, no
+# frame of reference for `enforced_in`, or a ledger in which no knob declares
+# one at all - that last one is a check that read nothing, not a clean run).
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -59,24 +78,32 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${EHS_REPO_ROOT:-$(gate_root)}"
 GATES_DIR="$HERE"
 LEDGER="$HERE/data/budget-ledger.json"
+GATES_REL=""
 ONLY_SELFTEST=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --gates-dir) GATES_DIR="${2:-}"; shift 2 ;;
     --ledger)    LEDGER="${2:-}"; shift 2 ;;
+    --gates-rel) GATES_REL="${2:-}"; shift 2 ;;
     --self-test) ONLY_SELFTEST=1; shift ;;
-    -h|--help)   sed -n '2,52p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,71p' "$0"; exit 0 ;;
     *)           shift ;;
   esac
 done
 
+# How the ledger spells the gates directory. Derived, not assumed: if GATES_DIR
+# is not under ROOT the strip leaves an absolute path and check 5 says so
+# instead of inventing a prefix.
+[ -n "$GATES_REL" ] || GATES_REL="${GATES_DIR#"$ROOT"/}"
+
 measure() {
-  python3 - "$1" "$2" <<'PY'
+  python3 - "$1" "$2" "$3" <<'PY'
 import json, re, sys, pathlib
 
 gates = pathlib.Path(sys.argv[1])
 ledger_path = pathlib.Path(sys.argv[2])
+gates_rel = sys.argv[3].strip().rstrip("/")
 KNOB = re.compile(r'\$\{(EHS_[A-Z0-9_]+):-([0-9][0-9_]*)\}')
 DOC = re.compile(r'default[:\s]+([0-9][0-9_]*)')
 
@@ -95,6 +122,7 @@ except (OSError, ValueError, KeyError) as exc:
 
 # --- what the source actually enforces -------------------------------------
 enforced = {}   # knob -> {value, file}
+where = {}      # knob -> {paths, spelled the way the ledger spells them}
 docs = {}       # knob -> [(file, line, value)]
 for f in sorted(gates.rglob("*.sh")):
     rel = f.as_posix()
@@ -104,8 +132,10 @@ for f in sorted(gates.rglob("*.sh")):
         txt = f.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         out(2, f"cannot read {rel}: {exc}"); raise SystemExit
+    ledger_spelling = f"{gates_rel}/{f.relative_to(gates).as_posix()}"
     for m in KNOB.finditer(txt):
         enforced.setdefault(m.group(1), (m.group(2).replace("_", ""), rel))
+        where.setdefault(m.group(1), set()).add(ledger_spelling)
     for knob in {m.group(1) for m in KNOB.finditer(txt)}:
         for i, line in enumerate(txt.splitlines(), 1):
             if line.lstrip().startswith("#") and knob in line:
@@ -115,6 +145,25 @@ for f in sorted(gates.rglob("*.sh")):
 if not enforced:
     out(2, "no `${EHS_*:-<number>}` knob was found in any gate: this check read nothing, "
            "which is not the same as finding nothing wrong")
+    raise SystemExit
+
+
+def declared_place(entry):
+    """`enforced_in` as a string, tolerating an entry that is not an object."""
+    if not isinstance(entry, dict):
+        return ""
+    return str(entry.get("enforced_in") or "").strip()
+
+
+if not gates_rel or gates_rel.startswith("/"):
+    out(2, f"I cannot tell how the ledger spells {gates}: --gates-rel came through as "
+           f"{gates_rel!r}. `enforced_in` is written relative to the repository root and "
+           f"comparing it to an absolute path would either pass everything or fail everything")
+    raise SystemExit
+if not any(declared_place(knobs.get(k)) for k in enforced):
+    out(2, f"not one of the {len(enforced)} knobs in {ledger_path.name} declares `enforced_in`: "
+           f"check 5 read nothing. A ledger that stopped saying where a bound is enforced is not "
+           f"a ledger with nothing wrong in it")
     raise SystemExit
 
 fails = 0
@@ -138,6 +187,24 @@ for knob, (val, rel) in sorted(enforced.items()):
         out(1, f"{knob}: the ledger declares {entry.get('value')!r} and {rel} enforces {val}. "
                f"Moving a bound and leaving its declaration behind is how a budget loosens "
                f"without anyone deciding to loosen it - change both in the same edit and say why")
+        fails += 1
+    # 5. where -- check 2 proves the number agrees; this proves the address does
+    places = sorted(where.get(knob, ()))
+    declared_at = declared_place(entry)
+    if not declared_at:
+        out(1, f"{knob}: `enforced_in` is missing or empty, and {rel} reads the knob. The column "
+               f"exists to tell a reader where the bound is made to bite; left blank it tells "
+               f"them to go looking, and 'I could not find the control' reads like 'there is none'")
+        fails += 1
+    elif declared_at not in places:
+        out(1, f"{knob}: the ledger says `enforced_in` {declared_at} and the knob is read in "
+               f"{', '.join(places)}. Following that address lands on a file with no such bound "
+               f"in it - the reader concludes the budget is unenforced, and the run stays green")
+        fails += 1
+    elif len(places) > 1:
+        out(1, f"{knob}: read in {len(places)} files ({', '.join(places)}) and the ledger names "
+               f"one. A single address cannot describe two controls: split the entry, or stop "
+               f"reading the same knob in two places")
         fails += 1
     if kind == "budget":
         budgets += 1
@@ -168,7 +235,9 @@ if declared_only:
     fails += len(declared_only)
 
 out(0, f"measured: {len(enforced)} knob(s) enforced in {gates.name}/, {budgets} of them budgets, "
-       f"{sum(len(v) for v in docs.values())} stated default(s) cross-checked, {fails} finding(s)")
+       f"{sum(len(v) for v in docs.values())} stated default(s) cross-checked, "
+       f"{len(enforced)} `enforced_in` address(es) resolved against the source under {gates_rel}/, "
+       f"{fails} finding(s)")
 if fails:
     out("FAILS", "")
 PY
@@ -192,7 +261,11 @@ selftest() {
       printf '  HARNESS  %-44s the mutation itself failed\n' "$name"; f=$((f+1)); return
     fi
     local out rc
-    out="$(measure "$w" "$w/data/budget-ledger.json" 2>&1)"; rc=0
+    # "scripts/gates" is spelled out here and derived in the production path: the
+    # case tree is a flat copy of the gates directory, and the ledger inside it
+    # still declares repository-relative addresses. Asking the copy where it
+    # lives would compare the ledger with itself.
+    out="$(measure "$w" "$w/data/budget-ledger.json" "scripts/gates" 2>&1)"; rc=0
     printf '%s' "$out" | grep -q '^1|' && rc=1
     printf '%s' "$out" | grep -q '^2|' && rc=2
     if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
@@ -256,7 +329,37 @@ d=json.loads(p.read_text()); e=d["knobs"]["EHS_MAX_TREE_BYTES"]
 e["kind"]="not_a_budget"; e["value"]=123
 p.write_text(json.dumps(d,indent=2))'
 
+  echo "  == the address the ledger gives for a bound =="
+  run_case enforced-in-names-a-different-gate 1 "and the knob is read in" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json"
+d=json.loads(p.read_text())
+e=d["knobs"]["EHS_MAX_TREE_BYTES"]
+assert e["enforced_in"]=="scripts/gates/gate-plugin-integrity.sh"
+# a real gate, which really exists, and which does not read this knob
+e["enforced_in"]="scripts/gates/gate-tree-delta.sh"
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case enforced-in-emptied-on-one-knob 1 "missing or empty" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json"
+d=json.loads(p.read_text()); d["knobs"]["EHS_MIN_XREFS"]["enforced_in"]="  "
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case the-same-knob-read-in-two-gates 1 "cannot describe two controls" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"gate-tree-delta.sh"
+# assembled from parts: a literal here would be scanned out of this very file
+p.write_text(p.read_text()+"\nSECOND=\"$" + "{EHS_MIN_XREFS:-2}\"\n")'
+
   echo "  == could not measure =="
+  run_case nobody-declares-where-a-bound-is-enforced 2 "check 5 read nothing" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json"
+d=json.loads(p.read_text())
+for e in d["knobs"].values(): e.pop("enforced_in",None)
+p.write_text(json.dumps(d,indent=2))'
+
   run_case ledger-missing 2 "missing or unusable" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json").unlink()'
@@ -264,6 +367,21 @@ import os,pathlib
   run_case ledger-unparseable 2 "missing or unusable" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"data/budget-ledger.json").write_text("{")'
+
+  # The frame of reference itself. run_case always hands check 5 a usable one, so
+  # the branch that refuses to guess is exercised here or nowhere.
+  local fr fr_out fr_rc
+  for fr in "" "/private/tmp/somewhere"; do
+    fr_out="$(measure "$GATES_DIR" "$LEDGER" "$fr" 2>&1)"; fr_rc=0
+    printf '%s' "$fr_out" | grep -q '^1|' && fr_rc=1
+    printf '%s' "$fr_out" | grep -q '^2|' && fr_rc=2
+    if [ "$fr_rc" -eq 2 ] && printf '%s' "$fr_out" | grep -q "how the ledger spells"; then
+      printf '  PASS  %-46s rc=2\n' "no-frame-of-reference[${fr:-empty}]"; p=$((p+1))
+    else
+      printf '  FAIL  %-46s rc=%s (wanted 2)\n' "no-frame-of-reference[${fr:-empty}]" "$fr_rc"
+      printf '%s\n' "$fr_out" | sed 's/^/        /' | head -3; f=$((f+1))
+    fi
+  done
 
   command rm -rf "$tmp"
   echo "  $p PASS / $f FAIL"
@@ -276,7 +394,7 @@ if [ "$ONLY_SELFTEST" -eq 1 ]; then
 fi
 
 gate_header "budget-ledger (a bound may not move without the figure that moved it)"
-gate_scope "every \${EHS_*:-<number>} a gate reads, against scripts/gates/data/budget-ledger.json and against every comment in the source that states a default for it"
+gate_scope "every \${EHS_*:-<number>} a gate reads, against scripts/gates/data/budget-ledger.json - its value, its \`enforced_in\` address, and every comment in the source that states a default for it"
 gate_out_of_scope "whether a 'measured' claim is TRUE, and the DIRECTION of a change - this gate has no history at gate time and does not pretend to tell a raise from a tightening"
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -306,11 +424,14 @@ while IFS= read -r line; do
     2)     gate_warn "$msg"; RC=2 ;;
     FAILS) : ;;
   esac
-done < <(measure "$GATES_DIR" "$LEDGER")
+done < <(measure "$GATES_DIR" "$LEDGER" "$GATES_REL")
 
 echo "NOT MEASURED: whether a 'measured' claim is true. A gate cannot re-run the reasoning that"
 echo "              justified a number; it enforces that the claim exists beside it and that the"
-echo "              number is the same everywhere this repository states it."
+echo "              number is the same everywhere this repository states it. Nor does check 5"
+echo "              prove the file named in 'enforced_in' makes the bound BITE - only that it is"
+echo "              the file that reads the knob. A gate that read a budget and never compared"
+echo "              anything to it would satisfy this check and enforce nothing."
 
 if [ "$SELFTEST_SKIPPED" -eq 1 ] && [ "$RC" -eq 0 ]; then RC=2; fi
 gate_verdict "$RC"; exit "$RC"
