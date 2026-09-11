@@ -33,6 +33,33 @@
 #   2. Runs scripts/gates/run-all.sh over the result.
 #   3. Runs every self-test battery under scripts/, fixtures pruned.
 #
+# WHAT --chain ADDS, and why the plain mode was not enough
+#   The plain mode merges the whole stack and then measures ONCE. That answers
+#   "is the combination green", and it cannot answer "WHICH branch broke it" -
+#   the only form of the answer anybody can act on, because the fix belongs on
+#   one branch and the person who has to write it is its author.
+#
+#   Worse, it cannot tell a gate the merge BROKE from one that was already red
+#   on the base. With no "before", every red reads as the combination's fault.
+#
+#   --chain measures the base first, then again after EVERY merge, and diffs the
+#   two verdict maps BY GATE NAME. A gate that was 0 at one point and 1 at the
+#   next is attributed to the branch merged in between, by name. That is the
+#   difference between "something is wrong" and "gate-handover-contract.sh went
+#   green -> FAIL when loop/iter4 landed, and no single branch would say so".
+#
+#   It costs one full suite pass per point. Measured on this repository on
+#   2026-09-11: `run-all.sh --selftests` over origin/main takes 4m08s, so a
+#   four-branch chain is five passes, about twenty-one minutes. That price is
+#   why it is a flag and not the default.
+#
+#   A CONFLICT STOPS THE CHAIN. The plain mode skips the conflicting branch and
+#   carries on, which is right when the question is "is the rest green". It is
+#   wrong here: every point after a skipped branch measures a tree that is not
+#   the chain, so a regression found later would be attributed to the wrong
+#   branch - worse than not attributing it at all. The branches after a conflict
+#   are printed as NOT MEASURED, by name, and the run cannot return 0.
+#
 # EXIT CODES (repo contract)
 #   0 = measured, and the merged tree is green
 #   1 = measured, and something FAILS on the merged tree
@@ -52,6 +79,8 @@
 #   scripts/gh/merge-preview.sh --base stable br1
 #   scripts/gh/merge-preview.sh --union             # keep both sides on a conflict
 #   scripts/gh/merge-preview.sh --list          # print the branches and stop
+#   scripts/gh/merge-preview.sh --chain br1 br2 # measure EVERY point and
+#                                               # attribute each regression
 
 set -uo pipefail
 
@@ -60,6 +89,7 @@ ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 BASE="origin/main"
 LIST_ONLY=0
 UNION=0
+CHAIN=0
 UNIONED=""
 SKIP_GATES="gate-tree-delta.sh"
 SKIP_WHY="its delta over a combined merge is a number nobody ships"
@@ -69,7 +99,8 @@ while [ $# -gt 0 ]; do
     --base) BASE="${2:-}"; shift 2 ;;
     --list) LIST_ONLY=1; shift ;;
     --union) UNION=1; shift ;;
-    -h|--help) sed -n '2,44p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --chain) CHAIN=1; shift ;;
+    -h|--help) sed -n '2,72p' "${BASH_SOURCE[0]}"; exit 0 ;;
     --) shift; break ;;
     -*) printf 'COULD NOT MEASURE: unknown argument %s\n' "$1" >&2; exit 2 ;;
     *) break ;;
@@ -89,13 +120,70 @@ fi
 command -v git >/dev/null 2>&1 || { echo "COULD NOT MEASURE: git is missing" >&2; exit 2; }
 git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || { echo "COULD NOT MEASURE: $ROOT is not a git work tree" >&2; exit 2; }
 
+# DISCOVERY.
+#
+# Two things were wrong with asking `gh pr list` for every open pull request and
+# merging whatever came back, and both were measured on this repository on
+# 2026-09-11, when it had thirty of them open.
+#
+#   1. A pull request whose BASE is another pull request's branch is already
+#      stacked. Merging its head into `main` drags its base in with it, so the
+#      same work is counted twice and the tree measured is one nobody is going
+#      to ship. Only the pull requests that actually target BASE are taken, and
+#      every one left out is printed BY NAME with the reason - a branch dropped
+#      in silence is the omission this file exists to stop.
+#
+#   2. An EMPTY answer from `gh` is not the same fact as "there is nothing
+#      open". It is also what a missing token, the wrong account, a rate limit
+#      and a network failure look like, and all four of them return zero rows
+#      and exit clean. Reporting a green from a zero you never proved you could
+#      have seen a one in is the whole disease this repository is built around.
+#      So the empty answer is checked against a KNOWN POSITIVE: if the same
+#      command with `--state all` returns at least one pull request, the query
+#      works, the zero is a measurement, and there is genuinely nothing to
+#      combine - which is a declared 0, printed as such, never an implied one.
+#      If the control comes back empty too, the instrument is what is blind and
+#      the answer is 2.
 BRANCHES=("$@")
+NOTHING_TO_COMBINE=0
 if [ "${#BRANCHES[@]}" -eq 0 ]; then
   command -v gh >/dev/null 2>&1 || { echo "COULD NOT MEASURE: no branches given and gh is missing to discover the open pull requests" >&2; exit 2; }
-  while IFS= read -r b; do
-    [ -n "$b" ] && BRANCHES+=("origin/$b")
-  done < <(gh pr list --state open --json number,headRefName --jq 'sort_by(.number)[].headRefName' 2>/dev/null)
-  [ "${#BRANCHES[@]}" -gt 0 ] || { echo "COULD NOT MEASURE: no open pull request was found and none was given" >&2; exit 2; }
+  base_short="${BASE##*/}"
+  gh_rows="$(gh pr list --state open --limit 200 --json number,headRefName,baseRefName \
+              --jq 'sort_by(.number)[] | "\(.number)\t\(.headRefName)\t\(.baseRefName)"' 2>/dev/null)" || gh_rows=""
+  EXCLUDED=""
+  while IFS=$'\t' read -r num head base_of; do
+    [ -n "$head" ] || continue
+    if [ "$base_of" = "$base_short" ]; then
+      BRANCHES+=("origin/$head")
+    else
+      EXCLUDED="$EXCLUDED
+  #$num $head -> $base_of (stacked: its base is not $base_short)"
+    fi
+  done <<EOF
+$gh_rows
+EOF
+  if [ "${#BRANCHES[@]}" -eq 0 ]; then
+    control="$(gh pr list --state all --limit 1 --json number --jq 'length' 2>/dev/null)" || control=""
+    if [ "${control:-0}" -gt 0 ] 2>/dev/null; then
+      NOTHING_TO_COMBINE=1
+    else
+      echo "COULD NOT MEASURE: no pull request targets $base_short, and the known-positive control (--state all) also came back empty - that is a blind instrument, not an empty repository" >&2
+      exit 2
+    fi
+  fi
+  if [ -n "$EXCLUDED" ]; then
+    printf 'NOT IN THE CHAIN, and not in silence - their base is not %s:%s\n' "$base_short" "$EXCLUDED"
+  fi
+fi
+
+if [ "$NOTHING_TO_COMBINE" -eq 1 ]; then
+  printf '\n=== merge preview: %s + 0 branch(es) ===\n' "$BASE"
+  printf 'Nothing targets %s today, and I proved I can see pull requests when there\n' "${BASE##*/}"
+  printf 'are any: `gh pr list --state all` returned rows. There is no combination to\n'
+  printf 'judge, so there is nothing that can be wrong with one.\n'
+  printf '  0 (measured: nothing to combine)\n'
+  exit 0
 fi
 
 printf '\n=== merge preview: %s + %d branch(es) ===\n' "$BASE" "${#BRANCHES[@]}"
@@ -122,6 +210,154 @@ trap cleanup EXIT
 
 git -C "$ROOT" worktree add --detach "$WT/tree" "$BASE" >/dev/null 2>&1 || {
   printf 'COULD NOT MEASURE: I could not create a worktree at %s\n' "$BASE" >&2; exit 2; }
+
+# ---------------------------------------------------------------------------
+# --chain: measure every point, and attribute every regression to ONE branch.
+# ---------------------------------------------------------------------------
+
+SKIP_ARGS=()
+for g in $SKIP_GATES; do SKIP_ARGS+=(--skip "$g"); done
+
+# measure_point <outfile>
+#
+# Writes one "<VERDICT> <name>" line per gate and per battery, so two points can
+# be compared BY NAME rather than by a summary count. A count tells you the
+# number moved; only the name tells you what to go and read.
+#
+# Two runners, because they discover different sets: run-all.sh --selftests
+# covers scripts/gates/** (gates and the self-tests that live beside them), and
+# the batteries outside that directory are launched one by one. Measured on
+# origin/main on 2026-09-11: 57 names from the first, 6 from the second. Leaving
+# the second set out would have made six batteries invisible to the comparison,
+# which is exactly the silence this tool was written against.
+measure_point() {
+  local out="$1" rc=0 brc=0 v="" b=""
+  : > "$out"
+  ( cd "$WT/tree" && EHS_BASE_REF="$BASE" ./scripts/gates/run-all.sh --selftests "${SKIP_ARGS[@]}" ) \
+    > "$WT/run.log" 2>&1 || rc=$?
+  sed -e 's/\x1b\[[0-9;]*m//g' "$WT/run.log" \
+    | awk '/^===== GATE SUMMARY =====/ {seen=1; next}
+           seen && $1 ~ /^(OK|FAIL|UNMEASURABLE)$/ && $2 ~ /\.(sh|py)$/ { print $1, $2 }' \
+    >> "$out"
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    brc=0
+    ( cd "$WT/tree" && bash "$b" </dev/null >/dev/null 2>&1 ) || brc=$?
+    case "$brc" in 0) v=OK ;; 2) v=UNMEASURABLE ;; *) v=FAIL ;; esac
+    printf '%s %s\n' "$v" "$b" >> "$out"
+  done < <(cd "$WT/tree" && find scripts -type d -name fixtures -prune -o -type f -name '*.selftest.sh' -print \
+             | grep -v '^scripts/gates/' | LC_ALL=C sort)
+  # A point with no names at all is not a green point: the runner did not run.
+  [ -s "$out" ] || return 2
+  return 0
+}
+
+# transitions <prev> <now>
+#
+# Ranks OK < FAIL < UNMEASURABLE, so "went the wrong way" is one comparison and
+# not a table of special cases. An UNMEASURABLE is ranked WORSE than a FAIL on
+# purpose: a gate that stopped being able to measure has stopped defending
+# anything, and it is the transition that reads most like a pass.
+transitions() {
+  awk 'function rank(v){ return v=="OK" ? 0 : (v=="FAIL" ? 1 : 2) }
+       NR==FNR { p[$2]=$1; next }
+       { n[$2]=$1 }
+       END {
+         for (k in n) {
+           if (!(k in p))            { print "APPEARED", n[k], k; continue }
+           if (p[k] == n[k])         continue
+           if (rank(n[k]) > rank(p[k])) print "BROKE", p[k] "->" n[k], k
+           else                        print "FIXED", p[k] "->" n[k], k
+         }
+         for (k in p) if (!(k in n))  print "VANISHED", p[k], k
+       }' "$1" "$2" | LC_ALL=C sort
+}
+
+if [ "$CHAIN" -eq 1 ]; then
+  printf '\n== point 0: the base, %s\n' "$BASE"
+  printf '   (a red gate here is the base'"'"'s, not the chain'"'"'s. Without this\n'
+  printf '    measurement every red later would be blamed on a merge.)\n'
+  BASE_OK=1
+  if ! measure_point "$WT/p0"; then
+    printf '  COULD NOT MEASURE the base. Nothing after this can be attributed.\n'
+    exit 2
+  fi
+  awk '{print $1}' "$WT/p0" | LC_ALL=C sort | uniq -c | sed 's/^/  /'
+  grep -v '^OK ' "$WT/p0" | sed 's/^/  base is already: /' || true
+  grep -q -v '^OK ' "$WT/p0" && BASE_OK=0
+
+  RC=0
+  CHAIN_BROKE=0 CHAIN_UNMEAS=0
+  prev="$WT/p0"
+  i=0
+  STOPPED=""
+  for b in "${BRANCHES[@]}"; do
+    i=$((i + 1))
+    if [ -n "$STOPPED" ]; then
+      printf '\n== %s : NOT MEASURED (the chain stopped at %s)\n' "$b" "$STOPPED"
+      RC=2
+      continue
+    fi
+    printf '\n== point %d: + %s\n' "$i" "$b"
+    if ! git -C "$ROOT" rev-parse -q --verify "$b" >/dev/null 2>&1; then
+      printf '  UNRESOLVED  this ref does not exist\n'
+      STOPPED="$b"; RC=2; continue
+    fi
+    if ! git -C "$WT/tree" "${GIT_ID[@]}" merge --no-edit -q "$b" >"$WT/merge.log" 2>&1; then
+      printf '  CONFLICT, file by file and hunk by hunk:\n'
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        hk="$(grep -c '^<<<<<<< ' "$WT/tree/$f" 2>/dev/null || true)"
+        ln="$(grep -n '^<<<<<<< ' "$WT/tree/$f" 2>/dev/null | cut -d: -f1 | tr '\n' ' ' || true)"
+        printf '    %-52s %s hunk(s) at line(s) %s\n' "$f" "${hk:-?}" "${ln:-?}"
+      done < <(git -C "$WT/tree" diff --name-only --diff-filter=U)
+      git -C "$WT/tree" merge --abort >/dev/null 2>&1 || true
+      STOPPED="$b"; RC=2; continue
+    fi
+    printf '  merged clean for git. That is not the same as safe - measuring:\n'
+    now="$WT/p$i"
+    if ! measure_point "$now"; then
+      printf '  COULD NOT MEASURE this point\n'
+      RC=2; continue
+    fi
+    out="$(transitions "$prev" "$now")"
+    if [ -z "$out" ]; then
+      printf '  no gate or battery changed verdict.\n'
+    else
+      printf '%s\n' "$out" | while IFS=' ' read -r kind move name; do
+        printf '    %-9s %-14s %s\n' "$kind" "$move" "$name"
+      done
+      # Two buckets, not one, and the ranking above decides which. A gate that
+      # went OK->FAIL is a merge that BREAKS something and the chain is worth 1.
+      # A gate that went OK->UNMEASURABLE stopped being able to measure at all,
+      # and calling that a failure would claim a measurement nobody has: it is
+      # worth 2, the same precedence run-all.sh uses. Matching '^BROKE ' for both
+      # put every unmeasurable transition in the failing bucket.
+      grep -qE '^BROKE [A-Z]+->FAIL ' <<<"$out" && CHAIN_BROKE=1
+      grep -qE '^BROKE [A-Z]+->UNMEASURABLE ' <<<"$out" && CHAIN_UNMEAS=1
+      grep -q '^VANISHED ' <<<"$out" && CHAIN_UNMEAS=1
+    fi
+    prev="$now"
+  done
+
+  printf '\n== verdict (chain)\n'
+  [ "$BASE_OK" -eq 1 ] || printf '  the BASE was not all-green. Anything it was already red about is NOT\n  attributed to a branch above.\n'
+  # A gate that stopped being MEASURABLE, or that disappeared from the run
+  # altogether, has stopped defending anything - and it is the transition that
+  # reads most like a pass, because nothing prints a FAIL. It cannot leave the
+  # verdict at 0.
+  [ "$CHAIN_UNMEAS" -eq 1 ] && [ "$RC" -ne 1 ] && RC=2
+  if [ "$CHAIN_BROKE" -eq 1 ]; then
+    RC=1
+    printf '  1 (measured: a merge in this order BREAKS something, named above, and no\n'
+    printf '     single branch would have said so)\n'
+  elif [ "$RC" -eq 2 ]; then
+    printf '  2 (COULD NOT MEASURE the whole chain - this is not a pass)\n'
+  else
+    printf '  0 (measured: every point in this order holds what the base held)\n'
+  fi
+  exit "$RC"
+fi
 
 printf '\n== merging\n'
 CONFLICTS=0 MERGED=0
