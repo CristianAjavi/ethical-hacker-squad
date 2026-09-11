@@ -184,7 +184,14 @@ work="$TMP/slow-scoped-unreadable"; rm -rf "$work"; mkdir -p "$work"; build_tree
 printf 'gate-gamma.sh\n' > "$work/scripts/gates/data/slow-scoped.txt"
 chmod 000 "$work/scripts/gates/data/slow-scoped.txt" 2>/dev/null || true
 if [ -r "$work/scripts/gates/data/slow-scoped.txt" ]; then
-  printf 'NOT MEASURED %-32s the file is still readable after chmod 000 (root?)\n' slow-scoped-unreadable
+  # `skip` and not `NOT MEASURED`: the word at the head of this line is READ by
+  # gate-case-counts.sh, which counts a skipped case toward the SIZE of this
+  # battery because a case that could not run is still a case. It knows the
+  # three spellings this tree emits and `NOT MEASURED` is not one of them, so
+  # the old wording made 19 cases read as 18 on any runner where root can open
+  # a file it has chmod 000 — green on a Mac, red in a container, from the same
+  # commit. The reason still travels; only the word that carries it changed.
+  printf 'skip     %-36s the file is still readable after chmod 000 (root?)\n' slow-scoped-unreadable
   skipped=$((skipped+1))
 else
   rc=0; out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)" || rc=$?
@@ -208,7 +215,13 @@ wf = w / ".github/workflows/ci.yml"
 wf.write_text(wf.read_text().replace("--only \x27gate-beta.sh\x27", "--only \x27gate-*\x27"))'
 
 echo
-echo "Summary: $pass ok, $fail failures, $skipped not measured"
+# The house shape, which 21 batteries in this tree emit and gate-case-counts.sh
+# reads: ok + failures. The third state is NOT dropped — it is printed per case
+# as a `skip` line above, which that gate adds back to reach the size quoted in
+# docs/gate-requirements.md. A total that silently leaves out what could not be
+# measured is a total that lies downward.
+echo "Summary: $pass ok, $fail failures"
+[ "$skipped" -gt 0 ] && echo "of these, $skipped could not be measured on this machine (each printed as skip above)"
 if [ "$fail" -gt 0 ]; then
   echo "Result: FAILED."
   exit 1

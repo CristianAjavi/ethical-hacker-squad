@@ -53,7 +53,7 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) <!-- cases: scripts/gates/gate-bench-blinding.selftest.sh --> |
 | tooling completeness | running | `gate-tooling-blindspot.sh` + self-test (12 cases <!-- cases: scripts/gates/gate-tooling-blindspot.selftest.sh -->) — a procedure that sends the auditor at a path `rg`/`fd` hide by default carries at least one invocation able to reach it |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
-| deferred controls have a lane | running | `gate-deferral-lane.sh` + self-test (19 cases) |
+| deferred controls have a lane | running | `gate-deferral-lane.sh` + self-test (19 cases <!-- cases: scripts/gates/gate-deferral-lane.selftest.sh -->) |
 | the discovery sweep can see | running | `gate-discovery-controls.sh` + self-test (15 cases <!-- cases: scripts/gates/gate-discovery-controls.selftest.sh -->) |
 | pack routing reachability | running | `gate-pack-routing.sh` + self-test (12 cases <!-- cases: scripts/gates/gate-pack-routing.selftest.sh -->) |
 
@@ -863,7 +863,7 @@ a job that re-runs a deferred control without naming it — `run-all.sh --pr-con
 instead of passing one that does not, which is the direction a control is allowed to be wrong in,
 and the fix is one word in the step or one entry in the JSON.
 
-Proved in the negative by 19 cases on throwaway trees — a gate about declarations can only be
+Proved in the negative by 19 cases <!-- cases: scripts/gates/gate-deferral-lane.selftest.sh --> on throwaway trees — a gate about declarations can only be
 exercised by writing declarations — of which 12 must come back `1` (a lane deleted, a lane that is
 only a comment, a `--skip` standing in for a lane, a glob that resolves to nothing, a lane that
 invokes a path that is gone, an exemption with no reason, an exemption nothing defers, an exemption
