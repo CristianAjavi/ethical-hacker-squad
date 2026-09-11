@@ -17,7 +17,7 @@ TOOL_REL="scripts/gh/merge-preview.sh"
 command -v git >/dev/null 2>&1 || { echo "  COULD NOT MEASURE: git is missing (rc 2)"; exit 2; }
 
 LAB="$(mktemp -d)"; trap 'rm -rf "$LAB"' EXIT
-pass=0; fail=0
+pass=0; fail=0; unmeasured=0
 G() { git -C "$1" -c user.email=t@e -c user.name=t "${@:2}"; }
 
 # A repository with the two things merge-preview runs: a gate runner and a
@@ -35,21 +35,47 @@ build_repo() {
 # the first draft of this stub printed only the count line, --chain found no
 # names at all, and every chain case came back "could not measure" on trees
 # where nothing was wrong.
-worst=0; lines=""
-for g in scripts/gates/*.selftest.sh scripts/gates/gate-*.sh; do
-  [ -e "$g" ] || continue
+#
+# It speaks --only for the same reason. The real runner takes a glob matched
+# against the file NAME and narrows the run to it - measured on this repository
+# on 2026-09-11: 1.8 s for one gate against 4m08s for the pass - and the
+# confirmation step depends on that narrowing being real. A stub that ignored
+# --only would have re-run every gate, and a confirmation that re-measures the
+# whole POINT instead of the one control it doubts would have passed every case
+# here while costing a full suite per transition in the field.
+#
+# Discovery is RECURSIVE and reports the BASENAME, like the real one. That is
+# not decoration either: it is how two gates in different directories come to
+# report under a single name, which is the case where a second measurement
+# cannot say which of them moved.
+ONLY=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --only) ONLY="${2:-}"; shift 2 ;;
+    --skip) shift 2 ;;
+    *) shift ;;
+  esac
+done
+worst=0; lines=""; n=0
+while IFS= read -r g; do
+  [ -n "$g" ] || continue
+  b="$(basename "$g")"
+  if [ -n "$ONLY" ]; then
+    case "$b" in $ONLY) : ;; *) continue ;; esac
+  fi
+  n=$((n + 1))
   rc=0; bash "$g" >/dev/null 2>&1 || rc=$?
   case "$rc" in
     0) lines="$lines
-OK   $(basename "$g") - measured, no findings" ;;
+OK   $b - measured, no findings" ;;
     2) lines="$lines
-UNMEASURABLE $(basename "$g") - COULD NOT MEASURE"; [ "$worst" -eq 1 ] || worst=2 ;;
+UNMEASURABLE $b - COULD NOT MEASURE"; [ "$worst" -eq 1 ] || worst=2 ;;
     *) lines="$lines
-FAIL  $(basename "$g") - measured, FAILS"; worst=1 ;;
+FAIL  $b - measured, FAILS"; worst=1 ;;
   esac
-done
+done < <(find scripts/gates -type f \( -name '*.selftest.sh' -o -name 'gate-*.sh' \) | LC_ALL=C sort)
 echo "===== GATE SUMMARY ====="
-echo "discovered: 1 | run: 1 | green: 1 | FAIL: 0 | UNMEASURABLE: 0"
+echo "discovered: $n | run: $n | green: 1 | FAIL: 0 | UNMEASURABLE: 0"
 printf '%s\n' "$lines" | sed '/^$/d'
 exit "$worst"
 RA
@@ -61,6 +87,26 @@ RA
 [ -f data/needed.txt ] || { echo "the file this battery reads is gone"; exit 1; }
 exit 0
 ST
+  chmod +x "$d/scripts/gates/stub.selftest.sh"
+  git -C "$d" init -q -b main
+  G "$d" add -A; G "$d" commit -qm base
+}
+
+# The same repository, but driven by THIS repository's REAL gate runner instead
+# of the stub above. A stub can be taught to answer anything; a label that only
+# a stub can produce is a label nobody will ever see in the field. run-all.sh
+# needs exactly three things to run outside its own tree - lib/common.sh, the
+# declared slow-scoped list, and at least one gate - so a faithful harness costs
+# three cp and about half a second.
+build_real_repo() {
+  local d="$1"
+  mkdir -p "$d/scripts/gates/lib" "$d/scripts/gates/data" "$d/scripts/gh" "$d/data"
+  cp "$ROOT/$TOOL_REL" "$d/scripts/gh/merge-preview.sh"
+  cp "$ROOT/scripts/gates/run-all.sh" "$d/scripts/gates/run-all.sh"
+  cp "$ROOT/scripts/gates/lib/common.sh" "$d/scripts/gates/lib/common.sh"
+  cp "$ROOT/scripts/gates/data/slow-scoped.txt" "$d/scripts/gates/data/slow-scoped.txt"
+  chmod +x "$d/scripts/gates/run-all.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$d/scripts/gates/stub.selftest.sh"
   chmod +x "$d/scripts/gates/stub.selftest.sh"
   git -C "$d" init -q -b main
   G "$d" add -A; G "$d" commit -qm base
@@ -232,6 +278,182 @@ G "$d" checkout -q main
 res "a gate that VANISHES -> rc 2, not 0" "$(run_tool "$d" --chain chain/deleter)" 2 "COULD NOT MEASURE the whole chain"
 
 # ---------------------------------------------------------------------------
+# CONFIRMATION: a transition is measured a SECOND time before a branch is named.
+#
+# Why these exist. On 2026-09-11 two --chain runs over the same four branches
+# both reported gate-budget-ledger.sh going OK->UNMEASURABLE at point 4, and
+# five independent gates over that very tree - the gate alone, the gate with
+# EHS_BASE_REF set, run-all.sh --only, the gate inside a LINKED worktree, and
+# the whole suite at 65 run / 65 green / 0 FAIL / 0 UNMEASURABLE - all came back
+# 0. The transition was the machine being saturated. A 2 born of load is
+# indistinguishable from a 2 born of the merge, and the report was one printf
+# away from reaching the author of a branch that had done nothing.
+#
+# The two halves have to be measured SEPARATELY, because a confirmation that
+# swallowed every transition and one that confirmed every transition both leave
+# a battery that only tests one of them green.
+# ---------------------------------------------------------------------------
+echo
+echo "== confirmation: measured twice before anybody is named"
+
+# N1. The break REPRODUCES. The line stays BROKE, the chain stays rc 1, and
+#     nothing about the attribution changes. Without this case a confirmation
+#     that dropped EVERY transition would pass N2 and look finished.
+d="$LAB/chain-confirm"; build_repo "$d"
+CALLS="$LAB/witness.calls"; : > "$CALLS"
+cat > "$d/scripts/gates/witness.selftest.sh" <<ST
+#!/usr/bin/env bash
+# Always green. Its only job is to record that the runner ran it, so the COST of
+# the confirmation can be measured instead of assumed.
+echo x >> "$CALLS"
+exit 0
+ST
+chmod +x "$d/scripts/gates/witness.selftest.sh"
+G "$d" add -A; G "$d" commit -qm witness
+G "$d" checkout -q -b chain/renamer
+G "$d" mv data/needed.txt data/renamed.txt; G "$d" commit -qm renamer
+G "$d" checkout -q main
+res "the break REPRODUCES -> still BROKE, chain rc 1" "$(run_tool "$d" --chain chain/renamer)" 1 "BREAKS something"
+res "  and it says it re-measured and confirmed it" \
+    "$(grep -c '1 confirmed, 0 did not' "$LAB/out.txt")" 1
+# COST. point 0 and point 1 each run the witness once. A THIRD call would mean
+# the confirmation re-measured the whole POINT instead of the one control it
+# doubts - on this repository that is 4m08s per transition instead of 1.8 s.
+res "  and the confirmation measured ONE control, not the suite" \
+    "$(grep -c . "$CALLS")" 2
+
+# N2. The break does NOT reproduce: the very defect above, in miniature. It must
+#     not be attributed to the branch, it must not put the chain at 1 or at 2,
+#     and it must not be swallowed either - the third of those is the one that
+#     looks like success.
+d="$LAB/chain-flaky"; build_repo "$d"
+G "$d" checkout -q -b chain/flaky
+cat > "$d/scripts/gates/stub.selftest.sh" <<'ST'
+#!/usr/bin/env bash
+# Fails the FIRST time it runs in a given tree and passes afterwards: a gate
+# that lost a race, not a gate a merge broke.
+c=".flaky.count"
+n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$n" > "$c"
+[ "$n" -eq 1 ] && { echo "first run says broken"; exit 1; }
+exit 0
+ST
+G "$d" add -A; G "$d" commit -qm flaky
+G "$d" checkout -q main
+res "a break that does NOT reproduce -> rc 0, neither 1 nor 2" "$(run_tool "$d" --chain chain/flaky)" 0 "UNCONFIRMED"
+# The two buckets match '^BROKE ...'. That the new label starts with another
+# word and so falls in neither is MEASURED here, not read off the source.
+res "  and no branch is accused of breaking anything" \
+    "$(grep -c '^ *BROKE ' "$LAB/out.txt")" 0
+res "  and the verdict names it: an unreproduced transition is not swallowed" \
+    "$(grep -c 'NOT CONFIRMED by a second measurement' "$LAB/out.txt")" 1
+res "  and the control is named inside that report" \
+    "$(awk '/NOT CONFIRMED by a second/{s=1} s && /stub\.selftest\.sh/{n++} END{print n+0}' "$LAB/out.txt")" 1
+
+# N3. The control cannot be measured a second time. Two gates with the same
+#     BASENAME in different directories report under ONE name (the runner
+#     discovers recursively and reports basename), so the second measurement
+#     comes back with two different verdicts under that name and cannot say
+#     which of them moved. "I could not check" is not "no": that is a 2.
+d="$LAB/chain-twin"; build_repo "$d"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/scripts/gates/gate-dup.sh"
+chmod +x "$d/scripts/gates/gate-dup.sh"
+G "$d" add -A; G "$d" commit -qm dup
+G "$d" checkout -q -b chain/twin
+mkdir -p "$d/scripts/gates/sub"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$d/scripts/gates/sub/gate-dup.sh"
+chmod +x "$d/scripts/gates/sub/gate-dup.sh"
+G "$d" add -A; G "$d" commit -qm twin
+G "$d" checkout -q main
+res "a confirmation nobody can measure -> rc 2, never a discard" "$(run_tool "$d" --chain chain/twin)" 2 "UNCONFIRMABLE"
+res "  and the verdict names the control it could not confirm" \
+    "$(awk '/NOT CONFIRMED by a second/{s=1} s && /gate-dup\.sh/{n++} END{print n+0}' "$LAB/out.txt")" 1
+
+# N4. The OTHER instrument. measure_point has two of them - the runner for
+#     scripts/gates/, and a direct launch for every battery outside it - and a
+#     confirmation that re-measured a battery through the runner would be two
+#     instruments answering one question. Nothing above this line ever exercises
+#     the second route: without this case that half of the confirmation ships
+#     never having run once.
+d="$LAB/chain-outside"; build_repo "$d"
+mkdir -p "$d/scripts/other"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/scripts/other/outside.selftest.sh"
+chmod +x "$d/scripts/other/outside.selftest.sh"
+G "$d" add -A; G "$d" commit -qm outside
+G "$d" checkout -q -b chain/flaky-battery
+cat > "$d/scripts/other/outside.selftest.sh" <<'ST'
+#!/usr/bin/env bash
+c=".flaky-batt.count"
+n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$n" > "$c"
+[ "$n" -eq 1 ] && { echo "first run says broken"; exit 1; }
+exit 0
+ST
+G "$d" add -A; G "$d" commit -qm flaky-battery
+G "$d" checkout -q main
+res "a BATTERY that does not reproduce -> rc 0, by its own instrument" \
+    "$(run_tool "$d" --chain chain/flaky-battery)" 0 "UNCONFIRMED"
+res "  and the battery is named by its path, not by a basename" \
+    "$(awk '/NOT CONFIRMED by a second/{s=1} s && /scripts\/other\/outside\.selftest\.sh/{n++} END{print n+0}' "$LAB/out.txt")" 1
+
+# N5. THE BOUNDARY, and the one the first draft of this got wrong. "It did not
+#     reproduce" has to mean "it came back to where it was", not "the second
+#     measurement disagreed with the first". A gate that FAILS once and then
+#     cannot measure at all has disagreed with itself and is STILL red both
+#     times: dismissing it would retire a regression because two reds failed to
+#     match. Measured on the first implementation of this file: rc 0 and an
+#     UNCONFIRMED line. It must be a 2.
+d="$LAB/chain-mixed"; build_repo "$d"
+G "$d" checkout -q -b chain/mixed
+cat > "$d/scripts/gates/stub.selftest.sh" <<'ST'
+#!/usr/bin/env bash
+# FAILS the first time and cannot measure the second: red twice, differently.
+c=".mixed.count"
+n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$n" > "$c"
+[ "$n" -eq 1 ] && { echo "measured, FAILS"; exit 1; }
+echo "I cannot measure this any more"; exit 2
+ST
+G "$d" add -A; G "$d" commit -qm mixed
+G "$d" checkout -q main
+res "red twice but differently -> NOT dismissed, rc 2" "$(run_tool "$d" --chain chain/mixed)" 2 "COULD NOT MEASURE the whole chain"
+res "  and it is still an accusation, carrying the SECOND reading" \
+    "$(grep -c 'BROKE .*OK->UNMEASURABLE .*stub\.selftest\.sh' "$LAB/out.txt")" 1
+res "  and it is NOT filed as a transition that did not reproduce" \
+    "$(grep -c '^ *UNCONFIRMED ' "$LAB/out.txt")" 0
+
+# R1. REACHABILITY. Everything above runs against a stub runner, and a label
+#     that only a stub can produce is a label nobody will ever see. This case
+#     drives the same tool over THIS repository's REAL scripts/gates/run-all.sh
+#     - its real argument parsing, its real --only narrowing, its real GATE
+#     SUMMARY, em dash and all - with a gate that loses a race exactly once.
+#     If the real runner ever stops answering --only the way this reads it, this
+#     is the case that goes red.
+if [ -f "$ROOT/scripts/gates/run-all.sh" ] \
+   && [ -f "$ROOT/scripts/gates/lib/common.sh" ] \
+   && [ -f "$ROOT/scripts/gates/data/slow-scoped.txt" ]; then
+  d="$LAB/chain-real"; build_real_repo "$d"
+  G "$d" checkout -q -b chain/flaky-real
+  cat > "$d/scripts/gates/stub.selftest.sh" <<'ST'
+#!/usr/bin/env bash
+c=".flaky.count"
+n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "$n" > "$c"
+[ "$n" -eq 1 ] && { echo "first run says broken"; exit 1; }
+exit 0
+ST
+  G "$d" add -A; G "$d" commit -qm flaky
+  G "$d" checkout -q main
+  res "REACHABLE through the REAL runner -> UNCONFIRMED, rc 0" \
+      "$(run_tool "$d" --chain chain/flaky-real)" 0 "UNCONFIRMED"
+  res "  and the real runner's verdict was read, not guessed" \
+      "$(grep -c '1 did not' "$LAB/out.txt")" 1
+else
+  printf '  NOT MEASURED  %-52s\n' "the real runner is not in this checkout"
+  unmeasured=$((unmeasured+2))
+fi
+
+# ---------------------------------------------------------------------------
 # MUTANTS. Each prediction is written here BEFORE the mutant is run: if a
 # mutant survives, the case above it is decoration.
 # ---------------------------------------------------------------------------
@@ -268,7 +490,65 @@ res "M3 OK->UNMEASURABLE stops counting -> C5 goes green" \
 res "M4 the base is always called green -> C4 stops exonerating the branch" \
     "$(mutate M4 's/BASE_OK=0/BASE_OK=1/' "$LAB/chain-redbase" --chain chain/innocent >/dev/null; grep -c 'the BASE was not all-green' "$LAB/out.txt")" 0
 
+# M5. The confirmation reuses the first measurement instead of taking a second
+#     one - which is what "always agrees" actually looks like in code, and the
+#     shape a tired hand would write to make the cases go quiet. PREDICTION: N2
+#     goes from 0 to 1. The transition that never reproduced is printed BROKE,
+#     reaches the failing bucket, and the reproach goes out to a branch that did
+#     nothing. (Forcing the FLAG instead was tried first and is not a mutant:
+#     with the arrow carrying the second reading, a forced agreement prints
+#     BROKE OK->OK, which is a state the real code cannot reach and which falls
+#     in no bucket - the mutant died of incoherence rather than of the defect.)
+res "M5 the confirmation reuses the first measurement -> the wobble is blamed" \
+    "$(mutate M5 's/conf="$(confirm_verdict "$name")"/conf="${move##*->}"/' "$LAB/chain-flaky" --chain chain/flaky)" 1
+
+# M6. The confirmation NEVER agrees - which is what "swallow every transition"
+#     looks like, and it is the failure mode a battery with only N2 in it would
+#     have called green. PREDICTION: N1 goes from 1 to 0. A merge that really
+#     does break a battery is reported as an instrument wobble and the chain
+#     passes.
+res "M6 the confirmation never agrees -> a real break is explained away" \
+    "$(mutate M6 's/agrees=1/agrees=0/' "$LAB/chain-confirm" --chain chain/renamer)" 0
+
+# M7. A confirmation nobody could measure stops counting. PREDICTION: N3 goes
+#     from 2 to 0 - the accusation is neither confirmed nor denied, and the
+#     chain passes anyway, which is the exact shape of every defect this file
+#     was written against. (The mutation deletes the WIRING, not the label: a
+#     mutant that renamed the label and a control that grepped for the label
+#     would be the control reading itself.)
+res "M7 an unconfirmable transition stops counting -> N3 goes green" \
+    "$(mutate M7 '/UNCONFIRMABLE . <<</d' "$LAB/chain-twin" --chain chain/twin)" 0
+
+# M8. The confirmation stops narrowing the runner, so it re-measures the whole
+#     POINT to settle one name. PREDICTION: every verdict above stays exactly
+#     where it was - N1 is still rc 1 - and ONLY the witness count moves, from 2
+#     to 3. That is the whole reason the cost is a measured control and not a
+#     sentence in the header: on this repository the mutant costs 4m08s per
+#     transition instead of 1.8 s and NOTHING else about the output changes.
+res "M8 the confirmation stops narrowing -> it re-measures the whole point" \
+    "$(: > "$CALLS"; mutate M8 's/--only/--ignored/' "$LAB/chain-confirm" --chain chain/renamer >/dev/null; grep -c . "$CALLS")" 3
+
+# M9. A battery outside scripts/gates/ stops being routed to its own instrument
+#     and is asked of the gate runner instead, which has never heard of it.
+#     PREDICTION: N4 goes from 0 to 2 - the runner returns no line under that
+#     name, the confirmation cannot get a verdict, and a transition that was
+#     only ever a wobble is reported as one nobody could check.
+res "M9 a battery re-measured by the wrong instrument -> N4 cannot confirm" \
+    "$(mutate M9 's|\*/\*)|zzz)|' "$LAB/chain-outside" --chain chain/flaky-battery)" 2
+
+# M10. The same "never accuses" mutation, aimed at N5. The boundary case has to
+#      hold on its own rather than ride on N1's coverage, because it is the one
+#      that says what "did not reproduce" MEANS. PREDICTION: N5 goes from 2 to
+#      0 - a control that came back red twice, in two different ways, is filed
+#      as an instrument wobble and the chain passes over it.
+res "M10 never accuses -> the doubly-red control is filed as a wobble" \
+    "$(mutate M10 's/agrees=1/agrees=0/' "$LAB/chain-mixed" --chain chain/mixed)" 0
+
 echo
 echo "  $pass PASS / $fail FAIL"
 [ "$fail" -eq 0 ] || exit 1
+[ "$unmeasured" -eq 0 ] || {
+  printf '  and %d case(s) COULD NOT BE MEASURED - that is a 2, not a pass\n' "$unmeasured"
+  exit 2
+}
 exit 0

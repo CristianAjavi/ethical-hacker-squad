@@ -60,6 +60,32 @@
 #   branch - worse than not attributing it at all. The branches after a conflict
 #   are printed as NOT MEASURED, by name, and the run cannot return 0.
 #
+#   AND IT CONFIRMS BEFORE IT NAMES ANYBODY. A transition that WORSENS is
+#   measured a SECOND time, alone, on the SAME tree, before it is counted.
+#   Measured on this repository on 2026-09-11: two --chain runs over the same
+#   four branches both reported gate-budget-ledger.sh going OK->UNMEASURABLE at
+#   point 4, and five independent gates over that very tree - the gate on its
+#   own, the gate with EHS_BASE_REF set, run-all.sh --only, the gate inside a
+#   LINKED worktree (.git as a file, the shape the harness measures in), and the
+#   whole suite (65 run, 65 green, 0 FAIL, 0 UNMEASURABLE) - all came back 0.
+#   The transition was the machine being saturated, not the branch. A 2 born of
+#   load is indistinguishable from a 2 born of the merge, and this file was one
+#   printf away from mailing that reproach to somebody else's branch.
+#
+#   So: CONFIRMED by the second measurement -> printed BROKE and counted exactly
+#   as before. DID NOT REPRODUCE -> printed UNCONFIRMED, attributed to no branch,
+#   and named again in the verdict, because a transition that evaporates on the
+#   second look is news about the INSTRUMENT, and swallowing it would be the same
+#   silence this file exists to break. COULD NOT BE RE-MEASURED -> UNCONFIRMABLE,
+#   which is a 2: an unconfirmed accusation is not a discarded one.
+#
+#   The second measurement costs ONE control, not one suite, and it is taken by
+#   the SAME instrument that produced the first verdict - a gate is asked again
+#   through run-all.sh --only (1.8 s measured, against 4m08s for a whole pass), a
+#   battery outside scripts/gates/ is launched again directly. Two instruments
+#   answering one question disagree for reasons that have nothing to do with the
+#   tree, which is the defect one level up from the one this paragraph is about.
+#
 # EXIT CODES (repo contract)
 #   0 = measured, and the merged tree is green
 #   1 = measured, and something FAILS on the merged tree
@@ -100,7 +126,7 @@ while [ $# -gt 0 ]; do
     --list) LIST_ONLY=1; shift ;;
     --union) UNION=1; shift ;;
     --chain) CHAIN=1; shift ;;
-    -h|--help) sed -n '2,72p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,98p' "${BASH_SOURCE[0]}"; exit 0 ;;
     --) shift; break ;;
     -*) printf 'COULD NOT MEASURE: unknown argument %s\n' "$1" >&2; exit 2 ;;
     *) break ;;
@@ -273,6 +299,97 @@ transitions() {
        }' "$1" "$2" | LC_ALL=C sort
 }
 
+# rank_of <verdict> -> 0 | 1 | 2
+#
+# The same order the awk above ranks by, OK < FAIL < anything else, in the one
+# other place that has to agree with it. Two rankings that drift apart would let
+# a transition be a regression to one half of this file and not to the other.
+rank_of() { case "$1" in OK) printf '0\n' ;; FAIL) printf '1\n' ;; *) printf '2\n' ;; esac; }
+
+# confirm_verdict <name>   ->  OK | FAIL | UNMEASURABLE | UNKNOWN
+#
+# Measures ONE control again, on the tree exactly as it stands, BY THE SAME GATE
+# that produced the verdict in the first place. measure_point has two of them
+# and they are not interchangeable: a name carrying a slash is a battery outside
+# scripts/gates/ and was launched directly, a bare name came out of the runner's
+# GATE SUMMARY and is asked for again with --only, which narrows the runner to
+# that one gate (1.8 s measured on this repository against 4m08s for the pass).
+# Re-measuring by the OTHER instrument would be two instruments answering one
+# question, and two instruments disagree for reasons that are about neither the
+# tree nor the branch.
+#
+# UNKNOWN is not a verdict about the control. It is this function saying it
+# could not get one: nothing came back under that name, or more than one
+# DISTINCT verdict did - two gates with the same basename in different
+# directories report under a single name, and nothing here can tell which of
+# them moved. It is never a silent discard; the caller turns it into a 2.
+confirm_verdict() {
+  local name="$1" rc=0
+  case "$name" in
+    */*)
+      [ -f "$WT/tree/$name" ] || { printf 'UNKNOWN\n'; return 0; }
+      ( cd "$WT/tree" && bash "$name" </dev/null >/dev/null 2>&1 ) || rc=$?
+      case "$rc" in 0) printf 'OK\n' ;; 2) printf 'UNMEASURABLE\n' ;; *) printf 'FAIL\n' ;; esac
+      ;;
+    *)
+      ( cd "$WT/tree" && EHS_BASE_REF="$BASE" ./scripts/gates/run-all.sh --selftests "${SKIP_ARGS[@]}" --only "$name" ) \
+        > "$WT/confirm.log" 2>&1 || true
+      sed -e 's/\x1b\[[0-9;]*m//g' "$WT/confirm.log" \
+        | awk -v want="$name" '
+            /^===== GATE SUMMARY =====/ { seen=1; next }
+            seen && $1 ~ /^(OK|FAIL|UNMEASURABLE)$/ && $2 == want { v[$1]=1 }
+            END { n = 0; last = "UNKNOWN"
+                  for (k in v) { n++; last = k }
+                  if (n == 1) print last; else print "UNKNOWN" }'
+      ;;
+  esac
+}
+
+# confirm_transitions <transitions-text>   -> the same text, BROKE lines judged
+#
+# Every line that WORSENS is measured a second time before anybody is named.
+# Nothing else is touched: FIXED, APPEARED and VANISHED are not accusations
+# against a branch, and VANISHED already cannot leave the verdict at 0.
+#
+# The rewrite happens HERE and not in the printing loop below on purpose. That
+# loop is `printf | while`, which bash runs in a subshell: a flag raised inside
+# it is gone by the next line, so a confirmation computed there would have been
+# invisible to the verdict and would have read as "nothing was ever unconfirmed".
+confirm_transitions() {
+  local kind move name conf agrees was
+  while IFS=' ' read -r kind move name; do
+    [ -n "$kind" ] || continue
+    if [ "$kind" != "BROKE" ]; then
+      printf '%s %s %s\n' "$kind" "$move" "$name"
+      continue
+    fi
+    conf="$(confirm_verdict "$name")"
+    was="${move%%->*}"
+    # The test is whether the second look STILL ACCUSES - whether the control is
+    # worse than it was BEFORE this branch - and not whether it merely disagrees
+    # with the first. Those two are not the same rule, and the difference is a
+    # dropped red: a first FAIL and a second UNMEASURABLE disagree and are both
+    # accusations, so "it did not reproduce" would retire a regression because
+    # two reds failed to match each other. Dismissed only when it has come back
+    # to where it was.
+    agrees=0
+    [ "$(rank_of "$conf")" -gt "$(rank_of "$was")" ] && agrees=1
+    if [ "$conf" = "UNKNOWN" ]; then
+      printf 'UNCONFIRMABLE %s->? %s\n' "$move" "$name"
+    elif [ "$agrees" -eq 1 ]; then
+      # The arrow carries the SECOND measurement, the one taken alone. Where the
+      # two agree this is the identical line the old code printed; where they do
+      # not, the isolated one is the reading that was not competing with a whole
+      # suite for the machine.
+      printf 'BROKE %s->%s %s\n' "$was" "$conf" "$name"
+    else
+      printf 'UNCONFIRMED %s->%s %s\n' "$move" "$conf" "$name"
+    fi
+  done <<EOF
+$1
+EOF
+}
+
 if [ "$CHAIN" -eq 1 ]; then
   printf '\n== point 0: the base, %s\n' "$BASE"
   printf '   (a red gate here is the base'"'"'s, not the chain'"'"'s. Without this\n'
@@ -287,7 +404,8 @@ if [ "$CHAIN" -eq 1 ]; then
   grep -q -v '^OK ' "$WT/p0" && BASE_OK=0
 
   RC=0
-  CHAIN_BROKE=0 CHAIN_UNMEAS=0
+  CHAIN_BROKE=0 CHAIN_UNMEAS=0 CHAIN_UNCONF=0
+  UNCONF_LIST=""
   prev="$WT/p0"
   i=0
   STOPPED=""
@@ -324,24 +442,69 @@ if [ "$CHAIN" -eq 1 ]; then
     if [ -z "$out" ]; then
       printf '  no gate or battery changed verdict.\n'
     else
+      # CONFIRM BEFORE NAMING. Nothing below this line has any idea whether a
+      # BROKE survived a second measurement, so the judgement has to happen
+      # first and travel in $out itself - see confirm_transitions.
+      out="$(confirm_transitions "$out")"
       printf '%s\n' "$out" | while IFS=' ' read -r kind move name; do
-        printf '    %-9s %-14s %s\n' "$kind" "$move" "$name"
+        printf '    %-13s %-24s %s\n' "$kind" "$move" "$name"
       done
+      n_conf="$(grep -c '^BROKE ' <<<"$out" || true)"
+      n_unconf="$(grep -c '^UNCONFIRMED ' <<<"$out" || true)"
+      n_unk="$(grep -c '^UNCONFIRMABLE ' <<<"$out" || true)"
+      if [ $((n_conf + n_unconf + n_unk)) -gt 0 ]; then
+        printf '    every line above that WORSENS was measured a SECOND time, alone, on\n'
+        printf '    THIS tree before any branch was named: %d confirmed, %d did not\n' "$n_conf" "$n_unconf"
+        printf '    reproduce, %d could not be re-measured.\n' "$n_unk"
+      fi
       # Two buckets, not one, and the ranking above decides which. A gate that
       # went OK->FAIL is a merge that BREAKS something and the chain is worth 1.
       # A gate that went OK->UNMEASURABLE stopped being able to measure at all,
       # and calling that a failure would claim a measurement nobody has: it is
       # worth 2, the same precedence run-all.sh uses. Matching '^BROKE ' for both
       # put every unmeasurable transition in the failing bucket.
+      #
+      # UNCONFIRMED and UNCONFIRMABLE start with another word on purpose: these
+      # two patterns ignore them by themselves, so a transition that did not
+      # reproduce cannot reach either bucket by accident.
       grep -qE '^BROKE [A-Z]+->FAIL ' <<<"$out" && CHAIN_BROKE=1
       grep -qE '^BROKE [A-Z]+->UNMEASURABLE ' <<<"$out" && CHAIN_UNMEAS=1
       grep -q '^VANISHED ' <<<"$out" && CHAIN_UNMEAS=1
+      # A transition nobody could re-measure is a 2: this run does not know
+      # whether the branch broke something, and "I do not know" is not "no".
+      grep -q '^UNCONFIRMABLE ' <<<"$out" && CHAIN_UNMEAS=1
+      while IFS=' ' read -r kind move name; do
+        case "$kind" in
+          UNCONFIRMED)   CHAIN_UNCONF=1
+            UNCONF_LIST="$UNCONF_LIST
+    $name   at + $b
+      $move - first measurement, then the SAME control on the SAME tree. It
+      went back to where it was, so it is not this branch's." ;;
+          UNCONFIRMABLE) CHAIN_UNCONF=1
+            UNCONF_LIST="$UNCONF_LIST
+    $name   at + $b
+      $move - first measurement, then no second verdict at all. This run does
+      not know whether that accusation is true, so it does not make it." ;;
+        esac
+      done <<EOF
+$out
+EOF
     fi
     prev="$now"
   done
 
   printf '\n== verdict (chain)\n'
   [ "$BASE_OK" -eq 1 ] || printf '  the BASE was not all-green. Anything it was already red about is NOT\n  attributed to a branch above.\n'
+  # A transition that did not survive a second look is NOT attributed to a
+  # branch - and it is not swallowed either. It is a measurement about this
+  # instrument (two runs of this tool on a loaded machine both accused a branch
+  # of blinding a gate that five independent gates over the same tree found
+  # green), and an instrument that reports differently twice on one tree is a
+  # fact the next reader needs more than the branch's author does.
+  if [ "$CHAIN_UNCONF" -eq 1 ]; then
+    printf '  NOT CONFIRMED by a second measurement, and therefore attributed to NO\n'
+    printf '  branch - this is a report about the INSTRUMENT, not about the code:%s\n' "$UNCONF_LIST"
+  fi
   # A gate that stopped being MEASURABLE, or that disappeared from the run
   # altogether, has stopped defending anything - and it is the transition that
   # reads most like a pass, because nothing prints a FAIL. It cannot leave the
@@ -353,6 +516,9 @@ if [ "$CHAIN" -eq 1 ]; then
     printf '     single branch would have said so)\n'
   elif [ "$RC" -eq 2 ]; then
     printf '  2 (COULD NOT MEASURE the whole chain - this is not a pass)\n'
+  elif [ "$CHAIN_UNCONF" -eq 1 ]; then
+    printf '  0 (measured: every point in this order holds what the base held - with the\n'
+    printf '     unreproduced transition(s) named above, which belong to nobody)\n'
   else
     printf '  0 (measured: every point in this order holds what the base held)\n'
   fi
