@@ -192,7 +192,7 @@ RUN echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc \
 
 Rules: FP-01, FP-07.
 
-**Minimal test**: `rg -n 'ARG .*(TOKEN|SECRET|KEY|PASSWORD)|ENV .*(TOKEN|SECRET|KEY|PASSWORD)' Dockerfile*` and confirm whether a `.dockerignore` exists.\
+**Minimal test**: `rg -n -uu --hidden 'ARG .*(TOKEN|SECRET|KEY|PASSWORD)|ENV .*(TOKEN|SECRET|KEY|PASSWORD)' Dockerfile*` and confirm whether a `.dockerignore` exists — **the `-uu --hidden` is the test, not decoration**: a build context routinely ignores the directory its Dockerfile sits in, and `.dockerignore` is itself a hidden file the default invocation never lists.\
 **Traceability**: `CWE-798` · `CWE-540` · `CWE-522` · `A02:2025` · `CICD-SEC-6` · `SSDF PS` · `NIST 800-53 IA` · `CCM CEK`\
 **Tooling**: on a locally exported tar, `dockle --input image.tar -f json --exit-code 0` (the `--exit-code 0` keeps the scanner from breaking your own run). Do not conclude the image is clean if it flags nothing: dockle looks for known patterns, not entropy in arbitrary files.
 

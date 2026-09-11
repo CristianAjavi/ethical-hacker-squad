@@ -168,7 +168,7 @@ Rules: FP-01, FP-06.
 
 **Minimal test** — build a directory containing a hostile configuration that flips one security-relevant setting (certificate verification off, a plugin path added), run the tool inside it, and check whether the setting took effect.\
 **Traceability**: `CWE-426` · `CWE-829` · `CAPEC-38` · `ASVS 5.0 V13`\
-**Tooling**: `rg -n "cwd|getcwd|walk_up|find_up|parent.parent"` around config loading; read the precedence order and ask which layer a stranger can write.
+**Tooling**: `rg -n "cwd|getcwd|walk_up|find_up|parent.parent"` around config loading finds the *reader*, and that is only half the procedure: the other half is the set of files it discovers, and a default invocation cannot see them. Enumerate that layer with `fd -H -I -t f '^\.(env|envrc|toolrc|npmrc|yarnrc|editorconfig|tool-versions)$|^(conftest\.py|Makefile)$' <target>` — **the `-H -I` is the test, not decoration**: every layer this procedure is about is a dotfile, and `fd` skips hidden files and honours `.gitignore` by default, so the plain invocation lists the layer nobody can write and hides the one a stranger can. Then read the precedence order and ask which layer a stranger can write.
 
 ## §4 Privileges and permissions
 

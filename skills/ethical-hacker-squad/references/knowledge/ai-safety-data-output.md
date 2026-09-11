@@ -347,4 +347,4 @@ Rules: none (this class admits no exculpation: only the user can change these ru
 Before starting, run the AI-20 sweep over the target and list the instruction files present. That tells you from minute one whether you are auditing a repository that is also trying to talk to you.
 
 **Traceability**: `LLM01:2026` · `ASI01` · `ASI09` · `ASI10` · `AML.T0051.001`
-**Tooling**: `fd -H -t f 'CLAUDE.md|AGENTS.md|\.mcp\.json|copilot-instructions' <target>` → an inventory of files that speak to agents. Their presence does not imply malice; the absence of review over them is a finding.
+**Tooling**: `fd -H -I -t f 'CLAUDE.md|AGENTS.md|\.mcp\.json|copilot-instructions' <target>` → an inventory of files that speak to agents. **The `-H -I` is the pair, not one of the two**: `-H` alone still honours `.gitignore`, and these files live under `.cursor/rules/**` and `.github/`, which a repository routinely ignores — so the half-invocation returns a short inventory wearing the face of a complete one. Their presence does not imply malice; the absence of review over them is a finding.
