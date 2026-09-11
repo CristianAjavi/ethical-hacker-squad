@@ -83,6 +83,21 @@ EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 # gate that reports 2 in every CI run until somebody deletes it.
 LIVE_SCOPED='gate-governance-drift.sh gate-alert-live.sh'
 
+# Gates whose own measurement costs more than the ~30 s this repository allows on
+# the path that runs on every push - the figure gate-budget-ledger.sh cites in
+# its own header, and the reason its bite probe was timed before it was wired.
+# gate-case-counts.sh RUNS every battery it finds a citation for; that is the
+# whole point of it, a figure about a battery settled by running the battery,
+# and it is 301 s measured on this tree (411 s on a loaded run) against the 45 s
+# the `gates` job takes today. Its own battery carries a control over the real
+# tree and so costs the same 313 s, which is why both names are here. Left in
+# the serial set they would multiply the wall clock of every push by seven, and
+# a gate that makes every push slower is a gate somebody eventually deletes.
+# They are deferred here BY NAME with the cost, and they run in their own CI job
+# in parallel with this one - ci.yml, job `counts` - where they cost the person
+# who pushed no wall clock at all. EHS_SLOW_GATES=1 runs them locally.
+SLOW_SCOPED='gate-case-counts.sh gate-case-counts.selftest.sh'
+
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
 SELFTEST_PATTERN='*.selftest.sh'
@@ -187,6 +202,14 @@ while IFS= read -r g <&3; do
     n_deferred=$((n_deferred + 1))
     DEFERRED="$DEFERRED $name(needs-PR)"
     gate_info "$name needs PR context: it does not run here, issue-closure-gate.yml runs it"
+    continue
+  fi
+
+  # Gates that cost more than the push path allows.
+  if in_list "$name" "$SLOW_SCOPED" && [ -z "${EHS_SLOW_GATES:-}" ]; then
+    n_deferred=$((n_deferred + 1))
+    DEFERRED="$DEFERRED $name(costs-more-than-the-push-path)"
+    gate_info "$name runs every battery it cites (301 s measured): ci.yml job 'counts' runs it in parallel, not here. EHS_SLOW_GATES=1 ./scripts/gates/run-all.sh --selftests --only 'gate-case-counts*' runs it locally"
     continue
   fi
 
