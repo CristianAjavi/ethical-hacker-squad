@@ -162,6 +162,125 @@ rm -f "$D"/scripts/gates/gate-*.sh
 # 127 that follows would be counted as a measurement.
 check "a tree with no gates in it at all" 2 "$D" "$ROOT/$GATE"
 
+# --- 4b. the lanes are DISCOVERED, so a fourth one cannot arrive unseen -----
+# The document this gate polices was wrong in exactly this way once: it described
+# three lanes where the runner had four. A census that also knows three names
+# would not report a missing lane, it would report a WRONG number - the fourth
+# lane's gates counted as running on every push. These cases are the proof that
+# the lane list comes from the runner rather than from this module's memory.
+
+D="$TMP/lane-in-a-file"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
+import sys
+runall, lanefile = sys.argv[1], sys.argv[2]
+t = open(runall).read()
+assert "SLOW_SCOPED_FILE=" not in t, "the fixture already had the lane"
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
+open(runall, "w").write(t)
+open(lanefile, "w").write("# deferred for cost\ngate-agent-roster.sh\n")
+PY
+# The fixture's runner does not honour the lane it now declares, so `--list`
+# still names that gate. The census reading the file is exactly what makes the
+# two disagree: before the lane was read, this tree was green.
+check "a cost lane in a file the runner ignores" 2 "$D"
+
+# and the positive half: the names in that file are the ones the reader returns.
+LANES="$(cd "$D" && python3 - 2>&1 <<'PY'
+import os
+import sys
+sys.path.insert(0, "scripts/gates/lib")
+import doc_census as d
+gates = os.path.abspath("scripts/gates")
+names = d.lanes(open("scripts/gates/run-all.sh").read(), gates)
+print(" ".join(names.get("SLOW_SCOPED", ["(no such lane)"])) or "(the lane read empty)")
+PY
+)"
+if [ "$LANES" = "gate-agent-roster.sh" ]; then
+  printf 'ok       %-48s %s\n' "the file lane is read, by name" "$LANES"; pass=$((pass + 1))
+else
+  printf 'FAIL     %-48s %s\n' "the file lane is read, by name" "$LANES"; fail=$((fail + 1))
+fi
+
+# A cost lane defers the battery beside the gate - deferring only the gate moves
+# the cost into --selftests instead of removing it - so a battery in a lane is
+# not a lane pointing at nothing. Both halves are measured: the name that is
+# there, and the name that is not.
+D="$TMP/lane-with-a-battery"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
+import sys
+runall, lanefile = sys.argv[1], sys.argv[2]
+t = open(runall).read()
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
+open(runall, "w").write(t)
+open(lanefile, "w").write("gate-agent-tools.selftest.sh\n")
+PY
+# rc=1, not 2: the lane is legal and READ - a battery in a cost lane is not a
+# lane pointing at nothing - and what is now wrong is the sentence, which the
+# emitter can fix. Before the lanes were discovered this same tree answered 2.
+check "a cost lane that defers a battery" 1 "$D"
+( cd "$D" && EHS_REPO_ROOT="$D" python3 "$D/$LIB" --root "$D" --write ) >"$TMP/w2.txt" 2>&1 \
+  || die "--write answered rc=$? on a tree carrying a cost lane"
+check "and after --write, that tree is green" 0 "$D"
+# BOTH halves. The first draft of the cost clause overwrote the line that names
+# the live lane, and a check that only looked for the new clause called that
+# green: a sentence can gain a lane and lose one in the same edit.
+if grep -q 'deferred for cost by name in' "$D/docs/gate-requirements.md" \
+   && grep -q 'measures the live repository' "$D/docs/gate-requirements.md"; then
+  printf 'ok       %-48s %s\n' "the cost clause displaces no other lane" "both named"; pass=$((pass + 1))
+else
+  printf 'FAIL     %-48s %s\n' "the cost clause displaces no other lane" \
+    "cost=$(grep -c 'deferred for cost by name in' "$D/docs/gate-requirements.md") live=$(grep -c 'measures the live repository' "$D/docs/gate-requirements.md")"
+  fail=$((fail + 1))
+fi
+
+D="$TMP/lane-with-a-ghost-battery"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
+import sys
+runall, lanefile = sys.argv[1], sys.argv[2]
+t = open(runall).read()
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
+open(runall, "w").write(t)
+open(lanefile, "w").write("gate-nobody.selftest.sh\n")
+PY
+check "a cost lane that defers a battery nobody has" 2 "$D"
+
+D="$TMP/lane-unreadable"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" "$D/scripts/gates/data/slow-scoped.txt" <<'PY'
+import sys
+runall, lanefile = sys.argv[1], sys.argv[2]
+t = open(runall).read()
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED_FILE="$SELF_DIR/data/slow-scoped.txt"\nPR_SCOPED=\'', 1)
+open(runall, "w").write(t)
+open(lanefile, "w").write("gate-agent-roster.sh\n")
+PY
+chmod 000 "$D/scripts/gates/data/slow-scoped.txt"
+if [ "$(id -u)" = "0" ]; then
+  printf 'SKIPPED  %-48s %s\n' "a lane file that cannot be read" "running as root: no file is unreadable"
+else
+  check "a lane file that cannot be read" 2 "$D"
+fi
+chmod 644 "$D/scripts/gates/data/slow-scoped.txt" 2>/dev/null || true
+
+D="$TMP/lane-unknown-shape"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p).read()
+t = t.replace("PR_SCOPED='", 'SLOW_SCOPED="gate-agent-roster.sh"\nPR_SCOPED=\'', 1)
+open(p, "w").write(t)
+PY
+check "a lane written in a shape nobody reads" 2 "$D"
+
+D="$TMP/lane-unknown-name"; build "$D" || die "fixture"
+python3 - "$D/scripts/gates/run-all.sh" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p).read()
+t = t.replace("PR_SCOPED='", "WEEKEND_SCOPED='gate-agent-roster.sh'\nPR_SCOPED='", 1)
+open(p, "w").write(t)
+PY
+check "a lane this census has no name for" 2 "$D"
+
 # --- 5. the emitter and the checker must agree ------------------------------
 # Without this, --write could be writing something the gate would call wrong,
 # and every green above would only prove the two were frozen together.
