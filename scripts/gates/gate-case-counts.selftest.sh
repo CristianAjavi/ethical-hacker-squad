@@ -29,7 +29,13 @@
 #     land is an expectation that gets edited rather than believed.
 #     COST: this case runs every battery the docs cite. With no markers in the
 #     tree it is instant; with all of them it is ~200 s, measured 2026-09-11.
-#   * THREE MUTANTS, each with its prediction written above it before it ran.
+#   * A CONTROL over the mutants themselves: a copy of the gate must behave
+#     exactly like the gate in place. It did not, and nobody could see it:
+#     the copies ran with no shared library and printed nothing at all.
+#   * SEVEN MUTANTS, each with its prediction written above it before it ran.
+#     Six are judged on the exit code. The seventh cannot be: it makes the gate
+#     MISREAD a figure without changing how many citations are unmarked, so it
+#     is judged on the text, against an honest run of the same tree.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 #
@@ -49,6 +55,18 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-case-counts-XXXXXX")" || { echo "UNMEASURABLE no temp dir"; exit 2; }
 trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+
+# Every mutant below is a COPY of the gate, and the gate sources its shared
+# library from beside itself. Copied alone into $TMP the copy found no library:
+# measured on one fixture, the gate in place printed 8 lines and rc 1, and the
+# copy printed NOTHING at all - 9 `command not found` lines on stderr - and rc 1.
+# The exit code survives because it comes out of the python block, which is why
+# the rc-judged mutants still discriminated; a mutant judged on TEXT would have
+# been blind every time, and this battery would have reported that blindness as
+# a surviving mutant. The library goes beside the copies, and the control case
+# `a-copy-of-the-gate-behaves-the-same` holds it down.
+ln -s "$HERE/lib" "$TMP/lib" || {
+  echo "UNMEASURABLE the gate's library cannot be put beside its copies"; exit 2; }
 
 # --- helpers ---------------------------------------------------------------
 
@@ -261,6 +279,25 @@ printf 'Proved in the negative by 12 cases, including a control.\n' > "$d/docs/d
 data "$d" 1
 check unmarked-citation-at-the-ceiling-passes "$d" 0 "unmarked  docs/d.md:1"
 
+# --- a figure written with a thousands separator ---------------------------
+# This document's own corpus figure is `2,740 cases`. An expression anchored at
+# a word boundary reads that as `740 cases`, because a comma is a word
+# boundary: the gate then quotes back a number the document does not contain,
+# and quotes it SMALLER than the truth. The COUNT of unmarked citations is one
+# either way, so the case asserts the TEXT.
+d="$(new_tree thousands-separator)"
+printf 'The corpus is v1.2 (Java), 2,740 cases, fetched and never vendored.\n' > "$d/docs/d.md"
+data "$d" 1
+check a-citation-with-a-separator-is-one-number "$d" 0 '`2,740 cases`'
+
+# and the same figure bound to a battery: the marker is measured against 2740,
+# not against 740, or a separator would make a citation uncheckable for good.
+d="$(new_tree separator-marked)"
+battery "$d" big.selftest.sh 'Summary: 2740 ok, 0 failures'
+printf 'Proved by 2,740 cases <!-- cases: b/big.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+check a-marked-citation-with-a-separator "$d" 0 "cites 2740 and runs 2740"
+
 # --- two citations, one marker, one line -----------------------------------
 d="$(new_tree two-citations-one-marker)"
 battery "$d" one.selftest.sh 'Summary: 5 ok, 0 failures'
@@ -332,6 +369,28 @@ else
   fail=$((fail+1))
 fi
 
+# --- the control the mutants stand on ---------------------------------------
+# If a copy of the gate behaves differently from the gate in place for reasons
+# that have nothing to do with a mutation, a dead mutant says nothing about the
+# mutation. Same exit code AND same stdout, or every mutant below is theatre.
+d="$(new_tree copy-is-the-gate)"; scen_format "$d" '  10 PASS / 0 FAIL' 10
+cp "$GATE" "$TMP/copy-control.sh"
+out_here="$(bash "$GATE" --root "$d" --data "$d/data.json" --timeout 60 2>/dev/null)"
+rc_here=$?
+out_copy="$(bash "$TMP/copy-control.sh" --root "$d" --data "$d/data.json" --timeout 60 2>/dev/null)"
+rc_copy=$?
+if [ "$rc_here" = "$rc_copy" ] && [ "$out_here" = "$out_copy" ]; then
+  printf 'ok       %-46s rc=%s, output identical\n' a-copy-of-the-gate-behaves-the-same "$rc_copy"
+  pass=$((pass+1))
+else
+  printf 'FAILED   %-46s rc %s here vs %s copied, %s lines vs %s\n' \
+    a-copy-of-the-gate-behaves-the-same "$rc_here" "$rc_copy" \
+    "$(printf '%s' "$out_here" | wc -l | tr -d ' ')" \
+    "$(printf '%s' "$out_copy" | wc -l | tr -d ' ')"
+  printf '         every mutant below judges a copy that is not this gate.\n'
+  fail=$((fail+1))
+fi
+
 # --- MUTANTS ----------------------------------------------------------------
 # Each prediction was written here BEFORE the mutant was run. A mutant that
 # survives means this battery does not measure that branch, and the answer is a
@@ -380,6 +439,59 @@ mutant() {   # mutant <name> <python re.sub body> <tree dir> <honest rc>
   fi
 }
 
+# The same, for a mutation the EXIT CODE cannot see. Mutant F below makes the
+# gate misread a figure without changing how many citations are unmarked, so an
+# rc-judged mutant would survive by construction and be counted as coverage. It
+# is judged on what the gate PRINTS, and the honest gate is run first on the
+# same tree: if the honest gate prints the needle too, the mutant proves nothing
+# and that is a harness failure, not a pass.
+# OLD and NEW travel in the environment rather than inside a -c program, because
+# the text being substituted is a regular expression and quoting it twice is how
+# a mutation silently becomes a no-op.
+mutant_says() {  # mutant_says <name> <tree dir> <needle>; EHS_OLD/EHS_NEW in env
+  local name="$1" dir="$2" needle="$3"
+  local mut="$TMP/mutant-$name.sh" out honest rc
+  cp "$GATE" "$mut"
+  EHS_MUTANT="$mut" python3 - <<'PY'
+import os
+import pathlib
+p = pathlib.Path(os.environ["EHS_MUTANT"])
+t = p.read_text()
+old, new = os.environ["EHS_OLD"], os.environ["EHS_NEW"]
+assert t.count(old) == 1, "the text to mutate appears %d time(s), not once" % t.count(old)
+p.write_text(t.replace(old, new))
+PY
+  rc=$?
+  if [ "$rc" -ne 0 ] || cmp -s "$GATE" "$mut"; then
+    printf 'HARNESS  %-46s the mutation did not apply\n' "$name"; fail=$((fail+1)); return
+  fi
+  honest="$(bash "$GATE" --root "$dir" --data "$dir/data.json" --timeout 60 2>&1)"
+  if printf '%s' "$honest" | grep -q -- "$needle"; then
+    printf 'HARNESS  %-46s the honest gate prints it too: this proves nothing\n' "$name"
+    fail=$((fail+1)); return
+  fi
+  out="$(bash "$mut" --root "$dir" --data "$dir/data.json" --timeout 60 2>&1)"
+  if printf '%s' "$out" | grep -q -- "$needle"; then
+    printf 'ok       %-46s killed (it prints %s)\n' "$name" "$needle"; pass=$((pass+1))
+  else
+    printf 'FAILED   %-46s SURVIVED: it never printed %s\n' "$name" "$needle"
+    printf '         a surviving mutant means this battery does not measure that branch.\n'
+    fail=$((fail+1))
+  fi
+}
+
+# The literal-substitution twin of SUB. The text being replaced here is a
+# regular expression; quoting one twice, once for the shell and once for
+# re.sub, is how a mutation silently becomes a no-op, so it travels in the
+# environment instead and the count is asserted.
+SUBENV='
+import os, pathlib
+p = pathlib.Path(os.environ["EHS_MUTANT"])
+t = p.read_text()
+old, new = os.environ["EHS_OLD"], os.environ["EHS_NEW"]
+assert t.count(old) == 1, "the text to mutate appears %d time(s), not once" % t.count(old)
+p.write_text(t.replace(old, new))
+'
 SUB='
 import os, re, pathlib
 p = pathlib.Path(os.environ["EHS_MUTANT"])
@@ -412,6 +524,30 @@ printf 'Proved in the negative by 5 cases <!-- cases: b/s.selftest.sh -->.\n' > 
 data "$d" 0
 mutant unreadable-skip-shape-passed-over \
   "OLD=r'if puzzling:'; NEW='if False:'; $SUB" "$d" 2
+
+# F guards the READING of a figure, which no exit code can see: the gate counts
+# one unmarked citation whether it read 2,740 or 740, so F is judged on the text.
+d="$(new_tree mutant-f)"
+printf 'The corpus is v1.2 (Java), 2,740 cases, fetched and never vendored.\n' > "$d/docs/d.md"
+data "$d" 1
+EHS_OLD='CITATION = re.compile(r"(?<![\d.,])(\d[\d,]*)\s+cases?\b")'
+EHS_NEW='CITATION = re.compile(r"\b(\d+)\s+cases?\b")'
+export EHS_OLD EHS_NEW
+mutant_says citation-anchored-at-a-word-boundary "$d" '`740 cases`'
+unset EHS_OLD EHS_NEW
+
+
+# G is F's other half: the same misreading on the MARKED path, where the figure
+# is compared instead of merely quoted, so this one the exit code can see.
+d="$(new_tree mutant-g)"
+battery "$d" big.selftest.sh 'Summary: 2740 ok, 0 failures'
+printf 'Proved by 2,740 cases <!-- cases: b/big.selftest.sh -->.\n' > "$d/docs/d.md"
+data "$d" 0
+EHS_OLD='INTEGER = re.compile(r"(?<![\d.,])\d[\d,]*")'
+EHS_NEW='INTEGER = re.compile(r"\d+")'
+export EHS_OLD EHS_NEW
+mutant marked-figure-read-from-the-tail "$SUBENV" "$d" 0
+unset EHS_OLD EHS_NEW
 
 echo
 echo "Summary: $pass ok, $fail failures"

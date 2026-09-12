@@ -196,10 +196,21 @@ def emit(kind, text):
     print("%s\t%s" % (kind, text))
 
 # A citation: a figure in prose describing the size of something, `7 case(s)`.
-CITATION = re.compile(r"\b(\d+)\s+cases?\b")
+# The WHOLE number, separators included, and never starting inside one.
+# Anchored at a word boundary - `\b(\d+)` - this read `2,740 cases` as
+# `740 cases`, because a comma is a word boundary: the gate quoted back a
+# figure that appears nowhere in the document, and quoted it SMALLER than the
+# truth. A citation carrying a separator could not have been bound to a
+# battery either: the marker would have been measured against 740.
+CITATION = re.compile(r"(?<![\d.,])(\d[\d,]*)\s+cases?\b")
 # The marker that binds a citation to the battery it is about.
 MARKER = re.compile(r"<!--\s*cases:\s*(\S+?)\s*-->")
-INTEGER = re.compile(r"\d+")
+# Whole numbers here for the same reason as CITATION above: the figure a marker
+# governs is the last one before it on the line, and `\d+` made that `740` on a
+# line saying `2,740 cases`. A marked figure read wrong is worse than an
+# unmarked one: it is COMPARED, so the gate would have called a true citation
+# false.
+INTEGER = re.compile(r"(?<![\d.,])\d[\d,]*")
 # Colour never reaches a pipe here (common.sh checks for a TTY), but a battery
 # that colours unconditionally would hide its own total behind escape bytes.
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -349,7 +360,10 @@ for doc in docs:
         continue
 
     for lineno, line in enumerate(lines, 1):
-        cits = [(m.start(), int(m.group(1)), m.group(0)) for m in CITATION.finditer(line)]
+        # `2,740` is ONE number: the separators come out before the figure is
+        # compared with what the battery printed.
+        cits = [(m.start(), int(m.group(1).replace(",", "")), m.group(0))
+                for m in CITATION.finditer(line)]
         marks = [(m.start(), m.group(1)) for m in MARKER.finditer(line)]
         if not cits and not marks:
             continue
@@ -374,7 +388,7 @@ for doc in docs:
                              "its line: there is nothing to compare" % (doc, lineno, rel))
                 unmeasurable = True
                 continue
-            cited = int(before[-1])
+            cited = int(before[-1].replace(",", ""))
             result = measure(rel)
             if result[0] == "err":
                 emit("WARN", "%s:%d  %s" % (doc, lineno, result[1]))

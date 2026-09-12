@@ -1547,3 +1547,87 @@ that sells the three-state verdict itself as distinctive is now out of date.
 right findings; whether either product would score better than this one on anything. Reading a tree
 is not running a product, and neither was re-run — `benchmarked: false` still holds for both in
 `docs/competitive-baseline.json`.
+
+## Fourth reading, 2026-09-11 — the 253 commits read one by one, and the mover nobody had read
+
+The third reading measured how far the four movers had travelled. This one reads what they did,
+commit by commit, between the pin `README.md` quotes and each product's tip. Method: a bare
+`--filter=blob:none` clone per subject, `git fetch` of the public pin, then `git log --reverse
+--format='%ad %s'` and `git log --name-only` over `<pin>..HEAD`. Nothing from a rival tree was
+executed, and no product was run — this is reading, not benchmarking.
+
+`scripts/gh/competitive-freshness.sh` over the merged chain tree first: **rc 1**, and its finding is
+about this repository's bookkeeping rather than about anybody's product — `3 of its subjects have
+moved past what the baseline acknowledges` and `13 of them have NOT been triaged`.
+
+| subject | pin → tip | commits | files | lines |
+|---|---|---|---|---|
+| `Tencent/AI-Infra-Guard` | `4908db1` → `036c39b` | 65 | 72 | +1,958 / −201 |
+| `google/mantis` | `5f76be0` → `dd5d793` | 7 | 80 | +28,792 / −1,468 |
+| `maxgfr/ultrasec` | `f28d59f` → `4b9db6f` | 42 | 214 | +19,237 / −6,588 |
+| `braydos-h/BreachPilot` | `120c45b` → `371d067` | 139 | 551 | +60,157 / −11,428 |
+
+**`Tencent/AI-Infra-Guard` spent the quarter on breadth and on the README.** By path, the 65 commits
+touch `readme/` 24 times, `mcp-scan/` 18, `data/` 13, `common/` 11, `services/` 7 and `skill-scan/`
+6. The work is model fingerprints (`Gemini`, `Gemma`, `GLM`), CVE data corrections, MCP SDK 2.x
+compatibility, and — on 2026-09-08, `c533f62` — `CONTRIBUTING`, a code of conduct and issue and PR
+templates, which this repository has carried since iteration 3. Nothing in it adds an axis the
+comparison does not already have.
+
+**`google/mantis` moved AGAIN after the third reading of the same day**, which is the sort of thing a
+freshness gate exists to notice: the baseline acknowledged `d13c93f`, and `d13c93f..dd5d793` is one
+commit, 51 files, +14,625 / −3,014 — `Near complete rewrite of ADK reference harness`. Every path in
+all 7 commits is under `reference/`. It is a harness rewrite, not a new evaluation axis: the tier
+ladder, the per-stage floor and the dedupe skill are where the third reading left them.
+
+**`maxgfr/ultrasec` shipped 14 releases in nine days** and stays the closest product by construction.
+
+**`braydos-h/BreachPilot` put its 139 commits into a product surface** — a Playwright browser
+toolchain, an attack-graph canvas, an operations page, campaign orchestration — not into evidence
+discipline.
+
+### Three of the four landed "not measured is not a pass" within three weeks
+
+This is the reading that matters, and it sharpens the previous section rather than softening it:
+
+```
+Tencent/AI-Infra-Guard  39692dd  2026-08-31  mark a scan whose output was empty as possibly-incomplete
+braydos-h/BreachPilot   e10c9e8  2026-09-04  Mark queued module outputs as inconclusive
+maxgfr/ultrasec         327c9e0  2026-09-07  retain partial scanner evidence and report all incomplete gates
+```
+
+Three independent products, three weeks, one idea: a run that produced nothing is not a run that
+found nothing. That is the third state this repository has had as a rc contract since iteration 2,
+and it is now table stakes — exactly as the previous section concluded, now with dates and commits
+instead of an impression.
+
+**What none of them did in those 253 commits is prove that the control which reports the third state
+can go red.** No commit in any of the four touches mutation of a control, a negative proof, or a
+battery that must fail when the thing it watches is broken. That remains the differential, and it is
+the narrow one.
+
+### The fifth mover, found by the gate and read here
+
+`competitive-freshness.sh` also reported `netresearch/security-audit-skill` as `MOVED` with
+`nobody has recorded reading this move`. Read: `c4aa21b` → `296abf1` is 4 commits, 4 files,
++4 / −4 — two release bumps to v2.11.3 and two pre-commit-hook bumps to
+`netresearch/skill-repo-skill` v2.1.0. It changes no cell of the comparison.
+
+Searching its content for the vocabulary of a third verdict — `needs-human`, `inconclusive`,
+`could not measure`, `unmeasurable` — and for the vocabulary of mutation, with a control so the
+zeros mean something:
+
+```
+netresearch@296abf1        0 hits over 0 files, third verdict     (100 files in the tree)
+netresearch@296abf1        0 hits over 0 files, mutation
+this repository            1,341 hits over 238 files, third verdict   (1,287 files)
+this repository            138 hits over 33 files, mutation
+```
+
+The last two lines are why the first two are a reading and not a blind instrument.
+
+**What was NOT measured.** Nothing was run. No product was benchmarked, no finding was reproduced,
+and `benchmarked: false` still holds for `maxgfr/ultrasec`, `braydos-h/BreachPilot` and
+`netresearch/security-audit-skill` in `docs/competitive-baseline.json`. A commit subject is the
+author's claim about the commit; what is measured above is how many there were, which files they
+touched and how large they were.
