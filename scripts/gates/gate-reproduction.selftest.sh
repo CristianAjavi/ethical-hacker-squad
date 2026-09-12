@@ -189,21 +189,70 @@ check "a floor nobody can offer" 2 "$D"
 # trusted: the same few lines of Python run in both environments and only the
 # sandboxed one may fail. On a machine with no sandbox-exec the case says so and
 # is not counted as a pass, because an absent sandbox is not a proved one.
-iso="$(python3 "$HERE/../bench/selftest_isolation.py" 2>&1)"
-if printf '%s' "$iso" | grep -q '"skip"'; then
-  printf 'skip     %-46s %s\n' "the sandbox denies the network" "$iso"
-elif printf '%s' "$iso" | python3 -c "
+#
+# THE EXPERIMENT HAS A CONTROL, AND A RUN WITHOUT IT IS NOT A RESULT. The
+# unsandboxed side is that control: it has to reach the network, or the sandboxed
+# side failing to reach it proves nothing at all. Measured here on 2026-09-11,
+# inside a full `run-all.sh --selftests` on an otherwise green tree, this case
+# printed FAIL with {"subprocess": false, "seatbelt": false} — neither side got
+# out — and two runs of the same battery on the same tree minutes later printed
+# ok. A red that means `I could not tell` is the failure this repository refuses
+# everywhere else, and it was living here. The verdict is now decided by one
+# function, so the three answers can be read back with a fixed input.
+isolation_verdict() { # isolation_verdict <json or anything the probe printed>
+  printf '%s' "$1" | python3 -c '
 import json, sys
+raw = sys.stdin.read()
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(raw)
 except ValueError:
-    sys.exit(1)
-sys.exit(0 if (d.get('subprocess') is True and d.get('seatbelt') is False) else 1)
-" 2>/dev/null; then
-  pass=$((pass + 1)); printf 'ok       %-46s %s\n' "the sandbox denies the network" "unsandboxed opens it, sandboxed does not"
-else
-  fail=$((fail + 1)); printf 'FAIL     %-46s %s\n' "the sandbox denies the network" "$iso"
-fi
+    print("skip the probe printed something that is not JSON")
+    raise SystemExit(0)
+if not isinstance(d, dict):
+    print("skip the probe printed JSON that is not an object")
+    raise SystemExit(0)
+if d.get("skip"):
+    print("skip %s" % (d.get("skip") or "the probe declined"))
+    raise SystemExit(0)
+sub, seat = d.get("subprocess"), d.get("seatbelt")
+if sub is not True:
+    print("skip the control side did not reach the network here, so the sandbox proves nothing")
+elif seat is not False:
+    print("fail the sandbox did NOT deny the network")
+else:
+    print("ok unsandboxed opens it, sandboxed does not")
+'
+}
+
+iso_case() { # iso_case <label> <probe output>
+  local label="$1" verdict why
+  verdict="$(isolation_verdict "$2")"
+  why="${verdict#* }"; verdict="${verdict%% *}"
+  case "$verdict" in
+    ok)   pass=$((pass + 1)); printf 'ok       %-46s %s\n' "$label" "$why" ;;
+    fail) fail=$((fail + 1)); printf 'FAIL     %-46s %s\n' "$label" "$why" ;;
+    *)    printf 'skip     %-46s %s\n' "$label" "$why" ;;
+  esac
+}
+
+iso_case "the sandbox denies the network" \
+  "$(python3 "$HERE/../bench/selftest_isolation.py" 2>&1)"
+
+# The three answers, read back from a fixed input so the decision itself is
+# proved rather than trusted: without these, the live case above would be the
+# only evidence, and a live case that cannot run leaves the rule untested.
+iso_expect() { # iso_expect <label> <expected word> <probe output>
+  local got
+  got="$(isolation_verdict "$3")"; got="${got%% *}"
+  if [ "$got" = "$2" ]; then
+    pass=$((pass + 1)); printf 'ok       %-46s %s\n' "$1" "$got"
+  else
+    fail=$((fail + 1)); printf 'FAIL     %-46s %s\n' "$1" "got $got, expected $2"
+  fi
+}
+iso_expect "neither side reached the network: not a failure" skip '{"subprocess": false, "seatbelt": false}'
+iso_expect "the sandbox stopped denying: a failure"          fail '{"subprocess": true, "seatbelt": true}'
+iso_expect "a probe that printed nothing readable"           skip 'Traceback (most recent call last):'
 
 # ---------------------------------------------------------------------------
 # 8. The five probes added for `rag-agent` and `analytics-service`, each proved
