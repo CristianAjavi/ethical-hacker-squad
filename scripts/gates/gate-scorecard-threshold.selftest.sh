@@ -14,24 +14,32 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; 
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-scorecard-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+
+# shellcheck source=scripts/gates/lib/fixture-tree.sh
+. "$HERE/lib/fixture-tree.sh" || { echo "UNMEASURABLE lib/fixture-tree.sh is missing"; exit 2; }
+fixture_init "$SRC" "$TMP" || exit 2
 F="scripts/gates/fixtures/scorecard/good.json"
 
 # case <name> <expected rc> <needle> <mutation>   (mutation sees EHS_WORK)
 case_run() {
-  local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
-  rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  local name="$1" want="$2" needle="$3" mutation="$4" work="$FIXTURE_WORK"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); fixture_reset >/dev/null 2>&1 || true; return
   fi
   local out rc results="$work/$F"
   [ -f "$results" ] || results="$work/.absent.json"
   out="$(env -u SCORECARD_RESULTS EHS_REPO_ROOT="$work" bash "$GATE" --results "$results" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-40s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -6; fail=$((fail+1))
+  fi
+  # The tree the next case is about to receive is only trustworthy if this one
+  # gave it back intact, so the proof runs here and not at the end of the file.
+  local why
+  if ! why="$(fixture_reset)"; then
+    printf 'HARNESS  %-40s %s\n' "$name" "$why"; fail=$((fail+1))
   fi
 }
 
@@ -150,8 +158,13 @@ case_run thresholds-data-unusable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/scorecard-thresholds.json").write_text("{")'
 
+# FOUR CASES THAT HOLD THE REUSED TREE. They live in the library and not here
+# because nine batteries have this shape, and a control written nine times is
+# nine places for one of them to fall behind unnoticed.
+fixture_controls "$SRC"
+
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
   echo "Result: OK. A gated check below its minimum fails, an inconclusive or absent check is"
   echo "        could-not-measure rather than a pass, the aggregate is judged by movement, and"

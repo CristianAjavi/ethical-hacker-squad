@@ -45,7 +45,7 @@ check() {  # check <name> <expected substring> <expect-nonzero:yes|no> <dir>
   local name="$1" needle="$2" nonzero="$3" dir="$4" out rc
   out="$(EHS_REPO_ROOT="$dir" bash "$GATE" 2>&1)"; rc=$?
   local ok=0
-  printf '%s' "$out" | grep -q -- "$needle" || ok=1
+  grep -q -- "$needle" <<<"$out" || ok=1
   if [ "$nonzero" = yes ] && [ "$rc" -eq 0 ]; then ok=1; fi
   if [ "$nonzero" = no ] && [ "$rc" -eq 1 ]; then ok=1; fi
   if [ "$ok" -eq 0 ]; then
@@ -75,7 +75,7 @@ if [ "$rc" -eq 2 ]; then printf 'ok       %-34s rc=2\n' no-workflows-is-unmeasur
 else printf 'FAILED   %-34s rc=%s (wanted 2)\n' no-workflows-is-unmeasurable "$rc"; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The tool-free half of this gate fails when it must fail."
 exit 0

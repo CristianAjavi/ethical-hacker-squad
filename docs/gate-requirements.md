@@ -10,47 +10,199 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test, `gate-plugin-version.sh` + self-test |
-| `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test |
+| `G1` manifest and structure | running | `gate-plugin-integrity.sh` + self-test (22 cases), `gate-plugin-version.sh` + self-test (13 cases) |
+| `G1b` audit-only posture | running | `gate-agent-tools.sh` + self-test (29 cases) |
 | `G2` internal links | running | `gate-plugin-integrity.sh` (link resolution) · `gate-corpus-contract.sh` (routing to pack sections, and every pack file and section reachable from some route) |
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
-| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test |
+| `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (30 cases) |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
-| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test |
-| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test |
-| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (PR context) |
-| `G8` closure guard | running | `gate-issue-closure.sh` + self-test |
-| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test |
-| triage rules | running | `gate-triage-rules.sh` + self-test |
+| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (13 cases) |
+| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (12 cases) |
+| `G7` protected paths | running | `gate-protected-paths.sh` + self-test (35 cases), PR context |
+| `G8` closure guard | running | `gate-issue-closure.sh` + self-test (22 cases) |
+| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (20 cases) |
+| triage rules | running | `gate-triage-rules.sh` + self-test (20 cases) |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
-| findings artifact | running | `gate-findings-artifact.sh` + self-test |
-| bench integrity | running | `gate-bench-integrity.sh` + self-test |
-| bench index | running | `gate-bench-index.sh` + self-test |
+| findings artifact | running | `gate-findings-artifact.sh` + self-test (16 cases) |
+| bench integrity | running | `gate-bench-integrity.sh` + self-test (27 cases) |
+| bench index | running | `gate-bench-index.sh` + self-test (5 cases) |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
 | stage-eval separability floor | running | `gate-stage-eval-floor.sh` + inline self-test (8 cases) |
-| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 fixtures) |
+| routing stage dataset | running | `gate-routing-stage.sh` + inline self-test (6 cases) |
 | coverage gap claims | running | `gate-coverage-gap-claims.sh` + inline self-test (5 cases) |
-| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) |
-| served-tree delta | running | `gate-tree-delta.sh` + self-test |
-| verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test |
-| promotion invariant | running | `gate-promotion-safepath.sh` + self-test |
-| negative evidence | running | `gate-negative-evidence.sh` |
-| benign control | running | `gate-benign-control.sh` + self-test |
-| report contract | running | `gate-report-contract.sh` |
-| workflow hardening | running | `gate-workflow-hardening.sh`, `gate-actions-lint.sh` + self-test |
-| label taxonomy | running | `gate-labels-taxonomy.sh` |
-| contract inventory | running | `gate-contract-inventory.sh` + self-test |
-| negative proof | running | `gate-negative-proof.sh` + self-test |
+| reproduction cross-check | running | `gate-reproduction.sh` + self-test (33 cases) + --self-test (2 cases) |
+| served-tree delta | running | `gate-tree-delta.sh` + self-test (7 cases) |
+| verdict vocabulary | running | `gate-verdict-vocabulary.sh` + self-test (12 cases) |
+| promotion invariant | running | `gate-promotion-safepath.sh` + inline self-test (14 cases) |
+| negative evidence | running | `gate-negative-evidence.sh` + self-test (4 cases) + --self-test (10 cases) |
+| benign control | running | `gate-benign-control.sh` + self-test (23 cases) |
+| report contract | running | `gate-report-contract.sh` + inline self-test (17 cases) |
+| workflow hardening | running | `gate-workflow-hardening.sh` + self-test (22 cases), `gate-actions-lint.sh` + self-test (3 cases) |
+| label taxonomy | running | `gate-labels-taxonomy.sh` + self-test (12 cases) |
+| contract inventory | running | `gate-contract-inventory.sh` + inline self-test (7 cases) |
+| negative proof | running | `gate-negative-proof.sh` + inline self-test (9 cases) |
 | negative proof, its SIZE | running | `gate-negative-proof-census.sh` + self-test (6 cases) |
 | budgets, and the figure behind each | running | `gate-budget-ledger.sh` + self-test (10 cases) |
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
 | the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
-| governance contract | running | `gate-governance-contract.sh` + self-test |
-| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
-| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
-| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test |
+| governance contract | running | `gate-governance-contract.sh` + inline self-test (7 cases) |
+| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (18 cases) |
+| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (13 cases) |
+| an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
+| governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
+| every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
+| the case count this document promises | running | `gate-declared-case-counts.sh` + `lib/declared_case_counts.py` + self-test (51 cases) |
 
 Run everything locally with `bash scripts/gates/run-all.sh`. `gate-actions-lint.sh` reports **unmeasurable** without `shellcheck` installed, which is a `2` and not a pass — install it before trusting a local green.
+
+## A job that installs its own Python measures a different machine
+
+`gate-workflow-hardening.sh` gained a fifth rule, `setup-python-bare`: **a job
+that installs its own Python with `actions/setup-python` and never installs a
+package.**
+
+The runner image ships a `python3` carrying distribution packages, PyYAML among
+them. `setup-python` puts a CLEAN interpreter first on `PATH`, so everything
+that relied on those packages breaks — and it breaks several steps later,
+looking like a defect in the code under measurement. Measured cost when
+`battery-workers-ab.yml` carried one for a single commit: **one whole CI run,
+three red batteries, one cause, none of them in the code being judged.**
+
+**The rule was proved reachable against the file that motivated it**, not
+against a fixture alone. Run over `f26a3b5^:.github/workflows/battery-workers-ab.yml`
+it reports `setup-python-bare` at line 61 — the exact `uses:` line that was
+removed. Run over the same file today it is silent, comment and all.
+
+Two of the three fixtures must NOT fire, and each is a way the rule could have
+been written wrong:
+
+| fixture | what it holds down |
+|---|---|
+| `good/04-setup-python-with-install.yml` | setup-python is not forbidden. A job that brings its own interpreter and then installs what it needs built that machine on purpose. The `pip install` lives inside a `run: \|` block the scanner steps over for every other rule; this one has to read it anyway. |
+| `good/05-setup-python-named-in-a-comment.yml` | the prose explaining why a workflow does NOT carry setup-python has to name the action. A rule matching the bare string would put that file in permanent red, and the next person would delete the sentence rather than the step. **Where the name sits is the whole test**: the scanner drops whole-line comments and `run: |` bodies before any rule sees them, so this fixture names the action in a step `name:` and in a trailing comment too - lines the rule actually reads. |
+
+**What it cannot check, stated in the scanner's own limitations:** *which*
+packages get installed. Finding that out would mean running the job to see what
+it imports, so a `pip install` of the wrong thing satisfies the rule. That is
+the honest edge of a lexical scanner, and it still catches the shape that
+actually cost a run.
+
+**Three green fixtures do not prove a rule, and the bank said so.** Each rule
+was broken in the way it could plausibly have been written wrong, and the
+self-test had to go red *by the fixture that names it* - a bank reading only the
+exit code signs a mutant that some other case killed.
+
+| mutant | the rule, written wrong | died by |
+|---|---|---|
+| does not look at whether anything is installed | the collection of `pip install` never runs | `good/04` |
+| matches the bare string, not the `uses:` | the check is hoisted out of the `uses:` block | `good/05` |
+| never sees the step | the verdict never fires | `bad/15` |
+
+**Two of the three survived their first version, and both survivals were defects
+in the bank, not in the gate.** The mutant meant to match a bare string kept the
+check *inside* `if (u ~ /^uses:/)`, so it could not do the thing it was named
+for. And `good/05` first carried the action name only in whole-line comments and
+inside a `run: |` - both dropped by the scanner several rules earlier, so the
+name sat where nothing reads it. A fixture holding a rule down by a place the
+rule never looks holds nothing, and a green self-test says so either way.
+
+**And the self-test now says how many cases it ran.** It executed 22 fixtures
+and printed no count, which is why it was one of the four self-tests
+`gate-declared-case-counts.sh` could not compare against anything — the row
+carried no number because there was no number to read. It prints
+`22 passed, 0 failed` now, and the row above carries the 22.
+
+## An assertion may not hang on a pipe that can die
+
+Thirty-seven assertions across twenty-five batteries were written this way:
+
+```sh
+printf '%s' "$out" | grep -q -- "$needle"
+```
+
+and the shape cannot tell **"the gate never said it"** from **"my grep died"**.
+`grep -q` exits 0 the instant it matches, so a MATCH makes the writer see EPIPE
+and a NON-match makes grep read to the end with no EPIPE. Run 34137809334
+produced both at once:
+
+```
+scripts/gates/gate-agent-tools.selftest.sh: line 78: printf: write error: Broken pipe
+  FAIL  a second agent declaring write authority   rc=1 but never said: at most 1 may
+        |   [FAIL] 2 agents declare write authority; at most 1 may. …
+```
+
+The case reported a measured absence while printing, two lines below, the very
+sentence it claimed was missing. **The cause of that grep's death was never
+established** — one broken pipe in the whole run, no `cannot allocate`, no
+`Killed`, no `No space left`. That is itself the finding: the idiom destroys
+the evidence it would need to diagnose itself, so it can be removed but not
+investigated.
+
+The fix is a here-string — `grep -q -- "$needle" <<<"$out"` — the same grep,
+the same flags, the same pattern, with no pipe for a writer to die in.
+
+**A substring test was the obvious fix and would have been wrong.** An
+equivalence prover run over 27 real needle-and-haystack pairs found 5 where
+`grep -q` and `[[ $out == *"$needle"* ]]` disagree, because grep without `-F`
+matches a REGEX: `[FAIL]` is a character class, and `a*b` and `a.b` both match
+`aXb`. Replacing the idiom that way would have silently changed 30 assertions.
+
+`gate-assertion-pipes.sh` cables the rule and its battery holds down three
+things learned from the gate's own first red, plus four more from the hole the
+gate could not see from inside itself:
+
+- **the population is asked for, not globbed.** The first version found 37
+  batteries where `run-batteries.sh --list` has 35; the two extra were
+  *fixtures*, which contain on purpose whatever shape the fixture exercises.
+- **the runner is told where to look.** It defaults to `scripts` relative to
+  the cwd and, run from elsewhere, lists nothing while still exiting 0 with its
+  complaint on stderr — a gate that asked without saying where would read an
+  empty list and blame the tree.
+- **three cases must not fire.** `x || grep -q y` is not a pipe, and a pipe
+  into `| head` or `| sed` only DISPLAYS: a truncated display line changes no
+  verdict. Without those cases a gate that reddened on every tree would pass
+  its own battery.
+
+- **a gate that self-tests inline is read too.** For three versions the
+  population was exactly what `run-batteries.sh --list` names, and a gate
+  invoked as `gate-x.sh --self-test` is not a battery, so its code was never
+  opened. The gate reported a clean zero over the files it could see, which is
+  the most convincing shape a blind spot can take. Asked from outside, the
+  shadow held **28 sites across 13 files** — three of them inside a gate that
+  had just produced a red nobody could reproduce. The population is now the
+  runner's list **plus** every other `*.sh` under `scripts/`, with the same
+  `find` the runner uses; the runner is still asked, and a battery missing from
+  the wider glob is exit `2`, not a smaller number printed with confidence.
+- **a line that is only a comment asserts nothing.** This gate quotes the shape
+  it forbids twice in its own header. Without that rule the widened population
+  would put it in permanent red over its own docstring, and the fix for that
+  would have been an exemption list — which opens once and stays open.
+- **sites, not lines.** The first widened version displayed with `grep -E` and
+  counted with `grep -coE`; `-c` counts *lines* and `-o` does not stop it, so a
+  line carrying two sites read as one. It reported 27 where there were 28, and
+  the gap was chased between two scripts for a whole iteration before either
+  number was believed. Display and count are now one `awk` pass over one
+  pattern.
+- **the wide list must contain the narrow one.** The runner remains the
+  authority on what a battery is; asking it is what proves the glob widened the
+  population instead of trading one blind spot for another.
+
+Eight mutants were run against that battery — the `[^|]` guard deleted, the
+population re-globbed, the empty population passed as clean, the pattern widened
+to any pipe, the population narrowed back to the runner's list, the comment skip
+removed, the counter switched back to lines, and the glob's prune widened until
+it lost batteries — and each died in the case named for it. The count mutant was
+not invented afterwards: the case caught that defect on its first run.
+
+**What has no case of its own.** Deleting the wide-versus-narrow reconciliation
+leaves the battery green; only the mutant that widens the prune proves the guard
+fires at all. Written down rather than dressed up.
+
+**What it does not close.** A grep killed by a signal is still
+indistinguishable from "not found" once it survives the pipe removal, because
+separating them changes every battery's tally line and the count gate that
+reads it. That is a designed change, tracked separately; this gate closes the
+mechanism that was actually observed and says so in its own header.
 
 ## Exit-code semantics — applies to every gate
 
@@ -63,6 +215,230 @@ Three outcomes, three exit codes. A gate that cannot tell "I measured and it is 
 | `2` | Could not measure (tool missing, network unavailable, file unreadable, parse error) | fail, reported as **unmeasured**, never as pass |
 
 Every gate must be **proved in the negative**: a fixture that makes it exit `1`, and a condition that makes it exit `2`, both exercised in CI. A gate never observed failing is a gate nobody knows works.
+
+### The extension list was the next hand-written list
+
+Sweeping every file outside the document list closed the hole that a
+hand-written `ALSO` had left open, and opened the same hole one notch smaller
+in the same commit: the sweep read seven extensions and stopped at two million
+bytes. A count in a `.rst`, a `.toml`, a file with no suffix at all, or past
+byte two million answered to nothing, and the silence read exactly like a file
+that holds none. Seventy-four files in this repository were in that state.
+
+An extension list and a size cap are the same decision written twice — stop
+looking — as a constant nobody revisits. So the sweep now reads **bytes**, all
+of them, in one-megabyte pieces that carry the trailing partial line forward.
+Encoding stops mattering, because it never asks a file to decode. Size stops
+mattering, because memory is bounded by the longest line rather than the file.
+The two patterns it matches are compiled from the same source strings as the
+ones the documents are read with, rather than written out a second time: a
+hand-written copy would drift, and drift is what this gate is for.
+
+It is not a trade of speed for reach. Measured on 2026-09-07, median of seven:
+the old sweep read 1,151 files in **0.13 s**; the new one reads **1,224 in
+0.086 s** as a clean clone sees it, because a bytes match never decodes UTF-8
+and never builds a list of lines. This working copy also carries a 270 MB
+symlink into `node_modules` that `.gitignore` keeps out of the repository, and
+reading it takes the local figure to 0.37 s — worth naming, because it is the
+one number here a clone will not reproduce.
+
+That leaves exactly one door to rc 2: a file that cannot be OPENED. It is the
+narrowest the door has ever been, and a door nobody opens is a door nobody
+knows is there, so a case shuts one and demands rc 2 — and refuses to run,
+rather than passing, in a process that can read a `chmod 000` file.
+
+Six cases, each with a named killer: the count that is not UTF-8 (dies when
+`scan` refuses a blob it cannot decode), the file with no extension (dies when
+a suffix list comes back), the count past two megabytes (dies when a cap comes
+back), and two chunk boundaries — one with no newline anywhere before the
+declaration, one with the last newline just before it — because there are two
+ways to drop a partial line and only one mutant can be applied at a time. The
+sixth is the unopenable file.
+
+On the real tree, planted and removed: a count for a real gate in a file with
+no extension turned the gate red, so did one past the two-megabyte mark, so did
+one inside a file that is not valid UTF-8, and the same count for a gate that
+does not exist left it green. The unopenable file put it at 2 — and there the
+real tree cannot isolate the cause, because a file no process can read also
+blinds ten other rows whose self-tests walk this repository. The isolated
+evidence for that one is the toy case and the mutant that dies in it.
+
+### The list of documents was written by hand
+
+Reading `CHANGELOG.md` as well as the table closed two unchecked figures, and
+left a hole in the same sentence that closed them: `ALSO` is a hand-written
+list, so nothing said a **third** file that declares a case count would ever be
+found. A rule that depends on somebody remembering to extend it is the same
+rule that let the changelog go unread for as long as it did.
+
+The gate now sweeps every other file — see the section above for what "every"
+came to mean, and what it costs — and reports any count it finds there **for a
+gate that exists**. That last clause is what
+makes the rule survivable without an exception list: a count for a gate that is
+not on disk is a fixture, the mutant bank keeps one, and the rule never sees
+it. There is no allow-list to go stale, and no file that has to be remembered.
+
+A file the sweep cannot open leaves by the door marked COULD NOT MEASURE,
+which is rc 2. It is not a finding: nobody measured anything to call it wrong,
+and it is not silence either, which would read exactly like a file that holds
+no count.
+
+Measured on 2026-09-07: **one** declaration lives outside the two documents,
+and it names a gate no file matches, inside
+`scripts/declared-case-counts.mutants.py` — a fixture, correctly inert.
+(That name is written here without backticks on purpose:
+`gate-contract-inventory.sh` reads every backticked gate name in this
+document as a gate the runner must discover, and a fixture is not one.) The rule ships green, and the three negative controls
+on the real tree are what say the green means something: a count for a real
+gate planted in `CONTRIBUTING.md` turned it red, the same count for a gate that
+does not exist left it green, and a file that could not be opened put it at 2.
+
+Four cases, each with a named killer: the finding itself (dies when the sweep
+goes), the fixture staying inert (dies when the existence check goes), the
+unopenable file (dies when it is folded back into the findings), and the two
+documents that were read not being swept a second time (dies when the sweep
+forgets which files it already read — the table alone would then produce
+forty-one findings about itself).
+
+### A second document declared case counts and nothing read it
+
+`CHANGELOG.md` states case counts too, in its own spelling: it names the
+path and writes the number as `6-case self-test` rather than
+`self-test (6 cases)`. Until 2026-09-07
+`gate-declared-case-counts.sh` read exactly one document. Two live claims sat
+there unchecked; **one of the two was wrong**, and it was found by hand while
+fixing something else, which is precisely how the next one would not be found.
+
+The gate now reads a list of documents. Three things had to hold for that to be
+an improvement rather than a wider surface:
+
+- **Only the live section of a changelog is a claim about today.** A released
+  entry states the numbers of its own time. Accusing history of drifting from a
+  present it never described would produce a finding nobody could clear, and a
+  gate whose red cannot be cleared is a gate that gets skipped.
+- **Absent is not clean.** A repository without the secondary file is told so in
+  the run, in the same words the gate uses for anything else it could not read.
+  A silent skip would read exactly like a document with nothing to check.
+- **The rule that every gate must declare a count stays scoped to this table.**
+  The contract is what has to name every gate; a gate mentioned only in a
+  changelog entry must not satisfy the rule without a row ever being added.
+
+A disagreement between the two documents was already covered by the clash rule,
+which used to say "the table declares it twice" — it now names both files,
+because a number that is wrong in the other document cannot be fixed by looking
+at this one.
+
+Four cases, each with a named killer: a count in the changelog compared at all
+(dies when the second document is dropped), the two documents forbidden to
+disagree (same killer, from the other end), a released section left alone (dies
+when the truncation goes), and an absent changelog said out loud (dies when the
+line goes).
+
+### The sentence that explains an exemption used to open it
+
+`drop_historical` exempts text that quotes a superseded figure on purpose,
+inside a `<!-- counts:historical -->` region. The marker was matched as a
+SUBSTRING, so the sentence in `CHANGELOG.md` that *describes* the mechanism —
+naming the marker in backticks, in the middle of a line — opened a region, and
+the lazy span ran to the next real closing marker.
+
+Measured on 2026-09-07: **35 lines and 10,116 characters** of the live
+`[Unreleased]` section were silently unchecked, and inside them sat a declared
+corpus count that had been wrong since 2026-09-01 (`4,511` lines and `170`
+procedures against a measured 4,556 and 171), plus an identifier range that
+still ended at `AI-29` after `AI-30` shipped. The gate printed
+`exempted: 1 region(s)` — the same words it prints when the one region is the
+three-line one that was meant.
+
+A marker is a line, not a substring: both ends must own their line, which is
+how they are actually written, and a mention inside a sentence stays inert.
+
+Widening the reading exposed a second defect that had never been able to fire.
+`DECL_FILES` deliberately accepts a digit as well as a number word, and the
+comparison admitted only the word, so every `across 20 files` in the prose was
+a finding no rewrite of the number could clear — a check that accuses the text
+for being right in the other spelling. The count is now compared by VALUE, and
+a spelling this gate cannot read as a number says so instead of passing.
+
+Four cases, each with a named killer: a mention that must not open a region
+(dies with the loose marker), a properly marked region that must stay exempt
+(dies when the marker is tightened until nothing matches), a digit count read
+as a number (dies with the word-only comparison), and a wrong digit count still
+caught (dies when the comparison is removed). Two of the four detect the
+original defect; the other two are guards against over-correcting it, and the
+run above is what says which is which.
+
+### A self-test that never says how many cases it ran
+
+Ten of the forty-one documented gates ran cases and never printed a number. Their
+rows could not promise anything: the self-test could fall from fourteen cases to
+two, or to none, and every instrument in this repository would stay green,
+because there is nothing to compare a number against. `gate-routing-stage.sh`
+was the sharpest version — its row DID carry a number, `6 fixtures`, in a
+spelling no instrument reads, which is a claim dressed as a measurement.
+
+The counter is now shared rather than rewritten ten times. `lib/common.sh`
+carries `gate_case`, `gate_case_failed` and `gate_tally`, and `gate_tally`
+prints the one line `gate-declared-case-counts.sh` reads. Four of the ten
+already counted their failures and had no denominator; three ran a fixture loop
+with a single `ok` flag; `gate-governance-drift.selftest.sh` printed `6 cases`
+written by hand, true until somebody deleted a case, and now prints what it
+counted.
+
+Two of the ten are fail-fast — they stop at the first case that misbehaves — so
+they print the tally on both roads. A tally read off a red run is refused by the
+count gate anyway, and a run that says nothing answers to nothing.
+
+**The ten numbers in the table were not read off the code.** Each self-test was
+run and its printed tally copied: 5, 23, 7, 7, 6, 22, 9, 14, 17, 6. Counting
+cases by eye is how a row acquires a number that was never true.
+
+With this, every documented gate declares a case count and something reads it:
+42 self-tests compared, up from 32, and **zero** documented gates whose row
+promises nothing.
+
+### A row may name more than one gate, and only the first was being read
+
+The table's `G1` row names `gate-plugin-integrity.sh` and
+`gate-plugin-version.sh`; the workflow-hardening row names
+`gate-workflow-hardening.sh` and `gate-actions-lint.sh`. Both second gates
+carried a case count, and neither was ever compared: `ROW.search(line)` returns
+the FIRST match on a line and stops. Reading every match on the row takes the
+comparison from 30 self-tests to 32.
+
+Reading them all needs a fence. The span between a gate's name and its count is
+lazy, so unfenced it will happily reach across the NEXT gate's name — a row whose
+first gate carries no count and whose second does would hand the first its
+neighbour's number and accuse it of drift. `FENCE` refuses to cross another
+`gate-*.sh`. Nothing in the table has that shape today, which is exactly why the
+case for it is a toy and not the real tree.
+
+And a gate declared twice with two different numbers used to resolve by
+`declared[gate] = n` — last writer wins, in silence, with the losing row saying
+something no instrument would ever contradict. That is now a finding of its own.
+
+### A gate may carry two self-tests, and only one was being counted
+
+`gate-declared-case-counts.sh` resolves a gate's self-test by taking the **first
+convention that matches**: a sibling `<gate>.selftest.sh`, then `--self-test`,
+then inline. Two gates offer both — `gate-negative-evidence.sh` (a sibling
+battery of 4 path-resolution cases, and its own `--self-test` over 10 fixtures)
+and `gate-reproduction.sh` (a sibling battery of 33 cases, and its own
+`--self-test` over 2 mutants). The second one was compared against nothing: it
+could fall to a single case, or to none, with every row in this table still
+green — the same defect this section exists to close, one level down.
+
+Two things had to be true before it could be closed. Neither self-test printed a
+tally in a spelling any instrument reads, so both were given one; and the
+declaration needed a spelling of its own, because `+ inline self-test (N cases)`
+was **already taken** — three rows use it to say "this gate's only self-test is
+inline, it has no sibling", and a rule reading it as "the second one" would have
+accused all three. The second count is written `+ --self-test (N cases)`, which
+names the invocation and collides with nothing.
+
+Both ends are findings. A gate with two self-tests and one declaration is `1`;
+so is a row declaring a second self-test for a gate that has none, which is what
+a stale row looks like after the test is deleted.
 
 ### The four that had never been observed failing
 
@@ -360,7 +736,7 @@ So the prefix stays, demoted from *the* classifier to one signal among several, 
 
 **The exemption this replaced was measured and refused.** A task stood open to take those fixture inputs *out* of `scripts/gates/**` altogether, on the argument that they are negative proof rather than limits. Half of that argument holds — the three ways such a fixture can be weakened are all watched: deletion by `gate-negative-proof-census.sh`, neutering in place by the family's own self-test, which names the rule the fixture stopped tripping and caps the verdict at `2`. The other half does not. In **0 of those 28 changes** did G7 fire on fixtures alone, so the exemption would have cost 38 paths their protection and prevented not one firing. And the gates that do watch them answer a different question: the census asks whether the proof is still *there*, the self-test whether it still *trips*, and neither asks **who moved it**, which is the only question G7 asks. *Covered by another gate* is not *covered*. The refusal is recorded in `protected-paths.json` next to the list it declined to shorten, because the next reader will ask.
 
-It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 25 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — and three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file). The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
+It runs in the pull-request workflow rather than in the push suite, because a branch name and a diff against a base are things only a pull request has; `run-all.sh` defers it with a printed reason instead of running it against an empty diff and reporting a green that means nothing. Proved in the negative by `gate-protected-paths.selftest.sh`: 35 cases — three automated branches touching three different protected patterns, an automated branch touching nothing, an unattributed change touching one, an agent trailer and a bot identity each caught on a branch named anything at all, a reserved prefix still failing with a perfectly clean commit range (the asymmetry, stated as a test), an unreadable range with and without a limit in the diff, the override letting a marked change through and failing to silence drift and being called out when it stands on nothing, the documented list and the enforced list drifting in each direction, seven on the fold — the real limit named in full above it, the count of what it folded, a finding and an override each still naming a folded path in full, the case where nothing *but* negative proof moved and the line says so rather than counting against zero, a `.expected` refusing to fold, and the declaration removed altogether so nothing folds — three cases that must exit `2` (an unknown branch, a missing file list, an unusable data file), and three that hold the shared work tree honest — it fingerprints the same as a private copy, no case wrote into it, and the fingerprint moves when one byte is appended. The commit range and the label are injected by the harness rather than read from git, because a battery that reads the same signal from the same place as the gate is testing nothing. The unknown-branch case earned its keep on the first CI run: `git rev-parse` inside a directory that is not a repository walks **up** and answers about an ancestor one, so on a runner the gate confidently reported the wrong branch where it should have reported that it could not tell. It now falls back to git only when the root it was given is itself the top level. And the battery itself was not hermetic: on a runner `GITHUB_HEAD_REF` is set, the gate reads it as a default, and the case meant to prove *I cannot tell whose branch this is* was quietly told. Every case now runs with those variables cleared — a battery that inherits the environment is not proving what it claims.
 
 **The control went green because its input went missing, 2026-09-01.** The first push of the
 `alert-surface` branch had G7 **passing** on a diff that moved three protected paths. Nothing was
@@ -416,7 +792,7 @@ Three properties are worth stating because each has a case in the battery:
   and it would have been trivial to build it that way here.
 
 Seven cases in `gate-protected-paths.selftest.sh` fence this in, and **exactly one of them is
-allowed to pass** (32 cases in total, 0 failures). The other twenty-five were unchanged by the
+allowed to pass** (35 cases in total, 0 failures). The other twenty-eight were unchanged by the
 work: with no diff there is no exemption, so every verdict written before exemptions existed still
 holds.
 
@@ -622,7 +998,16 @@ This document opens with a rule about itself: *if a gate and this document disag
 `gate-contract-inventory.sh` enforces the half that is machine-checkable in both directions:
 
 - a gate the runner discovers and this document names nowhere is **a control nobody can find from the contract**;
-- a name this document carries that the runner does not discover is **a control the document promises and nobody runs**.
+- a name this document carries that the runner does not discover is **a control the document promises and nobody runs**;
+- unless the same name plus `.sh` **is** in the inventory, and then nothing is missing: the document wrote the gate without its extension, and that is what the message says.
+
+The third case was added because the gate found it and then misnamed it. A
+paragraph in this document wrote *gate-bench-integrity*, with no suffix, where it
+meant `gate-bench-integrity.selftest.sh`, and `gate-contract-inventory.sh` reported *a control the document
+promises and nobody runs* - which sent the reader looking for a gate that was
+never missing, while `gate-bench-integrity.sh` sat in the inventory two lines
+away. The mismatch was real and the verdict was right; the diagnosis was not,
+and a wrong diagnosis on a true failure costs the same time as a false alarm.
 
 The inventory comes from `run-all.sh --list`, never from a glob of `scripts/gates/`. The runner is the authority on what counts as a gate — it discovers recursively and is not filtered by extension — so the two cannot disagree about what exists. A gate the runner declares it will not run in this context still counts: *not run here* is not *does not exist*.
 
@@ -630,7 +1015,7 @@ Three things are deliberately **not** checked, because all three are a person's 
 
 `*.selftest.sh` is excluded. A self-test battery is not a gate and the runner does not list it as one, so the sentence above naming `gate-corpus-contract.selftest.sh` is correct prose. Counting it made this gate report a phantom on its first run against the repository, and the fixture `good/2-a-selftest-is-not-a-gate` is that mistake, kept.
 
-Proved in the negative by 6 fixtures — 2 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation.
+Proved in the negative by 7 fixtures — 3 negative, 2 positive, 2 unmeasurable — run as the gate's own self-test on every invocation. The third negative fixture carries a `phrase.expected`: exiting 1 does not distinguish a promised-and-unrun control from a name missing its suffix, so that case asserts the sentence and not only the code. Without the assertion it passes against a gate that cannot tell the two apart — measured, not assumed.
 ## The contract inside governance.json
 
 `scripts/gh/governance.json` carries two lists that describe the same thing from two sides:
@@ -649,6 +1034,1580 @@ A context enforced by the protection and **not** declared as required is reporte
 Editing the JSON changes what is *declared*. Nothing changes on GitHub until `scripts/gh/apply-governance.sh --apply` runs, which is a credentialed action a person takes; the gate deliberately has no opinion on the live state, and `gate-governance-drift.sh` is the one that reads it.
 
 Proved in the negative by 7 fixtures — 2 negative, 2 positive, 3 unmeasurable — run as the gate's own self-test on every invocation, and on the real file: before the fix in this change, the gate exits `1` on `scripts/gh/governance.json` naming `workflow-hardening`.
+
+## A green battery is not yet a tested rule
+
+Every battery in this repository is green. That is a fact about the batteries.
+Whether it is also a fact about the *rules* is a different question, and until
+this control existed nothing here could answer it: a case is green when the rule
+works, and a case is also green when the case never exercised the rule and would
+have passed with the rule deleted. Rendered identically. Chosen between by
+nobody.
+
+`gate-coverage-sweep.sh` chooses. For every statement in `scripts/gates/lib/*.py`
+that RECORDS a problem, it replaces that statement with `pass`, runs that
+library's battery, and asks whether anything went red. A battery still green over
+a silenced rule was never testing it.
+
+### The operator is narrow on purpose
+
+Flipping a comparison or negating a condition produces mutants that crash, and a
+crash is caught by anything — it scores as coverage the battery does not have. A
+silenced report changes nothing except the verdict, which is the one thing a
+battery exists to check.
+
+Spans come from `ast` and not from a regex. `findings.append(` routinely opens a
+call that closes three lines later; replacing only its first line leaves a
+`SyntaxError`, the battery dies of the parser, and the mutant is scored as
+covered. The self-test case `multi-line-report-is-replaced-whole` exists for
+exactly that, over a fixture whose third rule spans four lines.
+
+Receivers named `info`, `note`, `notes` and `summary` are skipped: they carry a
+printed count, not a failure, and silencing one changes what a run prints rather
+than what it concludes.
+
+### The denominator, which is the part that was a fiction
+
+This sweep was written three times in three sessions, in three throwaway scripts,
+and each of those versions looked for one thing only: a sibling
+`gate-<lib>.selftest.sh`. Six of the sixteen gate libraries do not have one. They
+were **skipped in silence**, so the sweep's headline — "24 survivors" — was never
+a statement about this repository. It was a statement about ten sixteenths of it,
+and nothing in the output said which ten.
+
+There are three ways a library is proved here, and the sweep now knows all three:
+
+```
+gate-<lib>.selftest.sh          a sibling battery            10 libraries
+gate-<lib>.sh --self-test       the inline form               4 libraries
+the gate that imports it        a fixture with no gate        2 libraries
+```
+
+A library that matches none of them is **printed as `NOT MEASURED` and forces
+exit code 2**, per the doctrine at the top of this document. A denominator with a
+hole in it is not a denominator. The self-test proves both halves:
+`unresolvable-library-is-declared-not-skipped` and
+`inline-self-test-counts-as-a-battery`.
+
+The sweep also prints, per library, the battery it resolved. An instrument that
+does not name what it measured with cannot be checked by the person reading its
+output — and resolving the battery is the exact step the three earlier versions
+got wrong without saying a word.
+
+### The file of survivors is a ratchet, not an amnesty
+
+`scripts/gates/data/coverage-sweep-accepted.json` holds every survivor, each with
+its reason and a `kind`:
+
+```
+open     a real coverage hole, ticketed, waiting for somebody to write the case
+accepted a survivor somebody looked at and decided to keep, with the reason
+```
+
+Both suppress the *new hole* failure and the run prints the two counts apart, so
+a file of twenty-seven open holes cannot read as twenty-seven things anybody is
+happy about. The teeth are in the other direction: **an entry that no longer
+survives fails too**. Closing a hole obliges you to delete its line, so the list
+can only shrink, and nobody can quietly bank a fix without recording it. This is
+the same shape `gate-tree-delta.sh` and `gate-scorecard-threshold.sh` already
+use here — judge the movement, not the level.
+
+### Survivors are recorded by anchor, not by line
+
+Entries are keyed `library::qualified.function#ordinal`, the ordinal counting
+report sites inside that function.
+
+Line numbers were tried first and rot on contact: an edit anywhere above a site
+moves it, and the acceptance silently transfers to whatever rule inherited the
+number. An edit above an anchor moves nothing
+(`anchor-survives-an-edit-above-it`). **Renaming the function does** move it, and
+that is correct rather than unfortunate — the acceptance was granted to a rule
+that no longer answers to that name, so it goes stale and the run fails
+(`renaming-the-function-invalidates-the-acceptance`). An acceptance naming a site
+that no longer exists is a failure too, never a silence: the reason was written
+for a rule that has moved or gone, and a green run would never mention it.
+
+### Why it is not in `gates`, and how it is paid for instead
+
+Not scope: **cost**. Measured on 2026-09-06, one 10-core machine, four mutants at
+a time — 125 report sites, 9845 s of battery time, 2695 s of wall clock — and it
+is nowhere near evenly spread:
+
+| library | sites | battery time | share |
+|---|---:|---:|---:|
+| `corpus_contract.py` | 31 | 4352 s | 44% |
+| `protected_paths.py` | 11 | 1825 s | 19% |
+| `triage_rules.py` | 14 | 1114 s | 11% |
+| the other ten | 69 | 2554 s | 26% |
+
+`run-all.sh` finishes in under a minute and is what people wait on before a
+merge; three quarters of an hour inside it is how a suite gets switched off. So
+it is declared in `SLOW_SCOPED` — with the reason and the workflow that does run
+it — which keeps it in `run-all.sh --list`, keeps it required by
+`gate-contract-inventory.sh`, and stops it being quietly absent. A gate that is
+silently missing is indistinguishable from a gate that passed. Run it here with
+`EHS_SWEEP=1`.
+
+In CI it is **one job per library**. The work divides perfectly, a library's
+mutants only ever run that library's battery, and the table says the total is
+dominated by one library — so sharding makes the critical path
+`corpus_contract.py` alone rather than the sum, on a runner it does not share.
+Measured on the first clean run, and the two causes are separable, because
+attributing all of it to sharding would be false:
+
+| | wall clock |
+|---|---:|
+| this Mac, 10 cores, one job, 4 workers | 2695 s |
+| one `ubuntu-latest` runner, 4 workers (sum of the 13 shard sweeps) | 284 s |
+| sharded across 13 runners, end to end, plan and verdict included | **111 s** |
+
+Sharding, machine held constant: **2.6x**, and the critical path is
+`corpus_contract.py`'s 82 s exactly as the cost table predicted. That is the
+figure this workflow is responsible for.
+
+**The 2695 s is one run, and no ratio is drawn from it.** It was taken on a box
+that was also running actionlint and `gh`. An earlier version of this section
+divided it by the CI figure and called the remainder "9.5x, the machine"; that
+was noise wearing a decimal point. Measured the way the next section says to —
+five runs, nothing else on the machine — the same battery is **35.2 s median over
+a 30.1–36.4 s range**, an 18% spread, against the runner's 9.3 s per mutant *with
+four-way contention*. About **3.8x**, with the Mac given the easier condition.
+
+The counts are identical on both machines, which is the part that says the runner
+really did the work: 125 sites, 27 survive, 98 die.
+
+### A death is not a catch
+
+Those 98 deaths were all scored as coverage, and they are not the same thing. The
+engine recorded `caught_by` — the cases the battery named when it went red — and
+never read it. The verdict was `survived = rc == 0`, so any mutant that turned a
+battery red counted as covered, **including one that turned it red by breaking
+something**. The header of `coverage_sweep.py` says the operator was kept narrow
+precisely so that would not happen, and then the verdict threw the distinction
+away.
+
+Two things were wrong, and the second hid the first:
+
+1. A mutant that dies with **no case naming it** was not caught by a case. It was
+   caught by a crash, and a crash is caught by anything.
+2. The expression that reads case names accepted `FAIL`, which is not a battery's
+   case line at all — it is `lib/common.sh`'s `gate_fail`, the **gate's own
+   verdict**. Its first word was being read as a case name, so "the gate refused"
+   rendered as "a case caught it". On the first three-library sample this alone
+   invented a case called `self-test:` and hid a crash behind it.
+
+Measured over the same 125 sites, one machine, four workers, 2055 s:
+
+| | before | after |
+|---|---:|---:|
+| caught by a case that names it | 98 (assumed) | **91 (measured)** |
+| dead with no case naming them | not measured | **7** |
+| surviving | 27 | 27 |
+
+The seven were not scattered. All of them sat in the three libraries proved by
+the **inline `--self-test` form**, which reports through `gate_fail` and never
+names a case, so the sweep could see the gate go red and never which rule the red
+belonged to:
+
+| library | sites that only crashed | after giving the self-test a case line |
+|---|---:|---:|
+| `routing_stage.py` | 5 | 0 |
+| `governance_contract.py` | 1 | 0 |
+| `stage_eval_floor.py` | 1 | 0 |
+
+The fix is one line per failure — `echo "FAILED  <case>"` beside the `gate_fail`
+that already knew the name — and it takes the repository to **zero report sites
+covered only by a crash**.
+
+### A zero from a blind instrument is not a zero
+
+Absence of a case name is only evidence where a name has been **seen**. A battery
+this sweep never watched name a failing case has an unproven detector, and
+calling its silence a hole would be the sweep doing to others exactly what it
+exists to catch. Those batteries are declared by name under `detector_unproven`
+in the acceptance file, on the same ratchet as the survivors: **listed with a
+reason, or the sweep exits 2** — and an entry the run refutes, because it did
+watch that battery name a case, is a failure too, so the excuse cannot outlive
+the defect. The list is empty today, and that is a measurement rather than a
+default: it had three entries when it was written.
+
+Proved in the negative by seven cases
+(`a-death-no-case-named-is-not-a-catch`, `gate_fail-is-not-read-as-a-case-name`,
+`a-crash-only-site-is-a-failure`, `an-accepted-crash-only-site-is-not-a-failure`,
+`an-unproven-detector-is-unmeasurable-not-a-hole`,
+`a-declared-blind-battery-is-not-a-refusal`,
+`a-refuted-unproven-declaration-is-a-failure`) and by a hand mutation of each new
+rule — five of five caught by the case written for it. It is a hand mutation
+because **`coverage_sweep.py` excludes itself from its own sweep**. That
+exclusion was written up here as a hole, and the next section is what happened
+when somebody measured it: the hole is real, and it was not the one described.
+
+### The engine's own report site is a refusal
+
+`coverage_sweep.py` excludes itself from the libraries it mutates, and the
+backlog called that a hole in the SUBJECT list. Measured, that reading is wrong,
+and it is worth writing down because the correction is the finding.
+
+The sweep's operator is `X.append(...)` as a statement. The engine has seven of
+those — `plan`, `results`, `seen`, `found`, `named_by`, `unresolved`, `aborted` —
+and **none of them is a report site**. They are all plumbing. Putting the engine
+in the subject list would manufacture seven mutants that crash, and, since the
+previous section stopped counting a crash as a catch, report seven holes that do
+not exist.
+
+The engine does not report through a findings list. It reports by REFUSING: a
+`print`, then `return 1` (measured, fails) or `return 2` (could not measure).
+Those are its report sites, and the sweep's own question, asked in the engine's
+own vocabulary, is: **if this refusal silently became a pass, would any case
+notice?** `scripts/coverage-sweep.mutants.py` is the bank that asks it — one
+`return 1`/`return 2` rewritten to `return 0` per mutant, in a copy of the tree,
+judged by the battery, with the unmutated original as the judge.
+
+| | before | after |
+|---|---:|---:|
+| refusals in the engine | 14, unmeasured | 14 |
+| caught by a case that names them | not measured | **14** |
+| **survive: a refusal becomes a pass and nobody notices** | not measured → **3** | **0** |
+| red with no case naming them | not measured | 0 |
+
+All three survivors were `except` blocks, and that is the shape of the gap: the
+cases covered the CHECKS and left the CATCHES uncovered.
+
+| site | refusal | why it matters |
+|---|---|---|
+| `:433` | `--list-libraries` over a selection that matches nothing | CI builds the shard matrix from that output |
+| `:477` | `--verdict-from` unable to build the plan | the verdict skips its own coverage check |
+| `:498` | **`the sweep itself failed`** | a library that does not parse crashes the sweep, and a crashed sweep reads GREEN |
+
+The third is the one that matters most. The deepest scanner in the repository
+falling over and reporting clean is the exact failure this file exists to
+prevent. Cases 33–35 close all three, and each of the three is the **only** case
+that catches its site, so the closure is attributable to the case rather than to
+a coincidence.
+
+The bank lives at `scripts/coverage-sweep.mutants.py` with
+`scripts/coverage-sweep.mutants.selftest.sh` beside it, so `run-batteries.sh` picks
+it up on its own: 14 mutants, four workers, 12 s, 13 MiB of peak disk. It sits
+deliberately OUTSIDE `scripts/gates/lib/` — every `.py` in that directory is a
+subject of the sweep, and this bank's own `.append` calls are plumbing that would
+be read as holes.
+
+It runs the unmutated tree first and exits 2 if that does not come back green.
+That baseline is not ceremony. The first version of this bank copied `scripts/`
+and not `.github/`, so the case that reads the workflow file failed for want of a
+file in all fourteen mutants — and the bank counted that failure as the case
+catching the mutant. Fourteen of fourteen caught, zero survivors, and the number
+was coverage that did not exist: the defect of the previous section, committed by
+the bank written to audit it.
+
+### 32 cases tarring 259 MB each
+
+`gate-protected-paths.selftest.sh` gives each case a work tree by tarring the
+repository into `"$TMP/$name"` — a new directory per case. The `rm -rf "$work"`
+at the top of the function therefore only ever removed a directory that did not
+exist yet, and all 32 copies piled up until the EXIT trap fired. Each copy
+included `tooling/claude-cli/node_modules`, 259 MB of the repository's 321 MB,
+which this gate reads none of.
+
+| | before | after |
+|---|---:|---:|
+| peak disk | 7855 MiB | **41 MiB** |
+| wall clock | 57 s | **25 s** |
+| cases green | 28 of 32 | **32 of 32** |
+| `No space left on device` write errors | 2013 | **0** |
+
+Four cases were red for a reason with nothing to do with protected paths. Note
+what that means and what it does not: the disk pressure is gone, but the battery
+still renders a failed write as a case FAILURE where the exit-code doctrine says
+COULD NOT MEASURE. That is a separate defect, it is still open, and removing the
+pressure only made it rarer.
+
+### The same defect, in nine more batteries
+
+`gate-protected-paths.selftest.sh` was not special. Nine other batteries carried
+the identical pair of mistakes - the unexcluded `node_modules`, and a `work`
+that is `"$TMP/$name"` so the leading `rm -rf` deletes a directory that does not
+exist yet - and none of them reads a byte of `tooling/`, which was checked
+before the exclusion went in rather than after.
+
+| battery | peak before | peak after | |
+|---|---:|---:|---:|
+| `gate-bench-integrity.selftest.sh` | 6170.3 MiB | **10.1 MiB** | 611x |
+| `gate-scorecard-threshold.selftest.sh` | 4292.5 MiB | **10.1 MiB** | 425x |
+| `gate-triage-rules.selftest.sh` | 4292.5 MiB | **10.1 MiB** | 425x |
+| `gate-corpus-identifiers.selftest.sh` | 3755.9 MiB | **10.1 MiB** | 372x |
+| `gate-findings-artifact.selftest.sh` | 3219.3 MiB | **10.1 MiB** | 319x |
+| `gate-licence-hygiene.selftest.sh` | 2414.5 MiB | **10.1 MiB** | 239x |
+| `gate-bench-blinding.selftest.sh` | 2414.3 MiB | **10.1 MiB** | 239x |
+| `gate-secret-scan.selftest.sh` | 2143.9 MiB | **10.1 MiB** | 212x |
+| `gate-corpus-contract.selftest.sh` | 536.6 MiB | **20.3 MiB** | 26x |
+| **the nine together** | **29240 MiB** | **101 MiB** | **289x** |
+
+Freeing each case's copy when the case ends is the half of the fix that matters
+for a battery whose cases outnumber its cores; excluding `node_modules` is the
+half that matters for every single copy. The gate under test never sees a
+difference: the same tree, minus 259 MB it does not open.
+
+### The instrument that reported a regression that had not happened
+
+The first version of this table was measured by sampling the machine's FREE DISK
+while each battery ran. It reported that `gate-corpus-contract.selftest.sh` had
+got **worse** - 290 MiB before, 601 MiB after - and that `gate-bench-integrity.selftest.sh`
+still held 1727 MiB after the fix. Both were artefacts. Free space is a
+machine-wide number: every neighbouring process moves it, so what that
+instrument measured was the laptop, not the job. It is the same defect the disk
+floor above was fixed for, one level up, committed this time into the ruler
+rather than into the rule.
+
+Measured instead on the tree the battery itself creates under `TMPDIR`, the two
+cells read 536.6 MiB -> 20.3 MiB and 6170.3 MiB -> 10.1 MiB. Nothing regressed.
+
+The two instruments can be told apart without trusting either one, and without
+any argument about which is right, by pointing both at something that did not
+change. 12 batteries were left untouched by this commit. Here is what free-disk
+sampling said about their peaks on two consecutive runs of the same suite over
+the same code:
+
+| untouched battery | run A | run B | |
+|---|---:|---:|---:|
+| `meter.selftest.sh` | 534.2 MiB | 1.1 MiB | 486x |
+| `time-repeat.selftest.sh` | 148.4 MiB | 0.6 MiB | 247x |
+| `run-batteries.selftest.sh` | 9.8 MiB | 0.0 MiB | 98x |
+| `verify-target-checkout.selftest.sh` | 0.8 MiB | 13.8 MiB | 17x |
+| `gate-agent-tools.selftest.sh` | 126.1 MiB | 1570.3 MiB | 12x |
+| `gate-benign-control.selftest.sh` | 18.9 MiB | 142.6 MiB | 8x |
+| `gate-protected-paths.selftest.sh` | 36.7 MiB | 158.1 MiB | 4x |
+| `coverage-sweep.mutants.selftest.sh` | 129.1 MiB | 495.9 MiB | 4x |
+| `gate-coverage-sweep.selftest.sh` | 9.4 MiB | 22.9 MiB | 2x |
+| `gate-verdict-vocabulary.selftest.sh` | 8.8 MiB | 8.4 MiB | 1x |
+| `gate-reproduction.selftest.sh` | 270.5 MiB | 277.8 MiB | 1x |
+| `gh.selftest.sh` | 325.0 MiB | 328.2 MiB | 1x |
+
+The instrument disagrees with ITSELF by up to 486x on work that did not change
+by a byte. `meter.selftest.sh` alone reads 534.2 MiB and then 1.1 MiB. Measured on the
+batteries' own trees, the same repeat moves the largest before arm by 5.8 MiB
+out of 6170 (0.09%) and every after arm by 0.0 MiB.
+
+A number whose repeats disagree by more than the effect being claimed is not
+evidence for that effect in either direction, and that is as true of the cell
+that flatters the change as of the one that accuses it. It was the accusing cell
+that cost the time here: half an hour looking for a regression that had never
+happened.
+
+The sampler also has to stay out of its own way. Walking a 6 GiB tree every
+0.15 s costs more than the battery being measured, and the first attempt at it
+inflated the wall clock of exactly the arm it was meant to accuse - the one with
+the most tree to walk. It now sleeps three times the cost of the previous walk,
+which bounds it near a fifth of the run whatever it is pointed at. The wall
+clock it prints is still not publishable for that reason; it says the battery
+ran, and `scripts/time-repeat.py` says how long anything takes.
+
+### A disk floor that never looked at the tree
+
+The sweep stopped launching clones when free disk fell under a flat 3 GiB. That
+number measures the machine, not the job. `run_mutant` deletes each clone in its
+`finally`, so the most a sweep ever holds at once is `jobs` copies of the tree it
+is sweeping.
+
+| | |
+|---|---:|
+| the repository's tree, as the sweep copies it | 10.1 MiB |
+| clones held at once, at the default `--jobs 4` | 4 |
+| peak the run can reach | 40.3 MiB |
+| free disk the guard demanded | 3072 MiB |
+| ratio | **76x** |
+
+The consequence arrived on its own, which is the only reason this section
+exists. The refusal bank above sweeps toy trees of a few hundred bytes, fifteen
+times over, and inside `run-batteries.sh` it came back COULD NOT MEASURE: 25 of
+44 cases red, `free disk fell below 3.2 GB` under every one of them, on a machine
+with 4.6 GiB free. Nothing about those trees had changed. Another battery's
+temporary files had moved a number the job in front of it did not depend on. The
+bank was right to refuse rather than publish a coverage figure it could not stand
+behind, and it was still an outage: a guard that refuses work 76x smaller than
+its own threshold is not protecting the disk, it is manufacturing NOT MEASURED.
+
+The floor is now the tree times the clones times eight, never under 256 MiB, and
+it is printed before the baseline runs so you learn it without waiting:
+
+```
+disk floor: 322 MiB applied (4 job(s) x 10314.5 KiB of tree x 8 = 322.3 MiB, never under 256 MiB)
+```
+
+| | before | after |
+|---|---:|---:|
+| floor for this repository | 3072 MiB | **322 MiB**, 8x the peak |
+| floor for the battery's toy tree | 3072 MiB | **256 MiB**, the minimum |
+| ballast the ballasted case writes | - | 8 MiB, paid 15x by the refusal bank |
+| battery cases | 44 | **47** |
+
+It is deliberately not capped at the top. A tree big enough to want more than
+3 GiB is precisely the case where the old constant was too SMALL, and it was too
+small there for the same reason it was too large here: it never looked at the
+tree.
+
+A control was made weaker, so the weaker control was proved to still bite.
+`a-floor-it-cannot-meet-stops-the-clones` raises the demand to 953 TiB through
+`EHS_SWEEP_MIN_FREE_MIB` and requires rc 2 with the mutants unrun. That branch
+existed for the whole life of the constant and no case had ever entered it. All
+three new cases were checked in the negative: with the constant put back, exactly
+those three turn red and nothing else does, so each is the only case that catches
+its rule.
+
+The knob deserves its own paragraph, because the first version of that case did
+not have one and was wrong. It reached the branch by arithmetic - 16 MiB of
+ballast times 256 clones times eight, a demand of 32 GiB - on the reasoning that
+no machine here has 32 GiB free. This laptop does not. The runner has 65 GiB, met
+the floor without noticing, and the case came back green locally and **red in
+CI**. That is the same defect the floor itself had just been fixed for, one level
+up: a verdict that depends on the machine it runs on rather than on the rule it
+claims to measure. `EHS_SWEEP_MIN_FREE_MIB` only ever takes the MAXIMUM of the
+computed floor and itself, so it can raise the bar and never lower it - a test
+hook able to weaken the guard it exercises would be worth less than no hook.
+
+What is still NOT measured: nothing exercises the abort at a threshold a machine
+could plausibly meet, because making free disk fall on demand means filling the
+disk. The case reaches the branch by asking for an impossible number, which proves
+the branch runs, not that the derived threshold is the right one.
+
+Sharding opens exactly one hole, and it is the same hole as before: a library
+nobody put in the matrix would be skipped in silence. Two things close it. The
+matrix is generated from the tree by `--list-libraries` rather than typed by
+hand, and the verdict job re-derives every report site the tree has and exits 2
+if the shards between them do not cover all of it
+(`a-library-in-no-shard-is-refused-not-ignored`). A shard never judges itself —
+measured alone against the whole acceptance file, every shard would fail over the
+other twelve shards' entries — so shards MEASURE and `--verdict-from` JUDGES.
+
+### Proved in the negative
+
+`scripts/gates/gate-coverage-sweep.selftest.sh`, 47 cases, over a toy repository
+whose answers are decided by construction: one rule with a case, two without, one
+of them spanning four lines. The sweep exists to find batteries that are green
+for the wrong reason, so a sweep green for the wrong reason would be the joke
+writing itself.
+
+Its own first run found a defect in the instrument: the sweep did not say which
+battery it had used for each library, so `inline-self-test-counts-as-a-battery`
+could not tell a correct resolution from a lucky one. The engine now prints it.
+
+Then the battery was itself swept by hand, by breaking the engine fourteen ways
+and asking not *did anything go red* but **did the case written for this defect
+go red**. Twelve did. Two were green for a reason other than the one they claim,
+and both times the fault was the same: the needle was a fixed string, so
+`check#1` matched inside `check#10`. `multi-line-report-is-replaced-whole` was
+the worse of the two — with a line-wise operator its four-line site dies of
+`SyntaxError` instead of surviving, and the case passed anyway, because the
+anchor it looked for also appears on the line saying the mutant died. Needles
+prefixed `re:` are now regular expressions and every anchor assertion is bounded,
+and the case asserts the site **survives** rather than merely appearing. Fourteen
+of fourteen.
+
+Then the workflow's own first run found a thirty-second: GitHub runs every
+`run:` block with `bash -e`, and `set -uo pipefail` does not turn that off. With
+pipefail, the sweep's rc 1 — a rule survived, which the verdict job exists to
+judge — killed the step before the line that reads `PIPESTATUS` to decide what
+that 1 meant. Eight shards red in fifteen seconds for a reason with nothing to do
+with coverage. Nothing local could have seen it: the step exists only in the
+workflow and the gate is deferred. `workflow-reads-an-exit-code-it-can-reach`
+sees it now — it walks every `PIPESTATUS` read in the file and fails if the
+nearest `set` above it has not turned `-e` off.
+
+Three further cases are refusals rather than verdicts, because an unread result
+is not a clean one: a battery already red before anything was mutated
+(`red-baseline-refuses-instead-of-reporting`), a selection matching no library,
+and a library with no report site at all. All three exit 2.
+
+## The number in the table, run
+
+Every row above that carries a self-test declares how many cases it runs. Until
+2026-09-07 nothing compared that number to anything, and the number was wrong
+more often than it was checked:
+
+| row | said | ran | what happened |
+|---|---|---|---|
+| `gate-coverage-sweep.sh` | 31 | **47** | sixteen cases added over four commits; the row was never touched |
+| `gate-triage-stage.sh` | 32 | **31** | never true: written wrong in `dc441f0`, and the battery has not changed since `a95347f` (#39) |
+| gate-portable-shell | 22 | **25** | found by hand the same week, on another branch |
+
+Two of twelve wrong, and four more that could not be compared to anything at
+all, because their self-test ran its cases as straight-line assertions and
+finished with a sentence instead of a count. A battery that cannot say how many
+cases it ran cannot tell five from zero, so `6 cases` in this table was not a
+claim anyone could check — it was decoration. Those four now keep a counter and
+print it (`gate-agent-roster.sh`, `gate-coverage-gap-claims.sh`,
+`gate-negative-proof-census.sh`, `gate-stage-eval-floor.sh`), and all four turned out
+to have been telling the truth. They simply had no way to prove it.
+
+`gate-declared-case-counts.sh` runs every self-test this table names and reads
+the count off it. One summary line, `N passed, M failed`, and the total is
+`N + M`. Two spellings of that line existed before this gate; the second
+spelling (`N PASS / M FAIL`) was rewritten into the first, because a parser that
+accepts two forms is a parser that will one day accept a third that means
+something else.
+
+### The battery that shrank by platform
+
+CI found this on the gate's first run: `gate-reproduction.sh` runs **33 cases on
+macOS and 32 on Linux**. One of them asserts that the sandbox denies the network,
+which needs `sandbox-exec`; on a machine without it the case prints `skip` and,
+in the branch as written, counted toward neither `pass` nor `fail`. So the tally
+shrank silently and the row was right only on a Mac — a number measured on the
+machine that happened to write it.
+
+A skipped case is not a case that proved anything, and it is not counted as one.
+It is still a case OF THE FILE, and that is what the row counts, so the battery
+now prints three numbers, `N passed, M failed, K skipped`, and the sum of the
+three is compared against the row. The third group is optional, so the other
+eleven batteries are unaffected. When a battery does skip, the gate says so on
+that row (`33, and 33 ran (sibling battery, 1 skipped)`) rather than letting the
+skip disappear into a matching total.
+
+**Three invocation conventions live in this repository** and the gate finds each
+rather than assuming one: a sibling `<gate>.selftest.sh`, a `--self-test` flag on
+the gate itself, or a self-test that runs inline on a normal run. Where a gate
+offers both a sibling and a flag, the sibling wins — a gate that grew a battery
+should not go on being read through its older inline path.
+
+### What it refuses to call a pass
+
+- a self-test that prints no count: the row cannot be checked against anything,
+  which is a `2`, not a green
+- a self-test that came back red: a count read off a failing battery is not a
+  measurement of a passing one
+- a row naming a gate that is not there
+- a table with no `self-test (N cases)` row at all: a zero here is a blind zero
+- the core exiting `1` with no row named — Python exits `1` when it dies, and a
+  verdict of "it FAILS" that names nothing is a crash wearing the exit code of
+  one
+
+### What it does not measure
+
+Whether the cases are any good, whether `N` is the *right* number of cases for
+that gate, or whether a green case measures its rule. That is what the mutant
+banks are for. This decides one thing: whether the document tells the truth
+about how many there are.
+
+It is also blind to a gate whose row carries no case count at all — twelve rows
+declare one and the rest do not, and those are invisible here.
+`gate-negative-proof.sh` is the one that refuses a gate with no battery.
+
+### The one row it will not run
+
+Its own. This gate's battery ends with a control case that invokes the gate over
+the real tree, so a gate that ran that battery would recurse without a floor.
+The row is not left unchecked, and it is not quietly skipped either: the gate
+prints which row it did not run and why, and the battery closes its own number
+with two assertions that pin each other — the document has to say 19, and the
+run has to reach 19. Raising one without the other leaves the file red.
+
+### The tally ledger, and why the job stopped doing the same work twice
+
+Counted with a shim on `bash` that logs each invocation's argv and `exec`s the
+real binary, so it changes nothing. One turn of
+`run-all.sh --skip gate-actions-lint.sh` — rc 0, 61 s, **228 bash invocations** —
+had seven gates running **twice**: `gate-agent-roster.sh`,
+`gate-alert-surface.sh`, `gate-budget-ledger.sh`, `gate-coverage-gap-claims.sh`,
+`gate-handover-contract.sh`, `gate-negative-proof-census.sh` and
+`gate-stage-eval-floor.sh`. Once as themselves, once
+because this gate ran their self-test — and under the inline convention that
+means running the gate. Measured cost of that half: **8.0 s, median of 5,
+spread 2%**.
+
+And the five rows with a sibling battery ran theirs **twice per CI job**: once
+here, once in `run-batteries.sh`. Measured: **59.3 s, median of 3, spread 2%**.
+
+So `run-batteries.sh` now leaves a ledger when `EHS_TALLY_LEDGER` names a file —
+one line per battery that exited 0, `<sha256 of the file> <path> <its tally>` —
+and this gate answers those rows from it. In CI the batteries step runs first
+and both steps share the file. Alternating, five runs each:
+
+| arm | runs |
+|---|---|
+| the gate reading the ledger | median **3.9 s**, range 3.9–4.0 s, spread 3% |
+| the gate as before | median **40.4 s**, range 39.6–43.6 s, spread 10% |
+
+The ranges do not overlap. The verdict is identical either way — same rc, same
+twelve rows, same counts — and the transcript differs only in the provenance it
+prints, which is the point of printing it:
+
+```
+checked 12 self-test(s) ... : 7 run here, 5 read off the ledger
+  gate-reproduction    33, and 33 ran (earlier in this job, by run-batteries.sh)
+```
+
+**The key is the content of the battery file, never its name**, and the ledger
+is consulted only for an invocation shaped exactly `bash <something>.selftest.sh`
+— what `run-batteries.sh` records. Edit a case, rename the file, check out
+another branch, or point a row at a gate rather than a battery, and the hash
+misses and it runs. There is no staleness window to reason about because there
+is no window, and every miss costs exactly what the check cost before. Only
+batteries that exited 0 are recorded: a count read off a red one is not a
+measurement, and both sides refuse it independently.
+
+### Cost
+
+Without a ledger it runs twelve self-tests, eight at a time. Measured on a
+ten-core box: **67.1 s sequential, 39.7 s at eight threads**, and the floor is
+one battery (`gate-reproduction.sh`, 33.4 s) that no number of threads divides.
+That is why `run-all.sh` went from 21.5 s to 60.9 s the day this gate landed —
+both measured back to back on the same machine. With the ledger the gate itself
+is 3.9 s.
+
+The figure that matters to CI is not the gate in isolation but the job around
+it. Alternating run for run, three each, `run-all.sh --skip
+'gate-actions-lint.sh'` — the exact command the `gates` job runs:
+
+| arm | median | range | spread |
+|---|---|---|---|
+| with the ledger | **25.3 s** | 25.2-25.5 s | 1% |
+| as it stood | **62.0 s** | 62.0-63.8 s | 3% |
+
+The ranges do not overlap, which is what makes this a difference between the two
+commands rather than a difference between two moments of the same box. **36.7 s
+off every push**, and the gate still checks all twelve rows: seven it runs, five
+it reads.
+
+A note on the inline convention: for a gate with neither a sibling battery nor a
+`--self-test` flag, "run its self-test" means running the gate itself. If such a
+gate were ever also expensive — a weekly sweep, say — this would launch it. The
+per-self-test ceiling is 900 s and the run says which convention it used, so the
+cost is visible rather than mysterious, but the shape is worth knowing before
+adding a gate of that kind.
+
+### Negative proof
+
+`scripts/gates/gate-declared-case-counts.selftest.sh`, 51 cases. Forty-nine
+build a toy repository — a table with the rows the case needs and fake gates that
+print a count and nothing else — so each costs milliseconds and can assert a
+shape the real tree does not currently contain. Both directions of drift, all
+three invocation conventions, the sibling beating the flag, `N + M` rather than
+`N`, a skipped case counting toward the row and a skip the row did not count,
+the last summary line rather than the first, one drifted row among four good
+ones, and every refusal listed above. Six are the ledger's: a hit that is not
+re-run, an entry whose file changed being ignored, a ledger that cannot answer
+for a gate run inline, a ledger that is absent, one that is rubbish, and drift
+still caught when it comes off the ledger. In each of those the battery under
+the toy prints a count that DISAGREES with the ledger line, so the case can only
+pass if the gate read the source it was meant to. Five are the second
+self-test's, and they close on each other: a gate that has one and a row that
+declares only the first, a row that declares a second for a gate that has none,
+a second count that drifts while the first still matches, a gate whose
+`--self-test` is its first and only one being declared a second time, and — the
+one that keeps the rule honest — a gate that merely NAMES the flag in a comment,
+which must not be accused. Four more are the multi-gate row's: both gates on
+one row compared, the second one drifting, a count that may not cross to the
+gate before it, and one gate declared twice with two numbers — that last fixture
+prints the SECOND number on purpose, so without the clash finding the case is
+green and one of the two written claims is still false. Two more are the rule
+that every gate declares a count: a gate on disk whose row declares nothing is a
+finding, and a sibling battery is not a gate of its own — demanding a row for
+every FILE would demand one for each battery, which no gate could satisfy. The
+first of those two asserts an ABSENCE, so the mutant `the-fence-comes-down` is
+what proves the line would appear: with the fence down it does, and the case
+dies. Six more are the sweep's reach, listed in the section that added them.
+The last two are this file's own row against its own tally, and the control:
+the real tree, every self-test this table names, no mutation. Neither is given
+an ordinal here — the ones that used to be written out said thirty-seventh and
+thirty-eighth long after the file had passed forty, which is this gate's own
+defect in this gate's own paragraph.
+
+Five of the bank's mutants are that rule's, each dying in the case named for
+it: `offers_flag` reverted to the substring test that started this, the
+uncounted finding deleted, the phantom finding deleted, `second_selftest` no
+longer requiring a sibling, and the second self-test discovered but never run.
+The bank refuses a mutation that matches nothing rather than counting it, which
+is how it reported its own stale anchor the moment the verdict line merged three
+conditions into one — a substitution that finds nothing kills nothing and
+reports the same green.
+
+The writer's side is `scripts/run-batteries.selftest.sh`, 71 cases, six of them
+the ledger's: a green battery leaves one line keyed by a 64-character hash, a red
+one leaves nothing, a battery that prints no tally leaves nothing, no
+`EHS_TALLY_LEDGER` means no file is written at all, and editing the battery moves
+the key. The sixth is the positive control for the fifth, and it exists because
+the fifth was green for the wrong reason: run inside `run-batteries.sh`, this
+file inherited the ledger the caller was using, and the toy battery its
+"no ledger written" case launched wrote a line into the REAL one. Nothing in the
+file noticed — the toy directory stays clean either way and the line lands
+somewhere else. So the file now unsets the variable at the top, and a case puts
+a probe ledger in the environment to prove the probe can see a write at all. A
+"nothing was written" that has never seen a write is not a measurement.
+
+Mutant bank: `scripts/declared-case-counts.mutants.py`, fifty mutations
+of the core, the wrapper and the runner that writes the ledger, each declaring in
+advance which case has to go red. **50 of 50 caught**, in 39 s. This paragraph
+said twenty-two while the file held twenty-three: nothing compares the number
+here against the bank, which is the defect one floor up wearing different
+clothes. Two notes on how
+it had to be built. The bank points the control case at a faithful toy repository
+rather than the real one, because a mutation of how the invocation is resolved
+can make that control launch the real weekly sweep — the first version died
+exactly that way, at 900 s. And one mutant is a PAIR of edits: `PIPESTATUS[0]`
+and `set -o pipefail` cover the same hole in the runner, so neither is provable
+alone and only removing both is a test. A protection that cannot be mutated on
+its own is worth saying out loud rather than counting as proven.
+
+And one the suite caught rather than the author: run standalone the bank was
+**22 of 22**, and the first time it ran inside `run-batteries.sh` — which
+exports `EHS_TALLY_LEDGER` — **one mutant survived**. That mutant changes what
+happens when the variable is UNSET, and it was set. The bank now strips it from
+the environment of every battery it launches; each case that wants a ledger
+builds its own. A mutant whose effect depends on the environment it inherits is
+not a measurement, it is a coincidence — and a bank that only ever ran one way
+had no way to know which it had.
+
+## A single timing is not a measurement
+
+Wall-clock figures were being published off a single run. Then the same battery,
+three times back to back on a quiet machine with nothing changed, came back
+30 s, 45 s, 38 s — a spread wider than most of the improvements those figures
+were used to claim. Nothing carried an error bar, so nothing could be told apart
+from noise, and one conclusion drawn that way ("the Mac is 9.5x slower than the
+runner") had to be withdrawn.
+
+Not every figure was blind: "the battery suite went 364.7 s to 141.5 s" was taken
+twice per arm, **alternated**, with ranges that do not overlap. That one is under
+the bar set here and above the one that matters, and the difference is the whole
+subject of this section.
+
+```bash
+scripts/time-repeat.py --runs 5 --label "the battery" -- bash scripts/gates/gate-corpus-contract.selftest.sh
+```
+
+It prints every run, then the median **with its range and the spread as a
+percentage**, and it will not print a median alone. What it refuses matters more
+than what it prints:
+
+| | |
+|---|---|
+| `--runs 1` | refused. One sample cannot show a spread, and that is the whole point |
+| the command exits non-zero | exit 2, NOT MEASURED. A command that failed is not a slow command |
+| `--warmup` | runs are dropped only after being printed, never silently |
+| `--max-spread` | judges the **spread**, not the speed: a box too noisy to measure on says so instead of handing back a median |
+| `--against CMD` | runs a second command **alternately** with the first and answers the only question an A/B has: do the two ranges overlap? |
+| `--contenders N` | runs N more copies of the same command alongside each timed run, so a figure taken under load can be compared with one that was |
+
+Quote the range whenever the spread is over 10%. A change smaller than the spread
+is not an improvement you measured; it is the box.
+
+### A block against a block is not an A/B
+
+One afternoon, the same battery, unchanged, five runs a block:
+
+| block | median | range | internal spread |
+|---|---:|---|---:|
+| A | 28.3 s | 26.2–29.3 s | 11% |
+| B, twenty minutes later | 40.4 s | 35.3–41.1 s | 14% |
+| C, twenty minutes after that | 43.6 s | 40.7–47.6 s | 16% |
+
+Each block is tight. **No two blocks overlap.** Timing the old code in one block
+and the new code in the next would have "measured" a 54% regression that was
+nothing but the afternoon — and in the other direction it would have signed a 35%
+improvement just as confidently. That is what `--against` exists for: it
+interleaves the arms run for run, so whatever drifts drifts through both, and it
+ends on the only verdict worth printing —
+
+```
+The two ranges do not overlap. That is a difference between the commands, not
+the box under them.
+```
+
+or the refusal that is the same sentence turned around, `the two ranges OVERLAP`.
+
+### The number a figure was taken under travels with it
+
+`35 s` and `140 s` of the same battery do not contradict each other; one was
+taken alone and the other with four copies running. A median without its load is
+as misleading as a median without its range, so `--contenders` prints the
+condition against the number itself and not only in the header.
+
+That flag found something the moment it was pointed at this repository:
+`gate-corpus-contract.selftest.sh` still `tar`red the whole tree **once per case**
+and freed none of them until the battery exited — the two savings of earlier work
+had never reached it. Four copies at once could not run at all: 22.9 GB of free
+disk gone and `No space left on device`, which the instrument correctly reported
+as NOT MEASURED rather than as a slow run. Measured and fixed, alternated arms:
+
+| | before | after |
+|---|---|---|
+| wall clock | 40.5 s (28.8–51.9) | **15.1 s (10.2–16.1)**, ranges disjoint |
+| disk peak, one copy | 7,083 MB | **275 MB** |
+| four copies at once | did not fit on the machine | 50.7 s (46.8–72.0), 2,238 MB |
+
+The last row is what a mutant in the local sweep actually costs, and it is the
+figure the "140.4 s per mutant" of an earlier single run should be read against.
+
+Proved in the negative: `scripts/time-repeat.selftest.sh`, 28 cases, and
+`scripts/time-repeat.mutants.py`, which silences one rule of the instrument at a
+time and demands that the case written for it goes red — **twenty of twenty**. A
+stale anchor there exits 2, NOT MEASURED, rather than reporting a smaller total:
+four anchors went stale during this very refactor, and a bank that quietly shrank
+would have called that progress.
+
+### The bank that said 0 while reporting a rule nobody measures
+
+Wiring that bank to a runner turned out to be the smaller half of T-ehs-55. Its
+docstring promised the usual three exit codes — 0 every mutant caught, 1 one was
+not, 2 could not measure — and the file contained no `sys.exit(1)` at all. It
+printed `SOBREVIVE  <- nadie lo caza` and then exited **0**. Any runner would
+have read that as a pass, which makes it the exact defect the bank exists to
+find, sitting in the bank: a green that means nothing. The refusal had the
+matching problem one level up — a battery it could not measure was announced as
+`la bateria ya esta roja` and exited 1, a measured failure, when no baseline had
+been established at all.
+
+Each row was run, before and after, with a bank reduced to one mutant so the
+control costs one battery instead of twenty-one:
+
+| control | before | after |
+|---|---|---|
+| a mutant nobody catches | **rc 0**, `SOBREVIVE` | rc 1, and it names the battery to write the case in |
+| red, but not by the case that claims it | rc 0 (same path; `sys.exit(1)` appears 0 times in the file) | rc 1 |
+| an anchor that no longer matches | rc 2 | rc 2, unchanged |
+| the baseline could not be measured (battery rc 2) | **rc 1**, "la bateria ya esta roja" | rc 2, "no se pudo medir sin mutar" |
+| the baseline is red (battery rc 1) | rc 1 | rc 2 — without a green baseline, a red under a mutant proves nothing |
+
+Then the wiring, and it is not a gate. `scripts/time-repeat.mutants.selftest.sh`
+execs the bank, which is what `run-batteries.sh` discovers — the same shape as
+`coverage-sweep.mutants.selftest.sh`, and deliberately not under
+`scripts/gates/`, where `run-all.sh` takes anything that is not documentation,
+data, fixtures or `lib/` for a gate. Batteries: **32 → 33**.
+
+The cost is 174 s measured, twenty mutants at one whole battery each plus the
+baseline, twice giving twenty of twenty. Whether that is visible in the suite's
+wall clock is a question this machine cannot answer: the sequential runner
+disagrees with itself by 174 s over identical code, so the added work is
+declared here as work rather than defended with a stopwatch reading that does
+not exist.
+
+#### The fallback that could never run
+
+Wiring it turned CI red on the first push, and the failure was Linux-only. The
+bank copied the pristine tree per mutant with
+
+```python
+subprocess.run(["cp", "-Rc", pristine, work], capture_output=True) \
+    or subprocess.run(["cp", "-R", pristine, work], check=True)
+```
+
+which is the shell idiom `cp -Rc … || cp -R …` transliterated into Python. It
+is not a fallback. **`CompletedProcess` is always truthy**, so the second call
+could never run — not on a bad day, not ever. And `cp -c` asks for an APFS
+clonefile that GNU coreutils does not have, so on the runner the first call
+exited at option parsing, nothing was copied, and the next `read_text()` raised
+`FileNotFoundError`. On this Mac the first call always worked, which is why the
+defect shipped: the arm that was broken was the one macOS never takes.
+
+The second defect was in how that arrived. A Python traceback exits 1, so
+`run-batteries.sh` filed a crash as `did not behave as specified` — a measured
+failure — and pointed the reader at the mutant instead of at the copy. Under
+`scripts/gates/lib/common.sh` a run that never reached a judgement is 2.
+
+Both were run in the negative on macOS by rejecting `-Rc` the way GNU coreutils
+rejects it, with the bank reduced to one mutant so a control costs one battery
+instead of twenty-one:
+
+| control | result |
+|---|---|
+| old code, `cp -Rc` rejected | rc 1, `FileNotFoundError … /cnt-*/una-sola-vuelta-deja-de-rechazarse/scripts/time-repeat.py` — the CI failure, reproduced locally |
+| new code, `cp -Rc` rejected | rc 0, `cazado por one-run-is-refused` — the fallback copied and the bank judged |
+| new code, both copies rejected | rc 2, `NO MEDIDO: el banco se cayo antes de juzgar` |
+
+The control that should have caught this is written and does not run, and would
+not have caught it either. `origin/loop/portable-shell-gate` carries a
+catalogue rule `cp-c` whose remedy field says, verbatim, `cp -R, or cp -Rc ...
+|| cp -R ... so the clone is tried and never assumed`. That branch is unmerged,
+and `lib/portable_shell.py` scans `SUFFIXES = (".sh", ".bash")` — this defect
+lived in a `.py`, in a `subprocess` argv list, where the catalogue's shell
+regex has nothing to match. Extending it to Python argv lists is the ticket;
+merging that branch alone would not have helped.
+
+### The intermittent that turned out to be three defects
+
+The red that surfaced beside it was the documented intermittent in
+`a-dead-contender-is-unmeasurable`, whose header said in as many words that the
+cause was NOT established after 600 controlled repetitions. It is established
+now, and the thing that established it was fixing the diagnostic written to
+explain it.
+
+**One.** That diagnostic read `ls -l /dev/fd/2 2>&1`, and the `2>&1` points the
+process's own fd 2 at the substitution pipe *before* `ls` resolves the path. It
+described the redirection, not the state under test, so it reported `p-w--w----`
+— a pipe — one line after `[ -p /dev/fd/2 ]` had said no. Read at face value it
+accuses `test` of a defect that lives in the diagnostic. `ls` now keeps the
+original fd 2, and case 27 pins the property: with fd 2 on a regular file, a
+line that names fd 2 must describe a regular file.
+
+**Two.** With an honest diagnostic the next occurrence answered the question on
+sight: `-p said no 1 time(s); on one more look: yes`, beside an `ls` that read
+the real descriptor and printed `p-w--w----`. What is transient is the
+`/dev/fd` lookup, not the descriptor — the fd was a pipe throughout. One probe
+is not an answer, so the probe is now bounded at five. Bounded, because a
+contender's stderr is genuinely not a pipe and a probe allowed to spin until it
+likes the answer is not a probe.
+
+**Three, and it was ours.** The classifier added for `overlapping-ranges-are-
+the-box` recomputed overlap from the ranges the tool printed. Printing rounds to
+`%.1f`, and the two directions are not symmetric: printed apart means apart,
+because rounding moves each end by at most 0.05 s and a visible gap is at least
+0.1 s. Printed *touching* means nothing on its own — two ranges 0.1 s apart can
+print the same boundary. The case failed on exactly that: `0.4-0.6` and
+`0.4-0.4`, which touch only where the rounding put them. An overlap is now read
+as one only when it clears the rounding that produced it, and the band between
+is a third answer.
+
+That correction then exposed the case's own dead end. Two 0.4 s arms print
+`0.4-0.4` and `0.4-0.4`; a range 0.0 s wide can never clear 0.1 s, so the case
+reported COULD NOT MEASURE on 4 of 4 runs — sound, and useless. **A case that
+cannot create its own condition does not measure the rule, whatever colour it
+prints.** The arms now carry a spread wider than the rounding and the *same*
+one: `wide.sh` keys its sleep on invocation number in pairs (0.2, 0.2, 0.6,
+0.6), so `--against`, which alternates A,B,A,B, hands 0.2/0.6/0.2 to both arms
+rather than the fast one to A and the slow one to B. Keying on parity is how
+this was got wrong once before: it separates the arms instead of widening them.
+Both arms print 0.2-0.6, the overlap clears the rounding by 0.3 s, and the case
+costs 2.0 s instead of 2.4 s.
+
+| control | result |
+|---|---|
+| the diagnostic put back to `2>&1`, fd 2 on a regular file | 26 PASS / 1 FAILED — case 27, saying `ls described it as: p-w--w----` |
+| the rounding band signed green instead of unmeasured | 27 PASS / 1 FAILED — case 28, and nothing else |
+| the battery as it stands | 28 PASS / 0 FAILED / 0 COULD NOT MEASURE, rc 0, on 4 of 4 runs |
+
+Cases: **26 → 28**.
+
+#### And the case itself was only true on one platform
+
+Case 27 went green on macOS and red on the runner on its first push, which is
+the second Linux-only defect in two commits and the same shape as the first: a
+control written and proved on the arm that cannot fail. It asked `ls -l
+/dev/fd/2` and required a regular file. On macOS `/dev/fd/N` is an fdesc node
+and stats as the open file itself, so that holds. On Linux it is a symlink into
+`/proc/self/fd`, so a bare `ls -l` describes the LINK: `l-wx------ 1 runner
+runner 64 … /dev/fd/2 -> /tmp/…/fd2.target`.
+
+`ls -lL` follows it, and that single letter is what makes the question portable:
+a regular file answers `-` on both, and the pipe a redirection would have
+substituted answers `p` on both. Measured rather than argued — this Mac cannot
+run the Linux arm, so the Linux SHAPE was built here instead, a `mkfifo` with a
+symlink to it:
+
+| probe on a symlink to a fifo | answer | would the case have caught it? |
+|---|---|---|
+| `ls -l` (what case 27 shipped with) | `lrwxr-xr-x … -> …/f` | no — `l`, not `p`: blind on Linux |
+| `ls -lL` | `prw-r--r-- … ` | yes |
+
+Both the diagnostic and the case now use `-L`. The macOS half of the control was
+re-run with the lying `2>&1` restored: 27 PASS / 1 FAILED, case 27, saying `ls
+described it as: p-w--w----`.
+
+### The battery that answers differently on a busy machine
+
+Two cases of `scripts/time-repeat.selftest.sh` were caught going red on work
+that had not changed, and only while the machine was loaded. Counted, not
+guessed:
+
+| condition | runs | red |
+|---|---:|---:|
+| the battery alone, idle box | 12 | 0 |
+| the battery alone, 14 spinning processes beside it | 8 | 1 (`overlapping-ranges-are-the-box`) |
+| inside a full suite run of 519.7 s | 1 | 1 (`a-dead-contender-is-unmeasurable`) |
+
+`overlapping-ranges-are-the-box` asserted that two runs of the SAME command
+produce ranges that overlap. Under contention they need not, and when they did
+not the case said FAILED — a verdict about the box, delivered as a verdict about
+the tool. By this repository's own doctrine that is a **2, could not measure**,
+and the battery had no way to say it. Both halves are now fixed, and the second
+one is the one that matters:
+
+- The arms are `slow.sh` (0.4 s) and no longer a command that finishes under the
+  0.1 s the report prints. Two ranges of rounded zeros carry no signal at all, so
+  a neighbouring process could pull them apart with nothing in the transcript to
+  show that it had.
+- The case no longer reads the verdict line as evidence about itself. A
+  classifier reads the two ranges the tool PRINTED and decides on its own whether
+  they touch. Ranges that touch under a verdict of "difference" is a defect in
+  the tool and is still a FAILURE. Ranges that genuinely do not touch, for two
+  runs of one command, is the box moving under the case: COULD NOT MEASURE,
+  counted apart from pass and fail, and the battery exits 2. Rounding cannot
+  invent that gap — it is monotone, so ranges that are apart at 0.1 s were apart
+  before they were printed.
+
+| the battery under 14 spinning processes | runs | red | could not measure |
+|---|---:|---:|---:|
+| before | 8 | 1 | — |
+| after | 8 | 0 | 0 |
+
+A third answer is also a way to make any red disappear, so it arrives with the
+measurement that it did not:
+
+| control | wanted | measured |
+|---|---|---|
+| the mutant `todo-par-de-rangos-es-una-diferencia` (`if True:`) | still caught | case 20 FAILED, battery rc 1 |
+| the real tool on arms that genuinely separate, 0.2-0.5 s against 0.9-0.9 s | could not measure | `COULD NOT MEASURE`, battery rc 2, nothing FAILED |
+| the classifier's own box branch mutated to `pass` | case 26 goes red | case 26 red |
+
+The first and the last of those three live in the battery as cases 25 and 26,
+reading canned transcripts, so they run on every commit instead of only when
+somebody loads the machine on purpose.
+
+`a-dead-contender-is-unmeasurable` is the one that was made readable. Its
+fixture tells the measured run from a contender by asking whether its own stderr
+is the pipe the tool captures, and every other answer - including *I could not
+tell* - was filed as "I am a contender". 600 controlled repetitions of that
+discriminator under load did not reproduce the failure and **the cause is not
+established**; what is fixed is that the next occurrence will name itself. A
+stderr that is neither the captured pipe nor a contender's sink now says so and
+exits 9. Proved in the negative directly: with fd 2 closed the old fixture exits
+7 and the new one exits 9, and the new case demands the 9.
+
+### Running the batteries at the same time, and where the answer is read
+
+`scripts/run-batteries.sh` runs the batteries several at a time, `--jobs 4` by
+default. It was sequential on a ten-core laptop for a real reason - nine
+batteries copied the whole tree per case and one peaked at 6168 MiB, so starting
+two together was a way to fill the disk - and it stayed sequential for a while
+after that reason was removed, because the number that would justify the change
+**could not be measured on the machine that asked the question**. Four
+alternated suite runs there:
+
+| arm | runs |
+|---|---|
+| sequential, unchanged | 309.5 s and 483.6 s |
+| candidate, 4 workers | 331.4 s and 249.0 s |
+
+The sequential arm disagrees with itself by 174.1 s, 56% of its own faster run,
+over identical code. That range swallows the effect in both directions, so
+neither "faster" nor "slower" was a reading that machine could support.
+
+So the instrument moved instead of the standard.
+`.github/workflows/battery-workers-ab.yml` runs the two arms **alternately** on
+a runner and reports whether their ranges overlap, which is the only form this
+answer can take. Both arms are the same file at the same commit and differ only
+in `--jobs`, so the worker count is not confounded with every other line that
+would differ between two files. It carries a push trigger as well as
+`workflow_dispatch` for an unglamorous reason: a `workflow_dispatch` workflow
+can only be dispatched once its file is on the default branch, and a measurement
+that can only run after the merge arrives after the decision it exists to
+inform.
+
+What the batteries can decide without a clock is decided by the batteries: same
+exit code under one worker and under four, and the same transcript but for the
+one line that declares the worker count.
+
+**The answer, read on a four-core runner, three alternated runs per arm, with
+the control step in place (run 34143402483, 36 batteries):**
+
+| arm | median | range | spread |
+|---|---|---|---|
+| sequential, `--jobs 1` | 367.2 s | 364.6 - 372.6 s | 2% |
+| four workers, `--jobs 4` | **228.9 s** | 227.5 - 229.4 s | 1% |
+
+**-138.3 s, -37.7%, and the ranges do not overlap.** That is a difference
+between the commands, not the box under them - on four cores, where the laptop
+that could not read its own clock has ten. The move was the whole point: the
+same question that produced a 56% spread on the laptop produced a 2% spread
+here, and the quiet clock is what turned an argument into a number.
+
+The first published reading of this table - 364.9 s against 236.1 s, -35.3% -
+came from run 34133457474, whose verdict step had no control and therefore was
+not entitled to attribute anything. Same direction, same order of magnitude,
+and it is replaced rather than kept beside this one: two tables for one question
+make the reader pick, and a reader picks the friendlier number.
+
+**An instrument that installs its own runtime measures a different machine.**
+This job carried an `actions/setup-python` step for one commit, and it cost a
+whole run. `ci.yml` deliberately has none: it runs the suite on the runner
+image's own `python3`, which carries PyYAML from the distribution package.
+`setup-python` installs a clean interpreter and puts it first on `PATH`, so
+PyYAML is gone - `gate-labels-taxonomy.sh` and `scripts/gh/tests` dropped to
+UNMEASURABLE, `gate-alert-surface.sh --self-test` stopped printing its tally, and
+the count gate's control over the real repository went red for a row it could no
+longer check. Three red batteries, one cause, none of them in the code under
+measurement. A job whose claim is "here is what the suite costs in CI" has to
+run in CI's environment, not in a tidier one of its own making.
+
+**The comparison needed a control before it was allowed to accuse anything.**
+The verdict step first ran the suite once per arm and attributed every
+difference to the worker count. It came back red naming four: two stopwatch
+readings printed inside a battery's own output, and two lines carrying a
+`mktemp` directory name. None of them had anything to do with parallelism - a
+sequential run differs from *another* sequential run by exactly those lines. The
+step now runs the suite sequentially **twice** and in parallel once. The two
+sequential runs establish what the runner varies by on its own with the variable
+under test held still, and the normaliser has to flatten that pair to nothing
+before the step is allowed to say anything about the arms: a leftover there is
+COULD NOT MEASURE, not a finding about `--jobs`. Only a difference the control
+does not reproduce can be laid at the door of the worker count.
+
+**The printer, and the result that is never coming.** Output is buffered per
+battery and printed in LIST order, so the transcript does not depend on which
+machine ran it, and the tally ledger is written from that printer - single
+threaded by construction, so concurrent appends to one file are a question
+nobody has to answer.
+
+Written the obvious way, the printer waits at battery *n* for its exit code and
+has two states: here, and not yet. It has no value for *never*. A launcher that
+ends early leaves it waiting on a file nobody will write, and the job hangs
+until the six-hour CI timeout kills it having said nothing about why. That is
+not hypothetical - **this file's own mutant case produces exactly that shape**,
+and the first parallel printer answered it by hanging. The launcher now leaves a
+marker when its last worker is done, and the absence of a result beside the
+presence of that marker is read as what it is: COULD NOT MEASURE, named battery
+by battery. `EHS_BATTERY_STALL` (default 900 s) is the floor under the one path
+a marker cannot cover, a launcher killed outright.
+
+**The floor that was a ceiling.** That bound is written in seconds — in its
+variable, in its header, in this paragraph — and was counted in *polls* of the
+0.2 s wait loop. Nine hundred polls are 180 seconds, so "a floor under an
+infinite wait and not a policy about slowness" was a policy about slowness with
+its threshold at a fifth of what anyone exporting the variable would assume, and
+`EHS_BATTERY_STALL=20` in this repository's own battery meant four. Measured:
+under eight workers it cut `gate-bench-integrity.selftest.sh` at case 22 of 23,
+printed the half-written transcript, and returned the whole suite as
+`COULD NOT MEASURE` — while the same battery run alone is 23 passed, 0 failed,
+rc 0. The case that separates the two readings is the smallest tree that can: a
+two-second battery under a four-second bound, which survives if the bound is
+seconds and is declared resultless if it is polls. Run against the old
+arithmetic it goes red; that is the only reason to believe the new one.
+
+**A count that reported work nobody did.** The same mutant went green over a
+broken protection first. It takes FD 3 away from the launcher so a battery that
+reads stdin eats the rest of the list, and it did exactly that - but the count
+line was left counting rows of the list rather than results, so a run in which
+one battery ran and two never started still announced `batteries run: 3`, and
+the case whose needle is that count reported the protection intact. `found` now
+counts batteries that came back with an exit code. A tally that reports work
+nobody did will cover for whatever broke it.
+
+### Whose minutes are these
+
+The suite takes minutes and its transcript never said who was spending them: 36
+batteries, **0 of them with a published time**. "The suite is slow" is not
+something anyone can act on, and the batteries that own most of it were guessed
+at for months rather than read. `EHS_BATTERY_TIMES=<file>` now files one line
+per row of the list — `<elapsed seconds> <path>` — and prints the slowest few
+under the headline.
+
+**Read on this laptop, `--jobs 8`, 36 of 36 batteries timed:**
+
+| battery | elapsed | repeat |
+|---|---|---|
+| `gate-declared-case-counts.selftest.sh` | **352 s** | 373 s |
+| `gate-protected-paths.selftest.sh` | 264 s | 260 s |
+| `gate-bench-integrity.selftest.sh` | 238 s | 264 s |
+| `time-repeat.mutants.selftest.sh` | 211 s | 211 s |
+| `gate-reproduction.selftest.sh` | 198 s | 187 s |
+
+2,898 s of battery time inside a **493 s** run. One battery is 12% of the whole
+suite and holds first place in both runs by a margin nothing else comes near;
+the rows below it sit within about 10% of each other and reorder between runs,
+so the ranking is a reading at the top and noise further down. That is the
+answer to the question this instrument exists for, and it is the first time it
+has been read rather than assumed.
+
+It is **off by default, and that is not a convenience**. The A/B job above
+decides whether its two arms measured the same thing by DIFFING their
+transcripts, and a clock reading in the default output differs between any two
+runs of the same file. It would arrive there as a difference between the arms,
+and the tempting repair — widen that job's normaliser until the new lines are
+swallowed — is a control being blinded to keep a feature. Two cases hold the
+line: the default transcript carries no timing block, and two default runs of
+the same tree are byte-identical.
+
+**The figure is elapsed, not cost.** At more than one worker a battery's
+seconds include waiting for the others: 2,898 s of them fit inside 493 s, so
+they overlap each other almost six times over and none is what that battery
+would cost alone. The block prints the worker count on the same line for that
+reason and the sum against the wall clock underneath, so the overlap is visible
+rather than asserted. A "slowest batteries" list with no concurrency beside it
+reads as isolated cost, which is the one thing those numbers are not.
+
+**A battery with no time is `unknown`, never 0.** Filed as 0 it would sort to
+the bottom of a list headed "slowest" and read as the cheapest thing in the
+suite. The fixture is this file's own greedy mutant, which makes two batteries
+produce no result at all — a row of the list with no clock beside it — and the
+mutation on top of it files the missing time as 0, at which point every other
+assertion still passes. That is the only reason to believe the word.
+
+**The instrument ate its own measurement twice before it read one.** The path
+arrives in the environment and the file is TRUNCATED at startup, so a nested run
+does not add a line to somebody else's artefact — it destroys what was in it.
+First run: 36 batteries in, **24 lines out**, two of them toy fixtures belonging
+to `run-batteries.selftest.sh`, and the suite red naming that file. Second run,
+with the battery unsetting the variable as it already does for the ledger: **34
+lines**, the two missing being the first two of the list, wiped by one of the
+four mutant banks that run this runner as their subject. The fix that holds is
+one line in the worker — a battery inherits an empty path, and one that wants a
+times file of its own names one. Third run: 36 of 36. The sum printed under the
+headline had been computed from the survivors both times, and read as a suite
+cheaper than the one that had just run.
+
+**What it costs.** Two `date` calls per battery: 72 process spawns, **0.119 s**
+measured on this laptop, inside a 493 s run. The summary block runs once. The
+overhead is four ten-thousandths of the run and well under the 24 s the two
+clean runs differ by on their own.
+
+Fourteen cases, and nine mutations of the runner run against them, each
+declaring in advance which assertion has to go red: the block printed
+unconditionally, the sort reversed, the worker count dropped from the heading,
+the sum dropped, the file appended instead of truncated, an unwritable path
+allowed to continue, the worker not timing at all, the child inheriting the
+parent's path, and the count of untimed batteries left unsaid. **9 of 9 died**,
+14 s per run.
+
+NOT DONE, and written here rather than left implicit. The 71 above is
+hand-maintained: `gate-declared-case-counts.sh` compares a declared count against
+what a self-test runs, but only for files named `gate-*.sh`, so `run-batteries`,
+`coverage-sweep.mutants`, `declared-case-counts.mutants` and
+`time-repeat.mutants` are batteries whose declared counts nothing reads. And
+`EHS_TALLY_LEDGER`, unlike `EHS_BATTERY_TIMES`, still fails silently when its
+path cannot be written, and is still inherited by the batteries the runner
+launches.
+
+### The battery that has to go last
+
+The clock above named a hot spot and the next question was where inside it the
+seconds went. Not where anyone assumed. `gate-declared-case-counts.selftest.sh`
+runs 51 cases; 50 of them build a toy repository and cost **0.05 s** between
+them. The fifty-first is the control — the real gate over the real tree — and it
+was the whole battery.
+
+**What that control costs depends on something outside it.** It runs the
+self-test of every row the documents declare, and answers what it can from the
+tally ledger the other batteries write as they finish. Measured on this laptop,
+same tree, same commit:
+
+| the control over the real tree | rows run | rows read | elapsed |
+|---|---|---|---|
+| with no ledger | 42 | 0 | **132.2 s** |
+| with a full ledger | 17 | 25 | **6.9 s** |
+
+Nineteen times. And the ledger is written by the printer, which is serial and
+works in list order, so what a battery finds when it starts is whatever prefix
+of the list has already finished AND been printed. `LC_ALL=C sort` put this one
+at **position 15 of 36**. It was reading an almost empty file.
+
+**So a battery may now declare itself deferred** — `# ehs-runs-last:` at the
+start of a line inside its first 20 lines, carrying its reason on the same line
+— and `run-batteries.sh` moves it to the end. Measured across two runs each,
+`--jobs 8`, the ledger on in both arms so the comparison is of the ORDER and
+nothing else:
+
+| | before | after |
+|---|---|---|
+| its position in the list | 15 of 36 | **36 of 36** |
+| its elapsed inside the suite | 294 s | **118 s** (130 s on the repeat) |
+| the suite | 437 s | **342 s** (359 s on the repeat) |
+| the slowest battery in the suite | this one | `time-repeat.mutants.selftest.sh`, 213 s |
+
+**The declaration lives in the battery, not in a list here.** A "run these last"
+list in the runner is the third hand-written list this repository has had to
+remove in a week, and it would have gone stale the first time a battery was
+renamed. The battery is what knows why it has to be late, and the marker carries
+that reason where the next reader will be standing.
+
+**Twenty lines is a rule, not a budget.** It is what makes the marker a header
+declaration rather than any occurrence of a string. Four batteries here write
+toy batteries into fixtures and one of them writes this very marker to prove the
+ordering works; a file quoting it in its body is not asking for anything. Two
+cases hold that: a marker past the window defers nothing, and an indented marker
+defers nothing.
+
+**`--list` prints the deferred order, not the alphabetical one.** The printer
+reports in list order and the A/B job diffs those transcripts, so a `--list` that
+disagreed with the run would be a map of a different suite. The case that holds
+it asserts the two agree rather than asserting either one alone.
+
+**Deferred is not skipped.** The cheapest way to stop a slow battery costing
+anything is to stop running it, and from the outside that reads exactly like
+this feature: one battery, much faster, suite still green. A case runs a deferred
+battery that FAILS and requires rc 1 and its name in the transcript, and the
+mutant that drops the row instead of moving it turns that into rc 0.
+
+**A battery that cannot be read stops the run at COULD NOT MEASURE.** The order
+is a decision taken over every battery, so one I cannot open makes the ORDER
+undecidable rather than just that row — and it was going to fail when bash
+reached it anyway.
+
+`gate-assertion-pipes.sh` caught the first draft of this and was right. It read
+the header with `head -n 20 "$file" | grep -q '^# ehs-runs-last:'`, which
+answers "the marker is not in the header" and "I could not open the file" with
+the same silence. The header now goes into a variable, the read is checked, and
+the match is a shell `case` pattern — which also spares the run a process per
+battery. It cost a red suite to find, which is what that gate is for.
+
+Fourteen cases and six mutations of the runner, each declaring in advance which
+assertion has to go red: no partition at all, the halves the wrong way round,
+the marker matched anywhere in the header, the whole file searched instead of
+the header, deferred turned into dropped, and an unreadable battery waved
+through. **6 of 6 died.**
+
+NOT DONE. Nothing measures that a battery which SHOULD defer has declared it:
+`gate-declared-case-counts.selftest.sh` is the only one that needs to today, and
+a second one would be found by someone reading a slow run rather than by a gate.
+And the deferred group runs at the end with the pool draining, so a suite with
+several of them would serialise its own tail.
+
+### The bank of the clock, several mutants at a time
+
+`time-repeat.mutants.py` silences one rule of the instrument at a time and asks
+which case goes red. Each mutant runs one whole battery, twenty of them plus a
+baseline: **21 runs, one after another**. The section above left it as the
+slowest battery in the suite at 213 s, and that is the question this one answers.
+
+The mutants are independent - each works on its own copy of the tree and reads
+nothing the others write - so `EHS_TIMING_JOBS` of them now run at once,
+defaulting to 4.
+
+**Four rather than eight, and the reason is not caution.** This bank is itself
+one battery of a suite that already runs eight at a time. A bank that took a core
+per mutant would be competing with the seven siblings beside it, and the box
+would be measuring its own contention rather than this change. Eight is there for
+a run on its own, and both readings are in the table.
+
+**What is being timed here is a CLOCK, which is why it was measured before it was
+changed.** `time-repeat.selftest.sh` asserts on elapsed seconds. A battery whose
+assertions moved under load would turn this bank intermittent, and an
+intermittent bank is worse than a slow one: it teaches people to re-run until it
+is green. Reading the code would not have settled that. Measured on this laptop:
+**44 concurrent copies of that battery across four rounds** - one round of 8 and
+three of 12 - **28 of 28 cases green in every one of them**, rc 0 throughout,
+each copy 8 s alone against 11-16 s under load. The cases assert no absolute
+duration, and that is why they survive it.
+
+| | before | after |
+|---|---|---|
+| the bank on its own | 172 s (twice, transcripts byte-identical) | **55 s** at `EHS_TIMING_JOBS=4`, 42 s at 8 |
+| the bank inside the suite | 213 s (222 s on the repeat) | **84 s** (89 s) |
+| its rank among the 36 batteries | 1st, the slowest | 7th |
+| the suite | 342 s (359 s) | **228 s** (267 s) |
+| mutants caught by their owner | 20 of 20 | 20 of 20, in every arm |
+| the slowest battery in the suite | this one | `gate-protected-paths.selftest.sh`, 128 s |
+
+**The transcript does not move.** `ThreadPoolExecutor.map` yields in ARGUMENT
+order and nothing is printed until the pool closes, so the bank reads the same at
+one worker as at eight. That is not a nicety. `battery-workers-ab.yml` now
+carries a second job that decides whether the two arms measured the same thing by
+DIFFING their transcripts, and it has the shape of the suite job above for the
+same reason: **two serial runs first**, to establish what the bank varies by with
+the variable under test held still. That control came back byte-identical here -
+a stronger floor than the suite's, because the bank prints no clock readings of
+its own - so anything the arms differ by is the worker count or nothing. One line
+differs on purpose and is normalised, the count of how many ran at a time,
+because a verdict that does not say under what conditions it was reached is half
+a verdict.
+
+**A worker count nobody can read is a 2, not a default.** `EHS_TIMING_JOBS=x`
+exits COULD NOT MEASURE rather than falling back to 4 and reporting a number
+under a shape the reader believes they chose.
+
+NOT DONE. The 44-copy evidence is from this laptop, and it is a measurement taken
+once rather than a case: a later change to `time-repeat.selftest.sh` that made it
+assert an absolute duration would be caught by the new job only when someone
+pushes to `measure/**` or dispatches it. Nothing runs it on every commit, because
+running the bank three times over is minutes CI does not owe every push.
+
+### Twenty-six copies of a tree nobody touched
+
+`gate-protected-paths.selftest.sh` gave every case a private work tree by tarring
+the repository into it. Thirty-two cases, thirty-two copies, 0.63 s each measured
+— **20 s of a 25 s battery**, and the reason it was the slowest battery in the
+suite once the two sections above had moved the other two out of the way: at
+`--jobs 8` those copies are thirty-two writers competing for one disk, and the
+same battery that costs 25 s alone cost **128 s** inside the suite.
+
+**Twenty-six of the thirty-two never touched the tree.** What each case varies is
+the four signals the harness INJECTS — branch, file list, commit range, label —
+and not one of them lives in the tree. Only six pass a mutation, and the mutation
+is run by this harness, so which cases can dirty a tree is not a list anybody
+maintains: it is whether the case asked for one. The twenty-six now share a single
+copy and the six still get their own.
+
+| | before | after |
+|---|---|---|
+| full copies of the tree per run | 32 | **2** (one shared, one for the equivalence case) + 6 private |
+| the battery on its own | 25 s | **8 s** |
+| the battery inside the suite | 128 s | **38 s** (48 s on the repeat) |
+| the suite | 228 s (267 s) | **195 s** (232 s) |
+| the slowest battery in the suite | this one | `gate-bench-integrity.selftest.sh`, 105 s |
+| cases | 32 | 35 |
+
+**Sharing a tree is the kind of change that goes green for the wrong reason**, so
+three cases hold it rather than a paragraph:
+
+- `shared-tree-equals-a-private-one` makes one private copy exactly the way every
+  case made its own before this change and requires the two to fingerprint alike.
+  A shared tree that had come out short would let twenty-six cases pass against
+  something the gate never sees in CI, and every one of them would look green.
+- `shared-tree-unchanged-by-every-case` fingerprints the shared tree before the
+  first case and after the last. It also prints the split — `26 shared, 6 private`
+  — because a run that silently stopped sharing would otherwise be invisible.
+- `the-fingerprint-sees-one-byte` appends one byte to the shared tree after every
+  case is done with it and requires the fingerprint to move. A check that cannot
+  see a change is not a check, and this repository has shipped one before.
+
+The fingerprint is `find -type f | sort -z | xargs $HASH | $HASH`, 65 ms, rather
+than `tar | $HASH`, 460 ms: same reading, seven times cheaper, and it is taken
+three times per run. `$HASH` is chosen once and named — `sha256sum` where a Linux
+runner has it, `shasum` where this laptop does, COULD NOT MEASURE where neither is
+— because a battery that hard-coded either would be green on one machine and blind
+on the other. An **empty** reading is a failure return, never a digest —
+"the tree is empty" and "I could not look" must not reach the caller wearing the
+same face — and every place that cannot take it exits COULD NOT MEASURE rather
+than failing a case.
+
+**Three mutations of the harness, each declaring in advance which case has to go
+red, 3 of 3 caught:** a case that mutates handed the shared tree
+(`shared-tree-unchanged-by-every-case`, rc 1), the fingerprint replaced by a
+constant (`the-fingerprint-sees-one-byte`, rc 1), and the private copy of the
+equivalence case tarred short (`shared-tree-equals-a-private-one`, rc 1).
+
+While counting these, the prose above was found declaring **25 cases for a battery
+that has run 32 since the fold cases landed**. Nothing read it: the count
+`gate-declared-case-counts.sh` compares lives in the table at the top of this file,
+in the shape `self-test (NN cases)`, and a sentence saying "25 cases" in the middle
+of a paragraph is invisible to it. It is corrected here, and it is the second time
+a hand-written number in this file has gone stale without a single instrument
+noticing.
+
+NOT DONE. The three mutations were run by hand, from a copy of the battery placed
+beside the gate — the battery derives the gate's path from its own `$0`, so a
+mutant run from elsewhere reports `rc 127` for every case and proves nothing. They
+are not wired to a bank: one would cost a battery run per mutant, and the three
+controls they exercise are already in the battery.
+
+### One tree, put back between cases
+
+`gate-bench-integrity.selftest.sh` rots the answer key in one specific way per
+case, so unlike the battery in the section above **twenty-two of its
+twenty-three cases really do need a tree they can ruin**. Sharing one was not
+available. What was available is not copying it again: the tree cost **627 ms**
+to `tar` and **95 ms** to put back with `rsync -a --delete`, and twenty-three
+copies were two thirds of a 21 s battery — 132 s of it inside the suite, where
+those copies are eight batteries' worth of writers competing for one disk.
+
+| | before | after |
+|---|---|---|
+| full copies of the tree per run | 23 | **2** (one pristine, one for the equivalence case) |
+| the battery on its own | 21 s | **11 s** |
+| the battery inside the suite | 132 s | **82 s**, and see below |
+| cases | 23 | 27 |
+
+**The suite total is NOT MEASURED for this change, and the reason is worth more
+than a number would have been.** The run that produced the 82 s above took
+383 s against the 232 s of the run before it — and battery by battery, **thirty
+of the thirty-one others went up** (`gate-declared-case-counts.selftest.sh`
+87 s → 188 s, `gh.selftest.sh` 97 s → 159 s, `gate-agent-tools.selftest.sh`
+91 s → 152 s) while the only one that went down was this one. The laptop had a
+load average of 11 to 17 with none of it belonging to the suite: `fseventsd`
+had been pinned at 100% of a core for thirty hours. A total measured through
+that is a reading of the machine and not of the change, so it is not published
+as one. The battery's own number is the claim, and it was taken alone, twice,
+on both sides.
+
+The machinery lives in `scripts/gates/lib/fixture-tree.sh` rather than in the
+battery, because **this is the second battery to need it and nine more have the
+same shape**. It chooses its tools and says so rather than assuming them:
+`sha256sum` where a Linux runner has it and `shasum` where this laptop does,
+`rsync` where there is one and the old full copy where there is not. The
+fallback is deliberate — without `rsync` the per-case copy is still correct,
+only slow, and turning a working battery red over a missing convenience would
+be the wrong trade — but the battery **prints which path it took**, because a
+suite quietly running the slow path forever is the same as never having done
+this.
+
+**`rsync` decides what to resend from size and mtime, not content.** A mutation
+that rewrote a file to the same length in the same second would survive the
+restore, the next case would run against it, and — since most cases here want a
+non-zero exit anyway — it would very probably still look green. So four cases
+hold the reuse rather than a paragraph:
+
+- `restored-tree-equals-a-fresh-copy` fingerprints the reused tree against a
+  copy made exactly the old way, with `tar`, from the real repository.
+- `the-restore-removes-a-stray-file` adds a file no case adds and requires the
+  restore to take it away. It exists because **every case above only edits or
+  deletes**: nothing exercised the `--delete` half, so the claim that the tree
+  comes back whatever a case did was resting on a measurement taken outside
+  this battery.
+- `every-case-restored-the-tree` compares the number of restores that landed
+  clean against the number of cases, and prints the mode.
+- `the-fingerprint-sees-one-byte` appends one byte and requires the fingerprint
+  to move.
+
+**Four mutations of the harness, each naming in advance which control has to go
+red, 4 of 4 caught:** the restore replaced by `true`, the fingerprint replaced
+by a constant, the tally never written, and `--delete` dropped from the
+`rsync`. Each is matched on the `FAILED` line of the named control and not on
+the control's name alone — the name appears on the `ok` line too, and a mutant
+scored on that would be scored on the right exit code for the wrong reason.
+
+The tally is kept in a **file** and not a variable, and the reason is the first
+run of this library: `fixture_reset` is called from inside `$(...)` so the
+caller can capture its complaint, a subshell incremented the counter into its
+own grave, and the battery reported `0 restores for 24 cases`. The control was
+written to catch exactly that and caught it on its first run.
+
+Seven of the nine other batteries that copied the whole tree per case have
+since been converted; the section below has their numbers and names the two
+that were not. The four mutations here were run by hand from a copy of the
+battery and library placed beside the real ones — the battery derives both
+paths from its own `$0` — and are not wired to a bank.
+
+### Seven more batteries put the tree back instead of copying it
+
+The library written for the battery above turned out to fit seven of the nine
+others exactly: the same `case_run` prologue, the same `tar` of the whole tree,
+the same `rm -rf` at the end. Each of them lost the copy and gained the four
+controls.
+
+| battery | before | after | cases |
+|---|---|---|---|
+| `gate-triage-rules.selftest.sh` | 23.5 s | **9.0 s** | 16 → 20 |
+| `gate-scorecard-threshold.selftest.sh` | 16.5 s | **8.5 s** | 16 → 20 |
+| `gate-secret-scan.selftest.sh` | 18.5 s | **13.0 s** | 8 → 12 |
+| `gate-corpus-identifiers.selftest.sh` | 12.0 s | **10.0 s** | 14 → 18 |
+| `gate-findings-artifact.selftest.sh` | 9.5 s | **8.5 s** | 12 → 16 |
+| `gate-licence-hygiene.selftest.sh` | 8.5 s | **7.5 s** | 9 → 13 |
+| `gate-bench-blinding.selftest.sh` | 8.0 s | **9.0 s** | 9 → 13 |
+| **the seven, alone** | **96.5 s** | **65.5 s** | 84 → 112 |
+
+Each number is the mean of two runs of that battery on its own, on both sides,
+and **`gate-bench-blinding.selftest.sh` got half a second slower.** It is published rather
+than dropped because it is the shape of the trade and not noise in it: the four
+controls cost a fresh full copy and three fingerprints, about 1.5 s, and a
+battery with nine cases only has nine copies to save. Below roughly ten cases
+this change buys nothing but the controls. It was kept anyway — the controls
+are the point, and the four of them are why the other six numbers can be
+believed.
+
+**The controls moved into the library too.** They were 74 lines at the foot of
+one battery; written out eight times they would have been eight places for one
+of them to fall behind unnoticed. `fixture_controls` reads the caller's `pass`
+and `fail` and adds to them, which is why it is a sourced function and not a
+subshell, and why it takes `cases` **before** it scores anything — the first
+control does not restore, and counting it would make the restore tally
+disagree with itself.
+
+The mutation bank was run twice, because passing it proves two different
+things. Against the library, the four named mutants are still **4 of 4
+caught**. Against each converted battery, one mutant — the restore replaced by
+`true` — is **7 of 7 caught**, and that second run is the one that matters
+here: a battery can source a library and never call it, and a green self-test
+is not evidence that a shared control reached it. Three separate times on this
+front a piece passed its own test and turned out never to have run from the
+thing that was supposed to run it.
+
+NOT DONE. `gate-corpus-contract.selftest.sh` (30 cases, 11 s alone) already
+clones its tree with `cp -Rc` and has a different `case_run` shape, so it was
+left alone rather than converted on the assumption that `rsync` would beat a
+copy-on-write clone; that assumption is unmeasured.
+`gate-protected-paths.selftest.sh` keeps a per-case copy for its six mutating
+cases only. **The suite total is again NOT MEASURED**, for the same reason as
+the section above and with the same evidence: `fseventsd` is still pinned at
+100% of a core on this laptop, and a suite total read through that measures the
+machine.
 
 ## Branch naming
 

@@ -18,6 +18,26 @@
 GATE_OK=0
 GATE_FAIL=1
 GATE_UNMEASURABLE=2
+
+# CASE TALLY. A self-test that never says how many cases it ran cannot be
+# compared with the number the documentation promises: it can fall to two
+# cases, or to none, and every row about it stays green.
+# `gate-declared-case-counts.sh` reads the LAST line of this shape, so a
+# self-test prints it once, at the end, and only counts what it actually ran.
+GATE_CASES=0
+GATE_CASES_FAILED=0
+
+# gate_case — one case was run.
+gate_case() { GATE_CASES=$((GATE_CASES + 1)); }
+
+# gate_case_failed — the case just counted did not behave.
+gate_case_failed() { GATE_CASES_FAILED=$((GATE_CASES_FAILED + 1)); }
+
+# gate_tally — the canonical line, in the one spelling every instrument reads.
+gate_tally() {
+  printf -- '--- %d passed, %d failed ---\n' \
+    "$((GATE_CASES - GATE_CASES_FAILED))" "$GATE_CASES_FAILED"
+}
 export GATE_OK GATE_FAIL GATE_UNMEASURABLE
 
 # Colors only when attached to a TTY and not running in CI.

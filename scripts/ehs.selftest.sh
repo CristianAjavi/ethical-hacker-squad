@@ -17,7 +17,7 @@ check() {
   if [ "$rc" -ne "$want_rc" ]; then
     ok=1
   fi
-  if [ -n "$needle" ] && ! echo "$out" | grep -q "$needle"; then
+  if [ -n "$needle" ] && ! grep -q "$needle" <<<"$out"; then
     ok=1
   fi
 
@@ -42,7 +42,7 @@ check "search-finds-mcp" "$EHS search mcp" 0 "AI-08"
 check "search-empty-returns-0" "$EHS search xyznonexistentquery123" 0 "No procedures found"
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. scripts/ehs CLI passes all tests."
 exit 0

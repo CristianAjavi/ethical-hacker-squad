@@ -148,6 +148,9 @@ d=$(prep P1);  printf '\nA benign request from a legitimate user must still be v
 d=$(prep N22); check N22 0 "FINAL CONTROL: untouched copy again"
 
 printf '\nSummary: %d ok, %d failure(s)\n' "$pass" "$fail"
+# The canonical tally line, in the one spelling gate-declared-case-counts.sh
+# reads. Without it the number this battery's row promises is true of nothing.
+printf -- '--- %d passed, %d failed ---\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 printf 'Result: OK. The gate fails when it must fail, stays quiet on correct prose,\n'
 printf '        and distinguishes "could not measure" from "nothing to report".\n'

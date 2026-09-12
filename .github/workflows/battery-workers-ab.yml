@@ -1,0 +1,263 @@
+name: Battery workers A/B
+
+# WHY THIS RUNS SOMEWHERE ELSE
+#     The question - does running the batteries several at a time make the suite
+#     faster - was already asked once, on a laptop, and the laptop could not
+#     answer it. Four alternated runs there put the serial arm at 309.5 s and
+#     483.6 s over IDENTICAL code: 174.1 s of disagreement with itself, 56% of
+#     its own fast run. A range that wide swallows the effect in both directions,
+#     so neither "faster" nor "slower" was a reading that machine could support.
+#
+#     So the instrument moves. This job runs the two arms ALTERNATELY on a
+#     runner and reports whether their ranges overlap, which is the only form
+#     the answer can take. If they overlap here too, the answer is NO-MEDIDO and
+#     it gets written down as that - a second unreadable instrument is a result,
+#     not a licence to pick the number that suits.
+#
+#     Both arms are the SAME FILE at the same commit, differing only in --jobs.
+#     Comparing two files would confound the worker count with every other line
+#     that changed between them.
+#
+# It is manual on purpose: it costs tens of minutes of runner time and answers a
+# question that is asked once per change to the runner, not once per push.
+
+# The push trigger is not a convenience. A `workflow_dispatch` workflow can only
+# be dispatched once its file is on the DEFAULT branch, so a measurement written
+# on a feature branch cannot be run until after the change it is supposed to
+# justify has already been merged - the measurement would arrive after the
+# decision it exists to inform. Pushing the branch under `measure/` runs it where
+# it was written. The prefix keeps it off every other branch.
+on:
+  push:
+    branches: ['measure/**']
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "timed runs per arm"
+        required: false
+        default: "3"
+      jobs:
+        description: "workers in the parallel arm"
+        required: false
+        default: "4"
+
+# Granted job by job, never inherited: a workflow that says nothing here takes
+# whatever the repository default happens to be on the day it runs.
+permissions: {}
+
+jobs:
+  ab:
+    name: serial vs parallel, alternated
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # THERE IS DELIBERATELY NO actions/setup-python HERE, and putting one back
+      # will break this measurement in a way that looks like a code defect.
+      #
+      # ci.yml runs the suite on the runner image's own python3, which carries
+      # PyYAML from the distribution package. setup-python installs a CLEAN
+      # interpreter and puts it first on PATH, so PyYAML is gone: measured on
+      # this very workflow, `gate-labels-taxonomy` and `scripts/gh/tests`
+      # dropped to UNMEASURABLE, `gate-alert-surface --self-test` stopped
+      # printing its tally, and the count gate's control over the real
+      # repository went red for a row it could no longer check. Three red
+      # batteries, one cause, none of them in the code under measurement.
+      #
+      # An instrument that installs its own runtime measures a different machine
+      # than the one it is judging. This job's whole claim is "here is what the
+      # suite costs in CI", so it has to run in CI's environment, not in a
+      # tidier one of its own making.
+
+      - name: How many batteries, and how many cores
+        run: |
+          echo "cores: $(nproc)"
+          echo "batteries: $(bash scripts/run-batteries.sh --list | wc -l)"
+
+      # The timer captures the command's output, so when an arm comes back red
+      # the log says "exited 2" and not one word about which battery. That is
+      # what happened the first time this job ran, and the diagnosis had to be
+      # fetched from a different workflow's log. One plain run first, with its
+      # output where a reader can see it: a red suite is a fact about the suite,
+      # not about the clock, and it should be legible before anything is timed.
+      - name: One plain run, so a red suite says which battery
+        run: bash scripts/run-batteries.sh
+
+      # The verdict is the overlap, not the medians. --runs is deliberately
+      # small: each run is the whole suite, and a fourth repetition buys less
+      # than it costs. If the ranges touch, that IS the finding.
+      # The inputs go through `env`, never into the run block itself. A
+      # workflow_dispatch input is text a caller chose, and `${{ }}` inside a
+      # `run:` is expanded by the runner BEFORE the shell sees the line, so the
+      # text would be code. Through `env` it is a value the shell reads.
+      - name: Alternate the two arms
+        env:
+          RUNS: ${{ inputs.runs || '3' }}
+          JOBS: ${{ inputs.jobs || '4' }}
+        run: |
+          case "$RUNS" in ''|*[!0-9]*) echo "runs must be a number"; exit 2 ;; esac
+          case "$JOBS" in ''|*[!0-9]*) echo "jobs must be a number"; exit 2 ;; esac
+          python3 scripts/time-repeat.py \
+            --runs "$RUNS" \
+            --label "serial (--jobs 1)" \
+            --against-label "parallel (--jobs $JOBS)" \
+            --against "bash scripts/run-batteries.sh --jobs $JOBS" \
+            -- bash scripts/run-batteries.sh --jobs 1
+
+      # A speed reading is worthless if the two arms did not measure the same
+      # thing. Same battery count, same verdict, same transcript but for the one
+      # line that declares the worker count.
+      # THE THIRD RUN IS THE CONTROL, AND IT IS NOT OPTIONAL.
+      #
+      # The first version of this step ran the suite twice - once per arm - and
+      # blamed every difference on the worker count. It came back red naming
+      # four: two stopwatch readings printed inside a battery's own output, and
+      # two lines carrying a mktemp directory name. None of them had anything to
+      # do with parallelism; a serial run differs from ANOTHER serial run by
+      # exactly those lines. A comparison with no control attributes its own
+      # noise to whatever it happens to be testing.
+      #
+      # So the suite runs SERIALLY TWICE and in parallel once. The two serial
+      # runs establish what the runner varies by on its own, with the variable
+      # under test held still. The normaliser below has to flatten that pair to
+      # nothing before the step is allowed to say anything about the arms: a
+      # leftover there means the normaliser is incomplete, which is COULD NOT
+      # MEASURE, not a finding about --jobs. Only a difference the control does
+      # NOT reproduce can be laid at the door of the worker count.
+      #
+      # The control is deliberately serial-vs-serial rather than the cheaper
+      # parallel-vs-parallel: it establishes the noise floor WITHOUT
+      # parallelism, so anything the arms diff shows on top of it is
+      # attributable to parallelism rather than absorbed into the baseline.
+      - name: The two arms must agree on the verdict, with a control for the noise
+        env:
+          JOBS: ${{ inputs.jobs || '4' }}
+        run: |
+          case "$JOBS" in ''|*[!0-9]*) echo "jobs must be a number"; exit 2 ;; esac
+
+          bash scripts/run-batteries.sh --jobs 1        > one.out   2>&1; r1=$?
+          bash scripts/run-batteries.sh --jobs 1        > again.out 2>&1; rc=$?
+          bash scripts/run-batteries.sh --jobs "$JOBS"  > many.out  2>&1; r2=$?
+          echo "serial rc=$r1   serial again rc=$rc   parallel rc=$r2"
+
+          if [ "$r1" != "$rc" ]; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the same file gave $r1 and $rc. Nothing here can be attributed to the worker count."
+            exit 2
+          fi
+
+          # Everything this flattens is the runner talking to itself. Each entry
+          # earned its place by showing up in the control, and the control is
+          # what proves the list is long enough.
+          norm() {
+            sed -e 's#/tmp/tmp\.[A-Za-z0-9][A-Za-z0-9]*#<tmpdir>#g' \
+                -e 's# in [0-9][0-9]* s # in <elapsed> s #g' \
+                -e '/at a time/d' "$1"
+          }
+
+          norm one.out   > n1.txt
+          norm again.out > n2.txt
+          norm many.out  > n3.txt
+
+          if ! diff n1.txt n2.txt > control.diff 2>&1; then
+            echo "::error title=COULD NOT MEASURE::two serial runs still differ after normalising, so this step cannot tell noise from a finding. The normaliser is short by:"
+            cat control.diff
+            exit 2
+          fi
+          echo "control: two serial runs normalise to the same transcript"
+
+          [ "$r1" = "$r2" ] || { echo "::error title=DIFFERENT VERDICT::the arms disagree on the exit code"; exit 1; }
+
+          if diff n1.txt n3.txt; then
+            echo "the arms leave the same transcript once the runner's own noise is taken out"
+          else
+            echo "::error title=DIFFERENT TRANSCRIPT::the arms differ by something the control does not reproduce"
+            exit 1
+          fi
+
+  # THE SAME QUESTION, ASKED OF THE BANK INSTEAD OF THE SUITE
+  #     time-repeat.mutants.py runs one whole battery per mutant, twenty of them
+  #     plus a baseline, and they used to run one after another - 213 s inside
+  #     the suite, the slowest battery in it. They now run several at a time.
+  #
+  #     What makes this one worth its own job rather than a case is WHAT it
+  #     measures: a CLOCK. A battery whose assertions moved under load would
+  #     turn the bank intermittent, and an intermittent bank is worse than a
+  #     slow one - it teaches people to re-run until it is green. That cannot be
+  #     settled by reading the code, and it cannot be settled on a laptop with a
+  #     different core count than the runner.
+  #
+  #     The control is the same shape as the suite job above and for the same
+  #     reason: two SERIAL runs first, to establish what the bank varies by with
+  #     the variable under test held still. On this laptop that pair came back
+  #     byte-identical, which is a stronger floor than the suite's - the bank
+  #     prints no clock readings of its own - so anything the arms differ by is
+  #     the worker count or nothing.
+  bank:
+    name: the timing bank, serial vs parallel
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # No actions/setup-python here either, for the reason spelled out in the
+      # job above: the bank runs the real battery, and a clean interpreter is a
+      # different machine than the one CI judges.
+
+      - name: How many cores, and how many mutants
+        run: |
+          echo "cores: $(nproc)"
+          echo "mutants: $(grep -c '^ ("' scripts/time-repeat.mutants.py)"
+
+      - name: Serial twice for the floor, then parallel, and diff all three
+        env:
+          JOBS: ${{ inputs.jobs || '4' }}
+        run: |
+          case "$JOBS" in ''|*[!0-9]*) echo "jobs must be a number"; exit 2 ;; esac
+
+          EHS_TIMING_JOBS=1 bash scripts/time-repeat.mutants.selftest.sh \
+            > one.out 2>&1; r1=$?
+          EHS_TIMING_JOBS=1 bash scripts/time-repeat.mutants.selftest.sh \
+            > again.out 2>&1; rc=$?
+          EHS_TIMING_JOBS="$JOBS" bash scripts/time-repeat.mutants.selftest.sh \
+            > many.out 2>&1; r2=$?
+          echo "serial rc=$r1   serial again rc=$rc   parallel rc=$r2"
+
+          if [ "$r1" != "$rc" ]; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the bank gave $r1 and $rc. Nothing here can be attributed to the worker count."
+            cat one.out again.out
+            exit 2
+          fi
+
+          # One line differs on purpose: the bank prints how many ran at a time,
+          # because a verdict that does not say under what conditions it was
+          # reached is half a verdict. Nothing else in the transcript may move.
+          norm() { sed -e 's/ ([0-9][0-9]* a la vez)/ (<n> a la vez)/' "$1"; }
+
+          norm one.out   > n1.txt
+          norm again.out > n2.txt
+          norm many.out  > n3.txt
+
+          if ! diff n1.txt n2.txt > control.diff 2>&1; then
+            echo "::error title=COULD NOT MEASURE::two serial runs of the bank still differ after normalising, so this step cannot tell noise from a finding. The normaliser is short by:"
+            cat control.diff
+            exit 2
+          fi
+          echo "control: two serial runs of the bank are the same transcript"
+
+          [ "$r1" = "$r2" ] || { echo "::error title=DIFFERENT VERDICT::the arms disagree on the exit code"; cat many.out; exit 1; }
+
+          if diff n1.txt n3.txt; then
+            echo "every mutant is caught by the same case at $JOBS at a time as at one"
+          else
+            echo "::error title=DIFFERENT TRANSCRIPT::a mutant changes hands under load, which makes the bank intermittent"
+            exit 1
+          fi

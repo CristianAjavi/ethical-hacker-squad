@@ -45,8 +45,10 @@ SH
 }
 
 fails=0
+cases=0
 run_case() {  # name expected_rc  (env already set by caller)
   local name="$1" want="$2"; shift 2
+  cases=$((cases + 1))
   local out rc
   out="$("$@" 2>&1)"; rc=$?
   if [ "$rc" -eq "$want" ]; then
@@ -104,7 +106,11 @@ chmod +x "$LAB/bin/gh"
 run_case "gh not authenticated -> rc 2" 2 \
   env PATH="$LAB/bin:$PATH" EHS_GOVERNANCE_SCRIPT="$LAB/comparator.sh" "$GATE"
 
+# The canonical tally line, in the one spelling gate-declared-case-counts.sh
+# reads, and counted rather than written by hand: the '6 cases' this file used
+# to print was a claim about nothing, true until someone deleted a case.
+printf -- '--- %d passed, %d failed ---\n' "$((cases - fails))" "$fails"
 if [ "$fails" -ne 0 ]; then
   echo "gate-governance-drift.selftest: $fails case(s) did not behave (rc 1)"; exit 1
 fi
-echo "gate-governance-drift.selftest: 6 cases, all behaved (rc 0)"
+echo "gate-governance-drift.selftest: $cases cases, all behaved (rc 0)"

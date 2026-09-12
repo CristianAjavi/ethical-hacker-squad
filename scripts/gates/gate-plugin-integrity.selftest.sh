@@ -54,7 +54,7 @@ run_case() {
   "$mutate" "$d"
   local out rc=0
   out="$(env EHS_REPO_ROOT="$d" EHS_SERVED_ROOTS="skills agents" "$@" bash "$GATE" 2>&1)" || rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -qi -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -qi -- "$needle" <<<"$out"; }; then
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -72,7 +72,7 @@ run_case_absent() {
   "$mutate" "$d"
   local out rc=0
   out="$(env EHS_REPO_ROOT="$d" EHS_SERVED_ROOTS="skills agents" "$@" bash "$GATE" 2>&1)" || rc=$?
-  if [ "$rc" -eq "$want" ] && ! printf '%s' "$out" | grep -qi -- "$needle"; then
+  if [ "$rc" -eq "$want" ] && ! grep -qi -- "$needle" <<<"$out"; then
     printf 'ok       %-36s rc=%s (no "%s")\n' "$name" "$rc" "$needle"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s and no "%s")\n' "$name" "$rc" "$want" "$needle"
@@ -143,7 +143,7 @@ run_case no-skill-md-anywhere        2 "nothing to validate"       m_no_skill_md
 run_case no-markdown-at-all          2 ""                          m_no_md_at_all
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate rejects a malformed skill, a tree that points outside"
 echo "        itself, and a corpus over budget, and it reports could-not-measure"

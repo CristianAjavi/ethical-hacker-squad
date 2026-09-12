@@ -25,7 +25,7 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURED python3 is not on PATH"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-reproduction-XXXXXX")" || { echo "UNMEASURED cannot create a temporary directory"; exit 2; }
 trap 'rm -rf "$TMP"' EXIT
-pass=0; fail=0
+pass=0; fail=0; skip=0
 
 # A private copy of the corpus. Every case mutates its own copy; the repository
 # is read and never written.
@@ -190,8 +190,9 @@ check "a floor nobody can offer" 2 "$D"
 # sandboxed one may fail. On a machine with no sandbox-exec the case says so and
 # is not counted as a pass, because an absent sandbox is not a proved one.
 iso="$(python3 "$HERE/../bench/selftest_isolation.py" 2>&1)"
-if printf '%s' "$iso" | grep -q '"skip"'; then
+if grep -q '"skip"' <<<"$iso"; then
   printf 'skip     %-46s %s\n' "the sandbox denies the network" "$iso"
+  skip=$((skip + 1))
 elif printf '%s' "$iso" | python3 -c "
 import json, sys
 try:
@@ -327,6 +328,10 @@ check "a submission line that encodes" 1 "$D" --case intake-portal
 D="$TMP/intake-control"; build "$D" || exit 2
 check "intake-portal untouched is consistent" 0 "$D" --case intake-portal
 
-printf -- '--- %s passed, %s failed ---\n' "$pass" "$fail"
+# The third number is not decoration. This file holds 33 cases and one of them
+# needs sandbox-exec, so on Linux it neither passes nor fails and the tally used
+# to read 32 - a battery that silently shrinks by platform. Skipped is still a
+# case of this file; it is simply not a case that PROVED anything here.
+printf -- '--- %s passed, %s failed, %s skipped ---\n' "$pass" "$fail" "$skip"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

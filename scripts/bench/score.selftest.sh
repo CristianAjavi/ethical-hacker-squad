@@ -86,7 +86,7 @@ expect() {  # <name> <mode> <needle> [extra args...]
   local art="$TMP/$name.json"
   build "$mode" "$art"
   local out; out="$(python3 "$SCORE" --findings "$art" "$@" 2>&1)"
-  if printf '%s' "$out" | grep -q -- "$needle"; then
+  if grep -q -- "$needle" <<<"$out"; then
     printf 'ok       %-28s %s\n' "$name" "$needle"; pass=$((pass+1))
   else
     printf 'FAILED   %-28s expected %s\n' "$name" "$needle"
@@ -120,7 +120,7 @@ if [ $? -eq 2 ]; then printf 'ok       %-28s missing artifact is 2\n' unmeasurab
 else printf 'FAILED   %-28s missing artifact was not 2\n' unmeasurable-artifact; fail=$((fail+1)); fi
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The scorer separates a perfect run, a short run, a decoy reported"
 echo "        and a near miss, and refuses to score what it cannot read."

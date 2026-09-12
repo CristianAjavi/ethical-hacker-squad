@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Self-test for gate-bench-integrity.sh: each case rots the answer key in one
-# specific way on a throwaway copy and asserts the exit code and the reason.
+# specific way and asserts the exit code and the reason.
+#
+# The rotting happens in ONE work tree that is put back between cases, not in a
+# fresh copy per case: the copy cost 0.63 s and the restore costs 0.10 s, and
+# twenty-three copies were two thirds of this battery. scripts/gates/lib/
+# fixture-tree.sh holds the machinery and the reasoning; what matters here is
+# that a shared tree is only safe while something PROVES it came back clean, so
+# every case ends with a fingerprint of the whole tree against the pristine one
+# and a case that cannot prove it is a harness failure, never a pass.
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 set -uo pipefail
 
@@ -14,24 +22,35 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-bench-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
+# shellcheck source=scripts/gates/lib/fixture-tree.sh
+. "$HERE/lib/fixture-tree.sh" || { echo "UNMEASURABLE lib/fixture-tree.sh is missing"; exit 2; }
+fixture_init "$SRC" "$TMP" || exit 2
+
 case_run() {
-  local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
-  rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  local name="$1" want="$2" needle="$3" mutation="$4" work="$FIXTURE_WORK"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-36s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-36s the mutation itself failed\n' "$name"; fail=$((fail+1))
+    fixture_reset >/dev/null 2>&1 || true
+    return
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
+  # The tree the next case is about to receive is only trustworthy if this one
+  # gave it back intact, so the proof runs here and not at the end of the file.
+  local why
+  if ! why="$(fixture_reset)"; then
+    printf 'HARNESS  %-36s %s\n' "$name" "$why"; fail=$((fail+1))
+  fi
 }
 
 echo "=== self-test: gate-bench-integrity.sh (source: $SRC) ==="
+echo "    one work tree, restored by $FIXTURE_RESTORE, fingerprinted with $FIXTURE_HASH"
 
 case_run control-untouched-bench 0 "still describes the cases" ""
 
@@ -182,8 +201,14 @@ case_run key-unparseable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").write_text("{ not json")'
 
+# ---------------------------------------------------------------------------
+# FOUR CASES THAT HOLD THE REUSED TREE. They live in the library and not here
+# because nine batteries have this shape, and a control written nine times is
+# nine places for one of them to fall behind unnoticed.
+fixture_controls "$SRC"
+
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate notices when the key stops describing the cases."
 exit 0

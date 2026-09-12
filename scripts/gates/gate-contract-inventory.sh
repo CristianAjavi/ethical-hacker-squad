@@ -112,12 +112,31 @@ compare() {  # <doc> <inventory-or-empty> <out>  -> 0 fine | 1 disagreement | 2 
     return "$GATE_UNMEASURABLE"
   fi
 
-  comm -23 "$inv" "$docd" | sed 's/^/UNDOCUMENTED|/' >> "$out"
-  comm -13 "$inv" "$docd" | sed 's/^/PHANTOM|/' >> "$out"
+  # A documented name that is not in the inventory is usually a control the
+  # document promises and nobody runs. It is NOT that when the same name plus
+  # `.sh` IS in the inventory: then the document wrote the gate without its
+  # extension, the runner runs it, and nothing is missing. The two cost very
+  # different things to fix, so they are not reported with the same sentence.
+  local phantoms="$TMPDIR_GATE/phantoms" undoc="$TMPDIR_GATE/undoc"
+  local sameg="$TMPDIR_GATE/samegate" g
+  comm -13 "$inv" "$docd" > "$phantoms"
+  comm -23 "$inv" "$docd" > "$undoc"
+  : > "$sameg"
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    if grep -qxF "$g.sh" "$inv"; then
+      printf 'NOEXT|%s|%s.sh\n' "$g" "$g" >> "$out"
+      printf '%s.sh\n' "$g" >> "$sameg"
+    else
+      printf 'PHANTOM|%s\n' "$g" >> "$out"
+    fi
+  done < "$phantoms"
+  grep -vxF -f "$sameg" "$undoc" 2>/dev/null | grep -v '^$' \
+    | sed 's/^/UNDOCUMENTED|/' >> "$out" || true
   printf 'STAT|inventory|%s\n'  "$(wc -l < "$inv"  | tr -d ' ')" >> "$out"
   printf 'STAT|documented|%s\n' "$(wc -l < "$docd" | tr -d ' ')" >> "$out"
 
-  grep -qE '^(UNDOCUMENTED|PHANTOM)\|' "$out" && return "$GATE_FAIL"
+  grep -qE '^(UNDOCUMENTED|PHANTOM|NOEXT)\|' "$out" && return "$GATE_FAIL"
   return "$GATE_OK"
 }
 
@@ -135,18 +154,28 @@ self_test() {
     local found=0
     for d in "$FIXTURES/$want"/*/; do
       [ -d "$d" ] || continue
-      found=1
+      found=1; gate_case
       rc=0
       compare "$d/doc.md" "$d/inventory.txt" "$out" || rc=$?
       case "$want" in
-        bad)          [ "$rc" -eq 1 ] || { gate_warn "NEGATIVE self-test failed: $(basename "$d") should FAIL (1) and gave $rc"; ok=0; } ;;
-        good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; } ;;
-        unmeasurable) [ "$rc" -eq 2 ] || { gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (2) and gave $rc"; ok=0; } ;;
+        bad)
+          if [ "$rc" -ne 1 ]; then
+            gate_warn "NEGATIVE self-test failed: $(basename "$d") should FAIL (1) and gave $rc"; ok=0; gate_case_failed
+          elif [ -r "$d/phrase.expected" ] && ! grep -qF -f "$d/phrase.expected" "$out"; then
+            # rc 1 alone does not say WHY. A fixture that carries expect.txt
+            # demands the line that names the cause: two different defects that
+            # both fail are not the same measurement.
+            gate_warn "NEGATIVE self-test failed: $(basename "$d") fails, but not for the stated reason"
+            sed 's/^/        want: /' "$d/phrase.expected"; sed 's/^/        got:  /' "$out"; ok=0; gate_case_failed
+          fi ;;
+        good)         [ "$rc" -eq 0 ] || { gate_warn "POSITIVE self-test failed: $(basename "$d") should pass (0) and gave $rc"; sed 's/^/        /' "$out"; ok=0; gate_case_failed; } ;;
+        unmeasurable) [ "$rc" -eq 2 ] || { gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (2) and gave $rc"; ok=0; gate_case_failed; } ;;
       esac
     done
     [ "$found" -eq 1 ] || { gate_warn "self-test: there are no '$want' fixtures"; ok=0; }
   done
 
+  gate_tally
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"
 }
@@ -193,6 +222,9 @@ main() {
       done
       grep '^PHANTOM|' "$out" | while IFS='|' read -r _k g; do
         gate_fail "the contract names $g and the runner does not discover it: a control the document promises and nobody runs"
+      done
+      grep '^NOEXT|' "$out" | while IFS='|' read -r _k g real; do
+        gate_fail "the contract writes $g and the runner lists $real: the same control under a name missing its extension, so write $real in the document"
       done
       gate_verdict 1; return "$GATE_FAIL" ;;
   esac

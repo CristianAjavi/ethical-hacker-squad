@@ -121,43 +121,47 @@ self_test() {
 
   for f in "$FIXTURES"/bad/*.yml; do
     [ -e "$f" ] || { gate_warn "self-test: there are no negative fixtures"; return "$GATE_UNMEASURABLE"; }
+    gate_case
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     expect="$(sed -n 's/^#[ ]*gate-expect:[ ]*//p' "$f" | head -1)"
     if [ -z "$expect" ]; then
       gate_warn "self-test: fixture $(basename "$f") does not declare '# gate-expect:'"
-      ok=0
+      ok=0; gate_case_failed
       continue
     fi
     rule_found="$(grep -c "^FAIL|[^|]*|[0-9]*|$expect|" "$out" 2>/dev/null || true)"
     if [ "${rule_found:-0}" -lt 1 ]; then
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should trigger '$expect' and it did not"
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
   for f in "$FIXTURES"/good/*.yml; do
     [ -e "$f" ] || { gate_warn "self-test: there are no positive fixtures"; return "$GATE_UNMEASURABLE"; }
+    gate_case
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     if grep -q '^FAIL|' "$out" || grep -q '^UNMEAS|' "$out"; then
       gate_warn "POSITIVE self-test failed: $(basename "$f") should come out clean:"
       print_findings "$out" FAIL   "        "
       print_findings "$out" UNMEAS "        "
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
   for f in "$FIXTURES"/unmeasurable/*.yml; do
     [ -e "$f" ] || continue
+    gate_case
     : > "$out"
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     if ! grep -q '^UNMEAS|' "$out"; then
       gate_warn "self-test failed: $(basename "$f") should come out UNMEASURABLE and it came out silent"
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
+  gate_tally
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"
 }

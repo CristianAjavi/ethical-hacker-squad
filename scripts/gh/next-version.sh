@@ -82,9 +82,9 @@ while IFS= read -r sha; do
   # the body is flattened to a single line: only a marker is searched inside it.
   body=$(git show -s --format='%b' "$sha" | tr '\r\n' '  ')
   # BREAKING: `type!:` in the subject or `BREAKING CHANGE:` in the body.
-  if printf '%s' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:'; then HAS_MAJOR=1; fi
-  if printf '%s' "$body" | grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:'; then HAS_MAJOR=1; fi
-  if printf '%s' "$subject" | grep -qE '^feat(\([^)]*\))?!?:'; then HAS_MINOR=1; fi
+  if grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' <<<"$subject"; then HAS_MAJOR=1; fi
+  if grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:' <<<"$body"; then HAS_MAJOR=1; fi
+  if grep -qE '^feat(\([^)]*\))?!?:' <<<"$subject"; then HAS_MINOR=1; fi
 done <<<"$SHAS"
 
 if (( COUNT == 0 )); then

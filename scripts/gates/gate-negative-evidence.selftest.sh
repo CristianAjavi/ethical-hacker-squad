@@ -88,7 +88,7 @@ ln -s "$ROOT" "$TMP/nest/repo"
 check "a symlink one directory down" "$TMP/nest/repo"
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED. The verdict depends on how the tree was reached."; exit 1; }
 echo "Result: OK. The same tree gets the same verdict by every path to it."
 exit 0

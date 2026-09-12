@@ -73,7 +73,7 @@ selftest() {
   command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not on PATH"; return "$GATE_UNMEASURABLE"; }
   [ -f "$HARNESS" ] || { gate_warn "the harness is missing at $HARNESS"; return "$GATE_UNMEASURABLE"; }
 
-  local work rc
+  local work rc n_pass=0
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
   # Cleaned up explicitly rather than with `trap ... RETURN`: bash propagates a
   # RETURN trap to the caller, and this one fired again as main() returned, when
@@ -94,9 +94,12 @@ PY
   rc=$?
   if [ "$rc" -ne 1 ]; then
     rm -rf "$work"
+    printf -- '--- %d passed, 1 failed ---\n' "$n_pass"
     gate_fail "self-test: a patch key that contradicts the probes returned $rc, expected 1"
     return "$GATE_FAIL"
   fi
+
+  n_pass=$((n_pass + 1))
 
   # -- mutant 2: the reproduction key is gone -------------------------------
   rm -f "$work/bench/reproduction/cli-packer/key.json"
@@ -104,11 +107,18 @@ PY
   rc=$?
   if [ "$rc" -ne 2 ]; then
     rm -rf "$work"
+    printf -- '--- %d passed, 1 failed ---\n' "$n_pass"
     gate_fail "self-test: a tree with no reproduction key returned $rc, expected 2"
     return "$GATE_FAIL"
   fi
 
+  n_pass=$((n_pass + 1))
+
   rm -rf "$work"
+  # ONE MUTANT IS ONE CASE. This self-test is fail-fast, so the line is printed
+  # on both roads: a tally read off a red run is refused by the count gate
+  # anyway, and a run that says nothing cannot be compared with anything.
+  printf -- '--- %d passed, 0 failed ---\n' "$n_pass"
   return "$GATE_OK"
 }
 

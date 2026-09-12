@@ -15,6 +15,52 @@ command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-protected-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
+# ONE TREE FOR THE CASES THAT ONLY READ IT
+#     Twenty-six of the thirty-two cases below hand the gate an untouched tree and
+#     change only the four signals the harness injects - branch, file list, commit
+#     range, label - none of which live in the tree at all. Each was tarring its
+#     own 13 MB copy regardless: 0.63 s per copy measured, 20 s of a 25 s battery,
+#     and this is the slowest battery in the suite under `--jobs 8` for exactly
+#     that reason - thirty-two copies competing for one disk. They now share one.
+#
+#     The six that DO mutate the tree still get a private copy, and which is which
+#     is not a list anybody maintains: it is whether the case passed a mutation,
+#     and the mutation is run by this harness. A case cannot dirty a tree it never
+#     asked to change.
+#
+#     Sharing is the kind of change that goes green for the wrong reason, so it is
+#     checked rather than argued. Three cases at the ends of this file do it: the
+#     shared tree is the same tree a case used to get, no case wrote into it, and
+#     - because a check that cannot see a change is not a check - the fingerprint
+#     moves when one byte is appended.
+# Chosen once and named, not assumed: sha256sum is the one a Linux runner has and
+# shasum is the one this laptop has, and a battery that hard-coded either would be
+# green on one machine and could-not-measure on the other.
+if command -v sha256sum >/dev/null 2>&1; then HASH=sha256sum
+elif command -v shasum >/dev/null 2>&1; then HASH=shasum
+else
+  echo "UNMEASURABLE neither sha256sum nor shasum is here, so the shared tree cannot be fingerprinted"
+  exit 2
+fi
+
+tree_digest() {
+  local d="$1" h
+  h="$( (cd "$d" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 "$HASH") 2>/dev/null \
+        | "$HASH" | cut -d' ' -f1 )"
+  # An empty reading is not "the tree is empty", it is "I could not look", and the
+  # two must never arrive at the caller wearing the same face.
+  case "$h" in ''|*[!0-9a-f]*) return 1 ;; esac
+  printf '%s\n' "$h"
+}
+
+SHARED="$TMP/.shared"; mkdir -p "$SHARED"
+(cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$SHARED" && tar -xf -)
+if ! SHARED_BEFORE="$(tree_digest "$SHARED")"; then
+  echo "UNMEASURABLE the shared work tree cannot be fingerprinted, so nothing below is trustworthy"
+  exit 2
+fi
+shared_used=0; private_used=0
+
 # The commit range and the label are the two signals a branch does not choose,
 # so they are the two the harness has to be able to INJECT. The work tree is a
 # tar copy with no `.git`, which means git cannot supply them here and every
@@ -23,14 +69,32 @@ pass=0; fail=0
 #
 # case <name> <branch> <files> <expected rc> <needle> <mutation> [<commits>] [<label>]
 case_run() {
-  local name="$1" branch="$2" files="$3" want="$4" needle="$5" mutation="$6" work="$TMP/$1"
+  local name="$1" branch="$2" files="$3" want="$4" needle="$5" mutation="$6"
   local commits="${7-}" label="${8--}"
-  rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
-  if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+  # The four injected signals go in a scratch directory of their own and never in
+  # the tree. They are what this harness SUPPLIES; a case that wrote them into a
+  # shared tree would be handing the next case its inputs.
+  local scratch="$TMP/s-$name" work
+  rm -rf "$scratch"; mkdir -p "$scratch"
+  if [ -n "$mutation" ]; then
+    # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules
+    # is 259 MB of the repository's 321 MB, this gate reads none of it, and
+    # every case below was tarring its own copy. Measured before:
+    # 7855 MiB of peak disk and 2013 "No space left on device" write errors,
+    # with four cases turning red for a reason that has nothing to do with
+    # protected paths.
+    work="$TMP/$name"; rm -rf "$work"; mkdir -p "$work"
+    (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
+    if ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
+      printf 'HARNESS  %-40s the mutation itself failed\n' "$name"; fail=$((fail+1))
+      rm -rf "$work" "$scratch"; return
+    fi
+    private_used=$((private_used+1))
+  else
+    work="$SHARED"
+    shared_used=$((shared_used+1))
   fi
-  local list="$work/.changed"
+  local list="$scratch/.changed"
   printf '%s\n' "$files" > "$list"
   local out rc args
   args=(--changed-files "$list" --override "$label")
@@ -38,8 +102,8 @@ case_run() {
   # and the gate has to tell those two apart or a blind run reads as a clean one.
   if [ "$commits" = "NONE" ]; then args+=(--authorship -)
   else
-    printf '%s\n' "$commits" > "$work/.commits"
-    args+=(--authorship "$work/.commits")
+    printf '%s\n' "$commits" > "$scratch/.commits"
+    args+=(--authorship "$scratch/.commits")
   fi
   # CASE_DIFF: the unified diff this case wants the gate to read. The work tree is
   # a tar copy with no `.git`, so the gate can never produce one here on its own -
@@ -47,26 +111,52 @@ case_run() {
   # case written before exemptions existed keeps its old verdict unchanged. A case
   # that wants an exemption evaluated has to hand the diff over, in writing.
   if [ -n "${CASE_DIFF:-}" ]; then
-    printf '%s\n' "$CASE_DIFF" > "$work/.diff"
-    args+=(--diff "$work/.diff")
+    printf '%s\n' "$CASE_DIFF" > "$scratch/.diff"
+    args+=(--diff "$scratch/.diff")
   fi
   [ "$branch" = "NONE" ] || args+=(--branch "$branch")
-  [ "$files" = "NOLIST" ] && args=(--branch "$branch" --changed-files "$work/.missing")
+  [ "$files" = "NOLIST" ] && args=(--branch "$branch" --changed-files "$scratch/.missing")
   # Hermetic on purpose. On a CI runner GITHUB_HEAD_REF and GITHUB_BASE_REF are
   # set, and the gate reads them as defaults - so a case meant to prove "I cannot
   # tell whose branch this is" silently got told, passed locally and failed on the
   # runner. A battery that inherits the environment is not proving what it claims.
   out="$(env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF -u BASE_REF -u CHANGED_FILES_FILE \
         EHS_REPO_ROOT="$work" bash "$GATE" "${args[@]}" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-40s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-40s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
+  # And the private copy goes with the case. It is a NEW directory per case, so
+  # the `rm -rf` at the top only ever removed a directory that did not exist yet:
+  # every copy piled up until the EXIT trap fired. One at a time is the whole
+  # requirement. The shared tree is not the case's to delete.
+  [ "$work" = "$SHARED" ] || rm -rf "$work"
+  rm -rf "$scratch"
 }
 
 echo "=== self-test: gate-protected-paths.sh (source: $SRC) ==="
+
+# THE SHARED TREE IS THE SAME TREE A CASE USED TO GET. Not an argument about tar
+# being deterministic: one private copy is made exactly the way every case made
+# its own before this change, and the two are required to fingerprint alike. A
+# shared tree that had come out short would let twenty-six cases pass against
+# something the gate never sees in CI, and every one of them would look green.
+EQUIV="$TMP/.equiv"; mkdir -p "$EQUIV"
+(cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$EQUIV" && tar -xf -)
+if EQUIV_D="$(tree_digest "$EQUIV")"; then
+  if [ "$EQUIV_D" = "$SHARED_BEFORE" ]; then
+    printf 'ok       %-40s\n' shared-tree-equals-a-private-one; pass=$((pass+1))
+  else
+    printf 'FAILED   %-40s the shared tree is not what a case used to be given\n' \
+           shared-tree-equals-a-private-one; fail=$((fail+1))
+  fi
+else
+  echo "UNMEASURABLE a private copy cannot be fingerprinted, so the shared one cannot be compared to it"
+  exit 2
+fi
+rm -rf "$EQUIV"
 
 case_run automation-touches-nothing-protected bot/knowledge-loop \
   'skills/ethical-hacker-squad/references/knowledge/web-api.md' 0 "no protected path" ""
@@ -295,8 +385,41 @@ case_run bot-bump-with-no-diff-stays-protected dependabot/github_actions/g \
   '.github/workflows/scorecard.yml' 1 "no diff was supplied" "" "$BOT_ID"
 
 
+# --------------------------------------------------------------------------
+# The two cases that make the shared tree safe rather than merely fast.
+# --------------------------------------------------------------------------
+if ! SHARED_AFTER="$(tree_digest "$SHARED")"; then
+  echo "UNMEASURABLE the shared tree cannot be fingerprinted after the run, so whether a case wrote into it is not decidable"
+  exit 2
+fi
+if [ "$SHARED_AFTER" = "$SHARED_BEFORE" ]; then
+  printf 'ok       %-40s %s shared, %s private\n' \
+         shared-tree-unchanged-by-every-case "$shared_used" "$private_used"
+  pass=$((pass+1))
+else
+  printf 'FAILED   %-40s a case wrote into the tree the other cases read\n' \
+         shared-tree-unchanged-by-every-case; fail=$((fail+1))
+fi
+
+# A check that cannot see a change is not a check. This one dirties the shared
+# tree on purpose, after every case has finished with it.
+if ! printf 'x' >> "$SHARED/README.md"; then
+  echo "UNMEASURABLE the shared tree cannot be written to, so the fingerprint cannot be shown to work"
+  exit 2
+fi
+if ! SHARED_DIRTY="$(tree_digest "$SHARED")"; then
+  echo "UNMEASURABLE the dirtied tree cannot be fingerprinted"
+  exit 2
+fi
+if [ "$SHARED_DIRTY" != "$SHARED_BEFORE" ]; then
+  printf 'ok       %-40s\n' the-fingerprint-sees-one-byte; pass=$((pass+1))
+else
+  printf 'FAILED   %-40s one byte appended and the fingerprint did not move\n' \
+         the-fingerprint-sees-one-byte; fail=$((fail+1))
+fi
+
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
   echo "Result: OK. A change carrying ANY mark of automation - a reserved branch prefix, an"
   echo "        agent trailer, a bot identity - cannot move the limits whatever the branch is"

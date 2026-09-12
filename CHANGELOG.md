@@ -6,7 +6,216 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
+### Changed
+- Seven more self-test batteries reuse one work tree instead of copying the
+  whole repository per case, and the four controls that hold a reused tree moved
+  from the foot of one battery into `scripts/gates/lib/fixture-tree.sh` as
+  `fixture_controls`. The seven, run alone and averaged over two runs on each
+  side: **96.5 s to 65.5 s**, with cases going from 84 to 112.
+  `gate-triage-rules.selftest.sh` 23.5 s to 9.0 s and
+  `gate-scorecard-threshold.selftest.sh` 16.5 s to 8.5 s carry most of it;
+  `gate-bench-blinding.selftest.sh` went the other way, 8.0 s to 9.0 s, because
+  nine cases do not save enough copies to pay for the controls. The mutation
+  bank was run against the library (4 of 4) and then against each converted
+  battery (7 of 7) — sourcing a library is not calling it. The suite total is
+  NOT MEASURED; `docs/gate-requirements.md` says why.
+
+- **One tree, put back between cases.** `gate-bench-integrity.selftest.sh` gave each
+  of its 23 cases a fresh `tar` copy of the repository. Unlike the battery in the
+  entry below, **22 of its 23 cases really do need a tree they can ruin**, so sharing
+  one was never available — but copying it again was not the only alternative: the
+  copy costs 627 ms and putting the tree back with `rsync -a --delete` costs 95 ms.
+  **The battery 21 s → 11 s alone and 132 s → 82 s inside the suite**, and 23 full
+  copies per run → 2. The suite TOTAL is not published: the run that produced the
+  82 s took 383 s against 232 s before it, thirty of the other thirty-one batteries
+  went up, and the laptop was carrying a load average of 11 to 17 that the suite did
+  not put there — a total measured through that reads the machine, not the change. The machinery is in
+  the new `scripts/gates/lib/fixture-tree.sh` rather than in the battery, because
+  this is the second battery to need it and **nine more have the same shape**. It
+  picks its tools and says which it picked — `sha256sum` or `shasum`, `rsync` or the
+  old full copy — and falls back rather than refusing, because a missing convenience
+  should not turn a correct battery red. Since `rsync` decides what to resend from
+  size and mtime rather than content, **four new cases hold the reuse**: the reused
+  tree fingerprints the same as a `tar` copy made the old way, a stray file no case
+  adds is removed by the restore (nothing else exercised `--delete` — every case only
+  edits or deletes), the number of clean restores matches the number of cases, and one
+  appended byte moves the fingerprint. **23 → 27 cases**, and four mutations of the
+  harness each naming in advance the control that has to go red, 4 of 4 caught on the
+  `FAILED` line of that control rather than on its name. The tally lives in a file
+  because the first run reported `0 restores for 24 cases`: `fixture_reset` runs
+  inside `$(...)`, and a subshell increments a counter into its own grave.
+
+- **Twenty-six copies of a tree nobody touched.** `gate-protected-paths.selftest.sh`
+  gave each of its 32 cases a private work tree by tarring the repository into it:
+  0.63 s per copy measured, **20 s of a 25 s battery**, and 128 s inside the suite
+  because at `--jobs 8` those copies are thirty-two writers competing for one disk.
+  Twenty-six of the thirty-two never touch the tree — what a case varies is the four
+  signals the harness injects, and none of them lives in the tree. They now share one
+  copy; the six that pass a mutation still get their own, and which is which is not a
+  list anybody maintains but whether the case asked for one. **The battery 25 s → 8 s**, 128 s → 38 s inside the suite (48 s on the repeat), and the suite itself 228 s → 195 s (232 s).
+  Three new cases hold the sharing rather than a paragraph: the shared tree fingerprints
+  the same as a private copy made the old way, no case wrote into it (the split
+  `26 shared, 6 private` is printed), and — because a check that cannot see a change is
+  not a check — one appended byte moves the fingerprint. The fingerprint is
+  `find | sort | xargs shasum | shasum`, 65 ms against 460 ms for `tar | shasum`, and an
+  empty reading is a failure return rather than a digest. **32 → 35 cases**, and three
+  mutations of the harness each naming in advance the case that has to go red, 3 of 3
+  caught. While counting them, this file's sibling was found declaring **25 cases for a
+  battery that has run 32 since the fold cases landed** — prose no instrument reads,
+  since the count that is compared lives in the table at the top of
+  `docs/gate-requirements.md`.
+
+- **The bank of the clock ran its 21 batteries one after another.**
+  `time-repeat.mutants.py` runs one whole battery per mutant, twenty of them plus the
+  baseline, and the previous entry left it as the slowest battery in the suite at 213 s.
+  They are independent - each works on its own copy of the tree and reads nothing the
+  others write - so `EHS_TIMING_JOBS` of them now run at once, **4 by default** rather
+  than 8 because this bank is itself one battery of a suite that already runs eight at a
+  time, and a bank taking a core per mutant would be measuring its own contention.
+  What is being timed here is a **clock**, so the risk was measured before the change
+  rather than reasoned about: **44 concurrent copies of `time-repeat.selftest.sh` across
+  four rounds** at 8 and 12 at a time, **28 of 28 cases green in every one**, each copy
+  8 s alone against 11-16 s under load. The bank on its own **172 s → 55 s** (42 s at 8),
+  inside the suite **213 s → 84 s** (89 s on the repeat), and the whole suite
+  **342 s → 228 s** (267 s); 20 of 20 mutants caught by their owner in every arm.
+  `ThreadPoolExecutor.map` yields in argument order and nothing prints until the pool
+  closes, so the transcript is identical at any worker count - which is what
+  `battery-workers-ab.yml`'s new second job checks, two serial runs first for the floor
+  (byte-identical here) and then the parallel arm diffed against them. A worker count
+  that is not a number exits **COULD NOT MEASURE**, not a silent fallback to 4.
+
+- **The slowest battery in the suite was reading a file the suite had not written yet.**
+  `gate-declared-case-counts.selftest.sh` runs 51 cases; 50 build a toy repository and
+  cost **0.05 s** between them, and the fifty-first — the real gate over the real tree —
+  was the whole battery. What that control costs depends on the tally ledger the other
+  batteries write as they finish: measured on this laptop, same tree, **132.2 s with no
+  ledger (42 rows run) against 6.9 s with a full one (17 run, 25 read)**. The ledger is
+  appended by the printer, which is serial and works in list order, and `LC_ALL=C sort`
+  put this battery at **position 15 of 36** — it was reading an almost empty file. A
+  battery may now declare itself deferred with `# ehs-runs-last:` at the start of a line
+  inside its first 20 lines, and `run-batteries.sh` moves it to the end of the list.
+  Two runs each at `--jobs 8`, the ledger on in both arms so the comparison is of the
+  order and nothing else: that battery **294 s → 118 s** (130 s on the repeat), the whole
+  suite **437 s → 342 s** (359 s). The declaration lives in the battery because a "run
+  these last" list in the runner would be the third hand-written list removed here in a
+  week, and it would go stale the first time a battery was renamed. **Twenty lines is a
+  rule, not a budget**: four batteries here write toy batteries into fixtures and one
+  writes this very marker, so the window is what separates a declaration from an
+  occurrence. `--list` prints the deferred order, because the printer reports in list
+  order and the A/B job diffs those transcripts. **Deferred is not skipped** — a case
+  runs a deferred battery that fails and requires rc 1 and its name, and the mutant that
+  drops the row instead of moving it turns that into rc 0. A battery that cannot be read
+  stops the run at COULD NOT MEASURE. `run-batteries.selftest.sh` 57 → 71 cases, six
+  mutations of the ordering, **6 of 6 caught**.
+
+- **`gate-assertion-pipes.sh` caught the first draft of that and was right.** It read the
+  header with `head -n 20 "$file" | grep -q '^# ehs-runs-last:'`, which answers "the
+  marker is not in the header" and "I could not open the file" with the same silence. The
+  header now goes into a variable, the read is checked, and the match is a shell `case`
+  pattern — which also spares the run a process per battery. It cost a red suite to find,
+  which is what that gate is for.
+
+### Added
+
+- **The suite took 493 s and its transcript never said whose they were.** 36 batteries,
+  **0 of them with a published time**: "the suite is slow" is not something anyone can act
+  on, and the batteries that own most of it were guessed at for months rather than read.
+  `EHS_BATTERY_TIMES=<file>` now files one line per row of the list — `<elapsed seconds>
+  <path>` — and prints the slowest few under the headline. Read on this laptop at
+  `--jobs 8`, 36 of 36 timed: `gate-declared-case-counts.selftest.sh` **352 s** (373 s on
+  the repeat), then protected-paths 264 s, bench-integrity 238 s, time-repeat.mutants
+  211 s, reproduction 198 s. One battery is **12% of the whole suite** and holds first
+  place in both runs by a margin nothing else comes near; the rows below sit within about
+  10% of each other and reorder between runs, so the ranking is a reading at the top and
+  noise further down. It is **off by default and that is not a convenience**: the A/B job
+  decides whether its two arms measured the same thing by diffing their transcripts, and a
+  clock reading there would arrive as a difference between the arms — the tempting repair,
+  widening that job's normaliser, is a control being blinded to keep a feature. The figure
+  is **elapsed, not cost**: 2,898 s of battery time fit inside a 493 s run, so they overlap
+  each other almost six times over, which is why the block carries the worker count on its
+  heading and the sum against the wall clock underneath. A battery with no time is
+  `unknown`, **never 0** — filed as 0 it would sort to the bottom of a list headed
+  "slowest" and read as the cheapest thing in the suite. Two `date` calls per battery,
+  measured at **0.119 s** across 72 spawns inside a 493 s run. `run-batteries.selftest.sh`
+  43 → 57 cases, nine mutations of the runner run against them, **9 of 9 caught**.
+
 ### Fixed
+
+- **A nested runner ate the times file of the run that launched it.** The path arrives in
+  the environment and the file is truncated at startup, so a battery that is itself a
+  runner — four in this repository are — did not add a line to somebody else's artefact,
+  it destroyed what was in it. Measured, twice, by the instrument's own control run: 36
+  batteries in and **24 lines out** the first time, two of them toy fixtures belonging to
+  `run-batteries.selftest.sh` and the suite red naming that file; **34 lines** the second,
+  the two missing being the first two of the list. Both times the sum printed under the
+  headline was computed from the survivors and read as a suite cheaper than the one that
+  had just run. The battery now unsets the variable as it already does for the ledger, and
+  the runner hands every battery an empty path — one that wants a times file of its own
+  names one. Third run: 36 of 36.
+
+- **The extension list was the next hand-written list, and it was in the same commit.**
+  Sweeping every file outside the document list closed the hole a hand-written `ALSO` had left
+  open, and opened the same hole one notch smaller in the same breath: the sweep read seven
+  extensions and stopped at two million bytes. A count in a `.rst`, a `.toml`, a file with no
+  suffix at all, or past byte two million answered to nothing, and the silence read exactly like
+  a file holding none. **Seventy-four files in this repository were in that state.** An extension
+  list and a size cap are the same decision written twice — stop looking — as a constant nobody
+  revisits, so the sweep now reads **bytes**, all of them, in one-megabyte pieces that carry the
+  trailing partial line forward: encoding stops mattering because it never asks a file to decode,
+  and size stops mattering because memory is bounded by the longest line rather than the file.
+  The two patterns are compiled from the same source strings the documents are read with rather
+  than written out again, because a hand-written copy would drift and drift is what this gate is
+  for. It is not a trade of reach for speed — median of seven, the old sweep read 1,151 files in
+  **0.13 s**, the new one reads **1,224 in 0.086 s** as a clean clone sees it, a bytes match
+  never having to decode UTF-8 or build a list of lines. (This working copy also carries a 270 MB
+  symlink into `node_modules` that `.gitignore` keeps out of the repository; reading it takes the
+  local figure to 0.37 s, and it is the one number here a clone will not reproduce.) That leaves
+  exactly one door to rc 2 — a file that cannot be OPENED — so a case shuts one and demands rc 2,
+  and refuses to run rather than pass in a process that can read a `chmod 000` file. On the real
+  tree, planted and removed: a real gate's count in a file with no extension turned it red, so
+  did one past two megabytes, so did one inside a file that is not valid UTF-8, and the same
+  count for a gate that does not exist left it green. The unopenable file put it at 2, and there
+  the real tree cannot isolate the cause — a file no process can read also blinds ten other rows
+  whose self-tests walk this repository — so the isolated evidence for that one is the toy case
+  and the mutant that dies in it. `gate-declared-case-counts.sh` self-test 46 → 51 cases, mutant
+  bank 45 → 50, **50 of 50 caught** in 39 s.
+
+- **The list of documents that state case counts was written by hand.** Reading `CHANGELOG.md`
+  as well as `docs/gate-requirements.md` closed two unchecked figures and left a hole in the same
+  sentence: `ALSO` is hand-written, so nothing said a **third** file declaring a count would ever
+  be found — and a rule that depends on somebody remembering to extend it is the rule that let
+  this file go unread for as long as it did. The gate now sweeps every other text file (1,153 of
+  them in 0.24 s, against the ~90 s it already spends running the self-tests it compares) and
+  reports any count it finds there **for a gate that exists**. That clause is what makes the rule
+  survivable with no exception list: a count for a gate that is not on disk is a fixture — the
+  mutant bank keeps one — and the rule never sees it. A file the sweep cannot open, undecodable
+  or over the 2 MB cap, leaves by the door marked COULD NOT MEASURE, rc 2: nobody measured
+  anything to call it wrong, and silence would have read exactly like a file holding no count.
+  Measured: **one** declaration lives outside the two documents and it is the fixture. The three
+  negative controls on the real tree are what say the green means something — a count for a real
+  gate planted in `CONTRIBUTING.md` turned it red, the same count for a gate that does not exist
+  left it green, and an undecodable file put it at 2. The clash rule then caught this entry
+  itself, which still said 42 while the table said 46.
+
+- **This file declared case counts and no instrument read them; one of the two was wrong.**
+  `gate-declared-case-counts.sh` compared the numbers in `docs/gate-requirements.md` against a
+  run of the self-test each row names, and read exactly one document. `CHANGELOG.md` states
+  counts too, in its own spelling — the path spelled out and `6-case self-test` instead of
+  `self-test (6 cases)` — and on 2026-09-07 one of its two live claims promised a 17-case
+  battery for a self-test that runs thirty. It was found by hand while fixing something else,
+  which is how the next one would not have been found. The gate now reads a list of documents:
+  **41 declarations in one file becomes 43 across two**. Three things had to hold for that to be
+  an improvement and not a wider surface. Only the **live section** of a changelog is a claim
+  about today — a released entry states the numbers of its own time, and a red nobody can clear
+  is a red that gets skipped. An **absent** secondary is said out loud, in the same words the
+  gate uses for anything else it could not read, because silence there reads exactly like a
+  document with nothing to check. And the rule that every gate must declare a count **stays
+  scoped to the table**, so a gate named only in a changelog entry cannot satisfy it without a
+  row. A disagreement between the two files was already the clash rule's business; it used to
+  say "the table declares it twice" and now names both files, because a number that is wrong in
+  the other document cannot be fixed by looking at this one.
+  `scripts/gates/gate-declared-case-counts.sh` (+ 51-case self-test), 50 mutants in
+  `scripts/declared-case-counts.mutants.py`.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
@@ -263,14 +472,14 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 - **`local-app.md` pack (`LOC-01`..`LOC-15`) and the `ehs-local-app` subagent** — the largest declared coverage gap, closed. CLI tools, desktop shells, published libraries, installers and local daemons had no procedure anywhere, and `coverage.md` routed them to `web-api`, whose own header says not to load it for a library with no network surface. Covers path traversal and archive extraction, symlink following, predictable temporary files, TOCTOU, argument injection (a list instead of a shell string does not stop it), untrusted search paths, configuration discovered from the working directory, permissive file modes, privileged helpers, insecure-by-default library APIs, Electron and WebView renderer isolation, protocol handlers and deep links, local IPC and loopback listeners with no `Origin` check, code arriving at runtime with no verification, and secrets in config, logs and `argv`. Its §0 is what keeps it honest: a local finding must name the second principal and the boundary crossed, or it is a hardening note. The role's contract adds one rule the others do not need — tests create files only inside a temporary directory made for the run, because a symlink or race test pointed at a real path is destruction, not evidence.
 
-- **`gate-corpus-contract.sh`** and its 17-case self-test — the corpus measured against every number and every name the repository states about it: numbering contiguity, declared counts and ranges, pack cost headers and the loading map, the six mandatory fields, identifier families, identifiers written outside backticks, the roster (`team.md` ↔ `agents/` ↔ `packs.json`) and the routing in `coverage.md`. Two exemptions exist and both are printed on every run: a procedure may declare that no external identifier applies, and text quoting a superseded figure is exempt only inside a `<!-- counts:historical -->` region.
+- **`gate-corpus-contract.sh`** and its 30-case self-test — the corpus measured against every number and every name the repository states about it: numbering contiguity, declared counts and ranges, pack cost headers and the loading map, the six mandatory fields, identifier families, identifiers written outside backticks, the roster (`team.md` ↔ `agents/` ↔ `packs.json`) and the routing in `coverage.md`. Two exemptions exist and both are printed on every run: a procedure may declare that no external identifier applies, and text quoting a superseded figure is exempt only inside a `<!-- counts:historical -->` region.
 - **Two identifier families the corpus was already citing and nothing declared**: the OWASP Agentic Skills Top 10 (`AST01`..`AST10`, project page verified 2026-08-21) and ATLAS mitigations (`AML.M*`). Added to `docs/sources-allowlist.json`, `NOTICE.md`, the meter's family table and the gate's family list, so those citations now count as traceability instead of being invisible.
 
 - **`AI-23`** — model, adapter and dataset artifacts loaded without provenance or safe deserialization. A checkpoint is executable content: `.pt`, `.pkl`, `.ckpt` and `.h5` deserialize into Python objects and run code while loading, before a single token is generated, and `trust_remote_code=True` executes modelling code from the repository. Pulling by tag instead of by digest means the artifact you audited is not the artifact production loads.
 - **`PRV-12`** — where personal data physically lands and where it is replicated: the `region` argument of every store, its backups, replicas and the third parties that receive it, against the jurisdiction the product declares. States the technical fact and never rules on lawfulness.
 
 - **Five procedures for code a model wrote, and the answer to the market's version of the question is mostly "already covered"**: `docs/coverage/mapa-vibecoding.md` maps the citable terrain for code an LLM wrote — a provenance, not a product category — with every source's licence, extraction date and an A/B/C evidence tier, plus the list of everything that could not be opened and three widely-repeated claims the checks contradict. `docs/coverage/huecos-vibecoding.md` crosses it against all 164 procedures, all 18 procedure files and all 9 agents, and spends as much room on what is **already covered** as on what is missing: `SUP-08` for hallucinated packages, `AI-04` and `AI-20` for generator instruction files, `WEB-04` for the missing row-level authorization behind a famous app-builder incident. Six gaps survive; five land. **`SUP-26`** the hallucinated name that already *resolves* — a lockfile hash proves byte-stability, not legitimacy, the advisory database returns nothing, and `SUP-07` under-fires by construction because most invented names resemble no real package. **`AI-29`** configuration in the repository that runs, or overrides, on the machine that opens it, with five CVE records fixing the shape. **`INF-24`** a configuration name the code reads and nothing defines, where the fallback becomes the security decision — the mirror of `WEB-23`. **`WEB-27`** a control that runs and cannot fail, which *deletes* findings instead of adding one by clearing taint on a sanitiser that returns its argument, and is the canonical way to answer `FP-01` wrongly. **`WEB-28`** attacker-controlled data written into a log, `CWE-117`, cited in none of the previous 164 traceability lines and the class generated code resolves worst of the four Veracode measured. Two of the five state inside themselves that **nobody has published a prevalence figure** for their class. The sixth gap ships no procedure: its identifier is held by a pre-registered round that has not run, contiguous numbering forbids skipping it, and it is declared in `references/traceability.md` with the interim rule — a verification whose family was never enumerated is `partially verified`, never `verified`. `bench/cases/intake-portal/` measures the two unmeasured classes with 11 planted defects and 8 decoys, including the same inert guard in three modules beside a fourth that works. The web pack ships a third file, `web-api-logging.md`, because with both procedures inside it `web-api-clientside-logic.md` measured 34,302 B against a 32,768 B cap. Independent verification refuted four over-sold claims before merge — including one in the served corpus — and a gap audit found four more; all are fixed here rather than shipped.
-- **Knowledge corpus** (4,511 lines, 170 numbered procedures across 8 role packs stored in 20 files). Each procedure carries where to look per stack, the vulnerable pattern, false-positive criteria, a minimal non-destructive test, standard traceability and tool guidance: `web-api` (`WEB-01`..`WEB-28`), `mobile` (`MOB-01`..`MOB-18`), `infra-cloud` (`INF-01`..`INF-24`), `supply-chain` (`SUP-01`..`SUP-26`), `ai-safety` (`AI-01`..`AI-29`), `privacy-abuse` (`PRV-01`..`PRV-13`), `local-app` (`LOC-01`..`LOC-16`), `remediation` (`REM-01`..`REM-07`, `VER-01`..`VER-09`). Five packs are split across more than one file — `infra-cloud` across two, `mobile`, `supply-chain`, `ai-safety` and `web-api` across three — so that no reference file exceeds the 32 KiB per-file budget enforced by `gate-plugin-integrity.sh`. `references/knowledge/README.md` is the loading map and names every file with its identifier range. The split is by section boundary only: procedure identifiers, their text and their six fields are unchanged, so every `WEB-*`, `MOB-*`, `INF-*`, `SUP-*` and `AI-*` reference in an existing report or issue still resolves.
+- **Knowledge corpus** (4,556 lines, 171 numbered procedures across 8 role packs stored in 20 files). Each procedure carries where to look per stack, the vulnerable pattern, false-positive criteria, a minimal non-destructive test, standard traceability and tool guidance: `web-api` (`WEB-01`..`WEB-28`), `mobile` (`MOB-01`..`MOB-18`), `infra-cloud` (`INF-01`..`INF-24`), `supply-chain` (`SUP-01`..`SUP-26`), `ai-safety` (`AI-01`..`AI-30`), `privacy-abuse` (`PRV-01`..`PRV-13`), `local-app` (`LOC-01`..`LOC-16`), `remediation` (`REM-01`..`REM-07`, `VER-01`..`VER-09`). Five packs are split across more than one file — `infra-cloud` across two, `mobile`, `supply-chain`, `ai-safety` and `web-api` across three — so that no reference file exceeds the 32 KiB per-file budget enforced by `gate-plugin-integrity.sh`. `references/knowledge/README.md` is the loading map and names every file with its identifier range. The split is by section boundary only: procedure identifiers, their text and their six fields are unchanged, so every `WEB-*`, `MOB-*`, `INF-*`, `SUP-*` and `AI-*` reference in an existing report or issue still resolves.
 - **Dedicated plugin subagents** under `agents/`. Auditor roles ship without `Edit` and `Write`, which removes the most direct write path. It is a real reduction, not a guarantee: auditors keep `Bash`, so read-only operation still depends on the contract and must be confirmed with `git status --porcelain` after a run.
 - **`references/traceability.md`** — verified state of every cited standard, the standard-to-role matrix, the citation policy, and an explicit list of known coverage gaps.
 - **`references/tooling.md`** — per-surface non-destructive invocation, network posture, licence constraints, and the typical false positive of each tool.

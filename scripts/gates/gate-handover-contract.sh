@@ -212,9 +212,9 @@ selftest() {
     fi
     local out rc
     out="$(measure "$w/SKILL.md" "$w/report.md" "$gates" "$w/handover-contract.json" 2>&1)"; rc=0
-    printf '%s' "$out" | grep -q '^1|' && rc=1
-    printf '%s' "$out" | grep -q '^2|' && rc=2
-    if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+    grep -q '^1|' <<<"$out" && rc=1
+    grep -q '^2|' <<<"$out" && rc=2
+    if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
       printf '  PASS  %-50s rc=%s\n' "$name" "$rc"; p=$((p+1))
     else
       printf '  FAIL  %-50s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -322,7 +322,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"report.md").unlink()'
 
   command rm -rf "$tmp"
-  echo "  $p PASS / $f FAIL"
+  echo "  $p passed, $f failed"
   [ "$f" -eq 0 ] || return 1
   return 0
 }
