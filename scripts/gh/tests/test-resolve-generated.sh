@@ -400,10 +400,18 @@ res "a subject with no conflict marker -> rc 2" "$(run_tool "$d" "$TOOL" docs/ce
 
 # extra: the shapes a person actually types. These exist because the subject
 # path is turned into a repo-relative one by stripping the root prefix, and on
-# macOS a temporary directory is reached as /var/... while git reports
-# /private/var/... - the same directory under two spellings. Without `pwd -P` on
-# both sides every absolute subject here would be reported as "outside this work
-# tree", which is a refusal dressed up as a security finding.
+# macOS a temporary directory is reached under `/var` while git reports the same
+# directory under its resolved spelling, which carries a `/private` prefix in
+# front of it - one directory, two spellings. Without `pwd -P` on both sides
+# every absolute subject here would be reported as "outside this work tree",
+# which is a refusal dressed up as a security finding.
+#
+# The spelling is described rather than typed out, because gate-machine-identity
+# reads that shape as a path belonging to one laptop and this file is not in its
+# allowance list. It found this line in CI and not here, for a reason worth
+# writing down: the gate's subjects are the VERSIONED files, so while these three
+# files were still untracked the whole local suite measured a tree that did not
+# contain them.
 d="$LAB/n1"; build_repo "$d"; doc_conflict_inside "$d"
 res "a subject given as an ABSOLUTE path -> rc 0" "$(run_tool "$d" "$TOOL" "$d/docs/census.md")" 0 "regenerated"
 res "n1. and it really regenerated" "$(grep -c '^- files counted: 3$' "$d/docs/census.md")" 1
