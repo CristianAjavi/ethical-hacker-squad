@@ -112,6 +112,19 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.js
 d=json.loads(p.read_text()); d["packs"]["mobile"]={"required":False,"floor":999}
 p.write_text(json.dumps(d,indent=2))'
 
+# The case above sets `required: False`, and for a long time that was the ONLY
+# shape in which the ratchet fired: the floor test was an `elif` hanging off
+# `if policy.get("required"):`, so a pack that IS required - which is all eight of
+# them - had no ratchet at all. The green above sat on top of the defect, because
+# it tested the one branch where the broken code still worked. This case is the
+# other branch, and it is the one that matters: restore the `elif` in
+# triage_rules.py and THIS goes red while the one above stays green.
+case_run ratchet-also-binds-a-required-pack 1 "below its floor of 777" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.json"
+d=json.loads(p.read_text()); d["packs"]["local-app"]["floor"]=777
+p.write_text(json.dumps(d,indent=2))'
+
 case_run rules-file-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"'"$R"'").unlink()'

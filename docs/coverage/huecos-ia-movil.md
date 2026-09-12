@@ -2,9 +2,9 @@
 
 **Analista de huecos.** Contrasta el temario profesional ya mapeado (OWASP GenAI/ASI/AITG/MCP/AST10/MAS, MITRE ATLAS, NIST AI RMF + AI 600-1, Microsoft Learn AI Red Teaming Agent, developer.android.com) contra el corpus real del escuadrón:
 
-- `/Users/cristianajavi/ethical-hacker-squad/skills/ethical-hacker-squad/references/knowledge/ai-safety.md` — `AI-01`..`AI-22`, 543 líneas
-- `/Users/cristianajavi/ethical-hacker-squad/skills/ethical-hacker-squad/references/knowledge/mobile.md` — `MOB-01`..`MOB-15`, 347 líneas
-- `/Users/cristianajavi/ethical-hacker-squad/skills/ethical-hacker-squad/references/traceability.md`
+- `skills/ethical-hacker-squad/references/knowledge/ai-safety.md` — `AI-01`..`AI-22`, 543 líneas
+- `skills/ethical-hacker-squad/references/knowledge/mobile.md` — `MOB-01`..`MOB-15`, 347 líneas
+- `skills/ethical-hacker-squad/references/traceability.md`
 - Packs adyacentes leídos solo para no duplicar: `privacy-abuse.md` §5, `supply-chain.md` §6 y §9, `remediation.md` `VER-04`, `infra-cloud.md` (índice)
 
 **Modo solo lectura.** No se escribió nada dentro del repo. Este archivo es el único entregable.

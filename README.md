@@ -16,7 +16,7 @@ Two results are larger than the comparison. Across three arms, fifteen runs and 
 
 What *is* measured, and is narrower than "finds more":
 
-- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format has no field for;
+- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format had no field for — *narrowed 2026-09-10, against us: AIG now marks an empty-output scan `possibly-incomplete` and carries a free-text `scanNote` in the SARIF `invocations[].properties` (`39692dd`, 2026-08-31, with `pytests/test_scan_completeness.py` beside it). That is the tool reporting its own emptiness at run level, not a per-finding verdict, and it is not a coverage declaration — but "no field for" is no longer true of the field, and the sentence now holds only per finding*;
 - a **coverage declaration** that must resolve every surface it inventories as read or not-read, so a reader can tell silence from a clean bill — a blinded reader test caught one of our own reports failing exactly that, which is why a validator now enforces it;
 - **zero decoys reported** on eleven constructs built to be mistaken for the defect beside them.
 
@@ -35,7 +35,7 @@ Two targets, **four arms**, six runs each, every claim judged blind by two indep
 
 **This corpus leads nothing.** On the [HTTP API](bench/runs/2026-08-22-third-competitor/) two arms out-recall it (5.00 against its 4.83) and `AI-Infra-Guard` out-precisions it, refuting **nothing** against its one claim. On the [AI-agent target](bench/runs/2026-08-22-second-competitor/) it is level with `AI-Infra-Guard` and ahead of `mantis`. **Each of the field's three comparable products falls outside a band somewhere; this corpus falls outside none.** That is an absence of outliers, not a win, and it is deliberately weaker than the sentence it replaces.
 
-**This comparison is a photograph taken on 2026-08-22**, at the commits named in [`docs/competitive-baseline.json`](docs/competitive-baseline.json). Subjects move: on 2026-08-24 two of the three were already past the commit measured here, both pushed that day. That does not make a number above wrong — it dates it. [`scripts/gh/competitive-freshness.sh`](scripts/gh/competitive-freshness.sh) is what notices, and it says only that the photograph is old, never that a product which moved got better.
+**This comparison is a photograph taken on 2026-08-22**, at the commits named in [`docs/competitive-baseline.json`](docs/competitive-baseline.json). Subjects move: on 2026-08-24 two of the three were already past the commit measured here, both pushed that day. That does not make a number above wrong — it dates it. [`scripts/gh/competitive-freshness.sh`](scripts/gh/competitive-freshness.sh) is what notices, and it says only that the photograph is old, never that a product which moved got better. On 2026-09-11 the five subjects that had moved were read commit by commit — 257 commits between the pinned commits and their tips — and no reading changes a cell above; the check now returns 0 (`still the tip 17 · moved and read 5 · MOVED 0 · could not measure 0`), which says the moves are acknowledged and never that a number was re-measured. **No product has been re-run since 2026-08-22**, and the readings are written up in [`docs/competitive-analysis.md`](docs/competitive-analysis.md).
 
 **Of the six products surveyed on 2026-08-22, three are comparable and all three have been run.** That survey was a closed list, and on 2026-09-01 [`scripts/gh/competitive-discovery.sh`](scripts/gh/competitive-discovery.sh) — which asks the question the freshness check cannot, *is the list still the field* — found **six more comparable products, none of them benchmarked**. The one that matters, `maxgfr/ultrasec`, has this project's exact purpose, was pushed two days earlier, and has **zero stars**: a popularity floor would have hidden it as thoroughly as the closed list did. They are pinned in the baseline with `benchmarked: false`, which is a note saying where to look and not a result. `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
 
@@ -45,11 +45,11 @@ Still **one model scale**, both targets authored here, and every competitor run 
 
 The second dimension is not capability at all.
 
- Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,556 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,557 lines of corpus across eight role packs, with 171 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -74,7 +74,7 @@ Installed as a plugin, each specialist is a real subagent with its own tool acce
 
 ## Knowledge
 
-Eight packs, one per role. Five of them are stored as **more than one file** (`mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three) so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
+Eight packs, one per role. Six of them are stored as **more than one file** — `web-api`, `mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three, `local-app` as two — so no single file exceeds the 32 KiB per-file budget that keeps selective loading possible; every file of a pack belongs to the same role and they share one procedure numbering.
 
 | Pack | File(s) | Procedures | Covers |
 |---|---|---|---|
@@ -150,9 +150,17 @@ Every finding comes back with an ID, the procedure that produced it, status (con
 
 ## How it stays current
 
-Security knowledge decays. A daily deterministic job checks the pinned sources and opens an issue when something moves; a weekly job reviews a rotating slice of the corpus and opens a narrow pull request. Both read only from an allowlist, attach provenance to every item, and are structurally unable to modify the safety contract, the manifest, the allowlist or the workflows.
+Security knowledge decays. The design is a daily deterministic job that checks the pinned sources and opens an issue when something moves, and a weekly job that reviews a rotating slice of the corpus and opens a narrow pull request — both reading only from an allowlist, attaching provenance to every item, and structurally unable to modify the safety contract, the manifest, the allowlist or the workflows. **Neither job runs yet**: no workflow schedules them. What does run today is `competitive-freshness.yml`, which re-checks the pinned competitor set.
 
 That loop is also the most dangerous thing in this repository — a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. [`docs/knowledge-loop.md`](docs/knowledge-loop.md) documents the threat model and the controls, including what they do **not** cover. Until the `stable` channel has its first tagged release, read that document as the design the automation is being built to, not as a description of controls already running.
+
+Dependency alerts are read the same way. Every open Dependabot alert on this repository is expected to sit on a bench fixture, never on shipped code. The fixtures under
+`bench/cases/` carry deliberately vulnerable dependencies as the answer key the squad is
+measured against; `scripts/gates/gate-alert-live.sh` places every open alert against the record
+in `scripts/gates/data/alert-surface.json` and fails on any that lands anywhere else. The count
+itself is nobody's gate - it moves when an upstream advisory is published. Measured on
+2026-09-11: five open, all five on fixtures. [`SECURITY.md`](.github/SECURITY.md) says how to
+re-measure it.
 
 ## Contributing
 
