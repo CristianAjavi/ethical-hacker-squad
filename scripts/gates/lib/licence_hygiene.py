@@ -23,6 +23,18 @@ Four measurements:
                            attribution is how a licence obligation goes missing.
   4. allowlist integrity   every source in docs/sources-allowlist.json carries
                            id, name, url, license and reuse, and no id repeats.
+  5. one window            the tool that PRODUCES the hashes cuts its phrase
+                           into windows of the size the denylist declares. Both
+                           halves used to write the 8 down for themselves, next
+                           to the file that also wrote it down, and nothing
+                           compared the three. Hashes built over a window of one
+                           size are invisible to a sweep that looks for another,
+                           so the failure is silent in the worst direction: the
+                           list still parses, the run still passes, and the
+                           phrases it names are no longer forbidden. The window
+                           is now read from the file by both, and this check
+                           measures the producer's by RUNNING it - what the
+                           script does, not what its source says.
 
 WHAT IT CANNOT DO: prove the absence of plagiarism. It catches the obvious
 failure mode - pasting a control description or a checklist - and says so.
@@ -35,6 +47,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,9 +55,12 @@ FAMILIES = "scripts/meter/standards-families.json"
 ALLOWLIST = "docs/sources-allowlist.json"
 DENYLIST = "scripts/gates/data/verbatim-denylist.json"
 NOTICE = "NOTICE.md"
+PRODUCER = "scripts/licence/add-verbatim-phrase.py"
 SCANNED = ("skills", "docs")
 MAX_QUOTED_WORDS = 15
-NGRAM = 8
+# The n of the n-gram is NOT here. It is DENYLIST's `ngram`, read once and used
+# by both halves of the mechanism - see measurement 5 in the module docstring.
+PROBE_WORDS = 24        # longer than any window anybody would plausibly declare
 
 # Quoting a licence term in order to record a licence determination is the one
 # case where the words themselves are the evidence. It is exempt only inside an
@@ -75,6 +91,52 @@ def normalise(text: str) -> list[str]:
 def ngram_hashes(words: list[str], n: int) -> set[str]:
     return {hashlib.sha256(" ".join(words[i:i + n]).encode()).hexdigest()[:16]
             for i in range(0, max(0, len(words) - n + 1))}
+
+
+def declared_window(deny: dict) -> int:
+    """The n of the n-gram, from the denylist itself. Never defaulted: a default
+    is how the number came to live in three places without anyone deciding to."""
+    if "ngram" not in deny:
+        raise Unmeasured(
+            f"{DENYLIST} does not declare `ngram`. The window is what makes a hash mean "
+            "anything, and guessing one would make this sweep agree with itself and with "
+            "nothing else")
+    n = deny["ngram"]
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise Unmeasured(f"{DENYLIST}: `ngram` is {n!r}, not a positive whole number")
+    return n
+
+
+def producer_window(root: Path) -> int:
+    """How wide a window the hash PRODUCER actually cuts, measured by running it.
+
+    It emits one object per window, so n = words - windows + 1. Reading the
+    number out of its source instead would only prove the source SAYS it.
+    """
+    script = root / PRODUCER
+    if not script.is_file():
+        raise Unmeasured(
+            f"{PRODUCER} is not there. It is the tool that writes every hash on the denylist; "
+            "without it I cannot tell whether the list and its producer agree, and a green "
+            "here would mean nobody looked")
+    probe = " ".join(f"w{i}" for i in range(PROBE_WORDS))
+    try:
+        r = subprocess.run([sys.executable, str(script), "--source", "window probe",
+                            "--denylist", str(root / DENYLIST)],
+                           input=probe, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Unmeasured(f"cannot run {PRODUCER} to measure its window: {exc}") from exc
+    if r.returncode != 0:
+        raise Unmeasured(f"{PRODUCER} exited {r.returncode} on a {PROBE_WORDS}-word probe: "
+                         f"{(r.stderr or '').strip()[:160]}")
+    try:
+        windows = len(json.loads(r.stdout))
+    except ValueError as exc:
+        raise Unmeasured(f"{PRODUCER} printed something that is not JSON: {exc}") from exc
+    if not 1 <= windows <= PROBE_WORDS:
+        raise Unmeasured(f"{PRODUCER} emitted {windows} window(s) for {PROBE_WORDS} words, "
+                         "which is not a window size I can read back")
+    return PROBE_WORDS - windows + 1
 
 
 def main() -> int:
@@ -122,6 +184,17 @@ def main() -> int:
     except (ValueError, KeyError) as exc:
         raise Unmeasured(f"{DENYLIST} is unusable: {exc}") from exc
 
+    ngram = declared_window(deny)
+
+    # ---- 5. the producer cuts the window the list declares --------------
+    checks += 1
+    observed = producer_window(root)
+    if observed != ngram:
+        findings.append(
+            f"{PRODUCER}: cuts {observed}-word windows and {DENYLIST} declares {ngram}. Every "
+            f"hash that tool produces is invisible to this sweep, so the denylist keeps parsing, "
+            f"keeps passing, and forbids nothing - the one failure here that leaves no trace")
+
     # ---- 1. attributed verbatim, and the denylist sweep ----------------
     names = owners + EXTRA_OWNERS
     exempt_regions = 0
@@ -138,7 +211,7 @@ def main() -> int:
             lines = text.splitlines()
 
             if deny_hashes:
-                present = ngram_hashes(normalise(text), NGRAM)
+                present = ngram_hashes(normalise(text), ngram)
                 for h in present & set(deny_hashes):
                     checks += 1
                     d = deny_hashes[h]
@@ -167,8 +240,9 @@ def main() -> int:
 
     print(f"measured: {files} markdown file(s), {len(owners)} identifier owner(s), "
           f"{len(allowlist.get('sources', []))} allowlisted source(s), {checks} checks")
-    print(f"denylist: {len(deny_hashes)} phrase hash(es) - stored as {NGRAM}-gram SHA-256 prefixes, "
-          "so the list can be checked without keeping a copy of the text it forbids")
+    print(f"denylist: {len(deny_hashes)} phrase hash(es) - stored as {ngram}-gram SHA-256 prefixes "
+          f"({DENYLIST}'s own `ngram`, and {PRODUCER} was measured cutting {observed}-word "
+          "windows), so the list can be checked without keeping a copy of the text it forbids")
     if exempt_regions:
         print(f"exempted: {exempt_regions} region(s) marked licence:quoted-terms, where the wording "
               "of a licence is the evidence for a licence determination")

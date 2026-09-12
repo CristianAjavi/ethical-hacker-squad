@@ -68,14 +68,46 @@ p.write_text(json.dumps(d,indent=2))'
 case_run denylisted-phrase-in-the-corpus 1 "on the verbatim denylist" '
 import os,json,hashlib,re,pathlib
 w=os.environ["EHS_WORK"]
-# take eight consecutive words that really are in the corpus, hash them the way
-# the gate does, and put only the hash on the list
+# take consecutive words that really are in the corpus, hash them the way the
+# gate does, and put only the hash on the list. The window comes from the list
+# itself: a literal here would have to be re-typed the day the window moves.
+p=pathlib.Path(w)/"scripts/gates/data/verbatim-denylist.json"
+d=json.loads(p.read_text()); n=d["ngram"]
 text=(pathlib.Path(w)/"skills/ethical-hacker-squad/references/knowledge/web-api.md").read_text()
 words=re.sub(r"[^a-z0-9 ]+"," ",text.lower()).split()
-h=hashlib.sha256(" ".join(words[40:48]).encode()).hexdigest()[:16]
-p=pathlib.Path(w)/"scripts/gates/data/verbatim-denylist.json"
-d=json.loads(p.read_text()); d["phrases"].append({"hash":h,"source":"a fixture, not a real source"})
+h=hashlib.sha256(" ".join(words[40:40+n]).encode()).hexdigest()[:16]
+d["phrases"].append({"hash":h,"source":"a fixture, not a real source"})
 p.write_text(json.dumps(d,indent=2))'
+
+# --- the window: one number, three places that used to write it down --------
+# This case is the discriminator. It moves the DECLARED window and plants a hash
+# of that width. A sweep with the number written into it computes the old width,
+# matches nothing, and reports a clean run - rc 0, which is the failure. Only a
+# sweep that reads the declaration finds the phrase.
+case_run denylist-ngram-drives-the-sweep 1 "on the verbatim denylist" '
+import os,json,hashlib,re,pathlib
+w=os.environ["EHS_WORK"]
+p=pathlib.Path(w)/"scripts/gates/data/verbatim-denylist.json"
+d=json.loads(p.read_text())
+n=d["ngram"]-2
+assert n>=3, "the declared window is too small to move and still be distinctive"
+assert n!=d["ngram"]
+text=(pathlib.Path(w)/"skills/ethical-hacker-squad/references/knowledge/web-api.md").read_text()
+words=re.sub(r"[^a-z0-9 ]+"," ",text.lower()).split()
+h=hashlib.sha256(" ".join(words[40:40+n]).encode()).hexdigest()[:16]
+d["ngram"]=n
+d["phrases"].append({"hash":h,"source":"a fixture, not a real source"})
+p.write_text(json.dumps(d,indent=2))'
+
+# and the other half of the mechanism: the tool that MAKES the hashes going back
+# to a window of its own. Nothing it produces would ever match again.
+case_run producer-cuts-a-window-of-its-own 1 "invisible to this sweep" '
+import os,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/licence/add-verbatim-phrase.py"
+t=p.read_text()
+i=t.index("def main(")
+# shadows the real one: at module level the last definition is the one that runs
+p.write_text(t[:i]+"def window_size(*a, **k):"+chr(10)+"    return 5"+chr(10)*3+t[i:])'
 
 case_run families-file-unreadable 2 "" '
 import os,pathlib
@@ -88,6 +120,16 @@ import os,pathlib
 case_run notice-gone 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"NOTICE.md").unlink()'
+
+case_run ngram-not-declared 2 "does not declare" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/verbatim-denylist.json"
+d=json.loads(p.read_text()); assert d.pop("ngram",None)
+p.write_text(json.dumps(d,indent=2))'
+
+case_run producer-gone 2 "is not there" '
+import os,pathlib
+(pathlib.Path(os.environ["EHS_WORK"])/"scripts/licence/add-verbatim-phrase.py").unlink()'
 
 echo
 echo "Summary: $pass ok, $fail failures"

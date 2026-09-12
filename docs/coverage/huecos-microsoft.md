@@ -1,6 +1,6 @@
 # Analisis de cobertura — curriculos de nube (Microsoft AZ-500 / SC-500 / SC-100 / SC-200, MCSB v2, AWS SCS-C02, GCP PCSE) contra INF-01..18 y PRV-01..11
 
-**Fecha:** 2026-08-11 · **Modo:** solo lectura sobre `/Users/cristianajavi/ethical-hacker-squad` · **Entregable:** este archivo, fuera del repo.
+**Fecha:** 2026-08-11 · **Modo:** solo lectura sobre la raíz del repositorio · **Entregable:** este archivo, fuera del repo.
 
 **Corpus leido:** `references/knowledge/infra-cloud.md` (387 lineas, INF-01..INF-18), `references/knowledge/privacy-abuse.md` (268 lineas, PRV-01..PRV-11), `references/traceability.md`. Consultados por adyacencia (para no proponer duplicados): `supply-chain.md` (SUP-01..20), `ai-safety.md` (AI-01..22), `web-api.md` (WEB-01..22), `remediation.md` (REM/VER).
 

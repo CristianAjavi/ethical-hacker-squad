@@ -4,7 +4,7 @@ Two families. `FP-01`..`FP-10` rule out a **report**: the finding is not real, o
 
 Half the value of this corpus is knowing when **not** to report. Every procedure carries a `What rules it out (false positive)` field, and until now that field was free prose: nothing named the rules, nothing required an answer, and nothing could check that a specialist had worked through them. A distributed discipline that nobody verifies is a discipline in name only.
 
-This file closes that. Ten rules, each with an identifier, each **answerable**, derived from the exculpating conditions the corpus already uses — they were read out of 370 `What rules it out` bullets, not invented.
+This file closes that. Ten **report** rules — `FP-01`..`FP-10`, the family this section covers — each with an identifier, each **answerable**, derived from the exculpating conditions the corpus already uses: they were read out of 370 `What rules it out` bullets, not invented. The six **merge** rules, `DUP-01`..`DUP-06`, have their own section below and their own test.
 
 ## How a rule is answered
 

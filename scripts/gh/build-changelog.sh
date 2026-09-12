@@ -88,7 +88,10 @@ SHAS=$(git log --no-merges --format='%H' "$RANGE" 2>/dev/null)
 while IFS= read -r sha; do
   [[ -n "$sha" ]] || continue
   subject=$(git show -s --format='%s' "$sha")
-  body=$(git show -s --format='%b' "$sha" | tr '\r\n' '  ')
+  # NOT flattened: see next-version.sh. `BREAKING CHANGE:` is a FOOTER, and
+  # accepting it after any whitespace let an untrusted body file a `docs:`
+  # commit under "Breaking changes".
+  body=$(git show -s --format='%b' "$sha")
   short="${sha:0:7}"
   COUNT=$((COUNT + 1))
 
@@ -99,7 +102,7 @@ while IFS= read -r sha; do
   entry="- ${desc} (\`${short}\`)"
 
   if printf '%s' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
-     || printf '%s' "$body" | grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:'; then
+     || printf '%s\n' "$body" | grep -qE '^BREAKING[ -]CHANGE:'; then
     BREAKS+="${entry}"$'\n'
   fi
 

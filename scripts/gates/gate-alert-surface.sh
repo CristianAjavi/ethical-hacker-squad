@@ -44,11 +44,20 @@
 #                    there. Both directions. This is what catches a manifest
 #                    described as carrying ground truth when it carries none.
 #
+#   7. exclusion     every manifest says whether an open Dependabot alert on it
+#                    is EXPECTED (a bench fixture carries deliberately vulnerable
+#                    dependencies) or is not (code this repository ships), and
+#                    that exclusion is written where a reader is - .github/SECURITY.md
+#                    and README.md - and not only where a gate looks. It is what
+#                    gate-alert-live.sh places a live alert against.
+#
 # WHAT IT DOES NOT MEASURE, and will not pretend to
 #   How many alerts GitHub currently reports. That number moves when an upstream
 #   advisory is published and nobody here did anything; a gate that tracked it
 #   would go red for a reason no change caused, and a gate that cries at the
-#   world gets ignored the same way the alert channel did. It also cannot read
+#   world gets ignored the same way the alert channel did. WHERE those alerts
+#   sit is a different question with a stable answer, and gate-alert-live.sh
+#   measures it against the exclusion checked here. It also cannot read
 #   the PROSE of dependabot.yml: it enforces the absence claims that were
 #   transcribed into the data file, so a claim added to the comment and not
 #   copied across stays invisible. Manifests under .git, node_modules, dist and
@@ -256,6 +265,66 @@ if fixtures:
                        f"whether a bump is safe would bump it")
                 fails += 1
 
+# --- 7. the written exclusion ----------------------------------------------
+# An open alert on a bench fixture is expected here and an open alert on shipped
+# code is not. That difference has to exist in WRITING - in this file, so
+# gate-alert-live.sh can place an alert against it, and in the documents a person
+# comparing this repository against another one actually reads, which is never a
+# gate's JSON.
+policy = surface.get("open_alerts_policy")
+if not isinstance(policy, dict):
+    out(2, f"{surface_path.name} declares no open_alerts_policy: nothing says which manifests "
+           f"may carry an open Dependabot alert, so gate-alert-live.sh would have nothing to "
+           f"place an alert against")
+else:
+    prefix = str(policy.get("expected_under") or "")
+    claim = str(policy.get("documented_claim") or "")
+    for rel in sorted(by_path):
+        e = by_path[rel]
+        if "alerts_allowed" not in e:
+            out(1, f"{rel} does not say whether an open Dependabot alert on it is expected. "
+                   f"What a policy table does not mention passes in silence, and silence here "
+                   f"reads as 'expected'")
+            fails += 1
+            continue
+        if e.get("alerts_allowed") is not True:
+            continue
+        if e.get("role") != "bench-fixture":
+            out(1, f"{rel} is declared as a place where an open alert is EXPECTED and its role "
+                   f"is {e.get('role')!r}, not bench-fixture: that one line would excuse an "
+                   f"alert on code this repository ships")
+            fails += 1
+        if prefix and not rel.startswith(prefix):
+            out(1, f"{rel} may carry alerts and sits outside {prefix!r}, the prefix the policy "
+                   f"tells a reader to expect them under")
+            fails += 1
+        if not str(e.get("alerts_why") or "").strip():
+            out(1, f"{rel} may carry alerts with no reason written: whoever triages the next "
+                   f"alert there has to be told why it is expected, not just that it is")
+            fails += 1
+    if not claim.strip():
+        out(1, "open_alerts_policy declares no documented_claim: the exclusion would live only "
+               "in a data file nobody outside this repository reads")
+        fails += 1
+    else:
+        for doc in policy.get("documented_in") or []:
+            dp = root / doc
+            if not dp.is_file():
+                out(1, f"{doc} is named as where this exclusion is written down, and it does "
+                       f"not exist")
+                fails += 1
+                continue
+            text = dp.read_text(encoding="utf-8", errors="replace")
+            if claim not in text:
+                out(1, f"{doc} does not carry the sentence open_alerts_policy says it carries. "
+                       f"The exclusion would be written where the gates read and not where a "
+                       f"person comparing this repository reads")
+                fails += 1
+            elif prefix and prefix not in text:
+                out(1, f"{doc} carries the claim without naming {prefix!r}, so a reader cannot "
+                       f"check it against the tree")
+                fails += 1
+
 out(0, f"measured: {len(found)} manifest(s) on disk, {len(by_path)} declared, "
        f"{sum(1 for e in by_path.values() if e.get('managed'))} managed by dependabot, "
        f"{len(absences)} asserted absence(s) checked, {checked} answer-key cross-check(s), "
@@ -294,11 +363,16 @@ GT
     cat > "$w/scripts/gates/data/alert-surface.json" <<'SF'
 {"manifests":[
   {"path":"bench/cases/node-supply/package.json","ecosystem":"npm","role":"bench-fixture",
-   "managed":false,"why":"planted defect","planted":["lodahs"],"decoys":[]},
+   "managed":false,"why":"planted defect","planted":["lodahs"],"decoys":[],
+   "alerts_allowed":true,"alerts_why":"the answer key of the benchmark"},
   {"path":"tooling/cli/package.json","ecosystem":"npm","role":"product","managed":true,
-   "planted":[],"decoys":[]}],
+   "planted":[],"decoys":[],"alerts_allowed":false}],
+ "open_alerts_policy":{"expected_under":"bench/cases/",
+   "documented_claim":"ALERTS ON FIXTURES ONLY.",
+   "documented_in":["SECURITY.md"]},
  "absences_asserted":[{"pattern":"go.mod","claimed_in":".github/dependabot.yml","why":"none here"}]}
 SF
+    printf 'ALERTS ON FIXTURES ONLY. See bench/cases/ for why.\n' > "$w/SECURITY.md"
   }
   # case <name> <expected rc> <needle> <mutation>
   run_case() {
@@ -377,6 +451,27 @@ p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/alert-surface.json"
 d=json.loads(p.read_text()); d["manifests"][0]["planted"]=[]
 p.write_text(json.dumps(d,indent=2))'
 
+  echo "  == the written exclusion, in both directions =="
+  run_case a-manifest-that-never-says-if-alerts-are-expected 1 "passes in silence" \
+'
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/alert-surface.json"
+d=json.loads(p.read_text()); del d["manifests"][1]["alerts_allowed"]
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case shipped-code-excused-as-a-place-alerts-belong 1 "not bench-fixture" \
+'
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/alert-surface.json"
+d=json.loads(p.read_text()); d["manifests"][1]["alerts_allowed"]=True
+d["manifests"][1]["alerts_why"]="because I said so"
+p.write_text(json.dumps(d,indent=2))'
+
+  run_case the-exclusion-disappears-from-the-document 1 "and not where a person" \
+'
+import os,pathlib
+(pathlib.Path(os.environ["EHS_WORK"])/"SECURITY.md").write_text("nothing about alerts here\n")'
+
   echo "  == could not measure =="
   run_case surface-file-missing 2 "missing or unusable" '
 import os,pathlib
@@ -401,8 +496,8 @@ if [ "$ONLY_SELFTEST" -eq 1 ]; then
 fi
 
 gate_header "alert-surface (the file that tells you how to read an alert has to be right)"
-gate_scope "every dependency manifest on disk, against scripts/gates/data/alert-surface.json, .github/dependabot.yml and bench/ground-truth.json"
-gate_out_of_scope "how many alerts GitHub currently reports - that number moves when an upstream advisory is published and nobody here did anything - and any claim in the config's PROSE that was not transcribed into the data file"
+gate_scope "every dependency manifest on disk, against scripts/gates/data/alert-surface.json, .github/dependabot.yml and bench/ground-truth.json - plus the written exclusion that says which of them may carry an open alert"
+gate_out_of_scope "how many alerts GitHub currently reports, and where the live ones sit (gate-alert-live.sh) - that number moves when an upstream advisory is published and nobody here did anything - and any claim in the config's PROSE that was not transcribed into the data file"
 
 if ! command -v python3 >/dev/null 2>&1; then
   gate_warn "python3 is not installed: nothing was checked"
