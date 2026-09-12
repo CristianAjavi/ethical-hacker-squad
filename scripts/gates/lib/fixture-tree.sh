@@ -146,3 +146,85 @@ fixture_restores() {
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s\n' "$n"
 }
+
+# ---------------------------------------------------------------- the controls
+# REUSING ONE TREE IS THE KIND OF CHANGE THAT GOES GREEN FOR THE WRONG REASON:
+# every case in a battery would still pass against a tree that had quietly
+# stopped being the repository. These four hold it. They read `pass` and `fail`
+# from the caller and add to them, which is why this is a sourced function and
+# not a subshell.
+#
+# Call it once, after the last case_run and before the summary.
+fixture_controls() {
+  local src="$1" fresh fresh_digest work_digest cases restores moved why
+
+  # Taken first, because the controls below score themselves into `pass` and the
+  # first of them does not restore anything.
+  cases=$((pass + fail))
+
+  # The tree the cases have been handed must still be what a case used to be
+  # given - a copy made exactly the old way, from the real repository, with tar.
+  fresh="$FIXTURE_PRISTINE.fresh"
+  rm -rf "$fresh"
+  fixture_copy "$src" "$fresh"
+  if fresh_digest="$(fixture_digest "$fresh")" && work_digest="$(fixture_digest "$FIXTURE_WORK")"; then
+    if [ "$fresh_digest" = "$work_digest" ]; then
+      printf 'ok       %-36s %s\n' restored-tree-equals-a-fresh-copy "$(printf '%.12s' "$work_digest")"
+      pass=$((pass+1))
+    else
+      printf 'FAILED   %-36s the reused tree is not a fresh copy (%s vs %s)\n' \
+        restored-tree-equals-a-fresh-copy "$work_digest" "$fresh_digest"
+      fail=$((fail+1))
+    fi
+  else
+    echo "UNMEASURABLE the trees cannot be fingerprinted, so the reuse above is unproven"
+    exit 2
+  fi
+  rm -rf "$fresh"
+
+  # A mutation can go three ways - edit, delete, add - and in most of these
+  # batteries every case only edits or deletes. Nothing would exercise the
+  # `--delete` half of the restore, so the claim that the tree comes back
+  # whatever a case did would rest on a measurement taken outside the battery.
+  : > "$FIXTURE_WORK/a-stray-file-no-case-should-leave.txt"
+  if why="$(fixture_reset)"; then
+    if [ -e "$FIXTURE_WORK/a-stray-file-no-case-should-leave.txt" ]; then
+      printf 'FAILED   %-36s the stray file survived the restore\n' the-restore-removes-a-stray-file
+      fail=$((fail+1))
+    else
+      printf 'ok       %-36s\n' the-restore-removes-a-stray-file
+      pass=$((pass+1))
+    fi
+  else
+    printf 'FAILED   %-36s %s\n' the-restore-removes-a-stray-file "$why"
+    fail=$((fail+1))
+  fi
+  cases=$((cases + 1))
+
+  # A run that silently stopped restoring - an early `return` added to a case, a
+  # restore that failed and was swallowed - would leave this count short.
+  if restores="$(fixture_restores)" && [ "$restores" -eq "$cases" ]; then
+    printf 'ok       %-36s %s restores, %s mode\n' every-case-restored-the-tree "$restores" "$FIXTURE_RESTORE"
+    pass=$((pass+1))
+  else
+    printf 'FAILED   %-36s %s restores for %s cases\n' \
+      every-case-restored-the-tree "${restores:-unreadable}" "$cases"
+    fail=$((fail+1))
+  fi
+
+  # A check that cannot see a change is not a check. One byte, after every case
+  # is done with the tree, and the fingerprint has to move.
+  printf 'x' >> "$FIXTURE_WORK/.one-byte-for-the-fingerprint"
+  if moved="$(fixture_digest "$FIXTURE_WORK")"; then
+    if [ "$moved" != "$FIXTURE_DIGEST" ]; then
+      printf 'ok       %-36s one byte moved it\n' the-fingerprint-sees-one-byte
+      pass=$((pass+1))
+    else
+      printf 'FAILED   %-36s the fingerprint did not move\n' the-fingerprint-sees-one-byte
+      fail=$((fail+1))
+    fi
+  else
+    echo "UNMEASURABLE the fingerprint could not be taken, so its sensitivity is unproven"
+    exit 2
+  fi
+}

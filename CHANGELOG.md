@@ -7,6 +7,18 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 ## [Unreleased]
 
 ### Changed
+- Seven more self-test batteries reuse one work tree instead of copying the
+  whole repository per case, and the four controls that hold a reused tree moved
+  from the foot of one battery into `scripts/gates/lib/fixture-tree.sh` as
+  `fixture_controls`. The seven, run alone and averaged over two runs on each
+  side: **96.5 s to 65.5 s**, with cases going from 84 to 112.
+  `gate-triage-rules.selftest.sh` 23.5 s to 9.0 s and
+  `gate-scorecard-threshold.selftest.sh` 16.5 s to 8.5 s carry most of it;
+  `gate-bench-blinding.selftest.sh` went the other way, 8.0 s to 9.0 s, because
+  nine cases do not save enough copies to pay for the controls. The mutation
+  bank was run against the library (4 of 4) and then against each converted
+  battery (7 of 7) — sourcing a library is not calling it. The suite total is
+  NOT MEASURED; `docs/gate-requirements.md` says why.
 
 - **One tree, put back between cases.** `gate-bench-integrity.selftest.sh` gave each
   of its 23 cases a fresh `tar` copy of the repository. Unlike the battery in the

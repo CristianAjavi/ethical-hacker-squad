@@ -15,20 +15,17 @@ else SRC="$(cd "$HERE/../.." && pwd)"; fi
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-triage-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+
+# shellcheck source=scripts/gates/lib/fixture-tree.sh
+. "$HERE/lib/fixture-tree.sh" || { echo "UNMEASURABLE lib/fixture-tree.sh is missing"; exit 2; }
+fixture_init "$SRC" "$TMP" || exit 2
 K="skills/ethical-hacker-squad/references/knowledge"
 R="skills/ethical-hacker-squad/references/triage.md"
 
 case_run() {
-  local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
-  rm -rf "$work"; mkdir -p "$work"
-  # --exclude node_modules is not tidiness: tooling/claude-cli/node_modules is
-  # 259 MB of the repository's 321 MB and this gate reads none of it. Nor is the
-  # `rm -rf` below: `work` is "$TMP/$name", a NEW directory per case, so the
-  # `rm -rf "$work"` above only ever removed a directory that did not exist yet
-  # and every copy piled up until the EXIT trap fired.
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ --exclude node_modules -cf - .) | (cd "$work" && tar -xf -)
+  local name="$1" want="$2" needle="$3" mutation="$4" work="$FIXTURE_WORK"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-34s the mutation itself failed\n' "$name"; fail=$((fail+1)); rm -rf "$work"; return
+    printf 'HARNESS  %-34s the mutation itself failed\n' "$name"; fail=$((fail+1)); fixture_reset >/dev/null 2>&1 || true; return
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
@@ -38,7 +35,12 @@ case_run() {
     printf 'FAILED   %-34s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
   fi
-  rm -rf "$work"
+  # The tree the next case is about to receive is only trustworthy if this one
+  # gave it back intact, so the proof runs here and not at the end of the file.
+  local why
+  if ! why="$(fixture_reset)"; then
+    printf 'HARNESS  %-34s %s\n' "$name" "$why"; fail=$((fail+1))
+  fi
 }
 
 echo "=== self-test: gate-triage-rules.sh (source: $SRC) ==="
@@ -125,6 +127,11 @@ import os,pathlib
 case_run conformance-data-unreadable 2 "" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"scripts/gates/data/triage-conformance.json").write_text("{ not json")'
+
+# FOUR CASES THAT HOLD THE REUSED TREE. They live in the library and not here
+# because nine batteries have this shape, and a control written nine times is
+# nine places for one of them to fall behind unnoticed.
+fixture_controls "$SRC"
 
 echo
 echo "Summary: $pass passed, $fail failed"

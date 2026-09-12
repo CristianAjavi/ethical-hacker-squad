@@ -202,78 +202,10 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").write_text("{ not json")'
 
 # ---------------------------------------------------------------------------
-# THREE CASES THAT HOLD THE SHARED TREE, because reusing one tree is the kind of
-# change that goes green for the wrong reason: every case above would still pass
-# against a tree that had quietly stopped being the repository.
-
-# Taken here and not below, because the three controls score themselves into
-# `pass` and the first of them does not restore anything.
-CASES=$((pass + fail))
-
-# The tree the cases have been handed twenty-three times must still be what a
-# case used to be given - a copy made exactly the old way, from $SRC, with tar.
-FRESH="$TMP/.fresh"
-fixture_copy "$SRC" "$FRESH"
-if fresh_digest="$(fixture_digest "$FRESH")" && work_digest="$(fixture_digest "$FIXTURE_WORK")"; then
-  if [ "$fresh_digest" = "$work_digest" ]; then
-    printf 'ok       %-36s %s\n' restored-tree-equals-a-fresh-copy "${work_digest:0:12}"
-    pass=$((pass+1))
-  else
-    printf 'FAILED   %-36s the reused tree is not a fresh copy (%s vs %s)\n' \
-      restored-tree-equals-a-fresh-copy "$work_digest" "$fresh_digest"
-    fail=$((fail+1))
-  fi
-else
-  echo "UNMEASURABLE the trees cannot be fingerprinted, so the reuse above is unproven"
-  exit 2
-fi
-rm -rf "$FRESH"
-
-# A mutation can go three ways - edit, delete, add - and every case above only
-# edits or deletes. Nothing exercised the `--delete` half of the restore, so the
-# claim that it puts the tree back whatever a case did was resting on a
-# measurement taken outside this battery. Here it rests on the battery.
-: > "$FIXTURE_WORK/bench/a-stray-file-no-case-should-leave.txt"
-if why="$(fixture_reset)"; then
-  if [ -e "$FIXTURE_WORK/bench/a-stray-file-no-case-should-leave.txt" ]; then
-    printf 'FAILED   %-36s the stray file survived the restore\n' the-restore-removes-a-stray-file
-    fail=$((fail+1))
-  else
-    printf 'ok       %-36s\n' the-restore-removes-a-stray-file
-    pass=$((pass+1))
-  fi
-else
-  printf 'FAILED   %-36s %s\n' the-restore-removes-a-stray-file "$why"
-  fail=$((fail+1))
-fi
-CASES=$((CASES + 1))
-
-# A run that silently stopped restoring - an early `return` added to a case, a
-# restore that failed and was swallowed - would leave this count short.
-if restores="$(fixture_restores)" && [ "$restores" -eq "$CASES" ]; then
-  printf 'ok       %-36s %s restores, %s mode\n' every-case-restored-the-tree "$restores" "$FIXTURE_RESTORE"
-  pass=$((pass+1))
-else
-  printf 'FAILED   %-36s %s restores for %s cases\n' \
-    every-case-restored-the-tree "${restores:-unreadable}" "$CASES"
-  fail=$((fail+1))
-fi
-
-# A check that cannot see a change is not a check. One byte, after every case is
-# done with the tree, and the fingerprint has to move.
-printf 'x' >> "$FIXTURE_WORK/README.md"
-if moved="$(fixture_digest "$FIXTURE_WORK")"; then
-  if [ "$moved" != "$FIXTURE_DIGEST" ]; then
-    printf 'ok       %-36s one byte moved it\n' the-fingerprint-sees-one-byte
-    pass=$((pass+1))
-  else
-    printf 'FAILED   %-36s the fingerprint did not move\n' the-fingerprint-sees-one-byte
-    fail=$((fail+1))
-  fi
-else
-  echo "UNMEASURABLE the fingerprint could not be taken, so its sensitivity is unproven"
-  exit 2
-fi
+# FOUR CASES THAT HOLD THE REUSED TREE. They live in the library and not here
+# because nine batteries have this shape, and a control written nine times is
+# nine places for one of them to fall behind unnoticed.
+fixture_controls "$SRC"
 
 echo
 echo "Summary: $pass passed, $fail failed"

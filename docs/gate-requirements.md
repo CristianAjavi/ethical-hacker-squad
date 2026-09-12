@@ -16,14 +16,14 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | `G3` context budget | running | `gate-plugin-integrity.sh` (bytes, the authority) |
 | `G3b` declared counts | running | `gate-corpus-contract.sh` + self-test (30 cases) |
 | `G4` every item cited | running | `gate-corpus-contract.sh` (six fields, identifier families, no identifier written as prose) |
-| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (9 cases) |
-| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (8 cases) |
+| `G5` licence hygiene | running | `gate-licence-hygiene.sh` + self-test (13 cases) |
+| `G6` secret scanning | running | `gate-secret-scan.sh` + self-test (12 cases) |
 | `G7` protected paths | running | `gate-protected-paths.sh` + self-test (35 cases), PR context |
 | `G8` closure guard | running | `gate-issue-closure.sh` + self-test (22 cases) |
-| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (16 cases) |
-| triage rules | running | `gate-triage-rules.sh` + self-test (16 cases) |
+| `G9` repository quality | running | `.github/workflows/scorecard.yml` (measurement) + `gate-scorecard-threshold.sh` + self-test (20 cases) |
+| triage rules | running | `gate-triage-rules.sh` + self-test (20 cases) |
 | triage-stage eval integrity | running | `gate-triage-stage.sh` + self-test (31 cases) |
-| findings artifact | running | `gate-findings-artifact.sh` + self-test (12 cases) |
+| findings artifact | running | `gate-findings-artifact.sh` + self-test (16 cases) |
 | bench integrity | running | `gate-bench-integrity.sh` + self-test (27 cases) |
 | bench index | running | `gate-bench-index.sh` + self-test (5 cases) |
 | agent roster census | running | `gate-agent-roster.sh` + inline self-test (6 cases) |
@@ -46,8 +46,8 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 | the alert surface, and what an alert on it means | running | `gate-alert-surface.sh` + self-test (13 cases) |
 | the handover: the deliverable is named on screen when a run ends | running | `gate-handover-contract.sh` + self-test (16 cases) |
 | governance contract | running | `gate-governance-contract.sh` + inline self-test (7 cases) |
-| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (14 cases) |
-| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (9 cases) |
+| `A1`/`A2`/`A3` corpus identifiers | running | `gate-corpus-identifiers.sh` + self-test (18 cases) |
+| pooled-batch blinding | running | `gate-bench-blinding.sh` + self-test (13 cases) |
 | an assertion may not hang on a pipe that can die | running | `gate-assertion-pipes.sh` + self-test (17 cases) |
 | governance drift | running in a live repo | `gate-governance-drift.sh` + self-test (6 cases) |
 | every rule in a gate library has a case | running weekly | `gate-coverage-sweep.sh` + `lib/coverage_sweep.py` + self-test (47 cases) · `.github/workflows/coverage-sweep.yml` |
@@ -2549,15 +2549,65 @@ caller can capture its complaint, a subshell incremented the counter into its
 own grave, and the battery reported `0 restores for 24 cases`. The control was
 written to catch exactly that and caught it on its first run.
 
-NOT DONE. Nine other batteries copy the whole tree per case
-(`gate-bench-blinding.selftest.sh`, `gate-corpus-contract.selftest.sh`,
-`gate-corpus-identifiers.selftest.sh`, `gate-findings-artifact.selftest.sh`,
-`gate-licence-hygiene.selftest.sh`, `gate-scorecard-threshold.selftest.sh`,
-`gate-secret-scan.selftest.sh`, `gate-triage-rules.selftest.sh`, and
-`gate-protected-paths.selftest.sh` for its six mutating cases). They are 134 cases between them and none has been
-converted yet. The four mutations here were run by hand from a copy of the
+Seven of the nine other batteries that copied the whole tree per case have
+since been converted; the section below has their numbers and names the two
+that were not. The four mutations here were run by hand from a copy of the
 battery and library placed beside the real ones — the battery derives both
 paths from its own `$0` — and are not wired to a bank.
+
+### Seven more batteries put the tree back instead of copying it
+
+The library written for the battery above turned out to fit seven of the nine
+others exactly: the same `case_run` prologue, the same `tar` of the whole tree,
+the same `rm -rf` at the end. Each of them lost the copy and gained the four
+controls.
+
+| battery | before | after | cases |
+|---|---|---|---|
+| `gate-triage-rules.selftest.sh` | 23.5 s | **9.0 s** | 16 → 20 |
+| `gate-scorecard-threshold.selftest.sh` | 16.5 s | **8.5 s** | 16 → 20 |
+| `gate-secret-scan.selftest.sh` | 18.5 s | **13.0 s** | 8 → 12 |
+| `gate-corpus-identifiers.selftest.sh` | 12.0 s | **10.0 s** | 14 → 18 |
+| `gate-findings-artifact.selftest.sh` | 9.5 s | **8.5 s** | 12 → 16 |
+| `gate-licence-hygiene.selftest.sh` | 8.5 s | **7.5 s** | 9 → 13 |
+| `gate-bench-blinding.selftest.sh` | 8.0 s | **9.0 s** | 9 → 13 |
+| **the seven, alone** | **96.5 s** | **65.5 s** | 84 → 112 |
+
+Each number is the mean of two runs of that battery on its own, on both sides,
+and **`gate-bench-blinding.selftest.sh` got half a second slower.** It is published rather
+than dropped because it is the shape of the trade and not noise in it: the four
+controls cost a fresh full copy and three fingerprints, about 1.5 s, and a
+battery with nine cases only has nine copies to save. Below roughly ten cases
+this change buys nothing but the controls. It was kept anyway — the controls
+are the point, and the four of them are why the other six numbers can be
+believed.
+
+**The controls moved into the library too.** They were 74 lines at the foot of
+one battery; written out eight times they would have been eight places for one
+of them to fall behind unnoticed. `fixture_controls` reads the caller's `pass`
+and `fail` and adds to them, which is why it is a sourced function and not a
+subshell, and why it takes `cases` **before** it scores anything — the first
+control does not restore, and counting it would make the restore tally
+disagree with itself.
+
+The mutation bank was run twice, because passing it proves two different
+things. Against the library, the four named mutants are still **4 of 4
+caught**. Against each converted battery, one mutant — the restore replaced by
+`true` — is **7 of 7 caught**, and that second run is the one that matters
+here: a battery can source a library and never call it, and a green self-test
+is not evidence that a shared control reached it. Three separate times on this
+front a piece passed its own test and turned out never to have run from the
+thing that was supposed to run it.
+
+NOT DONE. `gate-corpus-contract.selftest.sh` (30 cases, 11 s alone) already
+clones its tree with `cp -Rc` and has a different `case_run` shape, so it was
+left alone rather than converted on the assumption that `rsync` would beat a
+copy-on-write clone; that assumption is unmeasured.
+`gate-protected-paths.selftest.sh` keeps a per-case copy for its six mutating
+cases only. **The suite total is again NOT MEASURED**, for the same reason as
+the section above and with the same evidence: `fseventsd` is still pinned at
+100% of a core on this laptop, and a suite total read through that measures the
+machine.
 
 ## Branch naming
 
