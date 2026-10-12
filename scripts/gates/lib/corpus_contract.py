@@ -46,7 +46,8 @@ AGENTS_DIR = "agents"
 NUMBER_WORDS = {
     10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen",
     15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen",
-    19: "nineteen", 20: "twenty",
+    19: "nineteen", 20: "twenty", 21: "twenty-one", 22: "twenty-two",
+    23: "twenty-three", 24: "twenty-four", 25: "twenty-five",
 }
 
 DECL_LINES = re.compile(r"([\d]{1,3}(?:,\d{3})+)\s+lines")

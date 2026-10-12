@@ -14,7 +14,7 @@
 | §9 Crypto, secrets and the controls that are only apparent | hashing, homegrown encryption, `.env`, TLS; declared limits, validators, verifiers | WEB-19, WEB-23, WEB-26, WEB-27 |
 | §10 GraphQL and persistent channels | `/graphql`, WebSocket, SSE | WEB-20..WEB-21 |
 
-Section §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`. Open it whenever the target logs anything an outside caller can influence.
+Section §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`. Open it whenever the target logs anything an outside caller can influence. Section §12 (`WEB-29`, `WEB-30`) is in `web-api-baas.md`: open it when the browser talks to Supabase or Firebase directly.
 
 ## How to use a procedure
 

@@ -25,6 +25,22 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **Three procedures for what AI app builders get wrong most: a database the browser talks to.**
+  An outside review asked how the squad serves vibe-coded apps, and the corpus had no answer
+  where they break. `supabase` appeared nowhere, Firebase Security Rules nowhere, `NEXT_PUBLIC_`
+  and `VITE_` nowhere; row-level security appeared only as a reason to *discard* a finding
+  (`FP-01`), never as something to audit. `WEB-29` (Supabase: row-level security, grants, views,
+  `security definer` functions, Storage) and `WEB-30` (Firebase: Firestore, Realtime Database and
+  Storage rules) go into `web-api-baas.md`, a fourth file of the `web-api` pack, because neither
+  existing sibling had room under the 32 KiB budget. `SUP-27` (a server secret shipped to the
+  browser behind a public build prefix) joins §8 of `supply-chain-secrets-malware.md`. Two new
+  `coverage.md` rows route to them. Every vendor behaviour was checked against its primary
+  documentation on 2026-10-12, including two that change the audit: `supabase db lint` does not
+  look at row-level security (`supabase db advisors` does), and Supabase stops granting `anon`
+  and `authenticated` on new `public` tables by default on 2026-10-30. Also corrected on the way:
+  three files said five packs ship as more than one file; it was six, `local-app` being the one
+  left out.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad

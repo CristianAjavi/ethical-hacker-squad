@@ -40,7 +40,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
 | [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
-| `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
+| `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two to four files; the first names the rest in its header. |
 | [references/triage.md](references/triage.md) | Before a finding is written, and before two are merged. Ten answerable rules that rule a **report** out; six that rule a **merge** out. |
 | [references/tooling.md](references/tooling.md) | Before invoking any scanner. Non-destructive invocation per surface, network requirements, licence constraints, and the typical false positive of each tool. |
 | [references/traceability.md](references/traceability.md) | When declaring coverage, mapping a finding to a standard, or writing the coverage section of the report. Also holds the **citation policy**. |
@@ -48,7 +48,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 | [references/report.md](references/report.md) | When writing the report, and before room runs out. |
 | [references/bibliography.md](references/bibliography.md) | Only when the user asks where a technique comes from or wants to go deeper. Never needed to run an audit. |
 
-Do not load a pack for a role you did not staff. The corpus is 4,556 lines across twenty files; loading it whole degrades the work.
+Do not load a pack for a role you did not staff. The corpus is 4,667 lines across twenty-one files; loading it whole degrades the work.
 
 ## Mapping to Claude Code
 
