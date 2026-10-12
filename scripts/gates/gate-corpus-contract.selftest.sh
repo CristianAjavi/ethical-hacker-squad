@@ -76,6 +76,21 @@ import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/knowledge/README.md"
 p.write_text(re.sub(r"\d+ numbered procedures","999 numbered procedures",p.read_text(),count=1))'
 
+# The exact sentence GitHub showed while the corpus held 171 procedures across 8.
+case_run description-states-a-count 1 "settings.description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/governance.json"
+d=json.loads(p.read_text())
+d["settings"]["description"]+=" 122 procedures across 7 role packs."
+p.write_text(json.dumps(d,indent=2))'
+
+case_run description-undeclared 1 "settings.description is not declared" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/governance.json"
+d=json.loads(p.read_text())
+del d["settings"]["description"]
+p.write_text(json.dumps(d,indent=2))'
+
 # The mutation is DERIVED from the file, never pinned to a literal upper bound.
 # Pinned to `AI-28` it silently stopped biting the day the corpus reached AI-29:
 # the replace matched nothing, the gate correctly returned 0, and the case read

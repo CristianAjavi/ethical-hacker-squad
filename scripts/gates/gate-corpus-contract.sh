@@ -15,6 +15,8 @@
 # WHAT IT MEASURES  (scripts/gates/lib/corpus_contract.py does the arithmetic)
 #   1. numbering       contiguous from 01, no duplicates, per identifier family
 #   2. declared counts corpus lines, procedures and file count, wherever stated
+#                      - and the repository description in governance.json
+#                      states none, because nothing can sync it on GitHub
 #   3. declared ranges the upper bound is the highest identifier that exists
 #   4. pack headers    the ~N line estimate and the loading-map table
 #   5. identifiers     every backticked token matches a known family, and no
