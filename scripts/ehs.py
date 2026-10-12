@@ -11,6 +11,7 @@ Usage:
   scripts/ehs.py stats
   scripts/ehs.py doctor
   scripts/ehs.py install [--antigravity] [--claude] [--all]
+  scripts/ehs.py sarif <findings.json> [-o out.sarif]
 """
 
 from __future__ import annotations
@@ -311,6 +312,110 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
 
+# GitHub reads a rule's `security-severity` as a CVSS-like score and buckets it:
+# >= 9.0 critical, 7.0-8.9 high, 4.0-6.9 medium, 0.1-3.9 low. `informational`
+# gets no score on purpose: zero would still be read as a severity.
+SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning",
+               "low": "note", "informational": "note"}
+SECURITY_SEVERITY = {"critical": 9.5, "high": 8.0, "medium": 5.5, "low": 3.0}
+# What a reader of a code-scanning alert may act on. `discarded` and
+# `withdrawn` are the squad saying "this is not a finding"; exporting them would
+# turn its own refutations into alerts.
+SARIF_KIND = {"confirmed": "fail", "probable": "review", "hardening": "informational"}
+# The same high-precision formats the findings validator refuses. SARIF gets
+# uploaded, so this file is refused here too rather than trusted upstream.
+UNREDACTED_SECRET = re.compile(
+    r"gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+
+
+def findings_to_sarif(artifact: Dict[str, Any], titles: Dict[str, str]) -> Dict[str, Any]:
+    """Map a findings.json deliverable onto one SARIF 2.1.0 run."""
+    results: List[Dict[str, Any]] = []
+    rules: Dict[str, Dict[str, Any]] = {}
+    for f in artifact.get("findings", []):
+        kind = SARIF_KIND.get(f.get("status", ""))
+        if kind is None or f.get("duplicate_of"):
+            continue
+        rule_id = f["procedure"]
+        severity = f.get("severity", "")
+        rule = rules.setdefault(rule_id, {
+            "id": rule_id,
+            "name": rule_id,
+            "shortDescription": {"text": titles.get(rule_id, "Finding outside any corpus procedure")},
+            "properties": {"tags": ["security"]},
+        })
+        tags = rule["properties"]["tags"]
+        tags.extend(t for t in f.get("traceability", []) if t not in tags)
+        # A rule carries ONE score in SARIF and a procedure can produce findings
+        # of different severities, so the rule keeps the highest; each result
+        # still carries its own level and its own severity in properties.
+        score = SECURITY_SEVERITY.get(severity)
+        if score is not None and score > float(rule["properties"].get("security-severity", "0")):
+            rule["properties"]["security-severity"] = f"{score:.1f}"
+
+        physical: Dict[str, Any] = {"artifactLocation": {"uri": f["location"]["path"]}}
+        if f["location"].get("line"):
+            physical["region"] = {"startLine": f["location"]["line"]}
+        text = f["title"].rstrip(".") + ". " + f.get("impact", "")
+        results.append({
+            "ruleId": rule_id,
+            "kind": kind,
+            "level": "note" if kind == "informational" else SARIF_LEVEL.get(severity, "warning"),
+            "message": {"text": text.strip()},
+            "locations": [{"physicalLocation": physical}],
+            "partialFingerprints": {"ehsFinding/v1": f"{rule_id}:{f['location']['path']}:{f['location'].get('line', 0)}"},
+            "properties": {k: f[k] for k in ("id", "status", "severity", "confidence") if k in f},
+        })
+    return {
+        "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "ethical-hacker-squad",
+                "informationUri": "https://github.com/CristianAjavi/ethical-hacker-squad",
+                "rules": [rules[k] for k in sorted(rules)],
+            }},
+            "results": results,
+        }],
+    }
+
+
+def cmd_sarif(args: argparse.Namespace) -> int:
+    """Convert a findings.json deliverable into SARIF 2.1.0 for code scanning."""
+    try:
+        raw = Path(args.findings).read_text(encoding="utf-8")
+        artifact = json.loads(raw)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        print(f"Error: cannot read {args.findings} as JSON ({e})", file=sys.stderr)
+        return 2
+    if not isinstance(artifact, dict) or not isinstance(artifact.get("findings"), list):
+        print(f"Error: {args.findings} has no `findings` list; is it a findings.json deliverable?",
+              file=sys.stderr)
+        return 2
+    if UNREDACTED_SECRET.search(raw):
+        print("Error: the artifact carries an unredacted secret in a high-precision format. "
+              "Nothing was written: SARIF is uploaded, and this would publish it. Redact it and "
+              "run scripts/gates/gate-findings-artifact.sh --deliverable first.", file=sys.stderr)
+        return 1
+    try:
+        titles = {p["id"]: p["title"] for p in parse_procedures(ROOT)}
+        sarif = findings_to_sarif(artifact, titles)
+    except (KeyError, TypeError) as e:
+        print(f"Error: a finding is missing a required field ({e}); validate the artifact with "
+              "scripts/gates/gate-findings-artifact.sh --deliverable first.", file=sys.stderr)
+        return 2
+    out = json.dumps(sarif, indent=2, ensure_ascii=False) + "\n"
+    if args.output:
+        Path(args.output).write_text(out, encoding="utf-8")
+        exported = len(sarif["runs"][0]["results"])
+        print(f"Wrote {args.output}: {exported} result(s) of {len(artifact['findings'])} finding(s). "
+              "Uploading it publishes them to GitHub code scanning; that is the user's call.",
+              file=sys.stderr)
+    else:
+        sys.stdout.write(out)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Ethical Hacker Squad CLI tool",
@@ -342,6 +447,11 @@ def main() -> int:
     p_install.add_argument("--claude", action="store_true", help="Install to Claude Code")
     p_install.add_argument("--all", action="store_true", help="Install to all supported environments")
 
+    # sarif
+    p_sarif = subparsers.add_parser("sarif", help="Convert a findings.json deliverable to SARIF 2.1.0")
+    p_sarif.add_argument("findings", help="Path to findings.json")
+    p_sarif.add_argument("-o", "--output", help="Write to this file instead of stdout")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -355,6 +465,7 @@ def main() -> int:
         "stats": cmd_stats,
         "doctor": cmd_doctor,
         "install": cmd_install,
+        "sarif": cmd_sarif,
     }
 
     handler = commands.get(args.command)

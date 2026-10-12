@@ -41,6 +41,14 @@ check "show-invalid-procedure" "$EHS show FAKE-99" 1 "not found"
 check "search-finds-mcp" "$EHS search mcp" 0 "AI-08"
 check "search-empty-returns-0" "$EHS search xyznonexistentquery123" 0 "No procedures found"
 
+# sarif: the conforming fixture has four findings, one of them a duplicate.
+FX="$HERE/gates/fixtures/findings"
+check "sarif-maps-a-conforming-artifact" "$EHS sarif $FX/good/01-conforming.json" 0 '"version": "2.1.0"'
+check "sarif-drops-the-duplicate" "$EHS sarif $FX/good/01-conforming.json | grep -c '\"ruleId\"'" 0 "^3$"
+check "sarif-carries-a-github-severity" "$EHS sarif $FX/good/01-conforming.json" 0 '"security-severity": "8.0"'
+check "sarif-refuses-an-unredacted-secret" "$EHS sarif $FX/bad/08-secret-in-the-evidence.json" 1 "unredacted secret"
+check "sarif-refuses-what-is-not-json" "$EHS sarif $HERE/ehs.selftest.sh" 2 "cannot read"
+
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }

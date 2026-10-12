@@ -25,6 +25,16 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  The export keeps the artifact's meaning: `confirmed` maps to `kind: fail`, `probable` to
+  `review`, `hardening` to a note, and `discarded`, `withdrawn` and duplicates are not exported.
+  `ruleId` is the procedure and the rule carries its highest `security-severity`. An artifact
+  with an unredacted secret is refused with exit 1 and nothing is written. Output validated with
+  zero errors against the OASIS SARIF 2.1.0 schema. Uploading stays the user's decision; the
+  export only writes a file. Five new cases in `scripts/ehs.selftest.sh`; 12 total, 0 failures.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad

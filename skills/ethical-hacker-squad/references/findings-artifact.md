@@ -78,3 +78,17 @@ These are not shape checks. They are the reasons the file is worth having:
 ## What it does not do
 
 It does not make a wrong finding right, and it does not judge severity — a well-formed file can carry a confident mistake. What it removes is the class of defect where the prose says one thing and the structure says another, and it gives a scorer something to count.
+
+## Exporting it to GitHub code scanning
+
+Only when the user asks for it. `scripts/ehs sarif findings.json -o ehs.sarif` (from `${CLAUDE_PLUGIN_ROOT}` when installed as a plugin) maps a **validated** artifact onto SARIF 2.1.0, the format GitHub code scanning reads, so findings show up in the repository's Security tab and on the pull request that touches their lines. Validate first with `gate-findings-artifact.sh --deliverable`; the export assumes a conforming file and fails with exit `2` on one it cannot map.
+
+What the mapping does, so nobody reads more into an alert than the artifact said:
+
+- `confirmed` becomes `kind: fail`, `probable` becomes `kind: review`, `hardening` becomes a `note`. `discarded`, `withdrawn` and anything with `duplicate_of` are **not exported**: they are the squad saying "this is not a finding", and an alert would invert that.
+- `ruleId` is the procedure (`WEB-04`, or `ad-hoc`), its description the procedure's title, its tags the traceability identifiers.
+- GitHub keeps **one** severity per rule and a procedure can produce findings of different severities, so the rule carries the highest. Each result still carries its own level, and its own `severity`, `status` and `confidence` under `properties`.
+- A finding without a `line` is exported without a region, never with an invented one.
+- An artifact carrying an unredacted secret in a high-precision format is refused with exit `1`, and nothing is written: SARIF is meant to be uploaded.
+
+**Uploading is a publication.** Writing the file is local; uploading it (`github/codeql-action/upload-sarif` in a workflow, or the code-scanning API) sends the findings to GitHub. Who can see them from then on depends on the repository and its settings, not on this export. It is the user's decision, never a default step of the handover.

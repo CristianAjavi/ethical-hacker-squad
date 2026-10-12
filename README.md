@@ -148,6 +148,8 @@ Use ethical-hacker-squad on the chatbot, focusing on prompt injection, tool auth
 
 Every finding comes back with an ID, the procedure that produced it, status (confirmed / probable / hardening / discarded), severity, confidence, location, redacted evidence, impact, recommended fix, verification method and standard traceability.
 
+The machine-readable half, `findings.json`, can be exported for GitHub code scanning with `scripts/ehs sarif findings.json -o ehs.sarif`. Writing the file is local; uploading it is a separate decision. See [`findings-artifact.md`](skills/ethical-hacker-squad/references/findings-artifact.md#exporting-it-to-github-code-scanning).
+
 ## How it stays current
 
 Security knowledge decays. A daily deterministic job checks the pinned sources and opens an issue when something moves; a weekly job reviews a rotating slice of the corpus and opens a narrow pull request. Both read only from an allowlist, attach provenance to every item, and are structurally unable to modify the safety contract, the manifest, the allowlist or the workflows.
