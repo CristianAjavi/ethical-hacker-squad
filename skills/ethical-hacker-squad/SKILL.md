@@ -37,7 +37,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 
 | File | Load it when |
 |---|---|
-| [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
+| [references/team.md](references/team.md) | Always, before dispatching. Role orders, the runtime pass, pack ownership and the finding format. |
 | [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |

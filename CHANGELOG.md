@@ -25,6 +25,17 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **The runtime pass: the leader now offers to run the target locally, and never assumes it.**
+  The safety contract allowed safe local tests, and the packs already held localhost probes
+  (`WEB-04`/`WEB-05` route matrices, the `WEB-16` `Origin` check), yet the leader workflow never
+  asked whether the target could run at all. Whatever surfaces only at runtime was reached only
+  when a specialist happened to try it. `references/team.md` now carries the step: offer it when
+  the inventory finds a start path; **ask first and name the commands**, because starting the
+  target executes its code and installing dependencies runs their install scripts; use only the
+  project's own commands on localhost with synthetic data; stop every process; and declare what
+  was exercised at runtime versus only read. The text lives in `team.md` because `SKILL.md` sits
+  10 bytes under its 12,288-byte budget; `SKILL.md` only names it in the load table.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad

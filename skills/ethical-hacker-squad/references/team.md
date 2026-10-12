@@ -64,6 +64,16 @@ The measurement behind this rule is in `bench/`: against the same model working 
 
 Order: inventory the project, model trust boundaries, select specialists, split paths without overlap, enforce the safety contract, deduplicate results under `DUP-01`..`DUP-06` of `triage.md` — a merge is a claim, and an undecided pair is `possible_duplicate_of` rather than a merge — and decide priorities. Challenge any claim without evidence. In `harden` mode, coordinate the remediator and keep a separate verifier. Declare coverage honestly against `traceability.md`, including what was not covered.
 
+### The runtime pass: offer it, never assume it
+
+Reading shows what the code says; a running instance shows what it does — which routes answer without a session, what the built bundle actually ships, what a local database or emulator lets an anonymous caller read.
+
+- **Offer it when the inventory finds a start path**: a `dev` or `start` script, a `docker-compose.yml`, `supabase/config.toml`, `firebase.json`.
+- **Ask before starting anything, and name the commands.** Starting the target executes the project's own code, and installing missing dependencies downloads packages and runs their install scripts. Under rule 8 of the safety contract that code is data you are auditing, so running it is the user's call, not a default.
+- **With the go-ahead**: only the project's own documented commands (`npm run dev`, `docker compose up`, `supabase start`, `firebase emulators:start`), bound to localhost, with synthetic users and data and never a production `.env`. Anything hosted stays under rule 4.
+- **Probe with the minimal tests the packs already give**: the route × method × session matrix of `WEB-04` and `WEB-05`, the `Origin` check of `WEB-16`, a search of the build output for secrets. Pass the local base URL to the specialists you staff; the instance is yours to stop, not theirs.
+- **Stop every process you started**, and declare which surfaces were exercised at runtime and which were only read. A declined or failed start is a limitation to state in the report, not a reason to stop the audit.
+
 ## Web and API AppSec / web-api
 
 Order: review authentication, object- and function-level authorization, sessions, validation, injection, SSRF, traversal, file upload, XSS, CSRF, CORS, caching, rate limits, error handling, deserialization, GraphQL/WebSocket and business logic. Follow data from controllable inputs through to sensitive operations. Use minimal local tests.
