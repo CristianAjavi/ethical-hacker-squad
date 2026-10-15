@@ -53,28 +53,28 @@ Corrections worth carrying, because getting these wrong is common: the current O
 
 ## Standard family to role and pack
 
-Six packs ship as more than one file (`web-api` as four; `mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three; `local-app` as two). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md` / `web-api-logging.md` / `web-api-baas.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
+Six packs ship as more than one file (`web-api` as five; `mobile`, `supply-chain`, `ai-safety` and `infra-cloud` as three; `local-app` as two). The `Pack` column names the file that holds the section, so a row citing several files means all of them are opened. The shorthands used below are `web-api.md` / `web-api-clientside-logic.md` / `web-api-logging.md` / `web-api-baas.md` / `web-api-fullstack.md`, `mobile.md` / `mobile-runtime-trust.md` / `mobile-ios.md`, `infra-cloud.md` / `infra-cloud-cicd-exposure.md` / `infra-cloud-cicd-platforms.md`, `supply-chain.md` / `supply-chain-secrets-malware.md` / `supply-chain-source-lifecycle.md`, `ai-safety.md` / `ai-safety-data-output.md`.
 
 | Standard family | Role | Pack | Procedures |
 |---|---|---|---|
 | `WSTG-INFO-*`, `WSTG-CONF-*` | web-api | `web-api-clientside-logic.md` §11, `infra-cloud-cicd-exposure.md` §5 | `WEB-22`, `INF-17` |
-| `WSTG-IDNT-*`, `WSTG-ATHN-*`, `WSTG-SESS-*` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
-| `WSTG-ATHZ-*` | web-api | `web-api.md` §2 + `web-api-baas.md` §12 | `WEB-04`..`WEB-06`, `WEB-29`, `WEB-30` |
+| `WSTG-IDNT-*`, `WSTG-ATHN-*`, `WSTG-SESS-*` | web-api | `web-api.md` §1 + `web-api-fullstack.md` §13 | `WEB-01`..`WEB-03`, `WEB-34`, `WEB-35` |
+| `WSTG-ATHZ-*` | web-api | `web-api.md` §2 + `web-api-baas.md` §12 + `web-api-fullstack.md` §13 | `WEB-04`..`WEB-06`, `WEB-29`..`WEB-34` |
 | `WSTG-INPV-*` | web-api | `web-api.md` §3, §4, §5 + `web-api-clientside-logic.md` §6 | `WEB-07`..`WEB-14` |
 | `WSTG-ERRH-*` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
 | `WSTG-CRYP-*` | web-api | `web-api-clientside-logic.md` §9 | `WEB-19` |
-| `WSTG-BUSL-*` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
+| `WSTG-BUSL-*` | web-api | `web-api-clientside-logic.md` §8 + `web-api-fullstack.md` §14 | `WEB-17`, `WEB-18`, `WEB-36` |
 | `WSTG-CLNT-*` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
 | `WSTG-APIT-*` | web-api | `web-api-clientside-logic.md` §10 | `WEB-20`, `WEB-21` |
-| `API1:2023`..`API5:2023` | web-api | `web-api.md` §1, §2 + `web-api-baas.md` §12 | `WEB-01`..`WEB-06`, `WEB-29`, `WEB-30` |
+| `API1:2023`..`API5:2023` | web-api | `web-api.md` §1, §2 + `web-api-baas.md` §12 + `web-api-fullstack.md` §13 | `WEB-01`..`WEB-06`, `WEB-29`..`WEB-35` |
 | `API6:2023`, `API4:2023` | web-api | `web-api-clientside-logic.md` §8 | `WEB-17`, `WEB-18` |
 | `API7:2023` | web-api | `web-api.md` §4 | `WEB-10` |
 | `API8:2023`, `API9:2023`, `API10:2023` | web-api / supply-chain | `web-api-clientside-logic.md` §7, §11 / `supply-chain.md` §7 | `WEB-15`, `WEB-16`, `WEB-22`, `SUP-13`..`SUP-15` |
-| `ASVS 5.0 V1`, `V2`, `V5` | web-api | `web-api.md` §3, §4, §5 | `WEB-07`..`WEB-12` |
+| `ASVS 5.0 V1`, `V2`, `V5` | web-api | `web-api.md` §3, §4, §5 + `web-api-fullstack.md` §14 | `WEB-07`..`WEB-12`, `WEB-36` |
 | `ASVS 5.0 V3` | web-api | `web-api-clientside-logic.md` §6, §7 | `WEB-13`..`WEB-16` |
 | `ASVS 5.0 V4` | web-api | `web-api-clientside-logic.md` §10 | `WEB-20`, `WEB-21` |
 | `ASVS 5.0 V6`, `V7`, `V9`, `V10` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
-| `ASVS 5.0 V8` | web-api | `web-api.md` §2 + `web-api-baas.md` §12 | `WEB-04`..`WEB-06`, `WEB-29`, `WEB-30` |
+| `ASVS 5.0 V8` | web-api | `web-api.md` §2 + `web-api-baas.md` §12 + `web-api-fullstack.md` §13 | `WEB-04`..`WEB-06`, `WEB-29`..`WEB-35` |
 | `ASVS 5.0 V11`, `V12` | web-api / infra-cloud | `web-api-clientside-logic.md` §9 / `infra-cloud.md` §1 | `WEB-19`, `INF-03` |
 | `ASVS 5.0 V13`, `V14` | infra-cloud / privacy-abuse | `infra-cloud.md` §1 + `infra-cloud-cicd-exposure.md` §5 / `privacy-abuse.md` §1..§3, §5 | `INF-01`..`INF-06`, `INF-17`, `PRV-01`..`PRV-05` |
 | `ASVS 5.0 V15` | web-api / remediator / ai-safety | `web-api-clientside-logic.md` §9 / part A / `ai-safety-data-output.md` §5 | `WEB-19`, `REM-01`..`REM-03`, `AI-15` |
@@ -84,14 +84,14 @@ Six packs ship as more than one file (`web-api` as four; `mobile`, `supply-chain
 | `MASVS-PLATFORM-*` | mobile | `mobile.md` §1, §3, §4 + `mobile-runtime-trust.md` §10 + `mobile-ios.md` §8 | `MOB-01`, `MOB-02`, `MOB-05`..`MOB-08`, `MOB-14`, `MOB-15`, `MOB-17` |
 | `MASVS-CODE-*`, `MASVS-RESILIENCE-*` | mobile | `mobile.md` §6 + `mobile-runtime-trust.md` §7, §11 | `MOB-11`..`MOB-13`, `MOB-18` |
 | `MASVS-PRIVACY-*` | privacy-abuse / mobile | `privacy-abuse.md` §5 / `mobile.md` §2 | `PRV-07`, `MOB-04` |
-| `A01:2025` | web-api | `web-api.md` §2, §4 + `web-api-baas.md` §12 | `WEB-04`..`WEB-06`, `WEB-10`, `WEB-29`, `WEB-30` |
+| `A01:2025` | web-api | `web-api.md` §2, §4 + `web-api-baas.md` §12 + `web-api-fullstack.md` §13 | `WEB-04`..`WEB-06`, `WEB-10`, `WEB-29`..`WEB-35` |
 | `A02:2025` | infra-cloud | `infra-cloud.md` §1..§3 + `infra-cloud-cicd-exposure.md` §5 | `INF-01`..`INF-12`, `INF-17` |
 | `A03:2025` | supply-chain | `supply-chain.md` §1..§6 + `supply-chain-secrets-malware.md` §8, §9 | `SUP-01`..`SUP-12`, `SUP-16`..`SUP-20` |
 | `A04:2025` | web-api / infra-cloud / supply-chain | `web-api-clientside-logic.md` §9 / `infra-cloud.md` §1 / `supply-chain-secrets-malware.md` §8 | `WEB-19`, `INF-03`, `SUP-27` |
 | `A05:2025` | web-api | `web-api.md` §3 | `WEB-07`..`WEB-09` |
-| `A06:2025` | leader | design review across packs | — |
-| `A07:2025` | web-api | `web-api.md` §1 | `WEB-01`..`WEB-03` |
-| `A08:2025` | supply-chain | `supply-chain.md` §5, §6 | `SUP-09`..`SUP-12` |
+| `A06:2025` | leader / web-api | design review across packs / `web-api-fullstack.md` §14 | `WEB-36` |
+| `A07:2025` | web-api | `web-api.md` §1 + `web-api-fullstack.md` §13 | `WEB-01`..`WEB-03`, `WEB-34` |
+| `A08:2025` | supply-chain / web-api | `supply-chain.md` §5, §6 / `web-api-fullstack.md` §14 | `SUP-09`..`SUP-12`, `WEB-36` |
 | `A09:2025` | infra-cloud / web-api | `infra-cloud.md` §1 / `web-api-clientside-logic.md` §11 | `INF-06`, `WEB-22` |
 | `A10:2025` | web-api | `web-api-clientside-logic.md` §11 | `WEB-22` |
 | `CICD-SEC-1`..`CICD-SEC-10` | infra-cloud + supply-chain | `infra-cloud-cicd-exposure.md` §4 + `infra-cloud-cicd-platforms.md` §7 / `supply-chain.md` §5, §6 + `supply-chain-source-lifecycle.md` §10 | `INF-13`..`INF-16`, `INF-19`..`INF-23`, `SUP-09`..`SUP-12`, `SUP-21`, `SUP-22` |

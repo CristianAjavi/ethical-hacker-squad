@@ -25,21 +25,26 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
-- **Three procedures for what AI app builders get wrong most: a database the browser talks to.**
-  An outside review asked how the squad serves vibe-coded apps, and the corpus had no answer
-  where they break. `supabase` appeared nowhere, Firebase Security Rules nowhere, `NEXT_PUBLIC_`
-  and `VITE_` nowhere; row-level security appeared only as a reason to *discard* a finding
-  (`FP-01`), never as something to audit. `WEB-29` (Supabase: row-level security, grants, views,
-  `security definer` functions, Storage) and `WEB-30` (Firebase: Firestore, Realtime Database and
-  Storage rules) go into `web-api-baas.md`, a fourth file of the `web-api` pack, because neither
-  existing sibling had room under the 32 KiB budget. `SUP-27` (a server secret shipped to the
-  browser behind a public build prefix) joins §8 of `supply-chain-secrets-malware.md`. Two new
-  `coverage.md` rows route to them. Every vendor behaviour was checked against its primary
-  documentation on 2026-10-12, including two that change the audit: `supabase db lint` does not
-  look at row-level security (`supabase db advisors` does), and Supabase stops granting `anon`
-  and `authenticated` on new `public` tables by default on 2026-10-30. Also corrected on the way:
-  three files said five packs ship as more than one file; it was six, `local-app` being the one
-  left out.
+- **Nine procedures for where apps built with AI tools actually break.** An outside review asked
+  how the squad serves vibe-coded apps, and the corpus had no answer where they break: `supabase`,
+  Firebase Security Rules, `NEXT_PUBLIC_`, Server Actions, Stripe webhooks and Vercel cron appeared
+  nowhere, and row-level security only as a reason to *discard* a finding (`FP-01`).
+  `web-api-baas.md` (§12, fourth file of the `web-api` pack): `WEB-29` Supabase row-level security
+  (grants, views, `security definer` functions, Storage, anonymous sign-ins, Realtime channels,
+  which are public by default), `WEB-30` Firebase rules, `WEB-31` a privilege column the user can
+  write through their own row (`profiles.role`; `with check` cannot stop it, column grants can),
+  `WEB-32` Edge Functions that take `verify_jwt` for authentication — the publishable key passes
+  it — or turn it off. `web-api-fullstack.md` (§13-§14, fifth file): `WEB-33` Server Actions and
+  Route Handlers that trust the page in front of them, `WEB-34` authorization only in the proxy
+  (matchers that exclude `/api`, Clerk's deprecated `createRouteMatcher`, CVE-2025-29927 on
+  self-hosted Next.js), `WEB-35` a cron or internal route anyone can trigger (`Bearer undefined`),
+  `WEB-36` a payment believed without verification (unsigned or fail-open webhooks, fulfilment on
+  the redirect page, a price from the request). `SUP-27` (a server secret behind a public build
+  prefix) joins `supply-chain-secrets-malware.md` §8, and `AI-19` now names the LLM route that
+  makes the app a free proxy for its own key. Every vendor behaviour was checked against primary
+  documentation on 2026-10-12 and 2026-10-15. Each procedure that needs Docker, a build or a
+  running app says it is the runtime pass and waits for the user's go-ahead.
+
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must

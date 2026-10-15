@@ -49,7 +49,7 @@ The second dimension is not capability at all.
 
 ## What makes it different
 
-Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,667 lines of corpus across eight role packs, with 174 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
+Most "act as a security expert" prompts are adjectives. This one ships **procedural knowledge**: 4,870 lines of corpus across eight role packs, with 180 numbered procedures. Each procedure states where to look per stack, the vulnerable pattern, **what rules it out as a false positive**, a minimal non-destructive test, the standard identifiers it maps to, and the tool command plus what that tool's output does *not* prove.
 
 - **An adaptive team, not a fixed checklist.** Two to four relevant specialists. No mobile agent without a mobile artifact.
 - **Detection and verification are separate agents.** The verifier works from the finding and the diff, never from the fixer's conclusion, and tries to refute both.
@@ -81,7 +81,8 @@ Eight packs, one per role. Six of them are stored as **more than one file** (`we
 | web-api | `web-api.md` | `WEB-01`..`WEB-12`, `WEB-24`..`WEB-25` | authn and sessions, object- and function-level authorization, injection, SSRF, deserialization and upload |
 | | `web-api-clientside-logic.md` | `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`..`WEB-27` | XSS and client sinks, CSRF/CORS/caching, business logic and rate limiting, crypto, GraphQL and WebSocket, and a control that runs without being able to fail |
 | | `web-api-logging.md` | `WEB-22`, `WEB-28` | what leaks out through the log, and what an attacker writes into it |
-| | `web-api-baas.md` | `WEB-29`..`WEB-30` | a backend-as-a-service the browser reaches directly: Supabase row-level security and Firebase Security Rules as the only authorization there is |
+| | `web-api-baas.md` | `WEB-29`..`WEB-32` | a backend-as-a-service the browser reaches directly: Supabase row-level security and Firebase Security Rules as the only authorization there is, a privilege column the user can write, Edge Functions that skip the caller |
+| | `web-api-fullstack.md` | `WEB-33`..`WEB-36` | full-stack frameworks: Server Actions and Route Handlers that trust the page, authorization only in the proxy, cron routes anyone can call, Stripe webhooks and prices |
 | mobile | `mobile.md` | `MOB-01`..`MOB-12` | manifest and exported surface, storage and logs, WebViews and bridges, deep links and intents, TLS and pinning, crypto and embedded secrets |
 | | `mobile-runtime-trust.md` | `MOB-13`, `MOB-16`..`MOB-18` | client-only controls, biometrics bound to a key, overlay and accessibility defenses on confirmation screens, code loaded after the store |
 | | `mobile-ios.md` | `MOB-14`..`MOB-15` | iOS specifics: `Info.plist`, ATS, URL schemes, entitlements, Keychain, pasteboard |
