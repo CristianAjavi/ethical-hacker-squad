@@ -12,8 +12,11 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   description carried an unquoted `: ` ("local daemons: path traversal") from 2026-08-20; PyYAML
   rejects the block ("mapping values are not allowed here"). `gate-agent-tools.sh` reads the
   frontmatter line by line, so it saw a valid `tools:` list, and `claude plugin validate <dir>`
-  (2.1.300) passes a frontmatter that is not YAML at all. Whether the harness falls back to a
-  tolerant parse is not documented; the fix does not bet on it. The description is reworded, and
+  (2.1.300) passes a frontmatter that is not YAML at all. The CLI pinned for `release.yml`
+  (2.1.221) did see it, and said what it meant: *"At runtime this agent loads with empty metadata
+  (all frontmatter fields silently dropped)"* — no `tools` restriction. Every weekly promotion to
+  `stable` from 2026-09-07 to 2026-10-12 reported it, and from 2026-09-14 on it was the only
+  failing gate: this is why `stable` was never created. The description is reworded, and
   the gate now parses every agent with a strict YAML loader: the block must parse, carry no
   duplicated key, and give a YAML parser the same `tools` list the line reader certified. Three
   new self-test cases (unquoted colon, a tool list folded onto a second line that smuggles
