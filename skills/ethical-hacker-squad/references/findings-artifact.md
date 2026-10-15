@@ -13,7 +13,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | The triage answers and what they mean | [`triage.md`](triage.md) |
 | Redaction placeholders and what may not travel | [`report.md`](report.md) |
 
-`gate-findings-artifact.sh` validates the artifact against all four, and the same command validates a real deliverable: `scripts/gates/gate-findings-artifact.sh --deliverable path/to/findings.json`.
+`gate-findings-artifact.sh` validates the artifact against all four, and the same command validates a real deliverable: `"<plugin root>/scripts/gates/gate-findings-artifact.sh" --deliverable /absolute/path/to/findings.json`, where `<plugin root>` is `${CLAUDE_PLUGIN_ROOT}` — two directories above this skill's base directory — and never a path inside the audited repository. Without the plugin there is no validator: report it as *not available*, as `report.md` § handover says.
 
 ## The fields, and why each is there
 
