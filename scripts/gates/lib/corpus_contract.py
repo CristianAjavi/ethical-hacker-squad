@@ -41,6 +41,8 @@ DECLARING_FILES = [
     "skills/ethical-hacker-squad/references/knowledge/README.md",
 ]
 GOVERNANCE_JSON = "scripts/gh/governance.json"
+PLUGIN_JSON = ".claude-plugin/plugin.json"
+MARKET_JSON = ".claude-plugin/marketplace.json"
 TEAM = "skills/ethical-hacker-squad/references/team.md"
 COVERAGE = "skills/ethical-hacker-squad/references/coverage.md"
 AGENTS_DIR = "agents"
@@ -279,6 +281,28 @@ def main() -> int:
                 f"{GOVERNANCE_JSON}: settings.description states '{m.group(0)}'; that text "
                 "lives on GitHub, where nothing syncs a count. State none"
             )
+
+    # The same rule for the two descriptions a user reads in `/plugin` before
+    # installing anything. They live in the tree, but they are copied into every
+    # user's cache and into marketplace listings, and no count in them is synced.
+    for rel in (PLUGIN_JSON, MARKET_JSON):
+        checks += 1
+        try:
+            manifest = json.loads(read(root, rel))
+        except ValueError as exc:
+            raise Unmeasured(f"{rel} is not valid JSON: {exc}") from exc
+        fields = [("description", manifest.get("description"))]
+        fields += [(f"plugins[{i}].description", entry.get("description"))
+                   for i, entry in enumerate(manifest.get("plugins") or [])
+                   if isinstance(entry, dict)]
+        for field, text in fields:
+            if not isinstance(text, str):
+                continue
+            for m in DESC_COUNT.finditer(text):
+                findings.append(
+                    f"{rel}: {field} states '{m.group(0)}'; a user reads it in /plugin "
+                    "before installing, and nothing syncs it. State none"
+                )
 
     # ---- 4. pack cost headers and the loading map ---------------------
     for name, measured in sorted(per_file_lines.items()):

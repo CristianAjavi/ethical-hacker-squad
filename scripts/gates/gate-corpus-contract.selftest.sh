@@ -84,6 +84,21 @@ d=json.loads(p.read_text())
 d["settings"]["description"]+=" 122 procedures across 7 role packs."
 p.write_text(json.dumps(d,indent=2))'
 
+# The descriptions /plugin shows: the manifest and every marketplace entry.
+case_run plugin-description-states-a-count 1 "plugin.json: description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/".claude-plugin/plugin.json"
+d=json.loads(p.read_text())
+d["description"]+=" Nine specialists, 180 procedures."
+p.write_text(json.dumps(d,indent=2))'
+
+case_run marketplace-entry-states-a-count 1 "plugins\[0\].description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/".claude-plugin/marketplace.json"
+d=json.loads(p.read_text())
+d["plugins"][0]["description"]+=" Across eight role packs."
+p.write_text(json.dumps(d,indent=2))'
+
 case_run description-undeclared 1 "settings.description is not declared" '
 import os,json,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/governance.json"
