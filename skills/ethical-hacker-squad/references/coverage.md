@@ -13,6 +13,27 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 
 Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `web-api-logging` + `web-api-baas` + `web-api-fullstack`, `mobile` + `mobile-runtime-trust` + `mobile-ios`, `infra-cloud` + `infra-cloud-cicd-exposure` + `infra-cloud-cicd-platforms`, `supply-chain` + `supply-chain-secrets-malware` + `supply-chain-source-lifecycle`, `ai-safety` + `ai-safety-data-output` + `ai-safety-agent-runtime`, `local-app` + `local-app-desktop-ipc`). The `Pack sections` column names the file that actually holds each section, so pass it verbatim: a row citing several files means the specialist opens all of them.
 
+## Quick audit
+
+`quick` mode reads this section and nothing else in this file. It is a fixed, ordered checklist: take the items whose *When* is in the inventory, top to bottom, and read each procedure **alone** with `${CLAUDE_PLUGIN_ROOT}/scripts/ehs show <ID>` (about 500 tokens each) instead of opening its pack. Without `scripts/ehs` — no Python, or the skill copied without the plugin — Grep the pack for `### <ID>` and read only that section. The order is what most often becomes a breach or a bill in an app built fast.
+
+1. `SUP-16`, `SUP-17` — Is a live secret in the tree or in git history? *When:* any repository.
+2. `SUP-27` — Does a server secret ship inside the browser bundle? *When:* `NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_` and the other public prefixes.
+3. `WEB-29` — Does every exposed table have RLS with a policy that binds each row to its owner? *When:* Supabase.
+4. `WEB-30` — Do the rules check the owner, not just "signed in"? *When:* Firebase.
+5. `WEB-31` — Can a user write their own role, plan or credits? *When:* Supabase or any `profiles`/`users` table with a role, plan or credits.
+6. `WEB-33` — Does each Server Action and Route Handler check the session and the owner itself? *When:* `"use server"`, `app/**/route.ts`, `pages/api/`.
+7. `WEB-34` — Is the proxy the only check, and does its matcher skip `/api`? *When:* `middleware.ts`, `proxy.ts`, Clerk, Auth.js.
+8. `WEB-04` — Can user A read or change user B's object? *When:* any route that takes an id.
+9. `WEB-05` — Can a normal user call an admin function? *When:* admin pages or routes.
+10. `WEB-36` — Is the webhook signature verified, and is the price set on the server? *When:* Stripe.
+11. `WEB-32` — Does each function identify the caller before using the secret key? *When:* `supabase/functions/`.
+12. `WEB-35` — Can anyone on the internet trigger the job? *When:* `crons` in `vercel.json`, internal or admin routes.
+13. `AI-19` — Can anyone spend your model key through your app, without a limit? *When:* an LLM API call.
+14. `AI-05` — Does the model's text decide what a user may do? *When:* an LLM that calls tools.
+
+**The cap.** No subagents, at most the twelve matching procedures that come first in this order, and no reading beyond what they name. If the user set a budget, it wins. When the cap is reached, stop and report; what was not reached goes in the coverage declaration as not checked, and the full audit is offered. A quick audit never claims more than its checklist.
+
 ## Routing table
 
 | Signal in the inventory | Role | Pack sections | Notes |

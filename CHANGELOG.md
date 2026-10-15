@@ -8,6 +8,24 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A run cost twice what the model alone costs, and nothing told a non-expert what to do first.**
+  The adversarial review's verdict on the product: for someone shipping an app built with AI
+  tools there was no fast mode, no cost cap and no "fix this first". Now: a `quick` mode — the
+  leader alone, no subagents, the ordered checklist of `coverage.md` § Quick audit for the stack
+  it finds (secrets, row-level security, Server Actions, the proxy, IDOR, Stripe, cron routes, the
+  LLM key), each procedure read alone with `scripts/ehs show <ID>` instead of whole packs, capped
+  at twelve procedures, nothing undemonstrated above `probable`; `report.md` gains the Quick
+  report and an executive summary that opens with **Fix these first**, written for whoever has to
+  act on it. Every subagent now carries `maxTurns` (60, the remediator 80: output comes back
+  marked partial instead of running on), `omitClaudeMd: true` (the target's `CLAUDE.md` no longer
+  lands in a specialist's starting context; rule 8 treats it as data) and, for auditors,
+  `disallowedTools: Edit, Write, NotebookEdit`. The bench narrative is gone from the agents'
+  prompts (about 3 KB per dispatch), `ehs-web-api`'s two contradictory orders ("read first" and
+  "enumerate before you read anything") became one, and the skill's description now speaks the
+  words a vibe coder uses and says it is not for general code review. `team.md` compares
+  `git status --porcelain --ignored` before and after an audit: plain `--porcelain` misses writes
+  to `.env` or `node_modules/`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;

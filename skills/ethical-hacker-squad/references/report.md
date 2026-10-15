@@ -24,6 +24,10 @@ Write the report in the language the user is using. Every label below describes 
 
 Never translate: standard identifiers (`WSTG-INPV-05`, `ASVS 5.0 V8`, `CWE-89`, `A01:2025`, `API1:2023`, `LLM01:2026`, `ASI06`, `MASVS-STORAGE-1`, `MASTG-TEST-0001`, `CAPEC-66`, `CICD-SEC-4`, `SSDF PW`, `SLSA Build L2`), procedure IDs from the packs (`WEB-07`, `AI-01`, `SUP-14`), tool names, command lines, file paths, code symbols, and CVE identifiers.
 
+## Quick report
+
+A `quick` audit writes the same deliverable — `report.md` and `findings.json` — with every mandatory section present and most of them one line long. The executive summary is the report: **Fix these first**, then the checklist rows run, each marked `checked` (with its finding, or "nothing found at this depth") or `not reached`. Findings not demonstrated stay `probable` with what would settle them. The coverage declaration names the checklist and the cap, and the residual-risk section offers the full audit. No `unaided_pass`, no `VER-09` pass: say so in scope and method.
+
 <!-- report:section id=redaction-pass class=mandatory -->
 ## Redaction pass — before writing, not after
 
@@ -57,6 +61,8 @@ The reason is blast radius. A secret sitting in a repository is exposed to whoev
 ## Executive summary
 
 State scope, mode, components reviewed, overall result and the most important risks. Avoid absolute guarantees. If nothing significant was found, say the review found nothing significant **at the depth reached** - not that the system is secure.
+
+Open it with **Fix these first**: at most five items, ordered by what an attacker could do soonest, written for someone who is not a security specialist. Each item is four short lines: what someone can do to the app or its users, the file, the change to make (a snippet when it fits), and how to check it is fixed. Identifiers and severities stay in the findings; this list is for the person who has to act tonight.
 <!-- /report:section -->
 
 <!-- report:section id=scope-and-method class=mandatory -->
