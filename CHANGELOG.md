@@ -8,6 +8,24 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A run cost twice what the model alone costs, and nothing told a non-expert what to do first.**
+  The adversarial review's verdict on the product: for someone shipping an app built with AI
+  tools there was no fast mode, no cost cap and no "fix this first". Now: a `quick` mode — the
+  leader alone, no subagents, the ordered checklist of `coverage.md` § Quick audit for the stack
+  it finds (secrets, row-level security, Server Actions, the proxy, IDOR, Stripe, cron routes, the
+  LLM key), each procedure read alone with `scripts/ehs show <ID>` instead of whole packs, capped
+  at twelve procedures, nothing undemonstrated above `probable`; `report.md` gains the Quick
+  report and an executive summary that opens with **Fix these first**, written for whoever has to
+  act on it. Every subagent now carries `maxTurns` (60, the remediator 80: output comes back
+  marked partial instead of running on), `omitClaudeMd: true` (the target's `CLAUDE.md` no longer
+  lands in a specialist's starting context; rule 8 treats it as data) and, for auditors,
+  `disallowedTools: Edit, Write, NotebookEdit`. The bench narrative is gone from the agents'
+  prompts (about 3 KB per dispatch), `ehs-web-api`'s two contradictory orders ("read first" and
+  "enumerate before you read anything") became one, and the skill's description now speaks the
+  words a vibe coder uses and says it is not for general code review. `team.md` compares
+  `git status --porcelain --ignored` before and after an audit: plain `--porcelain` misses writes
+  to `.env` or `node_modules/`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
@@ -24,6 +42,66 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`scripts/ehs prescan`, `compare` and `cost`: the three instruments an adversarial review found
+  missing.** *"No deterministic pre-scan, no baseline or suppressions with stable fingerprints, no
+  cost telemetry."* `prescan` reads a tree without running it and prints leads keyed to procedure
+  IDs for the shape AI tools produce; on the eval app of `evals/` it leads to all nine planted
+  defects and to none of the three correct controls, and the quick audit now starts with it.
+  `compare` matches two `findings.json` by the SARIF fingerprint (rule, file, component; never the
+  line), reports new, gone and persisting, honours expiring suppressions, and with `--fail-on`
+  becomes a pull-request check. `cost` sums the tokens of a session — the main thread and every
+  subagent — from Claude Code's own transcripts, counting each message once although the
+  transcript writes it once per content block; the handover now quotes it. Twenty new cases in
+  `scripts/ehs.selftest.sh`; 41 total, 0 failures.
+
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  `confirmed` maps to `kind: fail` with a level from its severity; `probable` (`review`) and
+  `hardening` (`informational`) carry `level: none`, the only level SARIF 2.1.0 §3.27.10 allows
+  for a kind other than `fail`; `discarded`, `withdrawn` and duplicates are not exported. Each
+  rule carries the procedure's `help` and a link to it, `external/cwe/cwe-n` tags, and its
+  highest `security-severity`; findings outside every procedure get one rule per CWE instead of
+  one bucket. The fingerprint hashes rule, file and component but not the line, so an alert
+  survives code moving above it. `automationDetails.id` (`--category`) lets an upload close the
+  alerts of the previous one. An artifact with an unredacted secret is refused with exit 1 and
+  nothing is written, and the formats come from one list now, `scripts/gates/data/secret-formats.txt`,
+  shared with the findings validator and `gate-report-contract.sh`: the validator used to know five
+  formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
+  signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
+  stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
+  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
+  subagents", so the leader and its subagents were never scored, and never against the model
+  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
+  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
+  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
+  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
+  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
+  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
+  what the suite cannot prove — above all, that one app written by the corpus's own author is not
+  an external benchmark.
+- **Nine procedures for where apps built with AI tools actually break.** An outside review asked
+  how the squad serves vibe-coded apps, and the corpus had no answer where they break: `supabase`,
+  Firebase Security Rules, `NEXT_PUBLIC_`, Server Actions, Stripe webhooks and Vercel cron appeared
+  nowhere, and row-level security only as a reason to *discard* a finding (`FP-01`).
+  `web-api-baas.md` (§12, fourth file of the `web-api` pack): `WEB-29` Supabase row-level security
+  (grants, views, `security definer` functions, Storage, anonymous sign-ins, Realtime channels,
+  which are public by default), `WEB-30` Firebase rules, `WEB-31` a privilege column the user can
+  write through their own row (`profiles.role`; `with check` cannot stop it, column grants can),
+  `WEB-32` Edge Functions that take `verify_jwt` for authentication — the publishable key passes
+  it — or turn it off. `web-api-fullstack.md` (§13-§14, fifth file): `WEB-33` Server Actions and
+  Route Handlers that trust the page in front of them, `WEB-34` authorization only in the proxy
+  (matchers that exclude `/api`, Clerk's deprecated `createRouteMatcher`, CVE-2025-29927 on
+  self-hosted Next.js), `WEB-35` a cron or internal route anyone can trigger (`Bearer undefined`),
+  `WEB-36` a payment believed without verification (unsigned or fail-open webhooks, fulfilment on
+  the redirect page, a price from the request). `SUP-27` (a server secret behind a public build
+  prefix) joins `supply-chain-secrets-malware.md` §8, and `AI-19` now names the LLM route that
+  makes the app a free proxy for its own key. Every vendor behaviour was checked against primary
+  documentation on 2026-10-12 and 2026-10-15. Each procedure that needs Docker, a build or a
+  running app says it is the runtime pass and waits for the user's go-ahead.
+
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must

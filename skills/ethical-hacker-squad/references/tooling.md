@@ -8,6 +8,15 @@ Load this before invoking any scanner. It answers three questions per tool: how 
 2. **A clean run is not evidence of absence.** Measured on 27 real projects and 192 CVE-confirmed vulnerabilities, individual static analyzers missed between 47% and 80% of them; combining several left 30% to 69% still missed (Lipp et al., ISSTA 2022). On a Java benchmark, four well-known SAST tools detected 11%-27% each and 38.8% combined, with deserialization, input validation and XSS the least detected (Bennett et al., EASE 2024). Report a clean scan as a fact about the tool.
 3. **Licence and network posture are part of the invocation.** Some tools may be executed but not redistributed; some phone home by default; some verify a discovered credential by using it against the real provider, which is an action against a third party.
 
+## The plugin's own instruments
+
+Shipped with the plugin under `${CLAUDE_PLUGIN_ROOT}/scripts/ehs` (Python 3, no network, no install):
+
+- `ehs prescan <target>` — deterministic leads for an app built fast, keyed to procedure IDs: tables with no row-level security, update policies on privilege columns, secrets behind public build prefixes, Server Actions and routes that never read the session, Stripe webhooks with no `constructEvent`, client-chosen prices, cron routes that fail open, open LLM routes, a matcher that skips `/api`, a Next.js inside the CVE-2025-29927 range. A lead is where to read first, never a finding; an empty result is not a clean bill.
+- `ehs compare <before.json> <after.json> [--suppress file] [--fail-on high]` — matches findings across runs by the fingerprint the SARIF export uses (rule, file, component; not the line): new, gone, persisting. A suppression is `{fingerprint, reason, expires}`; an expired one hides nothing. *Gone* means absent from the second run, not fixed. `--fail-on` makes it a pull-request check.
+- `ehs cost` — tokens spent by the newest session of the working directory, main thread and each subagent, read from Claude Code's transcripts. Tokens only; no price.
+- `ehs sarif <findings.json>` — the export for GitHub code scanning (`findings-artifact.md`).
+
 ## Network posture
 
 - **Fully offline:** gitleaks, detect-secrets, syft, bandit, njsscan, hadolint, conftest/OPA, actionlint, `zizmor --offline`, apktool, jadx, aapt2, apksigner, semgrep with local rules.
