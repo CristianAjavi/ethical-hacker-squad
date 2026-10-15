@@ -39,11 +39,11 @@ VOCAB_REGION = r"<!--\s*vocabulary:declare {name}\s*-->(.*?)<!--\s*/vocabulary:d
 TERM = re.compile(r"^\|\s*`([a-z ]+)`\s*\|", re.M)
 RULE_ID = re.compile(r"`(FP-\d{2})`")
 MERGE_RULE_ID = re.compile(r"`(DUP-\d{2})`")
-# High-precision formats, the same ones the report contract refuses.
-SECRETS = re.compile(
-    r"gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,}|sk-ant-[A-Za-z0-9_-]{16,}|"
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[baprs]-[A-Za-z0-9-]{10,}"
-)
+# The formats come from scripts/gates/data/secret-formats.txt, the one list the
+# report contract and the SARIF export read too. This file used to carry its own
+# five, and none of them was a Stripe, Supabase, OpenAI project or Google key.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from secret_formats import find_unredacted_secrets  # noqa: E402
 
 
 class Unmeasured(Exception):
@@ -475,8 +475,10 @@ def main() -> int:
                 paths_seen[2] += 1
 
         blob = json.dumps(data)
-        if SECRETS.search(blob):
-            fail(f"{target.name}: an unredacted secret format appears in the artifact")
+        leaked = find_unredacted_secrets(blob)
+        if leaked:
+            fail(f"{target.name}: an unredacted secret format appears in the artifact "
+                 f"({', '.join(leaked)})")
 
         total += 1
         if expected_bad:
