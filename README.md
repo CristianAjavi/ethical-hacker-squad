@@ -132,6 +132,8 @@ Use ethical-hacker-squad on the chatbot, focusing on prompt injection, tool auth
 
 Every finding comes back with an ID, the procedure that produced it, status (confirmed / probable / hardening / discarded), severity, confidence, location, redacted evidence, impact, recommended fix, verification method and standard traceability.
 
+The machine-readable half, `findings.json`, can be exported for GitHub code scanning with `scripts/ehs sarif findings.json -o ehs.sarif`. Writing the file is local; uploading it is a separate decision. See [`findings-artifact.md`](skills/ethical-hacker-squad/references/findings-artifact.md#exporting-it-to-github-code-scanning).
+
 ## How it stays current
 
 Not automatically, today. A knowledge loop — a daily check of the pinned sources and a weekly review of a slice of the corpus, each opening a pull request — is designed in [`docs/knowledge-loop.md`](docs/knowledge-loop.md), including its threat model: a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. **No workflow runs it yet.** What does run: the gates on every pull request, and scheduled checks for supply-chain hygiene, OpenSSF Scorecard, repository-protection and label drift, and the freshness of the competitive baseline. Corpus changes today are made by hand, through pull requests, against primary sources.
