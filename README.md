@@ -22,7 +22,7 @@ On an older Claude Code, add the marketplace first: `/plugin marketplace add Cri
 | a full review | "Audit this repository without modifying files." | the leader staffs two to four specialists for what the repository actually contains and reports with evidence |
 | fixes | "Fix the confirmed findings and verify them." | `harden` mode: a remediator patches, a different agent verifies |
 
-**What you get**: `report.md` and `findings.json` in a folder whose absolute path the run prints at the end. The report opens with the items to fix first; every finding names its file, its evidence and how to check the fix. `scripts/ehs sarif` turns `findings.json` into SARIF for GitHub code scanning if you want the findings in the Security tab.
+**What you get**: `report.md` and `findings.json` in a folder whose absolute path the run prints at the end ([an example of a quick report](docs/examples/quick-report.md)). The report opens with the items to fix first; every finding names its file, its evidence and how to check the fix. `scripts/ehs sarif` turns `findings.json` into SARIF for GitHub code scanning if you want the findings in the Security tab.
 
 **What it costs**: a quick audit reads only its checklist and dispatches no subagent. A full audit dispatches several, each capped at 60 turns, and costs several times what one reply of the model alone costs. It never starts paid tools, scanners against remote targets or anything that runs your code without asking first.
 
