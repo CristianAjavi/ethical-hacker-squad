@@ -124,6 +124,13 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `install`/`i`/`ci`/`add` in a workflow carries `--ignore-scripts`, and `npm install -g` fails
   outright. Two negative fixtures (the original line, and `npm ci` without the flag) and one
   positive; the census moves from 16 to 18.
+- **The leader read every role's order before dispatching specialists that carry their own.**
+  `references/team.md` is read on every run, before dispatching, and a third of it was the role
+  orders for web, mobile, infra, supply chain, AI, privacy, local apps, remediator and verifier —
+  text a plugin subagent already has in its definition. It is needed only when the skill was
+  copied without the plugin and the leader pastes an order into a `general-purpose` prompt. Those
+  sections and the fallback dispatch move to `references/team-roles.md`, read only in that case;
+  `team.md` goes from 16.3 KB to 9.2 KB, about 1,800 tokens fewer on every run.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
