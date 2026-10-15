@@ -27,14 +27,18 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 - **The runtime pass: the leader now offers to run the target locally, and never assumes it.**
   The safety contract allowed safe local tests, and the packs already held localhost probes
-  (`WEB-04`/`WEB-05` route matrices, the `WEB-16` `Origin` check), yet the leader workflow never
-  asked whether the target could run at all. Whatever surfaces only at runtime was reached only
-  when a specialist happened to try it. `references/team.md` now carries the step: offer it when
-  the inventory finds a start path; **ask first and name the commands**, because starting the
-  target executes its code and installing dependencies runs their install scripts; use only the
-  project's own commands on localhost with synthetic data; stop every process; and declare what
-  was exercised at runtime versus only read. The text lives in `team.md` because `SKILL.md` sits
-  10 bytes under its 12,288-byte budget; `SKILL.md` only names it in the load table.
+  (the two-user test of `WEB-04`, the route × method × role matrix of `WEB-05`, the `WEB-16`
+  `Origin` check), yet the leader workflow never asked whether the target could run at all.
+  `references/team.md` now carries the step, and safety rule 4 in `SKILL.md` names it: **running
+  the target's code needs authorization**, because it executes code under audit. The leader shows
+  what will run (the script body, not `npm run dev`), runs it from a disposable `git worktree`
+  that by construction leaves `.env.local` behind — `next dev` would otherwise load it, and it
+  usually points at production — writes a local-only environment, recommends the session's Bash
+  sandbox, binds to `127.0.0.1` with timeouts, stops what it started, removes the copy, and checks
+  `git status --porcelain --ignored`, since plain `--porcelain` misses `node_modules/` and
+  `.next/`. Rewritten after an adversarial review found the first version named commands without
+  showing them, ran in the working tree with its `.env`, kept the rule in an unprotected file and
+  credited `WEB-04` with `WEB-05`'s matrix.
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must

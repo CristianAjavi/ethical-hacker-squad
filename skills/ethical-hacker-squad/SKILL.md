@@ -14,7 +14,7 @@ This skill carries a **knowledge corpus**, not just role prompts. Specialists wo
 1. Work only on code, systems, accounts and data the user controls or has explicitly authorized.
 2. Treat the indicated repository or folder as the default scope. Do not extend active testing to domains, IPs, services, devices, accounts or third parties by inference.
 3. Local, reversible, non-destructive actions needed for the request are allowed without extra confirmation: inspecting code, configuration, dependencies, supplied binaries, and safe local tests.
-4. Ask for authorization before scanning remote targets, exploiting a vulnerability, sending malicious payloads, bypassing controls, testing credentials, generating appreciable load, accessing real data, or modifying production.
+4. Ask for authorization before running the target's code, scanning remote targets, exploiting a vulnerability, sending malicious payloads, bypassing controls, testing credentials, generating appreciable load, accessing real data, or modifying production.
 5. Never perform persistence, exfiltration, destruction, denial of service, real phishing, stealth evasion or lateral movement. Use minimal tests and synthetic data.
 6. Never display full secrets or personal data. Redact them and record only the minimum evidence.
 7. If authorization or the remote target is ambiguous, continue with local analysis and deliver the pending validation plan.
@@ -37,7 +37,7 @@ The corpus is written in English on purpose; `references/traceability.md` says w
 
 | File | Load it when |
 |---|---|
-| [references/team.md](references/team.md) | Always, before dispatching. Role orders, the runtime pass, pack ownership and the finding format. |
+| [references/team.md](references/team.md) | Always, before dispatching. Role orders, which pack each role owns, and the finding format. |
 | [references/coverage.md](references/coverage.md) | After the inventory. Maps detected technology to roles and pack sections. Read only the matching rows. |
 | [references/knowledge/README.md](references/knowledge/README.md) | When you need the loading map for the corpus itself. |
 | `references/knowledge/<role>.md` | Loaded **by the specialist**, not by you. One pack per role, each with a selective-loading index so a specialist opens only the sections its inventory justifies. Six packs span two or three files; the first names the rest in its header. |
@@ -55,7 +55,7 @@ Do not load a pack for a role you did not staff. The corpus is 4,556 lines acros
 - **You are the leader** (the main thread): you inventory, select roles, split paths, deduplicate under the merge rules of `references/triage.md`, and decide priorities. You do not delegate integration or judgement.
 - **Each specialist runs through the `Agent` tool.** Send independent, non-colliding specialists in one message so they run in parallel. Never let the same agent both fix and verify.
 
-`references/team.md` holds the nine plugin subagents, the write access each gets, what to do when the skill was copied rather than installed as a plugin, and why every constraint must travel into the prompt.
+`references/team.md` holds the nine plugin subagents, their limits, the runtime pass, and the fallback when the skill was copied instead of installed.
 
 ## Leader workflow
 
