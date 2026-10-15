@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "gates" / "lib"))
 from secret_formats import find_unredacted_secrets  # noqa: E402  one list, shared with the validators
@@ -519,6 +519,331 @@ def cmd_sarif(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# prescan: deterministic leads before any model reads the code
+# ---------------------------------------------------------------------------
+SKIP_DIRS = {".git", "node_modules", ".next", "dist", "build", "out", ".venv", "venv",
+             "__pycache__", "coverage", ".turbo", ".vercel", "vendor", ".svelte-kit", ".nuxt"}
+TEXT_EXT = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro", ".py",
+            ".rb", ".go", ".php", ".sql", ".rules", ".json", ".toml", ".yaml", ".yml", ".env"}
+SESSION_READ = re.compile(
+    r"\bauth\(\)|getServerSession|currentUser\(|auth\.getUser\(|getClaims\(|auth\.protect\(|"
+    r"getSession\(|requireUser|verifyIdToken|validateRequest\(|withAuth|clerkClient|getAuth\(")
+PUBLIC_SECRETISH = re.compile(
+    r"\b((?:NEXT_PUBLIC|VITE|REACT_APP|EXPO_PUBLIC|GATSBY|NUXT_PUBLIC|PUBLIC)_[A-Z0-9_]*"
+    r"(?:SECRET|SERVICE_ROLE|PRIVATE|PASSWORD|TOKEN|_KEY)[A-Z0-9_]*)\b")
+PUBLIC_BY_DESIGN = re.compile(r"ANON|PUBLISHABLE|PUBLIC_KEY|FIREBASE|SITE_KEY|MEASUREMENT|MAPS|POSTHOG|SENTRY_DSN")
+LLM_IMPORT = re.compile(r"from ['\"](openai|@anthropic-ai/sdk|ai|@ai-sdk/[a-z-]+|@google/generative-ai|groq-sdk)['\"]|require\(['\"](openai|@anthropic-ai/sdk)['\"]\)")
+NEXT_VULN = [((11, 1, 4), (12, 3, 5)), ((13, 0, 0), (13, 5, 9)), ((14, 0, 0), (14, 2, 25)), ((15, 0, 0), (15, 2, 3))]
+
+
+def _walk(target: Path):
+    for dirpath, dirnames, filenames in os.walk(target):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for name in filenames:
+            p = Path(dirpath) / name
+            if p.suffix in TEXT_EXT or name.startswith(".env") or name in ("package.json",):
+                try:
+                    if p.stat().st_size <= 1_000_000:
+                        yield p
+                except OSError:
+                    continue
+
+
+def _line_of(text: str, index: int) -> int:
+    return text.count("\n", 0, index) + 1
+
+
+def _exported_functions(text: str):
+    """(name, line, body) of each exported function, braces matched naively."""
+    pat = re.compile(r"export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(|"
+                     r"export\s+const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]+)?=>\s*")
+    for m in pat.finditer(text):
+        start = text.find("{", m.end() - 1)
+        if start < 0:
+            continue
+        depth, i = 0, start
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        yield (m.group(1) or m.group(2)), _line_of(text, m.start()), text[start:i + 1]
+
+
+def prescan(target: Path) -> List[Dict[str, Any]]:
+    """Leads, not findings: each names the procedure that decides it."""
+    leads: List[Dict[str, Any]] = []
+    sql: Dict[str, str] = {}
+
+    def lead(rule, procedure, path, line, text):
+        leads.append({"rule": rule, "procedure": procedure,
+                      "path": str(path.relative_to(target)), "line": line, "lead": text})
+
+    for p in sorted(_walk(target)):
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        rel = str(p.relative_to(target))
+        if p.suffix == ".sql":
+            sql[rel] = text
+        # secrets in any format the deliverables refuse; never the value
+        if not rel.endswith(("package-lock.json", "pnpm-lock.yaml", "yarn.lock")):
+            for fid in find_unredacted_secrets(text):
+                lead("secret-format", "SUP-16", p, None, f"a value in the `{fid}` format (not shown)")
+        for m in PUBLIC_SECRETISH.finditer(text):
+            if not PUBLIC_BY_DESIGN.search(m.group(1)):
+                lead("public-prefix-secret-name", "SUP-27", p, _line_of(text, m.start()),
+                     f"`{m.group(1)}` is named like a secret behind a public build prefix")
+                break
+        if p.name == "config.toml" and "supabase" in rel:
+            for m in re.finditer(r"verify_jwt\s*=\s*false", text):
+                lead("edge-function-verify-jwt-off", "WEB-32", p, _line_of(text, m.start()),
+                     "an Edge Function with `verify_jwt = false`")
+        if "--no-verify-jwt" in text and p.suffix in (".json", ".yml", ".yaml", ".toml"):
+            lead("edge-function-verify-jwt-off", "WEB-32", p, None, "a deploy with `--no-verify-jwt`")
+        if p.suffix == ".rules" or p.name == "database.rules.json":
+            for m in re.finditer(r"if\s+true|request\.time\s*<|request\.auth\s*!=\s*null|\"\.(read|write)\"\s*:\s*true", text):
+                lead("firebase-open-rule", "WEB-30", p, _line_of(text, m.start()),
+                     f"a rule that does not name the owner: `{m.group(0)}`")
+        is_ts = p.suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs")
+        if is_ts and re.search(r"^\s*['\"]use server['\"]", text, re.M):
+            # Per exported function: a module where one action checks the session
+            # says nothing about the action beside it.
+            for name, line, body in _exported_functions(text):
+                if not SESSION_READ.search(body):
+                    lead("server-action-without-session", "WEB-33", p, line,
+                         f"Server Action `{name}` never reads the session")
+        in_api = re.search(r"(^|/)(app/.*/route\.(t|j)sx?|pages/api/.*)$", rel)
+        if is_ts and in_api:
+            if not SESSION_READ.search(text) and not re.search(r"constructEvent|CRON_SECRET", text):
+                if LLM_IMPORT.search(text):
+                    lead("llm-route-without-session", "AI-19", p, None,
+                         "a route that calls a model API and never reads the session")
+                else:
+                    lead("route-without-session", "WEB-33", p, None, "a route handler that never reads the session")
+            if re.search(r"webhook", rel, re.I) and re.search(r"stripe|checkout\.session", text, re.I) \
+                    and "constructEvent" not in text:
+                lead("stripe-webhook-unverified", "WEB-36", p, None,
+                     "a Stripe webhook route with no `constructEvent` call")
+            m = re.search(r"unit_amount\s*:\s*(?!\d)[A-Za-z_$][\w.$]*", text)
+            if m and re.search(r"req(uest)?\.json\(\)|formData\(\)|searchParams", text):
+                lead("client-chosen-price", "WEB-36", p, _line_of(text, m.start()),
+                     "`unit_amount` taken from a variable in a route that reads the request body")
+            if re.search(r"Bearer \$\{process\.env\.CRON_SECRET\}", text) and \
+                    not re.search(r"!\s*process\.env\.CRON_SECRET|!\s*cronSecret|CRON_SECRET\s*\)\s*(\|\||throw)", text):
+                lead("cron-secret-fails-open", "WEB-35", p, None,
+                     "compares `Bearer ${process.env.CRON_SECRET}` with no guard for an unset secret")
+        if p.name in ("middleware.ts", "middleware.js", "proxy.ts", "proxy.js") and \
+                re.search(r"matcher[\s\S]{0,300}\(\?!\s*api", text):
+            lead("matcher-skips-api", "WEB-34", p, None,
+                 "the matcher excludes `/api`: every API route must check the session itself")
+        if p.name == "package.json":
+            m = re.search(r'"next"\s*:\s*"[~^]?(\d+)\.(\d+)\.(\d+)', text)
+            if m:
+                v = tuple(int(x) for x in m.groups())
+                if any(lo <= v < hi for lo, hi in NEXT_VULN):
+                    lead("next-cve-2025-29927", "WEB-34", p, None,
+                         f"next {'.'.join(map(str, v))} is in the CVE-2025-29927 range; it matters only when self-hosted")
+
+    # Supabase: a table created in a migration that no migration puts under RLS
+    created: Dict[str, str] = {}
+    rls = set()
+    for rel, text in sql.items():
+        for m in re.finditer(r"create\s+table\s+(?:if\s+not\s+exists\s+)?([\w.\"]+)", text, re.I):
+            name = m.group(1).replace('"', "").split(".")[-1]
+            created.setdefault(name, rel)
+        for m in re.finditer(r"alter\s+table\s+(?:only\s+)?([\w.\"]+)\s+enable\s+row\s+level\s+security", text, re.I):
+            rls.add(m.group(1).replace('"', "").split(".")[-1])
+        for m in re.finditer(r"create\s+policy[\s\S]{0,300}?(using\s*\(\s*true\s*\)|auth\.uid\(\)\s+is\s+not\s+null|user_metadata)", text, re.I):
+            leads.append({"rule": "policy-does-not-bind-owner", "procedure": "WEB-29", "path": rel,
+                          "line": _line_of(text, m.start()), "lead": f"a policy built on `{m.group(1)}`"})
+        for m in re.finditer(r"create\s+table\s+(?:if\s+not\s+exists\s+)?([\w.\"]+)\s*\(([\s\S]*?)\);", text, re.I):
+            name = m.group(1).replace('"', "").split(".")[-1]
+            if re.search(r"\b(role|is_admin|plan|tier|credits)\b", m.group(2)) and \
+                    re.search(rf"for\s+(update|all)[\s\S]{{0,80}}" , text, re.I) and \
+                    re.search(rf"on\s+[\w.\"]*{re.escape(name)}\b[\s\S]{{0,40}}for\s+(update|all)", text, re.I) and \
+                    not re.search(rf"revoke\s+update\s+on\s+(table\s+)?[\w.\"]*{re.escape(name)}\b", text, re.I):
+                leads.append({"rule": "owner-can-write-privilege-column", "procedure": "WEB-31", "path": rel,
+                              "line": _line_of(text, m.start()),
+                              "lead": f"`{name}` has a privilege column and an update policy, and no column grant"})
+    for name, rel in sorted(created.items()):
+        if name not in rls:
+            leads.append({"rule": "table-without-rls", "procedure": "WEB-29", "path": rel, "line": None,
+                          "lead": f"`{name}` is created and never put under row-level security"})
+    return leads
+
+
+def cmd_prescan(args: argparse.Namespace) -> int:
+    """Deterministic leads for an app built fast, before any model reads it."""
+    target = Path(args.target).resolve()
+    if not target.is_dir():
+        print(f"Error: {target} is not a directory", file=sys.stderr)
+        return 2
+    leads = prescan(target)
+    if args.json:
+        print(json.dumps({"target": str(target), "leads": leads}, indent=2))
+        return 0
+    if not leads:
+        print("No leads. That is not a clean bill: these are pattern checks, and the squad still reads the code.")
+        return 0
+    print(f"{len(leads)} lead(s) in {target} — leads, not findings: each names the procedure that decides it.\n")
+    for l in leads:
+        where = l["path"] + (f":{l['line']}" if l["line"] else "")
+        print(f"  {l['procedure']:<7} {where}\n          {l['lead']}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# compare: what is new, what is gone, what is suppressed, across two runs
+# ---------------------------------------------------------------------------
+SEVERITY_ORDER = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
+def fingerprints(artifact: Dict[str, Any], procedures: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    seen: Dict[str, int] = {}
+    out: Dict[str, Dict[str, Any]] = {}
+    rows = [f for f in artifact.get("findings", [])
+            if SARIF_KIND.get(f.get("status", "")) and not f.get("duplicate_of")]
+    rows.sort(key=lambda f: (f["location"]["path"], f["location"].get("line") or 0))
+    for f in rows:
+        out[sarif_fingerprint(sarif_rule_id(f, procedures), f, seen)] = f
+    return out
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Compare two findings.json deliverables by stable fingerprint."""
+    try:
+        before = json.loads(Path(args.before).read_text(encoding="utf-8"))
+        after = json.loads(Path(args.after).read_text(encoding="utf-8"))
+        suppress = json.loads(Path(args.suppress).read_text(encoding="utf-8")) if args.suppress else []
+    except (OSError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    procedures = {p["id"]: p for p in parse_procedures(ROOT)}
+    try:
+        a, b = fingerprints(before, procedures), fingerprints(after, procedures)
+    except (KeyError, TypeError) as e:
+        print(f"Error: a finding is missing a required field ({e}); validate both artifacts first.", file=sys.stderr)
+        return 2
+    today = __import__("datetime").date.today().isoformat()
+    active, expired = {}, []
+    for s in suppress if isinstance(suppress, list) else []:
+        if s.get("expires") and s["expires"] < today:
+            expired.append(s)
+        elif s.get("fingerprint") and s.get("reason"):
+            active[s["fingerprint"]] = s
+    new = [k for k in b if k not in a]
+    gone = [k for k in a if k not in b]
+    kept = [k for k in b if k in a]
+    report = {
+        "new": [dict(fingerprint=k, **{f: b[k].get(f) for f in ("id", "procedure", "severity", "status", "title")},
+                     path=b[k]["location"]["path"], suppressed=k in active) for k in new],
+        "gone": [dict(fingerprint=k, **{f: a[k].get(f) for f in ("id", "procedure", "severity", "status", "title")},
+                      path=a[k]["location"]["path"]) for k in gone],
+        "persisting": [dict(fingerprint=k, id=b[k].get("id"), procedure=b[k].get("procedure"),
+                            severity=b[k].get("severity"), was=a[k].get("status"), now=b[k].get("status"),
+                            suppressed=k in active) for k in kept],
+        "expired_suppressions": expired,
+    }
+    floor = SEVERITY_ORDER.get(args.fail_on, 99) if args.fail_on else 99
+    blocking = [n for n in report["new"] if not n["suppressed"]
+                and SEVERITY_ORDER.get(n.get("severity") or "", 0) >= floor]
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(f"new: {len(new)}  gone: {len(gone)}  persisting: {len(kept)}  "
+              f"suppressed: {sum(1 for r in report['new'] + report['persisting'] if r['suppressed'])}")
+        for n in report["new"]:
+            print(f"  + {n['procedure']:<12} {n['severity'] or '-':<13} {n['path']}  {n['title']}"
+                  + ("  [suppressed]" if n["suppressed"] else ""))
+        for g in report["gone"]:
+            print(f"  - {g['procedure']:<12} {g['severity'] or '-':<13} {g['path']}  {g['title']}")
+        for s in expired:
+            print(f"  ! suppression {s.get('fingerprint')} expired on {s.get('expires')}: it no longer hides anything")
+        print("Gone means absent from the second run, not fixed: a narrower run also loses findings.")
+    return 1 if blocking else 0
+
+
+# ---------------------------------------------------------------------------
+# cost: what a run spent, read from Claude Code's own transcripts
+# ---------------------------------------------------------------------------
+def _usage(path: Path) -> Dict[str, Dict[str, int]]:
+    per_model: Dict[str, Dict[str, int]] = {}
+    last: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            m = d.get("message") or {}
+            u = m.get("usage")
+            if isinstance(u, dict):
+                # one assistant message is written once per content block, each
+                # carrying the same usage: count every message once
+                last[m.get("id") or d.get("requestId") or d.get("uuid")] = (m.get("model") or "?", u)
+    for model, u in last.values():
+        acc = per_model.setdefault(model, {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0, "messages": 0})
+        acc["input"] += int(u.get("input_tokens") or 0)
+        acc["cache_write"] += int(u.get("cache_creation_input_tokens") or 0)
+        acc["cache_read"] += int(u.get("cache_read_input_tokens") or 0)
+        acc["output"] += int(u.get("output_tokens") or 0)
+        acc["messages"] += 1
+    return per_model
+
+
+def cmd_cost(args: argparse.Namespace) -> int:
+    """Tokens a session spent, main thread and every subagent, from its transcripts."""
+    base = Path(args.projects_dir).expanduser()
+    if args.session:
+        mains = sorted(base.glob(f"*/{args.session}.jsonl"))
+    else:
+        # The session still running is the newest transcript of the project
+        # Claude Code keys by the working directory, every non-alphanumeric
+        # character turned into "-".
+        project = base / re.sub(r"[^A-Za-z0-9]", "-", os.getcwd())
+        mains = sorted(project.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)[-1:]
+    if not mains:
+        print(f"Error: no transcript for session {args.session or '(latest)'} under {base}", file=sys.stderr)
+        return 2
+    main_path = mains[0]
+    session = main_path.stem
+    rows = [("leader (main thread)", main_path)]
+    for sub in sorted((main_path.parent / session / "subagents").glob("*.jsonl")):
+        label = sub.stem
+        meta = sub.with_suffix(".meta.json")
+        try:
+            m = json.loads(meta.read_text(encoding="utf-8"))
+            label = f"{m.get('agentType', '?')}: {m.get('description', sub.stem)}"
+        except (OSError, ValueError):
+            pass
+        rows.append((label, sub))
+    total = {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0, "messages": 0}
+    out = []
+    for label, path in rows:
+        for model, acc in _usage(path).items():
+            out.append({"agent": label, "model": model, **acc})
+            for k in total:
+                total[k] += acc[k]
+    if args.json:
+        print(json.dumps({"session": session, "rows": out, "total": total}, indent=2))
+        return 0
+    print(f"session {session}: {len(rows)} transcript(s)\n")
+    print(f"  {'agent':<46} {'model':<22} {'input':>9} {'cache wr':>10} {'cache rd':>11} {'output':>9}")
+    for r in out:
+        print(f"  {r['agent'][:46]:<46} {r['model'][:22]:<22} {r['input']:>9,} {r['cache_write']:>10,} "
+              f"{r['cache_read']:>11,} {r['output']:>9,}")
+    print(f"  {'TOTAL':<46} {'':<22} {total['input']:>9,} {total['cache_write']:>10,} "
+          f"{total['cache_read']:>11,} {total['output']:>9,}")
+    print("\nTokens only: prices change and depend on the plan, so no currency figure is printed here.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Ethical Hacker Squad CLI tool",
@@ -557,6 +882,26 @@ def main() -> int:
     p_sarif.add_argument("--category", default="ethical-hacker-squad",
                          help="Code-scanning category (automationDetails.id); one per analysis you upload")
 
+    # prescan
+    p_pre = subparsers.add_parser("prescan", help="Deterministic leads in a target before any model reads it")
+    p_pre.add_argument("target", help="Directory to scan (read-only)")
+    p_pre.add_argument("--json", action="store_true", help="Machine-readable output")
+
+    # compare
+    p_cmp = subparsers.add_parser("compare", help="Compare two findings.json by stable fingerprint")
+    p_cmp.add_argument("before", help="The earlier findings.json (the baseline)")
+    p_cmp.add_argument("after", help="The later findings.json")
+    p_cmp.add_argument("--suppress", help="JSON list of {fingerprint, reason, expires} to accept")
+    p_cmp.add_argument("--fail-on", choices=sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.get),
+                       help="Exit 1 when a new, unsuppressed finding is at least this severe")
+    p_cmp.add_argument("--json", action="store_true", help="Machine-readable output")
+
+    # cost
+    p_cost = subparsers.add_parser("cost", help="Tokens a Claude Code session spent, per agent")
+    p_cost.add_argument("--session", help="Session id; without it, the newest session of the current directory")
+    p_cost.add_argument("--projects-dir", default="~/.claude/projects", help="Where Claude Code keeps transcripts")
+    p_cost.add_argument("--json", action="store_true", help="Machine-readable output")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -571,6 +916,9 @@ def main() -> int:
         "doctor": cmd_doctor,
         "install": cmd_install,
         "sarif": cmd_sarif,
+        "prescan": cmd_prescan,
+        "compare": cmd_compare,
+        "cost": cmd_cost,
     }
 
     handler = commands.get(args.command)

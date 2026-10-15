@@ -17,6 +17,8 @@ Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `
 
 `quick` mode reads this section and nothing else in this file. It is a fixed, ordered checklist: take the items whose *When* is in the inventory, top to bottom, and read each procedure **alone** with `${CLAUDE_PLUGIN_ROOT}/scripts/ehs show <ID>` (about 500 tokens each) instead of opening its pack. Without `scripts/ehs` — no Python, or the skill copied without the plugin — Grep the pack for `### <ID>` and read only that section. The order is what most often becomes a breach or a bill in an app built fast.
 
+**Start with `${CLAUDE_PLUGIN_ROOT}/scripts/ehs prescan <target>`.** It reads the tree without running anything and prints *leads* keyed to these procedure IDs — a table with no row-level security, a secret behind `NEXT_PUBLIC_`, a Server Action or route that never reads the session, a webhook with no `constructEvent`, a matcher that skips `/api`. A lead tells you where to read first; it is never a finding until its procedure says so, and no lead is not a clean bill.
+
 1. `SUP-16`, `SUP-17` — Is a live secret in the tree or in git history? *When:* any repository.
 2. `SUP-27` — Does a server secret ship inside the browser bundle? *When:* `NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_` and the other public prefixes.
 3. `WEB-29` — Does every exposed table have RLS with a policy that binds each row to its owner? *When:* Supabase.

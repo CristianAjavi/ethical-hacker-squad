@@ -133,6 +133,45 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`scripts/ehs prescan`, `compare` and `cost`: the three instruments an adversarial review found
+  missing.** *"No deterministic pre-scan, no baseline or suppressions with stable fingerprints, no
+  cost telemetry."* `prescan` reads a tree without running it and prints leads keyed to procedure
+  IDs for the shape AI tools produce; on the eval app of `evals/` it leads to all nine planted
+  defects and to none of the three correct controls, and the quick audit now starts with it.
+  `compare` matches two `findings.json` by the SARIF fingerprint (rule, file, component; never the
+  line), reports new, gone and persisting, honours expiring suppressions, and with `--fail-on`
+  becomes a pull-request check. `cost` sums the tokens of a session — the main thread and every
+  subagent — from Claude Code's own transcripts, counting each message once although the
+  transcript writes it once per content block; the handover now quotes it. Twenty new cases in
+  `scripts/ehs.selftest.sh`; 41 total, 0 failures.
+
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  `confirmed` maps to `kind: fail` with a level from its severity; `probable` (`review`) and
+  `hardening` (`informational`) carry `level: none`, the only level SARIF 2.1.0 §3.27.10 allows
+  for a kind other than `fail`; `discarded`, `withdrawn` and duplicates are not exported. Each
+  rule carries the procedure's `help` and a link to it, `external/cwe/cwe-n` tags, and its
+  highest `security-severity`; findings outside every procedure get one rule per CWE instead of
+  one bucket. The fingerprint hashes rule, file and component but not the line, so an alert
+  survives code moving above it. `automationDetails.id` (`--category`) lets an upload close the
+  alerts of the previous one. An artifact with an unredacted secret is refused with exit 1 and
+  nothing is written, and the formats come from one list now, `scripts/gates/data/secret-formats.txt`,
+  shared with the findings validator and `gate-report-contract.sh`: the validator used to know five
+  formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
+  signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
+  stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
+  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
+  subagents", so the leader and its subagents were never scored, and never against the model
+  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
+  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
+  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
+  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
+  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
+  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
+  what the suite cannot prove — above all, that one app written by the corpus's own author is not
+  an external benchmark.
 - **Nine procedures for where apps built with AI tools actually break.** An outside review asked
   how the squad serves vibe-coded apps, and the corpus had no answer where they break: `supabase`,
   Firebase Security Rules, `NEXT_PUBLIC_`, Server Actions, Stripe webhooks and Vercel cron appeared
