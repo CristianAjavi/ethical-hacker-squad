@@ -27,7 +27,7 @@ The six fields are a contract, not decoration. "Where to look" narrows the searc
 
 ## §0 What tools do not see
 
-A clean SAST run is not evidence that no vulnerabilities exist. Measured over 27 real projects (1.15M LoC, 192 known vulnerabilities), each tool misses between 47% and 80% of the real vulnerabilities (Lipp et al., ISSTA 2022). On the SAP Java dataset, Semgrep, CodeQL, FindSecBugs and Snyk individually detect between 11% and 27%, and only 38.8% when all four are combined (Bennett et al., EASE 2024); the worst-detected classes are **CWE-502**, **CWE-20** and **CWE-79**. These classes require targeted manual reading:
+A clean SAST run is not evidence that no vulnerabilities exist. Measured over 27 real projects (1.15M LoC, 192 known vulnerabilities), even the best of six static C analyzers misses between 47% and 80% of the real vulnerabilities, depending on how a detection is counted (Lipp et al., ISSTA 2022). On the SAP Java dataset, Semgrep, CodeQL, FindSecBugs and Snyk individually detect between 11% and 27%, and only 38.8% when all four are combined (Bennett et al., EASE 2024); the worst-detected classes are **CWE-502**, **CWE-20** and **CWE-79**. These classes require targeted manual reading:
 
 - **BOLA/IDOR (CWE-639, API1:2023)**: the tool sees a parameterized query on `id` and approves it; it has no idea whose `id` that is. This is the number one class in APIs. → WEB-04.
 - **BFLA and property-level issues (API3/API5:2023)**: a role decorator is missing, or the serializer exposes one field too many. → WEB-05, WEB-06.
