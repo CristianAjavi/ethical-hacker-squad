@@ -268,52 +268,75 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_install(args: argparse.Namespace) -> int:
-    """Install/link skill to Antigravity and/or Claude Code."""
-    home = Path.home()
-    source_skill = ROOT / "skills" / "ethical-hacker-squad"
+CLAUDE_INSTALL = (
+    "claude plugin marketplace add {root}\n"
+    "claude plugin install ethical-hacker-squad@ethical-hacker-squad"
+)
 
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Install for Claude Code (as a plugin) and/or link the skill for Antigravity.
+
+    With no target flag it installs nothing and prints how to: the default used
+    to be Antigravity, and it replaced an existing directory there with
+    `shutil.rmtree` - a user's own files, deleted by a command run with no
+    arguments. It never deletes a real directory now; only a symlink it can
+    replace.
+    """
+    source_skill = ROOT / "skills" / "ethical-hacker-squad"
     if not source_skill.exists():
         print(f"Error: Source skill not found at {source_skill}", file=sys.stderr)
         return 2
 
-    installed = []
+    if not (args.claude or args.antigravity or args.all):
+        print("Nothing was installed. Choose a target:\n"
+              "  scripts/ehs install --claude       the plugin, with its nine subagents (recommended)\n"
+              "  scripts/ehs install --antigravity  link the skill into ~/.gemini/antigravity-cli/skills\n"
+              "  scripts/ehs install --all          both\n\n"
+              "Or, inside Claude Code 2.1.275 or later, from GitHub:\n"
+              "  /plugin install ethical-hacker-squad --marketplace CristianAjavi/ethical-hacker-squad")
+        return 0
 
-    if args.antigravity or args.all or not (args.claude or args.antigravity):
-        agy_target = home / ".gemini" / "antigravity-cli" / "skills" / "ethical-hacker-squad"
+    installed, failed = [], []
+
+    if args.claude or args.all:
+        claude = shutil.which("claude")
+        commands = CLAUDE_INSTALL.format(root=ROOT)
+        if claude is None:
+            failed.append("Claude Code: the `claude` binary is not on PATH. Run, once it is:\n" + commands)
+        else:
+            ok = True
+            for cmd in ([claude, "plugin", "marketplace", "add", str(ROOT)],
+                        [claude, "plugin", "install", "ethical-hacker-squad@ethical-hacker-squad"]):
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                if proc.returncode != 0:
+                    ok = False
+                    failed.append(f"Claude Code: `{' '.join(cmd[1:])}` exited {proc.returncode}: "
+                                  f"{(proc.stderr or proc.stdout).strip()[:300]}")
+                    break
+            if ok:
+                installed.append("Claude Code plugin ethical-hacker-squad (local marketplace "
+                                 f"{ROOT}); restart Claude Code to load it")
+
+    if args.antigravity or args.all:
+        agy_target = Path.home() / ".gemini" / "antigravity-cli" / "skills" / "ethical-hacker-squad"
         try:
             agy_target.parent.mkdir(parents=True, exist_ok=True)
             if agy_target.is_symlink():
                 agy_target.unlink()
             elif agy_target.exists():
-                shutil.rmtree(agy_target)
+                raise FileExistsError(f"{agy_target} exists and is not a link this command made; "
+                                      "move it away yourself, nothing was deleted")
             agy_target.symlink_to(source_skill, target_is_directory=True)
             installed.append(f"Antigravity CLI -> {agy_target}")
-        except Exception as e:
-            print(f"Warning: Could not link to Antigravity ({e})", file=sys.stderr)
+        except OSError as e:
+            failed.append(f"Antigravity CLI: {e}")
 
-    if args.claude or args.all:
-        claude_target = home / ".claude" / "plugins" / "ethical-hacker-squad"
-        try:
-            claude_target.parent.mkdir(parents=True, exist_ok=True)
-            if claude_target.is_symlink():
-                claude_target.unlink()
-            elif claude_target.exists():
-                shutil.rmtree(claude_target)
-            claude_target.symlink_to(ROOT, target_is_directory=True)
-            installed.append(f"Claude Code -> {claude_target}")
-        except Exception as e:
-            print(f"Warning: Could not link to Claude Code ({e})", file=sys.stderr)
-
-    if installed:
-        print("\nSuccessfully installed/linked Ethical Hacker Squad:")
-        for item in installed:
-            print(f"  ✓ {item}")
-        print()
-        return 0
-    else:
-        print("No installation targets selected.")
-        return 1
+    for item in installed:
+        print(f"  ✓ {item}")
+    for item in failed:
+        print(f"  ✗ {item}", file=sys.stderr)
+    return 1 if failed else 0
 
 
 # GitHub reads a rule's `security-severity` as a CVSS-like score and buckets it:
