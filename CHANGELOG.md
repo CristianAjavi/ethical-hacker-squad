@@ -6,20 +6,6 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ## [Unreleased]
 
-### Added
-
-- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
-  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
-  subagents", so the leader and its subagents were never scored, and never against the model
-  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
-  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
-  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
-  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
-  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
-  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
-  what the suite cannot prove — above all, that one app written by the corpus's own author is not
-  an external benchmark.
-
 ### Fixed
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
@@ -38,6 +24,18 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
+  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
+  subagents", so the leader and its subagents were never scored, and never against the model
+  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
+  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
+  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
+  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
+  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
+  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
+  what the suite cannot prove — above all, that one app written by the corpus's own author is not
+  an external benchmark.
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
