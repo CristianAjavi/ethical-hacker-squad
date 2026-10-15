@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -25,6 +26,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "gates" / "lib"))
+from secret_formats import find_unredacted_secrets  # noqa: E402  one list, shared with the validators
 
 
 def find_repo_root() -> Path:
@@ -322,30 +326,90 @@ SECURITY_SEVERITY = {"critical": 9.5, "high": 8.0, "medium": 5.5, "low": 3.0}
 # `withdrawn` are the squad saying "this is not a finding"; exporting them would
 # turn its own refutations into alerts.
 SARIF_KIND = {"confirmed": "fail", "probable": "review", "hardening": "informational"}
-# The same high-precision formats the findings validator refuses. SARIF gets
-# uploaded, so this file is refused here too rather than trusted upstream.
-UNREDACTED_SECRET = re.compile(
-    r"gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+CWE_ID = re.compile(r"^CWE-(\d+)$")
+CORPUS_URL = ("https://github.com/CristianAjavi/ethical-hacker-squad/blob/main/"
+              "skills/ethical-hacker-squad/references/knowledge/")
+MAX_TAGS = 20  # GitHub keeps 20 tags per rule and shows 10
 
 
-def findings_to_sarif(artifact: Dict[str, Any], titles: Dict[str, str]) -> Dict[str, Any]:
+def repo_relative(path: str) -> str:
+    """`./src/a.py` and `src/a.py` are one file; `.github/` keeps its dot."""
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def sarif_rule_id(f: Dict[str, Any], procedures: Dict[str, Dict[str, Any]]) -> str:
+    """The procedure, or an ad-hoc rule per weakness class, never one bucket."""
+    proc = f["procedure"]
+    if proc in procedures:
+        return proc
+    cwes = [t for t in f.get("traceability", []) if CWE_ID.match(t)]
+    return f"ad-hoc/{cwes[0]}" if cwes else f"ad-hoc/{f['id']}"
+
+
+def sarif_rule(rule_id: str, procedures: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    proc = procedures.get(rule_id)
+    if proc is None:
+        text = ("Reported outside every corpus procedure. Nothing in the corpus states how this "
+                "class is ruled out or tested; the result's message and the report carry the "
+                "evidence and the recommendation.")
+        return {"id": rule_id, "name": rule_id,
+                "shortDescription": {"text": "Finding outside any corpus procedure"},
+                "help": {"text": text, "markdown": text},
+                "properties": {"tags": ["security"]}}
+    fields = proc.get("fields", {})
+    url = CORPUS_URL + proc["file"]
+    parts = [(label, fields.get(key, "").strip()) for label, key in (
+        ("Vulnerable pattern", "vulnerable_pattern"),
+        ("What rules it out", "rules_it_out"),
+        ("Minimal test", "minimal_test"))]
+    markdown = f"**{rule_id} {proc['title']}**\n\n" + "\n\n".join(
+        f"**{label}**\n\n{body}" for label, body in parts if body) + f"\n\nProcedure: {url}"
+    text = f"{rule_id} {proc['title']}. " + " ".join(
+        f"{label}: {' '.join(body.split())}" for label, body in parts if body) + f" Procedure: {url}"
+    return {"id": rule_id, "name": rule_id,
+            "shortDescription": {"text": proc["title"]},
+            "helpUri": url,
+            "help": {"text": text, "markdown": markdown},
+            "properties": {"tags": ["security"]}}
+
+
+def sarif_fingerprint(rule_id: str, f: Dict[str, Any], seen: Dict[str, int]) -> str:
+    """Stable across line moves: rule, file and component, never the line.
+
+    Two findings of the same rule in the same component get an ordinal in line
+    order, so they stay distinct; inserting a third above them renumbers them,
+    which is the price of not hashing the line. GitHub computes its own
+    `primaryLocationLineHash` from the source on upload; this key is what
+    `scripts/ehs` itself uses to match a finding across runs.
+    """
+    loc = f["location"]
+    base = "|".join((rule_id, repo_relative(loc["path"]), loc.get("component", "")))
+    seen[base] = seen.get(base, 0) + 1
+    return hashlib.sha256(f"{base}|{seen[base]}".encode("utf-8")).hexdigest()[:32]
+
+
+def findings_to_sarif(artifact: Dict[str, Any], procedures: Dict[str, Dict[str, Any]],
+                      category: str = "ethical-hacker-squad") -> Dict[str, Any]:
     """Map a findings.json deliverable onto one SARIF 2.1.0 run."""
     results: List[Dict[str, Any]] = []
     rules: Dict[str, Dict[str, Any]] = {}
-    for f in artifact.get("findings", []):
-        kind = SARIF_KIND.get(f.get("status", ""))
-        if kind is None or f.get("duplicate_of"):
-            continue
-        rule_id = f["procedure"]
+    seen: Dict[str, int] = {}
+    exported = [f for f in artifact.get("findings", [])
+                if SARIF_KIND.get(f.get("status", "")) and not f.get("duplicate_of")]
+    exported.sort(key=lambda f: (f["location"]["path"], f["location"].get("line") or 0))
+    for f in exported:
+        kind = SARIF_KIND[f["status"]]
+        rule_id = sarif_rule_id(f, procedures)
         severity = f.get("severity", "")
-        rule = rules.setdefault(rule_id, {
-            "id": rule_id,
-            "name": rule_id,
-            "shortDescription": {"text": titles.get(rule_id, "Finding outside any corpus procedure")},
-            "properties": {"tags": ["security"]},
-        })
+        rule = rules.setdefault(rule_id, sarif_rule(rule_id, procedures))
         tags = rule["properties"]["tags"]
-        tags.extend(t for t in f.get("traceability", []) if t not in tags)
+        for t in f.get("traceability", []):
+            m = CWE_ID.match(t)
+            for tag in ((f"external/cwe/cwe-{m.group(1)}", t) if m else (t,)):
+                if tag not in tags and len(tags) < MAX_TAGS:
+                    tags.append(tag)
         # A rule carries ONE score in SARIF and a procedure can produce findings
         # of different severities, so the rule keeps the highest; each result
         # still carries its own level and its own severity in properties.
@@ -353,17 +417,21 @@ def findings_to_sarif(artifact: Dict[str, Any], titles: Dict[str, str]) -> Dict[
         if score is not None and score > float(rule["properties"].get("security-severity", "0")):
             rule["properties"]["security-severity"] = f"{score:.1f}"
 
-        physical: Dict[str, Any] = {"artifactLocation": {"uri": f["location"]["path"]}}
+        physical: Dict[str, Any] = {"artifactLocation": {
+            "uri": repo_relative(f["location"]["path"]), "uriBaseId": "SRCROOT"}}
         if f["location"].get("line"):
             physical["region"] = {"startLine": f["location"]["line"]}
         text = f["title"].rstrip(".") + ". " + f.get("impact", "")
         results.append({
             "ruleId": rule_id,
             "kind": kind,
-            "level": "note" if kind == "informational" else SARIF_LEVEL.get(severity, "warning"),
+            # SARIF 2.1.0 3.27.10: a result whose kind is not `fail` SHALL have
+            # level `none`. A `probable` finding asks for review; it does not
+            # assert a failure, and its severity still travels in properties.
+            "level": SARIF_LEVEL.get(severity, "warning") if kind == "fail" else "none",
             "message": {"text": text.strip()},
             "locations": [{"physicalLocation": physical}],
-            "partialFingerprints": {"ehsFinding/v1": f"{rule_id}:{f['location']['path']}:{f['location'].get('line', 0)}"},
+            "partialFingerprints": {"ehsFinding/v2": sarif_fingerprint(rule_id, f, seen)},
             "properties": {k: f[k] for k in ("id", "status", "severity", "confidence") if k in f},
         })
     return {
@@ -375,6 +443,12 @@ def findings_to_sarif(artifact: Dict[str, Any], titles: Dict[str, str]) -> Dict[
                 "informationUri": "https://github.com/CristianAjavi/ethical-hacker-squad",
                 "rules": [rules[k] for k in sorted(rules)],
             }},
+            # A trailing slash makes the whole id the category: every upload of
+            # the same category replaces the previous one, which is what closes
+            # an alert once the finding is gone.
+            "automationDetails": {"id": category.strip("/") + "/"},
+            "originalUriBaseIds": {"SRCROOT": {
+                "description": {"text": "The root of the audited repository; every path is relative to it."}}},
             "results": results,
         }],
     }
@@ -392,14 +466,20 @@ def cmd_sarif(args: argparse.Namespace) -> int:
         print(f"Error: {args.findings} has no `findings` list; is it a findings.json deliverable?",
               file=sys.stderr)
         return 2
-    if UNREDACTED_SECRET.search(raw):
-        print("Error: the artifact carries an unredacted secret in a high-precision format. "
-              "Nothing was written: SARIF is uploaded, and this would publish it. Redact it and "
+    leaked = find_unredacted_secrets(raw)
+    if leaked:
+        print("Error: the artifact carries an unredacted secret (" + ", ".join(sorted(set(leaked))) +
+              "). Nothing was written: SARIF is uploaded, and this would publish it. Redact it and "
               "run scripts/gates/gate-findings-artifact.sh --deliverable first.", file=sys.stderr)
         return 1
+    if any(Path(f.get("location", {}).get("path", "")).is_absolute()
+           for f in artifact["findings"] if isinstance(f, dict)):
+        print("Error: a finding carries an absolute path. Code scanning resolves paths from the "
+              "repository root; write them relative to it.", file=sys.stderr)
+        return 2
     try:
-        titles = {p["id"]: p["title"] for p in parse_procedures(ROOT)}
-        sarif = findings_to_sarif(artifact, titles)
+        procedures = {p["id"]: p for p in parse_procedures(ROOT)}
+        sarif = findings_to_sarif(artifact, procedures, args.category)
     except (KeyError, TypeError) as e:
         print(f"Error: a finding is missing a required field ({e}); validate the artifact with "
               "scripts/gates/gate-findings-artifact.sh --deliverable first.", file=sys.stderr)
@@ -451,6 +531,8 @@ def main() -> int:
     p_sarif = subparsers.add_parser("sarif", help="Convert a findings.json deliverable to SARIF 2.1.0")
     p_sarif.add_argument("findings", help="Path to findings.json")
     p_sarif.add_argument("-o", "--output", help="Write to this file instead of stdout")
+    p_sarif.add_argument("--category", default="ethical-hacker-squad",
+                         help="Code-scanning category (automationDetails.id); one per analysis you upload")
 
     args = parser.parse_args()
 

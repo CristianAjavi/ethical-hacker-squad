@@ -49,6 +49,40 @@ check "sarif-carries-a-github-severity" "$EHS sarif $FX/good/01-conforming.json"
 check "sarif-refuses-an-unredacted-secret" "$EHS sarif $FX/bad/08-secret-in-the-evidence.json" 1 "unredacted secret"
 check "sarif-refuses-what-is-not-json" "$EHS sarif $HERE/ehs.selftest.sh" 2 "cannot read"
 
+# The SARIF 2.1.0 rules the first version broke, and the fields GitHub reads.
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/ehs-selftest-XXXXXX")"; trap 'rm -rf "$TMPD"' EXIT
+PY='import json,sys; r=json.load(sys.stdin)["runs"][0]'
+check "sarif-review-carries-level-none" \
+  "$EHS sarif $FX/good/01-conforming.json | python3 -c '$PY; nf=[x for x in r[\"results\"] if x[\"kind\"]!=\"fail\"]; print(len(nf), all(x[\"level\"]==\"none\" for x in nf))'" 0 "^1 True$"
+check "sarif-tags-the-cwe-for-github" "$EHS sarif $FX/good/01-conforming.json" 0 '"external/cwe/cwe-639"'
+check "sarif-every-rule-carries-help" \
+  "$EHS sarif $FX/good/01-conforming.json | python3 -c '$PY; print(all(x[\"help\"][\"text\"] for x in r[\"tool\"][\"driver\"][\"rules\"]))'" 0 "^True$"
+check "sarif-declares-its-category" "$EHS sarif $FX/good/01-conforming.json" 0 '"id": "ethical-hacker-squad/"'
+check "sarif-category-is-configurable" "$EHS sarif $FX/good/01-conforming.json --category ehs/web" 0 '"id": "ehs/web/"'
+
+# The fingerprint must survive the code moving: same finding, every line +40.
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))
+for f in d["findings"]:
+    if f.get("location",{}).get("line"): f["location"]["line"] += 40
+json.dump(d, open(sys.argv[2], "w"))' "$FX/good/01-conforming.json" "$TMPD/moved.json"
+FP='import json,sys; print(sorted(x["partialFingerprints"]["ehsFinding/v2"] for x in json.load(sys.stdin)["runs"][0]["results"]))'
+check "sarif-fingerprint-ignores-the-line" \
+  "[ \"\$($EHS sarif $FX/good/01-conforming.json | python3 -c '$FP')\" = \"\$($EHS sarif $TMPD/moved.json | python3 -c '$FP')\" ] && echo same" 0 "^same$"
+
+# A finding no procedure covers gets a rule per weakness class, not one bucket.
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["findings"][0]["procedure"]="ad-hoc"
+json.dump(d, open(sys.argv[2], "w"))' "$FX/good/01-conforming.json" "$TMPD/adhoc.json"
+check "sarif-ad-hoc-rule-per-cwe" "$EHS sarif $TMPD/adhoc.json" 0 '"ruleId": "ad-hoc/CWE-639"'
+
+# The secret list is shared with the validators. A Stripe key is assembled at
+# run time so this file never carries one for the repository's own scan to find.
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["findings"][0]["evidence"]="key " + "sk_" + "live_" + "0"*24
+json.dump(d, open(sys.argv[2], "w"))' "$FX/good/01-conforming.json" "$TMPD/stripe.json"
+check "sarif-refuses-a-stripe-secret-key" "$EHS sarif $TMPD/stripe.json" 1 "stripe-secret-key"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["findings"][0]["location"]["path"]="/home/u/app/x.py"
+json.dump(d, open(sys.argv[2], "w"))' "$FX/good/01-conforming.json" "$TMPD/abs.json"
+check "sarif-refuses-an-absolute-path" "$EHS sarif $TMPD/abs.json" 2 "absolute path"
+
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
