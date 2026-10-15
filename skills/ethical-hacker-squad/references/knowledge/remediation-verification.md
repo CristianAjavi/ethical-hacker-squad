@@ -184,7 +184,7 @@ For each finding, one line with the outcome, what you executed, with what result
 - What you leaned on: SAST, security linter, dependency scanner, secrets, containers; and what that tool actually covers: languages, active rules, whether it follows flow across files
 
 **Vulnerable pattern**
-Closing the verification with "the scanner reports nothing". Lipp et al. (ISSTA 2022), across 27 projects and 192 CVE-confirmed vulnerabilities, measured that **each SAST tool misses between 47% and 80% of the real vulnerabilities**; combining several, false negatives drop to the 30% to 69% range. That is: even with several tools chained, a good third of what is real still fails to appear. A green scanner bounds your confidence, not the system's.
+Closing the verification with "the scanner reports nothing". Lipp et al. (ISSTA 2022), across 27 projects and 192 CVE-confirmed vulnerabilities, measured that **even the best of six static C analyzers misses between 47% and 80% of the real vulnerabilities**, depending on how a detection is counted, and the others miss more; combining several, false negatives drop to the 30% to 69% range. That is: even with several tools chained, a good third of what is real still fails to appear. A green scanner bounds your confidence, not the system's.
 
 **What rules it out (false positive)**
 - The tool is used as a complement and the conclusion rests on manual reproduction: then the scan is one more data point, correctly weighted.
