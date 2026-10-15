@@ -8,6 +8,16 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **`scripts/ehs install` with no arguments deleted a directory and installed for another tool.**
+  The default target was Antigravity (`~/.gemini/antigravity-cli/skills/`), and an existing
+  directory there was replaced with `shutil.rmtree` — whatever the user kept in it, gone, from a
+  command run with no arguments. `--claude` symlinked the repository into
+  `~/.claude/plugins/ethical-hacker-squad`, a path Claude Code does not load plugins from. Now
+  no target means nothing is installed and the command prints the choices; `--claude` installs
+  the plugin through `claude plugin marketplace add <repo>` and `claude plugin install`, or prints
+  those two commands when the CLI is absent; and no target ever deletes a real directory — only a
+  symlink it can replace. Three new cases in `scripts/ehs.selftest.sh`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;

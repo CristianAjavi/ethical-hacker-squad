@@ -41,6 +41,21 @@ check "show-invalid-procedure" "$EHS show FAKE-99" 1 "not found"
 check "search-finds-mcp" "$EHS search mcp" 0 "AI-08"
 check "search-empty-returns-0" "$EHS search xyznonexistentquery123" 0 "No procedures found"
 
+# install: a command run with no arguments must change nothing, and no target
+# may cost a user a directory they made. The default used to link into
+# ~/.gemini after `shutil.rmtree` of whatever was there.
+ITMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-install-XXXXXX")"
+mkdir -p "$ITMP/bin" "$ITMP/home/.gemini/antigravity-cli/skills/ethical-hacker-squad"
+ln -s "$(command -v python3)" "$ITMP/bin/python3"
+echo mine > "$ITMP/home/.gemini/antigravity-cli/skills/ethical-hacker-squad/mine.txt"
+check "install-without-a-target-installs-nothing" \
+  "HOME=$ITMP/empty-home $EHS install; [ ! -e $ITMP/empty-home/.gemini ] && echo untouched" 0 "untouched"
+check "install-never-deletes-a-real-directory" \
+  "HOME=$ITMP/home $EHS install --antigravity; cat $ITMP/home/.gemini/antigravity-cli/skills/ethical-hacker-squad/mine.txt" 0 "^mine$"
+check "install-claude-without-the-cli-says-how" \
+  "PATH=$ITMP/bin:/usr/bin:/bin HOME=$ITMP/home $EHS install --claude" 1 "claude plugin marketplace add"
+rm -rf "$ITMP"
+
 echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
