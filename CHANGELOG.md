@@ -79,6 +79,20 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
   signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
   stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+- **The runtime pass: the leader now offers to run the target locally, and never assumes it.**
+  The safety contract allowed safe local tests, and the packs already held localhost probes
+  (the two-user test of `WEB-04`, the route × method × role matrix of `WEB-05`, the `WEB-16`
+  `Origin` check), yet the leader workflow never asked whether the target could run at all.
+  `references/team.md` now carries the step, and safety rule 4 in `SKILL.md` names it: **running
+  the target's code needs authorization**, because it executes code under audit. The leader shows
+  what will run (the script body, not `npm run dev`), runs it from a disposable `git worktree`
+  that by construction leaves `.env.local` behind — `next dev` would otherwise load it, and it
+  usually points at production — writes a local-only environment, recommends the session's Bash
+  sandbox, binds to `127.0.0.1` with timeouts, stops what it started, removes the copy, and checks
+  `git status --porcelain --ignored`, since plain `--porcelain` misses `node_modules/` and
+  `.next/`. Rewritten after an adversarial review found the first version named commands without
+  showing them, ran in the working tree with its `.env`, kept the rule in an unprotected file and
+  credited `WEB-04` with `WEB-05`'s matrix.
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
