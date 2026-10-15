@@ -8,6 +8,24 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **Four procedures stated something false, and the reproduction gate blamed its own key.** From
+  an adversarial review, each checked against the vendor's documentation on 2026-10-15. `LOC-01`
+  gave `zf.extractall(dest)` from `zipfile` as the traversal example; `zipfile.extract`/`extractall`
+  strip absolute prefixes and every `..`, so the sinks are `tarfile` on Python 3.13 or older (3.14
+  made `filter="data"` the default) and code that joins `ZipInfo.filename` itself. `MOB-09` only
+  flagged an explicit `cleartextTrafficPermitted="true"` or `src="user"`; with no config at all, an
+  app targeting API 27 or lower permits cleartext and one targeting 23 or lower trusts user CAs.
+  `SUP-16` called a GitHub token whose checksum validates "critical with no further triage" — a
+  checksum proves the format, not that the token is live — and listed `sk_test_` as a
+  placeholder, though Stripe and Clerk both issue real secret keys under it. `INF-13` confirmed a
+  `pull_request_target` finding from the checkout `ref` alone; it now also needs a step that runs
+  the checked-out code and something in the job worth taking. The same Python change was why
+  `gate-reproduction.sh` failed on every laptop with 3.14: the probe for `P-06` checked the
+  signature of `extractall`, which 3.14 left unchanged, and read the runtime's refusal as the
+  code's. It now asks the runtime with a canary and measures under the pre-3.14 default when it
+  has to, saying so in the evidence; it passes on 3.12 and on 3.14. No line was added to the four
+  pack files, so no declared count moves.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;

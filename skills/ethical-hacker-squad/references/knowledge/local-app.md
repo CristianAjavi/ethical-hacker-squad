@@ -42,13 +42,13 @@ Two rules that prevent most of the noise in this pack:
 
 ### LOC-01 Path traversal in file arguments and archive extraction
 **Where to look**
-- Python: `zipfile.ZipFile.extractall`, `tarfile.open(...).extractall` without `filter="data"`, `os.path.join(dest, name)` on an entry name; Node: `adm-zip`, `tar`, `unzipper`, `path.join(dest, entry.fileName)`; Java: `ZipInputStream.getNextEntry` with `new File(dir, entry.getName())`; Go: `archive/zip` with `filepath.Join`.
+- Python: `tarfile.open(...).extractall` without `filter="data"` on Python 3.13 or older (3.14 made `data` the default; before it the default was equivalent to `fully_trusted`), any explicit `filter="fully_trusted"`, and `os.path.join(dest, name)` on an entry name — including `ZipInfo.filename` and `zipfile.Path`, which do not sanitize. `zipfile.ZipFile.extract`/`extractall` themselves strip absolute prefixes and every `..` component, so they are not the sink; Node: `adm-zip`, `tar`, `unzipper`, `path.join(dest, entry.fileName)`; Java: `ZipInputStream.getNextEntry` with `new File(dir, entry.getName())`; Go: `archive/zip` with `filepath.Join`.
 - Any command that takes a destination and a name from outside: `--output`, `--extract-to`, import and restore flows, plugin and template installers, "download this attachment" helpers.
 
-**Vulnerable pattern** — an entry name from the archive, or a path from an argument, is joined to a destination and used without canonicalizing the result and re-checking that it is still inside. The name may carry `..` segments, an absolute path, a Windows drive letter, a backslash separator on a case-insensitive filesystem, or a trailing NTFS stream. Example: `zf.extractall(dest)` where the archive contains `../../.ssh/authorized_keys`.
+**Vulnerable pattern** — an entry name from the archive, or a path from an argument, is joined to a destination and used without canonicalizing the result and re-checking that it is still inside. The name may carry `..` segments, an absolute path, a Windows drive letter, a backslash separator on a case-insensitive filesystem, or a trailing NTFS stream. Example: `tf.extractall(dest)` from `tarfile` on Python 3.13 or older, or `open(os.path.join(dest, info.filename), "wb")` over a `zipfile` listing, where the archive contains `../../.ssh/authorized_keys`.
 
 **What rules it out (false positive)**
-- Extraction goes through a filter that rejects traversal and absolute names (Python 3.12+ `filter="data"`), or every resolved path is compared against the canonicalized destination prefix **after** resolving symlinks, and a mismatch aborts.
+- Extraction goes through a filter that rejects traversal and absolute names (Python 3.12+ `filter="data"`, the default from 3.14; Python's `zipfile.extract`/`extractall`, which sanitize member names), or every resolved path is compared against the canonicalized destination prefix **after** resolving symlinks, and a mismatch aborts.
 - The archive is produced by the same program in the same run and never leaves a private directory.
 - The destination is a fresh directory created for this operation and the process cannot write anywhere interesting anyway — argue it, do not assume it.
 
