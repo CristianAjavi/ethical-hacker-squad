@@ -8,6 +8,20 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A validator that never ran counted as a pass.** `gate-plugin-version.sh` SKIPped
+  `claude plugin validate --strict` when no `claude` binary was on `PATH` and still ended rc=0,
+  and the `gates` job never installed one — so the pull request check never ran the validator.
+  The weekly `release.yml` did, and from 2026-09-07 it reported an agent whose frontmatter does
+  not parse; no pull request could see it. A missing validator is now rc=2, the knob
+  `EHS_REQUIRE_CLAUDE_CLI` is gone (the strict behaviour is the only one), the two remaining
+  SKIPs became "not applicable" and rc=2, and the `gates` job installs the CLI pinned in
+  `tooling/claude-cli` the way `release.yml` does, outside the work tree. The gate also stopped
+  counting the CLI's "Advice (does not change the verdict)" bullets as warnings: since 2.1.275
+  they made this gate's self-test red on every laptop with a current CLI. The self-test now
+  reads the validator through a stub, so its verdicts no longer depend on the CLI installed;
+  four new cases (advice tolerated twice, an agent error fails, a missing validator is rc=2),
+  17 total, 0 failures.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
