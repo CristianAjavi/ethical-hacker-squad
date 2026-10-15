@@ -34,7 +34,7 @@ Attack in both directions.
 
 **Against the fix.** Reproduce the original case and confirm it now fails. Then try the variants: a different encoding, a different HTTP verb, a different route to the same handler, a different role, a different content type, the same input one character past the boundary, the path that skips the middleware. A fix that only closes the exact string in the report has not closed the class.
 
-**Against the tests.** Confirm the regression test actually fails without the patch. If you cannot establish that, the test is decoration.
+**Against the tests.** Confirm the regression test actually fails without the patch. If you cannot establish that, the test is decoration. Establish it in a copy, never in the tree: `pre=$(mktemp -d)`, copy the tracked files into it (`git ls-files -z | xargs -0 tar -cf - | tar -xf - -C "$pre"`), take the patch out of the copy (`git diff --binary > "$pre.patch"` and `patch -R -p1 -d "$pre" < "$pre.patch"`, or `git diff <base> HEAD` for a committed fix), run the test there and record that it fails, then run it in the tree and record that it passes. The shell guard refuses `git stash`, `git checkout` and `git apply` from you, by design: the remediator's work is not yours to move, even for a minute.
 
 ## Reach proof: what a verdict that says "no" has to carry
 

@@ -73,6 +73,21 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   the plugin through `claude plugin marketplace add <repo>` and `claude plugin install`, or prints
   those two commands when the CLI is absent; and no target ever deletes a real directory — only a
   symlink it can replace. Three new cases in `scripts/ehs.selftest.sh`.
+- **The auditors' read-only contract was prose; now a hook holds their shell to it.** They list no
+  `Edit` or `Write`, and their bodies forbid writing through `Bash`, but nothing enforced the
+  second half: an auditor that read an instruction planted in the target, or decided to "help",
+  could commit, stash, install, edit in place, delete or call the internet. Claude Code passes
+  `agent_type` to hooks fired inside a subagent (2.1.69+), so `hooks/hooks.json` now runs
+  `scripts/hooks/auditor-shell-guard.sh` on every Bash call and acts only when the caller is one
+  of this plugin's subagents other than the remediator: it refuses state-changing `git`
+  subcommands, package installs and fetch-and-run, in-place editors, `rm -r`/`chmod`/`dd` outside a
+  temp directory, and network clients aimed at anything but localhost. It reads command lines,
+  not effects — `python -c` and a redirect still pass — and says so; the `git status --ignored`
+  comparison and the session's Bash sandbox remain the real containment. The verifier, which
+  could not prove a regression test fails without the patch without moving the remediator's
+  work, now does it in a copy (`mktemp -d`, `patch -R`), a sequence the guard allows. `hooks/**`
+  and `scripts/hooks/**` join G7's protected paths: they run in every user's session. 25
+  self-test cases, also run under macOS's bash 3.2.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
