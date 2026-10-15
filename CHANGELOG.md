@@ -43,6 +43,18 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`scripts/ehs prescan`, `compare` and `cost`: the three instruments an adversarial review found
+  missing.** *"No deterministic pre-scan, no baseline or suppressions with stable fingerprints, no
+  cost telemetry."* `prescan` reads a tree without running it and prints leads keyed to procedure
+  IDs for the shape AI tools produce; on the eval app of `evals/` it leads to all nine planted
+  defects and to none of the three correct controls, and the quick audit now starts with it.
+  `compare` matches two `findings.json` by the SARIF fingerprint (rule, file, component; never the
+  line), reports new, gone and persisting, honours expiring suppressions, and with `--fail-on`
+  becomes a pull-request check. `cost` sums the tokens of a session — the main thread and every
+  subagent — from Claude Code's own transcripts, counting each message once although the
+  transcript writes it once per content block; the handover now quotes it. Twenty new cases in
+  `scripts/ehs.selftest.sh`; 41 total, 0 failures.
+
 - **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
   squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
   whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.

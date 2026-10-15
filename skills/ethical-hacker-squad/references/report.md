@@ -218,6 +218,8 @@ result, and "4 confirmed, 2 probable, 11 ruled out" reads as an audit.
 not a pass*, in those words — the whole verdict vocabulary is defeated the moment a `2` is
 summarised on screen as "checks passed".
 
+**What the run spent**, when the plugin is installed: `<plugin root>/scripts/ehs cost`, run from the session's working directory, sums the tokens of the main thread and of every subagent from Claude Code's own transcripts of the newest session there (`--session <id>` names another). Quote the total; a user who asked for a quick check deserves to know what a full audit would cost before agreeing to one.
+
 <!-- handover:field id=not-measured -->
 **What could not be measured, in the same breath as what was.** The coverage declaration already
 holds this, and it is precisely the part that never survives into the spoken summary. Name the

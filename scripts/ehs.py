@@ -777,13 +777,21 @@ def _usage(path: Path) -> Dict[str, Dict[str, int]]:
 def cmd_cost(args: argparse.Namespace) -> int:
     """Tokens a session spent, main thread and every subagent, from its transcripts."""
     base = Path(args.projects_dir).expanduser()
-    mains = sorted(base.glob(f"*/{args.session}.jsonl"))
+    if args.session:
+        mains = sorted(base.glob(f"*/{args.session}.jsonl"))
+    else:
+        # The session still running is the newest transcript of the project
+        # Claude Code keys by the working directory, every non-alphanumeric
+        # character turned into "-".
+        project = base / re.sub(r"[^A-Za-z0-9]", "-", os.getcwd())
+        mains = sorted(project.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)[-1:]
     if not mains:
-        print(f"Error: no transcript for session {args.session} under {base}", file=sys.stderr)
+        print(f"Error: no transcript for session {args.session or '(latest)'} under {base}", file=sys.stderr)
         return 2
     main_path = mains[0]
+    session = main_path.stem
     rows = [("leader (main thread)", main_path)]
-    for sub in sorted((main_path.parent / args.session / "subagents").glob("*.jsonl")):
+    for sub in sorted((main_path.parent / session / "subagents").glob("*.jsonl")):
         label = sub.stem
         meta = sub.with_suffix(".meta.json")
         try:
@@ -800,9 +808,9 @@ def cmd_cost(args: argparse.Namespace) -> int:
             for k in total:
                 total[k] += acc[k]
     if args.json:
-        print(json.dumps({"session": args.session, "rows": out, "total": total}, indent=2))
+        print(json.dumps({"session": session, "rows": out, "total": total}, indent=2))
         return 0
-    print(f"session {args.session}: {len(rows)} transcript(s)\n")
+    print(f"session {session}: {len(rows)} transcript(s)\n")
     print(f"  {'agent':<46} {'model':<22} {'input':>9} {'cache wr':>10} {'cache rd':>11} {'output':>9}")
     for r in out:
         print(f"  {r['agent'][:46]:<46} {r['model'][:22]:<22} {r['input']:>9,} {r['cache_write']:>10,} "
@@ -867,7 +875,7 @@ def main() -> int:
 
     # cost
     p_cost = subparsers.add_parser("cost", help="Tokens a Claude Code session spent, per agent")
-    p_cost.add_argument("--session", required=True, help="Session id (the skill passes ${CLAUDE_SESSION_ID})")
+    p_cost.add_argument("--session", help="Session id; without it, the newest session of the current directory")
     p_cost.add_argument("--projects-dir", default="~/.claude/projects", help="Where Claude Code keeps transcripts")
     p_cost.add_argument("--json", action="store_true", help="Machine-readable output")
 
