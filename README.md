@@ -4,48 +4,36 @@ A skill and plugin for [Claude Code](https://claude.com/claude-code) that turns 
 
 > **Authorized use only.** This skill is for auditing systems you own or have explicit permission to test. Its safety contract forbids persistence, exfiltration, destruction, denial of service, real phishing, stealth evasion and lateral movement, and requires authorization before scanning remote targets, exploiting a vulnerability, or touching production.
 
+## Start here
+
+**Install** (Claude Code 2.1.275 or later):
+
+```
+/plugin install ethical-hacker-squad --marketplace CristianAjavi/ethical-hacker-squad
+```
+
+On an older Claude Code, add the marketplace first: `/plugin marketplace add CristianAjavi/ethical-hacker-squad`, then `/plugin install ethical-hacker-squad@ethical-hacker-squad`.
+
+**Ask it what you would ask a security reviewer**, in your own language:
+
+| You want | Say something like | What happens |
+|---|---|---|
+| to know whether your app is safe to launch | "I built this with an AI tool and launch next week. Is it safe?" | a **quick audit**: the leader alone runs an ordered checklist for your stack (secrets, database rules, Server Actions, payments, cron routes, your LLM key), capped at twelve procedures, and writes **Fix these first** in plain language |
+| a full review | "Audit this repository without modifying files." | the leader staffs two to four specialists for what the repository actually contains and reports with evidence |
+| fixes | "Fix the confirmed findings and verify them." | `harden` mode: a remediator patches, a different agent verifies |
+
+**What you get**: `report.md` and `findings.json` in a folder whose absolute path the run prints at the end. The report opens with the items to fix first; every finding names its file, its evidence and how to check the fix. `scripts/ehs sarif` turns `findings.json` into SARIF for GitHub code scanning if you want the findings in the Security tab.
+
+**What it costs**: a quick audit reads only its checklist and dispatches no subagent. A full audit dispatches several, each capped at 60 turns, and costs several times what one reply of the model alone costs. It never starts paid tools, scanners against remote targets or anything that runs your code without asking first.
+
 ## What it is measured to do, and what it is not
 
-This repository publishes its own evaluation bench, and the honest summary comes before the sales pitch.
+The honest summary comes before the pitch.
 
-**Eighteen blinded measurements — against the same model working with no corpus at all, and one three-way against a named competing product — recall on file subsets, recall on whole repositories, precision at frontier scale and at weak scale, reader utility, consistency — and the corpus leads on none of them.** At frontier scale it is indistinguishable from an unaided competent reviewer. Below that scale it was measured as actively harmful until a loading rule fixed most of it, and it is now indistinguishable there too.
-
-Two results are larger than the comparison. Across three arms, fifteen runs and 71 claims on one target, **not one arm produced a single true finding beyond the two the ground truth already named** — everything else was refuted by two independent adversarial verifiers. On **whole repositories with no pointer** — the task this corpus is actually built for, and the last dimension where a lead had not been ruled out — it now is. Re-run on a checkout verified to sit at the pre-fix commit, [three arms found the advisory 3/3 each](bench/runs/2026-08-22-unaided-verified/): with the corpus, with the corpus minus one rule, and **with no corpus at all**, the unaided arm reporting the most findings of the three. **Whole-repository detection of this advisory is the model's, and the corpus adds nothing to it.** The round that would have said otherwise [was retracted](bench/runs/2026-08-22-routing-at-N/): its targets were cloned at the default branch, so both arms audited code the defects had already been removed from, and the "shared blind spot" it reported was the arms correctly declining to report an already-bounded function. What stands is that **detection is the model's rather than any product's** — and that no product here publishes a whole-repository number at all, four of five publishing none.
-
-*(An earlier version of this paragraph said `google/mantis` is more precise than this corpus, from 53% against 62%. That comparison was superseded: at a matched claim count it is 21% against 53%. The superseded number is named here rather than deleted.)*
-
-What *is* measured, and is narrower than "finds more":
-
-- an artifact contract with somewhere to say **I could not decide this**, which the other arms' output format has no field for;
-- a **coverage declaration** that must resolve every surface it inventories as read or not-read, so a reader can tell silence from a clean bill — a blinded reader test caught one of our own reports failing exactly that, which is why a validator now enforces it;
-- **zero decoys reported** on eleven constructs built to be mistaken for the defect beside them.
-
-Every number, every prompt, every retraction and every refuted prediction of ours is in [`bench/`](bench/). Three published results were withdrawn there after their instruments failed inspection.
-
-**Two dimensions are measured in this project's favour. The capability one is not a lead on any axis — it is that this corpus is the only arm that is never the outlier.**
-
-Two targets, **four arms**, six runs each, every claim judged blind by two independent adversarial passes and a separate defect-matching judge. Bands fixed before the numbers: 10 points of precision, 0.5 defects of recall.
-
-| | precision band | recall band |
-|---|---|---|
-| `google/mantis` | **outside** on the AI-agent target (19 pts) | inside on both |
-| `Tencent/AI-Infra-Guard` | inside on both | **outside** on the HTTP API (0.83) |
-| `0xSteph/pentest-ai-agents` | **outside** on the HTTP API (16.3 pts) | inside |
-| **this corpus** | **inside on both** | **inside on both** |
-
-**This corpus leads nothing.** On the [HTTP API](bench/runs/2026-08-22-third-competitor/) two arms out-recall it (5.00 against its 4.83) and `AI-Infra-Guard` out-precisions it, refuting **nothing** against its one claim. On the [AI-agent target](bench/runs/2026-08-22-second-competitor/) it is level with `AI-Infra-Guard` and ahead of `mantis`. **Each of the field's three comparable products falls outside a band somewhere; this corpus falls outside none.** That is an absence of outliers, not a win, and it is deliberately weaker than the sentence it replaces.
-
-**This comparison is a photograph taken on 2026-08-22**, at the commits named in [`docs/competitive-baseline.json`](docs/competitive-baseline.json). Subjects move: on 2026-08-24 two of the three were already past the commit measured here, both pushed that day. That does not make a number above wrong — it dates it. [`scripts/gh/competitive-freshness.sh`](scripts/gh/competitive-freshness.sh) is what notices, and it says only that the photograph is old, never that a product which moved got better.
-
-**Of the six products surveyed on 2026-08-22, three are comparable and all three have been run.** That survey was a closed list, and on 2026-09-01 [`scripts/gh/competitive-discovery.sh`](scripts/gh/competitive-discovery.sh) — which asks the question the freshness check cannot, *is the list still the field* — found **six more comparable products, none of them benchmarked**. The one that matters, `maxgfr/ultrasec`, has this project's exact purpose, was pushed two days earlier, and has **zero stars**: a popularity floor would have hidden it as thoroughly as the closed list did. They are pinned in the baseline with `benchmarked: false`, which is a note saying where to look and not a result. `msoedov/agentic_security` is **not a slow arm but a different instrument** — a jailbreak fuzzer against a live endpoint, with no source-audit language anywhere — so scoring it here would measure something it never claimed to do. `vxcontrol/pentagi` needs live infrastructure this environment does not have.
-
-**Read every recall figure as a band, never a ranking.** The same twelve artifacts scored by two different blind judges moved by up to 0.33 of a defect and **the sign of the difference flipped**. That is the instrument's resolution, measured rather than assumed.
-
-Still **one model scale**, both targets authored here, and every competitor run at its floor: read-only, offline, and in one case below the model its own definition asks for.
-
-The second dimension is not capability at all.
-
- Against the five other products in this field, on a rubric fixed before any of them was opened — a measured detection number, its method, a comparison against not using it, a published negative result, a retraction, a pre-registration — [this project answers yes to all six and no other exceeds one](bench/runs/2026-08-21-field-transparency/). That is a claim about what you can **check**, not about what anyone finds, and the same survey corrected an error in this repository's own competitive analysis.
+- **The corpus, measured against the same model with no corpus: it leads on none of eighteen blinded measurements.** Recall on files and on whole repositories, precision at two model scales, reader utility, consistency: at frontier scale it is indistinguishable from an unaided competent reviewer. Whole-repository detection of the one advisory measured that way is the model's; the corpus adds nothing to it. Every number, prompt and retraction is in [`bench/`](bench/).
+- **The product you install has not been measured yet.** In 13 of the 17 bench rounds that kept their prompts, the prompts told the model not to delegate to subagents, so the leader-and-specialists squad was never scored, and never against the model alone or Claude Code's `/security-review`. [`evals/`](evals/) is the harness that does it, with a no-plugin baseline. It has not been run: running it spends credits.
+- **What is measured in its favour is narrower than "finds more"**: a findings format with a place to say *I could not decide this*, a coverage declaration that must resolve every surface as read or not read, and zero decoys reported on eleven constructs built to be mistaken for the defect beside them.
+- **Against three comparable products** on two targets authored here, at one model scale, it is the only arm inside both the precision and the recall band on both targets — an absence of outliers, not a lead. The comparison is dated 2026-08-22 ([`docs/competitive-baseline.json`](docs/competitive-baseline.json)).
 
 ## What makes it different
 
@@ -65,6 +53,7 @@ Most "act as a security expert" prompts are adjectives. This one ships **procedu
 | `audit` | Detects and prioritizes **without modifying files** (the default when in doubt). |
 | `harden` | Audits, fixes confirmed findings inside the repository, and verifies. |
 | `verify` | Checks existing fixes or controls. |
+| `quick` | An `audit` with a hard cap: the leader alone, the stack's ordered checklist, **Fix these first**. What a non-specialist asking "is it safe?" gets first. |
 
 ## The squad
 
@@ -111,16 +100,9 @@ OWASP Top 10:2025 · API Security Top 10 2023 · WSTG v4.2 · ASVS 5.0.0 · MASV
 
 Identifiers are cited; **no standard text is reproduced**. Most of these are CC BY-SA or more restrictive, and copying their wording would contaminate this repository's MIT licence. See [`NOTICE.md`](NOTICE.md).
 
-## Install
+## Install, update and channels
 
-**As a plugin (recommended — this is the only way you get the dedicated subagents):**
-
-```
-/plugin marketplace add CristianAjavi/ethical-hacker-squad
-/plugin install ethical-hacker-squad@ethical-hacker-squad
-```
-
-**Update:**
+The one-step install is under **Start here**. To update:
 
 ```
 /plugin marketplace update ethical-hacker-squad
@@ -129,9 +111,9 @@ Identifiers are cited; **no standard text is reproduced**. Most of these are CC 
 
 Claude Code also refreshes marketplaces in the background after startup, so updates usually arrive without being asked for. The repository is public, so no credentials are involved.
 
-**Channels.** `main` is the `latest` channel and updates on every commit. `stable` is promoted on a roughly weekly cadence with a semver tag and a changelog entry, after the gates pass, an independent verifier reviews the diff, and a rest period elapses. To pin harder, add the marketplace at a specific `ref` or `sha`. See [`docs/release-channels.md`](docs/release-channels.md).
+**Channels.** Today there is one: `main` is the `latest` channel, and every commit on it is a new version. A `stable` channel — a weekly, tagged, rested promotion — is specified in [`docs/release-channels.md`](docs/release-channels.md) and **has never been published**: the promotion has failed every week it has run. To pin a version today, add the marketplace at a specific `ref` or `sha`.
 
-**As a personal or project skill** — works, but ships no subagents; the skill falls back to `general-purpose` with the role prompt injected:
+**As a personal or project skill** — works, but ships no subagents and no scripts; the skill falls back to `general-purpose` agents with the role prompt injected:
 
 ```bash
 git clone https://github.com/CristianAjavi/ethical-hacker-squad.git /tmp/ehs
@@ -152,9 +134,7 @@ Every finding comes back with an ID, the procedure that produced it, status (con
 
 ## How it stays current
 
-Security knowledge decays. A daily deterministic job checks the pinned sources and opens an issue when something moves; a weekly job reviews a rotating slice of the corpus and opens a narrow pull request. Both read only from an allowlist, attach provenance to every item, and are structurally unable to modify the safety contract, the manifest, the allowlist or the workflows.
-
-That loop is also the most dangerous thing in this repository — a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. [`docs/knowledge-loop.md`](docs/knowledge-loop.md) documents the threat model and the controls, including what they do **not** cover. Until the `stable` channel has its first tagged release, read that document as the design the automation is being built to, not as a description of controls already running.
+Not automatically, today. A knowledge loop — a daily check of the pinned sources and a weekly review of a slice of the corpus, each opening a pull request — is designed in [`docs/knowledge-loop.md`](docs/knowledge-loop.md), including its threat model: a poisoned source would become an instruction inside the security agent of everyone who installed the plugin. **No workflow runs it yet.** What does run: the gates on every pull request, and scheduled checks for supply-chain hygiene, OpenSSF Scorecard, repository-protection and label drift, and the freshness of the competitive baseline. Corpus changes today are made by hand, through pull requests, against primary sources.
 
 ## Contributing
 
