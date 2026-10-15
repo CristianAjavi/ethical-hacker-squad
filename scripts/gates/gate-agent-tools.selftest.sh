@@ -112,6 +112,21 @@ C="$(mkcase no-frontmatter)"
 printf 'You are an agent with no frontmatter at all.\n' > "$C/agents/ehs-fixture-no-frontmatter.md"
 check "agent file with no frontmatter" 1 "has no YAML frontmatter" "$C"
 
+# --- rc=1: the frontmatter is YAML -----------------------------------------
+# The three ways a line reader and a YAML parser disagree about the same block.
+# The first is the defect agents/ehs-local-app.md shipped with; the second is
+# the dangerous one, because there the line reader certifies a list without
+# `Write` while YAML hands the harness a list with it.
+printf '\n-- rc=1  the frontmatter is YAML\n'
+C="$(mkcase description-colon)"; cp "$FIX/bad/10-description-colon.md" "$C/agents/"
+check "unquoted ': ' in the description" 1 "does not parse as YAML" "$C"
+
+C="$(mkcase tools-continuation)"; cp "$FIX/bad/11-tools-continuation-line.md" "$C/agents/"
+check "tools wrapped onto a folded second line" 1 "a YAML parser reads \`tools\` as 'Read,Grep,Glob,Write'" "$C"
+
+C="$(mkcase duplicated-tools)"; cp "$FIX/bad/12-duplicated-tools-key.md" "$C/agents/"
+check "two tools keys in one frontmatter" 1 "duplicated key 'tools'" "$C"
+
 # --- rc=1: role derivation -------------------------------------------------
 printf '\n-- rc=1  role derivation\n'
 C="$(mkcase second-writer)"; cp "$FIX/bad/04-second-write-authority.md" "$C/agents/"
