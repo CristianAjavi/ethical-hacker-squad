@@ -11,8 +11,10 @@ Two of the rules below stopped being intentions. `scripts/gates/gate-report-cont
 Run it over the deliverable before the deliverable leaves:
 
 ```
-scripts/gates/gate-report-contract.sh --deliverable path/to/report-directory
+"<plugin root>/scripts/gates/gate-report-contract.sh" --deliverable /absolute/path/to/report-directory
 ```
+
+`<plugin root>` is two directories above this skill's base directory, which Claude Code shows when the skill loads; in an installed plugin it is `${CLAUDE_PLUGIN_ROOT}`. A bare `scripts/gates/…` run from the audited repository names a path inside the target, not the plugin. A skill copied without the plugin has no validators at all: then each one is reported as *not available — not measured, not a pass*, never skipped in silence.
 
 It follows the repository's exit-code doctrine: `0` measured and clean, `1` measured and it leaks, `2` it could not measure. A `2` is not a pass — it says the deliverable was never checked, so it does not ship either.
 
@@ -216,7 +218,8 @@ result, and "4 confirmed, 2 probable, 11 ruled out" reads as an audit.
 **The exit code of each validator that ran**, named: `gate-report-contract.sh --deliverable` and
 `gate-findings-artifact.sh --deliverable`. Print the number. A `2` is reported as *not measured,
 not a pass*, in those words — the whole verdict vocabulary is defeated the moment a `2` is
-summarised on screen as "checks passed".
+summarised on screen as "checks passed". A validator that is not there (the skill was copied
+without the plugin) gets the same words and its own line.
 
 <!-- handover:field id=not-measured -->
 **What could not be measured, in the same breath as what was.** The coverage declaration already
