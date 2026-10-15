@@ -40,7 +40,7 @@ When this skill is installed as a plugin, it ships dedicated subagents whose too
 | `ehs-remediator` | Applies fixes (`harden` mode only) | `Edit`, `Write` |
 | `ehs-verifier` | Independent verification | none |
 
-Auditors have no `Edit` or `Write`. That is structural but incomplete: `Bash` can write through the shell, so in `audit` mode confirm with `git status --porcelain` that the tree is unchanged, and treat a modification as a contract breach worth reporting.
+Auditors have no `Edit` or `Write`, and when the skill is installed as a plugin a hook (`hooks/hooks.json`) refuses their shell the commands that change a repository, install or fetch packages, edit in place, delete outside a temp directory or reach a host other than localhost; the remediator is exempt. That is structural but incomplete: the hook reads command lines, not effects, and `Bash` can still write through the shell, so in `audit` mode confirm with `git status --porcelain` that the tree is unchanged, and treat a modification as a contract breach worth reporting.
 
 Each carries its own safety contract and loads its own pack, so your prompt supplies only: scope and paths, mode, target language, assigned components, and anything specific to this engagement.
 
