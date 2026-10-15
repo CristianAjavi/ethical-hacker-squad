@@ -18,6 +18,9 @@
 #      arrives from forks) reads the `secrets` context - in any of its three
 #      forms: `secrets.X`, `secrets['X']` and `toJSON(secrets)` - nor uses
 #      `secrets: inherit`.
+#   5. That no step installs packages with their lifecycle scripts: every
+#      `npm|pnpm|yarn|bun install|i|ci|add` carries `--ignore-scripts`, and no
+#      `npm install -g` resolves a version tag at run time (issue #17).
 #
 # Exit codes: 0 = measured and fine | 1 = measured and fails | 2 = could not measure.
 #
