@@ -23,8 +23,17 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `gate-reproduction.sh` failed on every laptop with 3.14: the probe for `P-06` checked the
   signature of `extractall`, which 3.14 left unchanged, and read the runtime's refusal as the
   code's. It now asks the runtime with a canary and measures under the pre-3.14 default when it
-  has to, saying so in the evidence; it passes on 3.12 and on 3.14. No line was added to the four
-  pack files, so no declared count moves.
+  has to, saying so in the evidence; it passes on 3.12 and on 3.14. The vendor and research
+  figures the packs quote were each checked against their source: two said something else. The
+  EPSS efficiencies came from a different row of Jacobs et al.'s Fig. 5 (CVSS ≥ 7 is 3.9%, not
+  6.5%; EPSS ≥ 0.088 is 45.5%, not 78.5%), and the "47% to 80% missed per tool" of Lipp et al. is
+  the *best* of six C analyzers under four ways of counting a detection — so `SKILL.md`'s
+  "per-tool recall 20%–53%" became what it is. Wording and attribution followed the sources for
+  the DBIR's KEV figure, Google's initial-access baseline, three Endor Labs editions, Sonatype's
+  cumulative +75% and its re-cited 95%, Orca's "high or critical", Datadog's Entra credentials,
+  Wiz's self-hosted models and a Checkmarx-commissioned study. `bibliography.md` now lists each
+  report with its date and URL and says what kind of evidence vendor research is. No line was
+  added to a pack file, so no declared count moves.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became

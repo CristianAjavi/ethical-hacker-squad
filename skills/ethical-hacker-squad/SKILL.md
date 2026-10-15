@@ -94,7 +94,7 @@ For each candidate:
 5. rule out false positives;
 6. assign severity from impact and exploitability in the real context.
 
-A tool match is not a confirmed vulnerability. Equally, **a clean scan is not evidence of absence**: measured per-tool recall on real vulnerabilities runs between 20% and 53%, so an unremarkable scanner run means nothing on its own. `references/tooling.md` records the typical false positive of each tool; the packs record what each class needs by hand.
+A tool match is not a confirmed vulnerability. Equally, **a clean scan is not evidence of absence**: the best of six C analyzers found 20% to 53% of 192 real CVEs, so a quiet scanner run means nothing on its own. `references/tooling.md` records the typical false positive of each tool; the packs record what each class needs by hand.
 
 ### 6. Fix under control
 
