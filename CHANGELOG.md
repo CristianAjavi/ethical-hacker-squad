@@ -115,6 +115,15 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   code's. It now asks the runtime with a canary and measures under the pre-3.14 default when it
   has to, saying so in the evidence; it passes on 3.12 and on 3.14. No line was added to the four
   pack files, so no declared count moves.
+- **Issue #17 was fixed in `release.yml` and nothing kept it fixed.** The release jobs, holding
+  `contents: write`, used to run `npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"`:
+  a tag the registry resolves on the day, with every lifecycle script run in reach of the token.
+  They now install from `tooling/claude-cli`'s lock file with `npm ci --ignore-scripts`, but the
+  repository's rule is that an issue closes with the check that stops it coming back, and there
+  was none. `gate-workflow-hardening.sh` gains rule 5: every `npm`/`pnpm`/`yarn`/`bun`
+  `install`/`i`/`ci`/`add` in a workflow carries `--ignore-scripts`, and `npm install -g` fails
+  outright. Two negative fixtures (the original line, and `npm ci` without the flag) and one
+  positive; the census moves from 16 to 18.
 
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
