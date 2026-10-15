@@ -7,7 +7,8 @@ scripts/meter/packs.json so that the layout lives in exactly one place:
 
   1. numbering        identifiers contiguous from 01, no duplicates, per family
   2. declared counts  corpus lines, procedure count and file count, wherever
-                      prose states them
+                      prose states them; and the repository description, which
+                      lives on GitHub where nothing can sync it, states none
   3. declared ranges  `AI-01`..`AI-28` must end at the highest identifier there is
   4. pack headers     the `**Cost:** ~N lines` estimate and the loading-map table
   5. identifiers      every procedure carries the six mandatory fields, its
@@ -39,6 +40,9 @@ DECLARING_FILES = [
     "skills/ethical-hacker-squad/SKILL.md",
     "skills/ethical-hacker-squad/references/knowledge/README.md",
 ]
+GOVERNANCE_JSON = "scripts/gh/governance.json"
+PLUGIN_JSON = ".claude-plugin/plugin.json"
+MARKET_JSON = ".claude-plugin/marketplace.json"
 TEAM = "skills/ethical-hacker-squad/references/team.md"
 COVERAGE = "skills/ethical-hacker-squad/references/coverage.md"
 AGENTS_DIR = "agents"
@@ -63,6 +67,13 @@ DECL_FILES = re.compile(
     r"(?:over|across|in)\s+((?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
     r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"
     r"(?:-(?:one|two|three|four|five|six|seven|eight|nine))?)\s+files\b")
+# A number beside a noun that counts the corpus or the squad. A bare digit is
+# not enough: "Top 10" is a standard's name, not a claim about this repository.
+DESC_COUNT = re.compile(
+    r"\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+"
+    r"(?:[a-z-]+\s+){0,2}(?:procedures|packs|files|lines|subagents|agents|specialists|roles)\b",
+    re.I)
 DECL_RANGE = re.compile(r"`([A-Z]{2,4})-0*1`\.\.`([A-Z]{2,4})-(\d{2})`")
 PACK_COST = re.compile(r"\*\*Cost:\*\*\s*~([\d,]+)\s*lines")
 MAP_ROW = re.compile(r"^\|\s*`([a-z0-9-]+\.md)`\s*\|[^|]*\|\s*~?([\d,]+)\s*\|")
@@ -248,6 +259,50 @@ def main() -> int:
                 findings.append(
                     f"{rel}: declares `{prefix}-01`..`{prefix}-{end:02d}`; the highest that "
                     f"exists is `{prefix}-{highest:02d}`"
+                )
+
+    # ---- 2b. the description GitHub shows states no count --------------
+    # It is the one sentence about the corpus that lives outside the tree, so
+    # sync-declared-counts.py cannot reach it. It said "122 procedures across 7
+    # role packs" while the corpus held 171 across 8, and nothing noticed.
+    checks += 1
+    try:
+        governance = json.loads(read(root, GOVERNANCE_JSON))
+    except ValueError as exc:
+        raise Unmeasured(f"{GOVERNANCE_JSON} is not valid JSON: {exc}") from exc
+    description = (governance.get("settings") or {}).get("description")
+    if not isinstance(description, str) or not description.strip():
+        findings.append(
+            f"{GOVERNANCE_JSON}: settings.description is not declared, so nothing watches "
+            "the description GitHub shows"
+        )
+    else:
+        for m in DESC_COUNT.finditer(description):
+            findings.append(
+                f"{GOVERNANCE_JSON}: settings.description states '{m.group(0)}'; that text "
+                "lives on GitHub, where nothing syncs a count. State none"
+            )
+
+    # The same rule for the two descriptions a user reads in `/plugin` before
+    # installing anything. They live in the tree, but they are copied into every
+    # user's cache and into marketplace listings, and no count in them is synced.
+    for rel in (PLUGIN_JSON, MARKET_JSON):
+        checks += 1
+        try:
+            manifest = json.loads(read(root, rel))
+        except ValueError as exc:
+            raise Unmeasured(f"{rel} is not valid JSON: {exc}") from exc
+        fields = [("description", manifest.get("description"))]
+        fields += [(f"plugins[{i}].description", entry.get("description"))
+                   for i, entry in enumerate(manifest.get("plugins") or [])
+                   if isinstance(entry, dict)]
+        for field, text in fields:
+            if not isinstance(text, str):
+                continue
+            for m in DESC_COUNT.finditer(text):
+                findings.append(
+                    f"{rel}: {field} states '{m.group(0)}'; a user reads it in /plugin "
+                    "before installing, and nothing syncs it. State none"
                 )
 
     # ---- 4. pack cost headers and the loading map ---------------------
