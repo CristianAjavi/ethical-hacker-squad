@@ -1,0 +1,59 @@
+# Example workflow: a quick security audit of every pull request, findings in
+# GitHub code scanning. Copy it into YOUR repository's .github/workflows/; it is
+# not run here. Read docs/github-action.md before enabling it: the job gives an
+# agent an API key and the pull request's content, and that content is untrusted.
+name: Security review (Ethical Hacker Squad)
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  squad:
+    # Pull requests from forks get no secrets anyway; this makes the skip explicit.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read          # read the code
+      security-events: write  # upload the SARIF
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout the squad's scripts (for the SARIF export)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: CristianAjavi/ethical-hacker-squad
+          ref: main   # pin a commit SHA you have reviewed
+          path: .ehs
+          persist-credentials: false
+
+      - name: Quick audit of the change
+        uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: https://github.com/CristianAjavi/ethical-hacker-squad.git
+          plugins: ethical-hacker-squad@ethical-hacker-squad
+          claude_args: --max-turns 80
+          prompt: |
+            Use the ethical-hacker-squad skill in quick mode on this pull request.
+            Scope: the files changed against the base branch (git diff --name-only
+            origin/${{ github.base_ref }}...HEAD) and the code they call. Audit only:
+            do not modify files, do not install anything, do not reach the network.
+            Write report.md and findings.json into ./ehs-out/.
+
+      - name: Export findings as SARIF
+        if: always() && hashFiles('ehs-out/findings.json') != ''
+        run: python3 .ehs/scripts/ehs sarif ehs-out/findings.json -o ehs.sarif --category ethical-hacker-squad/pr
+
+      - name: Upload to code scanning
+        if: always() && hashFiles('ehs.sarif') != ''
+        uses: github/codeql-action/upload-sarif@a35ac6e6798d72df5475948b28efb89edc2e19ca # v4.37.9
+        with:
+          sarif_file: ehs.sarif
+          category: ethical-hacker-squad/pr
