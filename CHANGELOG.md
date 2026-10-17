@@ -36,3 +36,4 @@ Changes from an adversarial review of the whole repository (2026-10-15), whose v
 - **The README puts install first** (#132) and says what does not exist yet: no `stable` release, no running knowledge loop.
 - **`team.md` loads lighter** (#139): role orders move to `team-roles.md`, read only without the plugin's subagents.
 - **The changelog** moved its history to `docs/changelog-history.md`.
+- **Fifteen gates block a pull request, not thirty-seven.** The ones whose failure would reach a user stay on every pull request (`scripts/gates/data/gate-sets.json`); the bench, governance and document-consistency gates run weekly in `gates-weekly.yml` and in full over every release candidate. Nothing stopped running.
