@@ -214,29 +214,24 @@ scripts/gates/fixtures/report/good'
 TEXT_EXT='md|txt|json|yml|yaml|html|htm|csv|log|sarif|xml'
 
 # ---------------------------------------------------------------------------
-# THE SECRET FORMATS. Three TAB-separated fields: id, regex, note. The separator
-# is a tab and not a pipe because half of these regexes contain a pipe, and a
-# table whose delimiter appears inside its own data is a bug waiting for the
-# first alternation someone adds.
+# THE SECRET FORMATS live in scripts/gates/data/secret-formats.txt, the one list
+# this gate, the findings.json validator and the SARIF export all read. They
+# used to be written here, in a table broader than the two lists guarding the
+# files that actually leave the machine. The file sits beside this gate, not
+# under EHS_REPO_ROOT: the instrument travels with the gate, whatever tree it is
+# pointed at.
 #
 # Every pattern is length-gated: a bare prefix never matches. That single rule
 # is what keeps the gate silent on the corpus files that teach secret detection.
 # ---------------------------------------------------------------------------
-PATTERNS="$(cat <<'PATEOF'
-github-token	gh[pousr]_[A-Za-z0-9]{36}	classic GitHub token, 40 chars, CRC32 checksum verifiable offline
-github-pat-fine	github_pat_[A-Za-z0-9_]{60,}	fine-grained GitHub PAT
-aws-access-key-id	(AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}	AWS access key id, high precision by prefix, no published checksum
-anthropic-key	sk-ant-[A-Za-z0-9_-]{24,}	Anthropic API key
-openai-key	sk-(proj-)?[A-Za-z0-9]{32,}	OpenAI API key
-slack-token	xox[baprse]-[A-Za-z0-9-]{16,}	Slack token
-google-api-key	AIza[A-Za-z0-9_-]{35}	Google API key
-stripe-secret-key	sk_live_[A-Za-z0-9]{16,}	Stripe live secret key
-gitlab-pat	glpat-[A-Za-z0-9_-]{20}	GitLab personal access token
-npm-token	npm_[A-Za-z0-9]{36}	npm automation token
-private-key-block	-----BEGIN [A-Z ]*PRIVATE KEY-----	PEM private key header
-signed-jwt	eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}	signed JWT; the third segment must be present, so an alg:none teaching example does not match
-PATEOF
-)"
+FORMATS_FILE="$SELF_DIR/data/secret-formats.txt"
+[ -r "$FORMATS_FILE" ] || unmeasurable "$FORMATS_FILE is missing: without the list of secret formats there is nothing to scan for"
+# id <TAB> regex <TAB> note, the shape the scanner below has always read.
+PATTERNS="$(awk -F'\t' '!/^#/ && NF >= 4 { print $1 "\t" $3 "\t" $4 }' "$FORMATS_FILE")"
+# id <TAB> prefix, interval-free, for the classifier.
+PREFIXES_FILE="$TMPD/secret-prefixes.tsv"
+awk -F'\t' '!/^#/ && NF >= 4 { print $1 "\t" $2 }' "$FORMATS_FILE" >"$PREFIXES_FILE"
+[ -s "$PREFIXES_FILE" ] || unmeasurable "$FORMATS_FILE declares no secret format"
 
 if [ "$LIST_PATTERNS" -eq 1 ]; then
   while IFS="$(printf '\t')" read -r id re note; do
@@ -318,25 +313,24 @@ fi
 SCAN_AWK="$TMPD/scan.awk"
 cat "$AWK_CRC" >"$SCAN_AWK"
 cat >>"$SCAN_AWK" <<'AWKEOF'
-function classify(m,   body, sum) {
+function classify(m,   body, sum, i) {
   if (m ~ /^gh[pousr]_/ && length(m) == 40) {
     body = substr(m, 5, 30); sum = substr(m, 35, 6);
     if (sum == b62(crc32(body), A1) || sum == b62(crc32(body), A2))
       return "credential\tgithub-token";
     return "token-shaped\tgithub-token";
   }
-  if (m ~ /^github_pat_/)                 return "high-precision\tgithub-pat-fine";
-  if (m ~ /^(AKIA|ASIA|AROA|AIDA)/)       return "high-precision\taws-access-key-id";
-  if (m ~ /^sk-ant-/)                     return "high-precision\tanthropic-key";
-  if (m ~ /^sk-/)                         return "high-precision\topenai-key";
-  if (m ~ /^xox/)                         return "high-precision\tslack-token";
-  if (m ~ /^AIza/)                        return "high-precision\tgoogle-api-key";
-  if (m ~ /^sk_live_/)                    return "high-precision\tstripe-secret-key";
-  if (m ~ /^glpat-/)                      return "high-precision\tgitlab-pat";
-  if (m ~ /^npm_/)                        return "high-precision\tnpm-token";
-  if (m ~ /^-----BEGIN/)                  return "high-precision\tprivate-key-block";
-  if (m ~ /^eyJ/)                         return "high-precision\tsigned-jwt";
+  for (i = 1; i <= NPFX; i++)
+    if (m ~ PFX[i]) return "high-precision\t" PFXID[i];
   return "high-precision\tunclassified";
+}
+BEGIN {
+  NPFX = 0;
+  while ((getline line < PREFIXES) > 0) {
+    split(line, parts, "\t");
+    NPFX++; PFXID[NPFX] = parts[1]; PFX[NPFX] = parts[2];
+  }
+  close(PREFIXES);
 }
 {
   p1 = index($0, ":"); if (p1 == 0) next;
@@ -380,7 +374,7 @@ EOF
   if [ -s "$err" ]; then
     unmeasurable "the scanner could not read part of its input: $(head -3 "$err" | tr '\n' ' ')"
   fi
-  awk -f "$SCAN_AWK" "$TMPD/hits.raw" >"$out" 2>/dev/null \
+  awk -v PREFIXES="$PREFIXES_FILE" -f "$SCAN_AWK" "$TMPD/hits.raw" >"$out" 2>/dev/null \
     || unmeasurable "the classifier failed over the scanner output"
   return 0
 }

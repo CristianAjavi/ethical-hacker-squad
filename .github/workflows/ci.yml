@@ -56,6 +56,40 @@ jobs:
           # useless: it reports 2, could not measure, on every run.
           fetch-depth: 0
 
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      # gate-plugin-version.sh runs `claude plugin validate --strict`, and a
+      # validator that is not installed is rc=2, never a pass. Until 2026-10-15
+      # this job had no CLI, the gate SKIPped the validator and ended green, and
+      # the only workflow that ran it (release.yml, weekly) reported a broken
+      # agent for five weeks that no pull request could see. Same install as
+      # release.yml: the lock file's integrity hash, no install scripts, the
+      # platform binary linked from the optional package the lock pins.
+      #
+      # It installs OUTSIDE the work tree on purpose: several gates walk the
+      # tree with `find`, and a node_modules beside them would be judged as
+      # part of the repository.
+      - name: Install the Claude Code CLI (from the lock file)
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/claude-cli"
+          mkdir -p "$dest"
+          cp tooling/claude-cli/package.json tooling/claude-cli/package-lock.json "$dest/"
+          cd "$dest"
+          npm ci --ignore-scripts
+          bin="$PWD/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          if [ ! -x "$bin" ]; then
+            echo "::error title=No CLI binary::the lock file did not put an executable at $bin"
+            exit 1
+          fi
+          mkdir -p "$PWD/.bin"
+          ln -sf "$bin" "$PWD/.bin/claude"
+          "$PWD/.bin/claude" --version
+          echo "$PWD/.bin" >> "$GITHUB_PATH"
+
       - name: Gate inventory
         run: ./scripts/gates/run-all.sh --list
 

@@ -11,8 +11,10 @@ Two of the rules below stopped being intentions. `scripts/gates/gate-report-cont
 Run it over the deliverable before the deliverable leaves:
 
 ```
-scripts/gates/gate-report-contract.sh --deliverable path/to/report-directory
+"<plugin root>/scripts/gates/gate-report-contract.sh" --deliverable /absolute/path/to/report-directory
 ```
+
+`<plugin root>` is two directories above this skill's base directory, which Claude Code shows when the skill loads; in an installed plugin it is `${CLAUDE_PLUGIN_ROOT}`. A bare `scripts/gates/…` run from the audited repository names a path inside the target, not the plugin. A skill copied without the plugin has no validators at all: then each one is reported as *not available — not measured, not a pass*, never skipped in silence.
 
 It follows the repository's exit-code doctrine: `0` measured and clean, `1` measured and it leaks, `2` it could not measure. A `2` is not a pass — it says the deliverable was never checked, so it does not ship either.
 
@@ -23,6 +25,10 @@ Everything else in this file is enforced by whoever writes the report and whoeve
 Write the report in the language the user is using. Every label below describes what a section must contain, not a heading to copy verbatim: translate the headings, keep the content. The `report:section` markers belong to this specification and are never copied into a deliverable.
 
 Never translate: standard identifiers (`WSTG-INPV-05`, `ASVS 5.0 V8`, `CWE-89`, `A01:2025`, `API1:2023`, `LLM01:2026`, `ASI06`, `MASVS-STORAGE-1`, `MASTG-TEST-0001`, `CAPEC-66`, `CICD-SEC-4`, `SSDF PW`, `SLSA Build L2`), procedure IDs from the packs (`WEB-07`, `AI-01`, `SUP-14`), tool names, command lines, file paths, code symbols, and CVE identifiers.
+
+## Quick report
+
+A `quick` audit writes the same deliverable — `report.md` and `findings.json` — with every mandatory section present and most of them one line long. The executive summary is the report: **Fix these first**, then the checklist rows run, each marked `checked` (with its finding, or "nothing found at this depth") or `not reached`. Findings not demonstrated stay `probable` with what would settle them. A control you checked and found correct goes under *What was ruled out, and what resisted* — never as a numbered item under a severity heading, where a reader acts on it as a defect (measured: the first eval run lost its false-alarm grader on exactly that). The coverage declaration names the checklist and the cap, and the residual-risk section offers the full audit. No `unaided_pass`, no `VER-09` pass: say so in scope and method.
 
 <!-- report:section id=redaction-pass class=mandatory -->
 ## Redaction pass — before writing, not after
@@ -57,6 +63,8 @@ The reason is blast radius. A secret sitting in a repository is exposed to whoev
 ## Executive summary
 
 State scope, mode, components reviewed, overall result and the most important risks. Avoid absolute guarantees. If nothing significant was found, say the review found nothing significant **at the depth reached** - not that the system is secure.
+
+Open it with **Fix these first**: at most five items, ordered by what an attacker could do soonest, written for someone who is not a security specialist. Each item is four short lines: what someone can do to the app or its users, the file, the change to make (a snippet when it fits), and how to check it is fixed. Identifiers and severities stay in the findings; this list is for the person who has to act tonight.
 <!-- /report:section -->
 
 <!-- report:section id=scope-and-method class=mandatory -->
@@ -210,7 +218,10 @@ result, and "4 confirmed, 2 probable, 11 ruled out" reads as an audit.
 **The exit code of each validator that ran**, named: `gate-report-contract.sh --deliverable` and
 `gate-findings-artifact.sh --deliverable`. Print the number. A `2` is reported as *not measured,
 not a pass*, in those words — the whole verdict vocabulary is defeated the moment a `2` is
-summarised on screen as "checks passed".
+summarised on screen as "checks passed". A validator that is not there (the skill was copied
+without the plugin) gets the same words and its own line.
+
+**What the run spent**, when the plugin is installed: `<plugin root>/scripts/ehs cost`, run from the session's working directory, sums the tokens of the main thread and of every subagent from Claude Code's own transcripts of the newest session there (`--session <id>` names another). Quote the total; a user who asked for a quick check deserves to know what a full audit would cost before agreeing to one.
 
 <!-- handover:field id=not-measured -->
 **What could not be measured, in the same breath as what was.** The coverage declaration already

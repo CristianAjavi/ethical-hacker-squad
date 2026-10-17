@@ -8,6 +8,141 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **A run cost twice what the model alone costs, and nothing told a non-expert what to do first.**
+  The adversarial review's verdict on the product: for someone shipping an app built with AI
+  tools there was no fast mode, no cost cap and no "fix this first". Now: a `quick` mode — the
+  leader alone, no subagents, the ordered checklist of `coverage.md` § Quick audit for the stack
+  it finds (secrets, row-level security, Server Actions, the proxy, IDOR, Stripe, cron routes, the
+  LLM key), each procedure read alone with `scripts/ehs show <ID>` instead of whole packs, capped
+  at twelve procedures, nothing undemonstrated above `probable`; `report.md` gains the Quick
+  report and an executive summary that opens with **Fix these first**, written for whoever has to
+  act on it. Every subagent now carries `maxTurns` (60, the remediator 80: output comes back
+  marked partial instead of running on), `omitClaudeMd: true` (the target's `CLAUDE.md` no longer
+  lands in a specialist's starting context; rule 8 treats it as data) and, for auditors,
+  `disallowedTools: Edit, Write, NotebookEdit`. The bench narrative is gone from the agents'
+  prompts (about 3 KB per dispatch), `ehs-web-api`'s two contradictory orders ("read first" and
+  "enumerate before you read anything") became one, and the skill's description now speaks the
+  words a vibe coder uses and says it is not for general code review. `team.md` compares
+  `git status --porcelain --ignored` before and after an audit: plain `--porcelain` misses writes
+  to `.env` or `node_modules/`.
+- **`ehs-local-app` shipped a frontmatter that is not YAML, and every check certified it.** Its
+  description carried an unquoted `: ` ("local daemons: path traversal") from 2026-08-20; PyYAML
+  rejects the block ("mapping values are not allowed here"). `gate-agent-tools.sh` reads the
+  frontmatter line by line, so it saw a valid `tools:` list, and `claude plugin validate <dir>`
+  (2.1.300) passes a frontmatter that is not YAML at all. The CLI pinned for `release.yml`
+  (2.1.221) did see it, and said what it meant: *"At runtime this agent loads with empty metadata
+  (all frontmatter fields silently dropped)"* — no `tools` restriction. Every weekly promotion to
+  `stable` from 2026-09-07 to 2026-10-12 reported it, and from 2026-09-14 on it was the only
+  failing gate: this is why `stable` was never created. The description is reworded, and
+  the gate now parses every agent with a strict YAML loader: the block must parse, carry no
+  duplicated key, and give a YAML parser the same `tools` list the line reader certified. Three
+  new self-test cases (unquoted colon, a tool list folded onto a second line that smuggles
+  `Write` past the line reader, two `tools:` keys); 32 total, 0 failures. See
+  `docs/gate-requirements.md` §G1 point 5.
+- **A validator that never ran counted as a pass.** `gate-plugin-version.sh` SKIPped
+  `claude plugin validate --strict` when no `claude` binary was on `PATH` and still ended rc=0,
+  and the `gates` job never installed one — so the pull request check never ran the validator.
+  The weekly `release.yml` did, and from 2026-09-07 it reported an agent whose frontmatter does
+  not parse; no pull request could see it. A missing validator is now rc=2, the knob
+  `EHS_REQUIRE_CLAUDE_CLI` is gone (the strict behaviour is the only one), the two remaining
+  SKIPs became "not applicable" and rc=2, and the `gates` job installs the CLI pinned in
+  `tooling/claude-cli` the way `release.yml` does, outside the work tree. The gate also stopped
+  counting the CLI's "Advice (does not change the verdict)" bullets as warnings: since 2.1.275
+  they made this gate's self-test red on every laptop with a current CLI. The self-test now
+  reads the validator through a stub, so its verdicts no longer depend on the CLI installed;
+  four new cases (advice tolerated twice, an agent error fails, a missing validator is rc=2),
+  17 total, 0 failures.
+
+- **The repository description stated a corpus that no longer existed.** GitHub showed *"122
+  procedures across 7 role packs"* while the corpus held 171 across 8, and AI-written summaries
+  of this project were repeating the stale figure. Nothing could have caught it:
+  `scripts/sync-declared-counts.py` rewrites numbers in the tree, and the description lives on
+  GitHub. The fix states **no count** there, so there is nothing left to drift. The description is
+  now declared in `scripts/gh/governance.json` `settings`, where `apply-governance.sh` already
+  compares every key against the live repository, and `gate-corpus-contract.sh` fails if a count
+  comes back or the declaration disappears. The same rule now covers the descriptions a user reads
+  in `/plugin` before installing — `plugin.json` and every `marketplace.json` entry — which an
+  adversarial review found unwatched. Four new self-test cases, one of them the exact stale
+  sentence; 30 total, 0 failures.
+- **`scripts/ehs install` with no arguments deleted a directory and installed for another tool.**
+  The default target was Antigravity (`~/.gemini/antigravity-cli/skills/`), and an existing
+  directory there was replaced with `shutil.rmtree` — whatever the user kept in it, gone, from a
+  command run with no arguments. `--claude` symlinked the repository into
+  `~/.claude/plugins/ethical-hacker-squad`, a path Claude Code does not load plugins from. Now
+  no target means nothing is installed and the command prints the choices; `--claude` installs
+  the plugin through `claude plugin marketplace add <repo>` and `claude plugin install`, or prints
+  those two commands when the CLI is absent; and no target ever deletes a real directory — only a
+  symlink it can replace. Three new cases in `scripts/ehs.selftest.sh`.
+- **The auditors' read-only contract was prose; now a hook holds their shell to it.** They list no
+  `Edit` or `Write`, and their bodies forbid writing through `Bash`, but nothing enforced the
+  second half: an auditor that read an instruction planted in the target, or decided to "help",
+  could commit, stash, install, edit in place, delete or call the internet. Claude Code passes
+  `agent_type` to hooks fired inside a subagent (2.1.69+), so `hooks/hooks.json` now runs
+  `scripts/hooks/auditor-shell-guard.sh` on every Bash call and acts only when the caller is one
+  of this plugin's subagents other than the remediator: it refuses state-changing `git`
+  subcommands, package installs and fetch-and-run, in-place editors, `rm -r`/`chmod`/`dd` outside a
+  temp directory, and network clients aimed at anything but localhost. It reads command lines,
+  not effects — `python -c` and a redirect still pass — and says so; the `git status --ignored`
+  comparison and the session's Bash sandbox remain the real containment. The verifier, which
+  could not prove a regression test fails without the patch without moving the remediator's
+  work, now does it in a copy (`mktemp -d`, `patch -R`), a sequence the guard allows. `hooks/**`
+  and `scripts/hooks/**` join G7's protected paths: they run in every user's session. 25
+  self-test cases, also run under macOS's bash 3.2.
+- **The validators were named by a path that only exists inside this repository.** `report.md`
+  and `findings-artifact.md` told the leader to run `scripts/gates/gate-report-contract.sh` and
+  `scripts/gates/gate-findings-artifact.sh`; a leader working in the audited repository resolves
+  that against the target, where nothing of the kind exists. Both now name `<plugin root>` —
+  `${CLAUDE_PLUGIN_ROOT}`, two directories above the skill's base directory — and an absolute
+  deliverable path, and a skill copied without the plugin reports each validator as *not
+  available — not measured, not a pass* instead of skipping it. `team.md` also tells the leader
+  what it means that the session started inside the target (its `CLAUDE.md` and project settings
+  came first) and how a user starts clean: `claude --add-dir <target>` from a neutral directory,
+  which does not load the added directory's `CLAUDE.md`, or `claudeMdExcludes`.
+- **Four procedures stated something false, and the reproduction gate blamed its own key.** From
+  an adversarial review, each checked against the vendor's documentation on 2026-10-15. `LOC-01`
+  gave `zf.extractall(dest)` from `zipfile` as the traversal example; `zipfile.extract`/`extractall`
+  strip absolute prefixes and every `..`, so the sinks are `tarfile` on Python 3.13 or older (3.14
+  made `filter="data"` the default) and code that joins `ZipInfo.filename` itself. `MOB-09` only
+  flagged an explicit `cleartextTrafficPermitted="true"` or `src="user"`; with no config at all, an
+  app targeting API 27 or lower permits cleartext and one targeting 23 or lower trusts user CAs.
+  `SUP-16` called a GitHub token whose checksum validates "critical with no further triage" — a
+  checksum proves the format, not that the token is live — and listed `sk_test_` as a
+  placeholder, though Stripe and Clerk both issue real secret keys under it. `INF-13` confirmed a
+  `pull_request_target` finding from the checkout `ref` alone; it now also needs a step that runs
+  the checked-out code and something in the job worth taking. The same Python change was why
+  `gate-reproduction.sh` failed on every laptop with 3.14: the probe for `P-06` checked the
+  signature of `extractall`, which 3.14 left unchanged, and read the runtime's refusal as the
+  code's. It now asks the runtime with a canary and measures under the pre-3.14 default when it
+  has to, saying so in the evidence; it passes on 3.12 and on 3.14. No line was added to the four
+  pack files, so no declared count moves.
+- **Issue #17 was fixed in `release.yml` and nothing kept it fixed.** The release jobs, holding
+  `contents: write`, used to run `npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"`:
+  a tag the registry resolves on the day, with every lifecycle script run in reach of the token.
+  They now install from `tooling/claude-cli`'s lock file with `npm ci --ignore-scripts`, but the
+  repository's rule is that an issue closes with the check that stops it coming back, and there
+  was none. `gate-workflow-hardening.sh` gains rule 5: every `npm`/`pnpm`/`yarn`/`bun`
+  `install`/`i`/`ci`/`add` in a workflow carries `--ignore-scripts`, and `npm install -g` fails
+  outright. Two negative fixtures (the original line, and `npm ci` without the flag) and one
+  positive; the census moves from 16 to 18.
+- **The leader read every role's order before dispatching specialists that carry their own.**
+  `references/team.md` is read on every run, before dispatching, and a third of it was the role
+  orders for web, mobile, infra, supply chain, AI, privacy, local apps, remediator and verifier —
+  text a plugin subagent already has in its definition. It is needed only when the skill was
+  copied without the plugin and the leader pastes an order into a `general-purpose` prompt. Those
+  sections and the fallback dispatch move to `references/team-roles.md`, read only in that case;
+  `team.md` goes from 16.3 KB to 9.2 KB, about 1,800 tokens fewer on every run.
+  has to, saying so in the evidence; it passes on 3.12 and on 3.14. The vendor and research
+  figures the packs quote were each checked against their source: two said something else. The
+  EPSS efficiencies came from a different row of Jacobs et al.'s Fig. 5 (CVSS ≥ 7 is 3.9%, not
+  6.5%; EPSS ≥ 0.088 is 45.5%, not 78.5%), and the "47% to 80% missed per tool" of Lipp et al. is
+  the *best* of six C analyzers under four ways of counting a detection — so `SKILL.md`'s
+  "per-tool recall 20%–53%" became what it is. Wording and attribution followed the sources for
+  the DBIR's KEV figure, Google's initial-access baseline, three Endor Labs editions, Sonatype's
+  cumulative +75% and its re-cited 95%, Orca's "high or critical", Datadog's Entra credentials,
+  Wiz's self-hosted models and a Checkmarx-commissioned study. `bibliography.md` now lists each
+  report with its date and URL and says what kind of evidence vendor research is. No line was
+  added to a pack file, so no declared count moves.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
@@ -24,6 +159,115 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
   `docs/gate-requirements.md` §G7.
 
 ### Added
+
+- **`scripts/ehs prescan`, `compare` and `cost`: the three instruments an adversarial review found
+  missing.** *"No deterministic pre-scan, no baseline or suppressions with stable fingerprints, no
+  cost telemetry."* `prescan` reads a tree without running it and prints leads keyed to procedure
+  IDs for the shape AI tools produce; on the eval app of `evals/` it leads to all nine planted
+  defects and to none of the three correct controls, and the quick audit now starts with it.
+  `compare` matches two `findings.json` by the SARIF fingerprint (rule, file, component; never the
+  line), reports new, gone and persisting, honours expiring suppressions, and with `--fail-on`
+  becomes a pull-request check. `cost` sums the tokens of a session — the main thread and every
+  subagent — from Claude Code's own transcripts, counting each message once although the
+  transcript writes it once per content block; the handover now quotes it. Twenty new cases in
+  `scripts/ehs.selftest.sh`; 41 total, 0 failures.
+
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  `confirmed` maps to `kind: fail` with a level from its severity; `probable` (`review`) and
+  `hardening` (`informational`) carry `level: none`, the only level SARIF 2.1.0 §3.27.10 allows
+  for a kind other than `fail`; `discarded`, `withdrawn` and duplicates are not exported. Each
+  rule carries the procedure's `help` and a link to it, `external/cwe/cwe-n` tags, and its
+  highest `security-severity`; findings outside every procedure get one rule per CWE instead of
+  one bucket. The fingerprint hashes rule, file and component but not the line, so an alert
+  survives code moving above it. `automationDetails.id` (`--category`) lets an upload close the
+  alerts of the previous one. An artifact with an unredacted secret is refused with exit 1 and
+  nothing is written, and the formats come from one list now, `scripts/gates/data/secret-formats.txt`,
+  shared with the findings validator and `gate-report-contract.sh`: the validator used to know five
+  formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
+  signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
+  stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
+  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
+  subagents", so the leader and its subagents were never scored, and never against the model
+  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
+  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
+  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
+  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
+  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
+  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
+  what the suite cannot prove — above all, that one app written by the corpus's own author is not
+  an external benchmark.
+- **Nine procedures for where apps built with AI tools actually break.** An outside review asked
+  how the squad serves vibe-coded apps, and the corpus had no answer where they break: `supabase`,
+  Firebase Security Rules, `NEXT_PUBLIC_`, Server Actions, Stripe webhooks and Vercel cron appeared
+  nowhere, and row-level security only as a reason to *discard* a finding (`FP-01`).
+  `web-api-baas.md` (§12, fourth file of the `web-api` pack): `WEB-29` Supabase row-level security
+  (grants, views, `security definer` functions, Storage, anonymous sign-ins, Realtime channels,
+  which are public by default), `WEB-30` Firebase rules, `WEB-31` a privilege column the user can
+  write through their own row (`profiles.role`; `with check` cannot stop it, column grants can),
+  `WEB-32` Edge Functions that take `verify_jwt` for authentication — the publishable key passes
+  it — or turn it off. `web-api-fullstack.md` (§13-§14, fifth file): `WEB-33` Server Actions and
+  Route Handlers that trust the page in front of them, `WEB-34` authorization only in the proxy
+  (matchers that exclude `/api`, Clerk's deprecated `createRouteMatcher`, CVE-2025-29927 on
+  self-hosted Next.js), `WEB-35` a cron or internal route anyone can trigger (`Bearer undefined`),
+  `WEB-36` a payment believed without verification (unsigned or fail-open webhooks, fulfilment on
+  the redirect page, a price from the request). `SUP-27` (a server secret behind a public build
+  prefix) joins `supply-chain-secrets-malware.md` §8, and `AI-19` now names the LLM route that
+  makes the app a free proxy for its own key. Every vendor behaviour was checked against primary
+  documentation on 2026-10-12 and 2026-10-15. Each procedure that needs Docker, a build or a
+  running app says it is the runtime pass and waits for the user's go-ahead.
+
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  `confirmed` maps to `kind: fail` with a level from its severity; `probable` (`review`) and
+  `hardening` (`informational`) carry `level: none`, the only level SARIF 2.1.0 §3.27.10 allows
+  for a kind other than `fail`; `discarded`, `withdrawn` and duplicates are not exported. Each
+  rule carries the procedure's `help` and a link to it, `external/cwe/cwe-n` tags, and its
+  highest `security-severity`; findings outside every procedure get one rule per CWE instead of
+  one bucket. The fingerprint hashes rule, file and component but not the line, so an alert
+  survives code moving above it. `automationDetails.id` (`--category`) lets an upload close the
+  alerts of the previous one. An artifact with an unredacted secret is refused with exit 1 and
+  nothing is written, and the formats come from one list now, `scripts/gates/data/secret-formats.txt`,
+  shared with the findings validator and `gate-report-contract.sh`: the validator used to know five
+  formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
+  signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
+  stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+- **The runtime pass: the leader now offers to run the target locally, and never assumes it.**
+  The safety contract allowed safe local tests, and the packs already held localhost probes
+  (the two-user test of `WEB-04`, the route × method × role matrix of `WEB-05`, the `WEB-16`
+  `Origin` check), yet the leader workflow never asked whether the target could run at all.
+  `references/team.md` now carries the step, and safety rule 4 in `SKILL.md` names it: **running
+  the target's code needs authorization**, because it executes code under audit. The leader shows
+  what will run (the script body, not `npm run dev`), runs it from a disposable `git worktree`
+  that by construction leaves `.env.local` behind — `next dev` would otherwise load it, and it
+  usually points at production — writes a local-only environment, recommends the session's Bash
+  sandbox, binds to `127.0.0.1` with timeouts, stops what it started, removes the copy, and checks
+  `git status --porcelain --ignored`, since plain `--porcelain` misses `node_modules/` and
+  `.next/`. Rewritten after an adversarial review found the first version named commands without
+  showing them, ran in the working tree with its `.env`, kept the rule in an unprotected file and
+  credited `WEB-04` with `WEB-05`'s matrix.
+- **`evals/`: the first harness that measures the product a user installs.** `bench/` measures the
+  corpus: in 13 of the 17 rounds that kept their prompts, the prompts say "Do not delegate to
+  subagents", so the leader and its subagents were never scored, and never against the model
+  alone or Claude Code's `/security-review`. Three `claude plugin eval` cases over one synthetic
+  app of the shape AI tools produce (Next.js on Vercel, Supabase, Stripe, OpenAI) with nine planted
+  defects and three correct controls: a non-expert's "is it safe?", a full audit, and the
+  built-in `/security-review` over the same app as a branch diff. Every case runs with and without
+  the plugin, so `Δ` is what the plugin adds. Nothing has been run: it spends credits, and rule 9
+  says that waits for a cap and the maintainer. `evals/README.md` gives the command, the cap and
+  what the suite cannot prove — above all, that one app written by the corpus's own author is not
+  an external benchmark.
+- **A pull-request mode: `docs/github-action.md` and a workflow to copy.** The review found no way
+  to run the squad on a change rather than a repository, and no GitHub Action. The example runs a
+  `quick` audit of the files a pull request changes through `anthropics/claude-code-action`
+  (pinned by SHA, plugin installed through its `plugin_marketplaces`/`plugins` inputs), exports
+  `findings.json` with `scripts/ehs sarif`, uploads it to code scanning, and shows how
+  `scripts/ehs compare --fail-on high` against a baseline turns it into a gate. The guide says
+  what it costs, that the pull request is untrusted input to an agent holding an API key, that
+  uploading publishes, and that a change-scoped review does not replace a full audit.
 
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must

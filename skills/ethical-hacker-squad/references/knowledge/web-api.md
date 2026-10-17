@@ -2,9 +2,11 @@
 
 > **When to load this file:** the inventory includes an HTTP server, an API (REST, GraphQL, RPC, WebSocket) or a web backend with routes, controllers, an ORM, sessions or tokens.
 > **Do not load it if:** the scope is only an APK/IPA with no reachable backend, only IaC and containers, only dependencies, or a library with no network surface.
-> **Cost:** ~358 lines. Load by section using the index; you do not need to read it end to end.
+> **Cost:** ~360 lines. Load by section using the index; you do not need to read it end to end.
 > **Second file of this pack:** `web-api-clientside-logic.md` holds §6-§10 and `WEB-13`..`WEB-21`, `WEB-23`, `WEB-26` and `WEB-27` — XSS and client-side sinks, CSRF/CORS/caching, business logic and rate limiting, cryptography and secrets, GraphQL and persistent channels, and the controls that are present without working. Open it as soon as the inventory reaches any of those; it carries its own index.
 > **Third file of this pack:** `web-api-logging.md` holds §11 with `WEB-22` and `WEB-28` — what leaks out through the log, and what an attacker writes into it. Open it whenever the target logs anything an outside caller can influence.
+> **Fourth file of this pack:** `web-api-baas.md` holds §12 with `WEB-29`..`WEB-32` — a backend-as-a-service the browser reaches directly (Supabase, Firebase), where the database policy is the only authorization that exists. Open it as soon as the inventory has a Supabase or Firebase client, configuration, rules file or Edge Function.
+> **Fifth file:** `web-api-fullstack.md` holds §13-§14 with `WEB-33`..`WEB-36` — Server Actions and Route Handlers, authorization that lives only in the proxy, scheduled jobs, and payments. Open it when the server code sits inside a full-stack framework (Next.js and its peers) or the app takes payments.
 
 ## Selective loading index
 
@@ -17,7 +19,7 @@
 | §4 SSRF and outbound network | fetch to user-supplied URLs, webhooks, importers | WEB-10 |
 | §5 Deserialization and files | pickle/Java/YAML, upload, download by path | WEB-11..WEB-12 |
 
-Sections §6 to §10 (`WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`, `WEB-27`) are in `web-api-clientside-logic.md`; §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`.
+Sections §6 to §10 (`WEB-13`..`WEB-21`, `WEB-23`, `WEB-26`, `WEB-27`) are in `web-api-clientside-logic.md`; §11 (`WEB-22`, `WEB-28`) is in `web-api-logging.md`; §12 (`WEB-29`..`WEB-32`) is in `web-api-baas.md`; §13-§14 (`WEB-33`..`WEB-36`) are in `web-api-fullstack.md`.
 
 ## How to use a procedure
 
@@ -25,7 +27,7 @@ The six fields are a contract, not decoration. "Where to look" narrows the searc
 
 ## §0 What tools do not see
 
-A clean SAST run is not evidence that no vulnerabilities exist. Measured over 27 real projects (1.15M LoC, 192 known vulnerabilities), each tool misses between 47% and 80% of the real vulnerabilities (Lipp et al., ISSTA 2022). On the SAP Java dataset, Semgrep, CodeQL, FindSecBugs and Snyk individually detect between 11% and 27%, and only 38.8% when all four are combined (Bennett et al., EASE 2024); the worst-detected classes are **CWE-502**, **CWE-20** and **CWE-79**. These classes require targeted manual reading:
+A clean SAST run is not evidence that no vulnerabilities exist. Measured over 27 real projects (1.15M LoC, 192 known vulnerabilities), even the best of six static C analyzers misses between 47% and 80% of the real vulnerabilities, depending on how a detection is counted (Lipp et al., ISSTA 2022). On the SAP Java dataset, Semgrep, CodeQL, FindSecBugs and Snyk individually detect between 11% and 27%, and only 38.8% when all four are combined (Bennett et al., EASE 2024); the worst-detected classes are **CWE-502**, **CWE-20** and **CWE-79**. These classes require targeted manual reading:
 
 - **BOLA/IDOR (CWE-639, API1:2023)**: the tool sees a parameterized query on `id` and approves it; it has no idea whose `id` that is. This is the number one class in APIs. → WEB-04.
 - **BFLA and property-level issues (API3/API5:2023)**: a role decorator is missing, or the serializer exposes one field too many. → WEB-05, WEB-06.
