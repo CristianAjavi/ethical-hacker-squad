@@ -6,6 +6,12 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 
 > **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
+## Which gates block a pull request
+
+Since 2026-10-15, fifteen. `scripts/gates/data/gate-sets.json` lists them under `pull_request`: the gates whose failure would reach a user who installs the plugin — the agents' tool posture and roster, the served tree and its version, secrets, the report and findings contracts, the verdict vocabulary and triage rules, the corpus's structure, identifiers and licence hygiene, and the workflows (`gate-actions-lint.sh` in its own job). `ci.yml` runs them with `run-all.sh --set pull_request` and their batteries with `EHS_GATE_SET=pull_request`; G7 and G8 keep their own pull-request workflow.
+
+Every other gate — the evaluation bench, the governance files, the census and ledgers, the documents that describe the gates — **still runs**: weekly and on demand in `.github/workflows/gates-weekly.yml` (`run-all.sh --set weekly`, every battery), and all of them, in full, over every release candidate in `release.yml`. A red there blocks a promotion to `stable`, not anyone's merge. The change answers an adversarial review that found 37 gates on every pull request, most of them checking that this repository's documents agree with each other while the product had never been measured. A gate moves into `pull_request` when a defect it catches can reach a user; the list is the place to argue it.
+
 ## What runs today
 
 | Requirement | Status | Implementation |

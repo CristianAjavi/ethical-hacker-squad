@@ -46,6 +46,25 @@ run "$TMP/red"; rc=$?
 grep -q 'did not behave.*bad.selftest.sh' "$TMP/out" \
   && ok "the failing battery is named, not just counted" || bad "the failure is anonymous"
 
+echo "== a gate set runs its batteries and names the rest =="
+
+# The pull-request set keeps a gate's battery when the gate is listed, keeps the
+# listed batteries outside gates/, and defers everything else BY NAME.
+mkdir -p "$TMP/set/gates/data"
+printf '{"pull_request": ["gate-kept.sh"], "pull_request_batteries": ["scripts/tool.selftest.sh"]}' \
+  > "$TMP/set/gates/data/gate-sets.json"
+battery "$TMP/set/gates" gate-kept 0
+battery "$TMP/set/gates" gate-weekly 1
+battery "$TMP/set" tool 0
+battery "$TMP/set/bench" bench 1
+EHS_GATE_SET=pull_request bash "$SUBJECT" "$TMP/set" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 0 ] && ok "the pull-request set runs only its batteries (the failing weekly ones did not run)" || bad "expected rc 0 for the set, got $rc"
+grep -q 'batteries run: 2' "$TMP/out" && ok "the set ran exactly its two batteries" || bad "the set ran the wrong number"
+grep -q 'deferred to the weekly run.*gate-weekly.selftest.sh' "$TMP/out" \
+  && ok "a deferred battery is named, not silently dropped" || bad "the deferred battery is anonymous"
+bash "$SUBJECT" "$TMP/set" >"$TMP/out" 2>&1; rc=$?
+[ "$rc" -eq 1 ] && ok "without the set, every battery runs and the weekly failure shows" || bad "expected rc 1 without the set, got $rc"
+
 echo "== could not measure outranks both green and red =="
 
 battery "$TMP/unmeas" ok   0
