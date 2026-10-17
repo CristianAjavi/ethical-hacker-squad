@@ -84,6 +84,8 @@ SELFTEST_PATTERN='*.selftest.sh'
 
 ONLY=""
 SKIP=""
+SET=""
+ONLY_REASON="--only"
 LIST_ONLY=0
 PR_CONTEXT=0
 SELFTESTS=0
@@ -92,6 +94,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --only) ONLY="${ONLY}${2:-}"$'\n'; shift 2 ;;
     --skip) SKIP="${SKIP}${2:-}"$'\n'; shift 2 ;;
+    --set) SET="${2:-}"; shift 2 ;;
     --list) LIST_ONLY=1; shift ;;
     --pr-context) PR_CONTEXT=1; shift ;;
     --selftests) SELFTESTS=1; shift ;;
@@ -122,6 +125,24 @@ in_list() { # in_list <name> <space-separated-list>
 }
 
 GATES_DIR="$SELF_DIR"
+
+# --set pull_request | weekly. One list, scripts/gates/data/gate-sets.json, says
+# which gates block a pull request; `weekly` is every other gate. A name in the
+# list that matches no file is could-not-measure: a gate silently in neither
+# set would run nowhere.
+if [ -n "$SET" ]; then
+  SETS_FILE="$SELF_DIR/data/gate-sets.json"
+  PR_SET="$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["pull_request"]))' "$SETS_FILE" 2>/dev/null)" || {
+    gate_warn "$SETS_FILE is missing or unreadable: I cannot tell which gates form the set '$SET'"; exit "$GATE_UNMEASURABLE"; }
+  for g in $PR_SET; do
+    [ -f "$SELF_DIR/$g" ] || { gate_warn "$SETS_FILE names $g, which does not exist"; exit "$GATE_UNMEASURABLE"; }
+  done
+  case "$SET" in
+    pull_request) for g in $PR_SET; do ONLY="${ONLY}${g}"$'\n'; done; ONLY_REASON="weekly set" ;;
+    weekly) for g in $PR_SET; do SKIP="${SKIP}${g}"$'\n'; done ;;
+    *) gate_warn "unknown set '$SET' (pull_request | weekly)"; exit "$GATE_UNMEASURABLE" ;;
+  esac
+fi
 if [ ! -d "$GATES_DIR" ]; then
   gate_warn "$GATES_DIR does not exist: there is nothing to measure"
   exit "$GATE_UNMEASURABLE"
@@ -169,7 +190,7 @@ while IFS= read -r g <&3; do
   esac
 
   if [ -n "$ONLY" ] && ! matches_any "$name" "$ONLY"; then
-    n_deferred=$((n_deferred + 1)); DEFERRED="$DEFERRED $name(--only)"; continue
+    n_deferred=$((n_deferred + 1)); DEFERRED="$DEFERRED $name($ONLY_REASON)"; continue
   fi
   if matches_any "$name" "$SKIP"; then
     n_deferred=$((n_deferred + 1)); DEFERRED="$DEFERRED $name(--skip)"
