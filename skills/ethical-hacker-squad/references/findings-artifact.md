@@ -13,7 +13,7 @@ It is written **beside** the report, never instead of it. A JSON file is not a d
 | The triage answers and what they mean | [`triage.md`](triage.md) |
 | Redaction placeholders and what may not travel | [`report.md`](report.md) |
 
-`gate-findings-artifact.sh` validates the artifact against all four, and the same command validates a real deliverable: `scripts/gates/gate-findings-artifact.sh --deliverable path/to/findings.json`.
+`gate-findings-artifact.sh` validates the artifact against all four, and the same command validates a real deliverable: `"<plugin root>/scripts/gates/gate-findings-artifact.sh" --deliverable /absolute/path/to/findings.json`, where `<plugin root>` is `${CLAUDE_PLUGIN_ROOT}` — two directories above this skill's base directory — and never a path inside the audited repository. Without the plugin there is no validator: report it as *not available*, as `report.md` § handover says.
 
 ## The fields, and why each is there
 
@@ -70,7 +70,7 @@ These are not shape checks. They are the reasons the file is worth having:
 6. **Every `procedure` resolves** to a real identifier in the corpus, or is exactly `ad-hoc`. An invented procedure id would make a finding look methodical when it was not.
 7. **Every `traceability` identifier matches a known family**, the same list `gate-corpus-contract.sh` uses.
 8. **Every `triage.rule` exists** in `triage.md`, and a reason is present whenever the answer is not `DOES_NOT_HOLD`.
-9. **No unredacted secret travels.** The high-precision formats — `ghp_`, `AKIA`, `sk-ant-`, PEM headers — are refused in any string, exactly as `gate-report-contract.sh` refuses them in the prose.
+9. **No unredacted secret travels.** Every format in `scripts/gates/data/secret-formats.txt` — GitHub, AWS, Anthropic, OpenAI, Google, Stripe (`sk_`/`rk_`/`whsec_`), Supabase `sb_secret_`, Slack, npm, PyPI, PEM headers and any signed JWT — is refused in any string. It is the same list `gate-report-contract.sh` applies to the prose and `scripts/ehs sarif` applies before writing an export.
 10. **A merge leaves a trace, and an undecided pair is not a merge.** `duplicate_of` points at a finding that exists in this artifact, is not itself a duplicate, and is not the finding itself; no id appears in both `duplicate_of` and `possible_duplicate_of`; and `duplicate_of` requires `merge_rules` with every rule of `triage.md`'s merge family answered and none `HOLDS`. Invariant 4 closed this one level down, for a candidate absorbed inside a single specialist's unaided pass. The leader's cross-specialist merge — ordered three times in `references/team.md`, governed by nothing — was the same substitution with nothing looking at it. The rule that no chain is allowed is not tidiness: a duplicate pointing at a duplicate is how a reader loses the surviving entry.
 
 11. **A finding may not live where the report says it did not look.** No finding's `location.path` may lie inside a surface listed in `engagement.coverage.not_read`, matched at a path segment boundary. Invariant 3 makes the inventory account for itself; this one makes it account to the findings beside it, because until now they were two documents sharing a file. Measured: the fixture that models a *conforming* artifact could declare `not_read: ["migrations/"]`, report a defect at `migrations/003_add_invoices.sql:12`, and sign verdict 0. A finding is proof that someone looked, so one of the two sentences is false, and the reader cannot tell which. The segment boundary is what keeps this from accusing the compliant — `migrations-legacy/` is not inside `migrations/`, and the conforming fixture carries exactly that case as its control. Across the 60 real artifacts in `bench/runs`, 277 findings carry a path and **none** contradicts a `not_read` entry: the rule forbids a class that has not happened yet rather than convicting past work.
@@ -78,3 +78,23 @@ These are not shape checks. They are the reasons the file is worth having:
 ## What it does not do
 
 It does not make a wrong finding right, and it does not judge severity — a well-formed file can carry a confident mistake. What it removes is the class of defect where the prose says one thing and the structure says another, and it gives a scorer something to count.
+
+## Exporting it to GitHub code scanning
+
+Only when the user asks for it. `scripts/ehs sarif findings.json -o ehs.sarif` (from `${CLAUDE_PLUGIN_ROOT}` when installed as a plugin) maps a **validated** artifact onto SARIF 2.1.0, the format GitHub code scanning reads, so findings show up in the repository's Security tab and on the pull request that touches their lines. Validate first with `gate-findings-artifact.sh --deliverable`; the export assumes a conforming file and fails with exit `2` on one it cannot map.
+
+What the mapping does, so nobody reads more into an alert than the artifact said:
+
+- `confirmed` becomes `kind: fail` with a `level` from its severity. `probable` becomes `kind: review` and `hardening` becomes `kind: informational`, both with `level: none`: SARIF 2.1.0 §3.27.10 allows no other level when the kind is not `fail`, and a probable finding asks for review rather than asserting a failure. Its severity still travels in `properties`. `discarded`, `withdrawn` and anything with `duplicate_of` are **not exported**: they are the squad saying "this is not a finding", and an alert would invert that.
+- `ruleId` is the procedure (`WEB-04`). Its `help` carries the procedure's vulnerable pattern, what rules it out and the minimal test, with a link to the corpus file; GitHub shows it beside the alert. A finding outside every procedure gets one rule per weakness class (`ad-hoc/CWE-639`, or `ad-hoc/<finding id>` with no CWE), never one bucket for all of them.
+- Tags carry the traceability identifiers, and each `CWE-n` also as `external/cwe/cwe-n`, the form code scanning filters on. At most 20 per rule, GitHub's limit.
+- GitHub keeps **one** severity per rule and a procedure can produce findings of different severities, so the rule carries the highest. Each result still carries its own level, and its own `severity`, `status` and `confidence` under `properties`.
+- `partialFingerprints.ehsFinding/v2` hashes the rule, the file and the `component`, **not the line**, so a finding keeps its identity when the code above it moves. Two findings of one rule in one component get an ordinal in line order. GitHub computes its own line hash on upload; this one is what `scripts/ehs` uses to match findings across runs.
+- Paths stay relative to the repository root (`uriBaseId: SRCROOT`). An absolute path is refused with exit `2`: code scanning would reject the upload or file the alert nowhere.
+- `automationDetails.id` is `ethical-hacker-squad/` (`--category` changes it). Each upload replaces the previous one in its category, which is how an alert closes once its finding is gone; use one category per analysis you upload.
+- A finding without a `line` is exported without a region, never with an invented one.
+- An artifact carrying an unredacted secret in any format of the shared list is refused with exit `1`, and nothing is written: SARIF is meant to be uploaded.
+
+To upload from a workflow, the job needs `security-events: write` and `contents: read`, and the step is `github/codeql-action/upload-sarif` (pinned by SHA) with `sarif_file: ehs.sarif` and the same `category`.
+
+**Uploading is a publication.** Writing the file is local; uploading it (`github/codeql-action/upload-sarif` in a workflow, or the code-scanning API) sends the findings to GitHub. Who can see them from then on depends on the repository and its settings, not on this export. It is the user's decision, never a default step of the handover.

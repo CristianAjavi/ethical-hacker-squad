@@ -22,6 +22,10 @@ Update:
 
 Claude Code also refreshes marketplaces in the background after startup, so in practice an installed plugin picks up new versions without being asked. This repository is public, so updates involve no credentials.
 
+## What a user's cache receives
+
+The marketplace entry does not install this repository. It installs a **distribution branch** built from it: `dist` from `main`, `dist-stable` from `stable`, published by `.github/workflows/dist.yml` on every push to either. A distribution holds only the paths in `scripts/dist/manifest.txt` — the skill, the agents, the hook, `scripts/ehs` and the two deliverable validators, about 1 MB — and `scripts/dist/build.sh` proves it runs (CLI, shell guard, both validators) before anything is pushed. The evaluation bench, the evals, the gates and their fixtures stay on the source branch. The promotion to `stable` rewrites the marketplace entry's branch to `dist-stable` and its tree gate allows exactly that difference. To try a working copy instead of a published build, run `claude --plugin-dir <repo>`.
+
 ## Two channels
 
 | Channel | Branch | Version resolves to | Who it is for |

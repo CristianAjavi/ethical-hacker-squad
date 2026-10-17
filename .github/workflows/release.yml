@@ -86,10 +86,10 @@ env:
   # imported by the very gates that are judging it, which defeats the invariant
   # the whole promotion model rests on: who judges is always main.
   PYTHONSAFEPATH: '1'
-  # Pinned version of the CLI that provides the two first-party gates
-  # (`plugin validate --strict` and `plugin tag --dry-run`). Verified as
-  # published on npm on 2026-08-04.
-  CLAUDE_CODE_VERSION: '2.1.221'
+  # The CLI that provides the two first-party gates (`plugin validate --strict`
+  # and `plugin tag --dry-run`) is pinned in ONE place: the lock file in
+  # tooling/claude-cli. It used to be pinned here as well, and the check that the
+  # two agreed turned every Dependabot bump of the lock into a broken release.
   PLUGIN_NAME: 'ethical-hacker-squad'
   # SOAK_DAYS, BLOCK_LABEL, the branch names and the tag prefix are NOT declared
   # here. They live in scripts/gh/governance.json, which is the single source of
@@ -397,10 +397,7 @@ jobs:
           # The lock file comes from tools/, which is the tip of main: the tree
           # being judged never supplies the tool that judges it.
           locked=$(node -e 'process.stdout.write(require("./package-lock.json").packages["node_modules/@anthropic-ai/claude-code"].version)')
-          if [ "$locked" != "$CLAUDE_CODE_VERSION" ]; then
-            echo "::error title=Two sources of truth::the lock file says $locked and CLAUDE_CODE_VERSION says $CLAUDE_CODE_VERSION. Update tooling/claude-cli/package.json and regenerate the lock."
-            exit 1
-          fi
+          echo "Claude Code CLI from the lock file: $locked"
           npm ci --ignore-scripts
           # --ignore-scripts is not negotiable: `postinstall` is third-party
           # code and this job holds a token. That postinstall is also what
@@ -450,7 +447,6 @@ jobs:
         env:
           EHS_REPO_ROOT: ${{ github.workspace }}/source
           EHS_CHANNEL: latest          # the candidate is still main: it must OMIT version
-          EHS_REQUIRE_CLAUDE_CLI: '1'  # without the CLI, rc=2: nothing is approved blind
           GATE_TOOLS_DIR: ${{ runner.temp }}/gate-tools
         run: |
           set -uo pipefail
@@ -507,10 +503,7 @@ jobs:
           # The lock file comes from tools/, which is the tip of main: the tree
           # being judged never supplies the tool that judges it.
           locked=$(node -e 'process.stdout.write(require("./package-lock.json").packages["node_modules/@anthropic-ai/claude-code"].version)')
-          if [ "$locked" != "$CLAUDE_CODE_VERSION" ]; then
-            echo "::error title=Two sources of truth::the lock file says $locked and CLAUDE_CODE_VERSION says $CLAUDE_CODE_VERSION. Update tooling/claude-cli/package.json and regenerate the lock."
-            exit 1
-          fi
+          echo "Claude Code CLI from the lock file: $locked"
           npm ci --ignore-scripts
           # --ignore-scripts is not negotiable: `postinstall` is third-party
           # code and this job holds a token. That postinstall is also what
@@ -572,6 +565,15 @@ jobs:
           jq --arg v "$NEXT_VERSION" '.version = $v' .claude-plugin/plugin.json > "$tmp"
           mv "$tmp" .claude-plugin/plugin.json
 
+          # 1b) the channel's distribution: main's marketplace entry installs
+          #     from the `dist` branch, stable's from `dist-stable`, which
+          #     dist.yml builds from this branch. Without it a stable user
+          #     would be served main's build.
+          tmp=$(mktemp)
+          jq '.plugins |= map(if (.source | type) == "object" and .source.ref == "dist" then .source.ref = "dist-stable" else . end)' \
+            .claude-plugin/marketplace.json > "$tmp"
+          mv "$tmp" .claude-plugin/marketplace.json
+
           # 2) CHANGELOG (commit subjects sanitized to plain text).
           "${GITHUB_WORKSPACE}/tools/scripts/gh/build-changelog.sh" \
             --version "$NEXT_VERSION" --from "$FROM" --to "$SOURCE_SHA" \
@@ -598,7 +600,7 @@ jobs:
           #    GATE checks) and the stable branch stays append-only: every
           #    release advances fast-forward and nobody has to force-push a
           #    branch users have already cloned.
-          git add .claude-plugin/plugin.json CHANGELOG.md
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
           TREE=$(git write-tree)
           if [ "$STABLE_EXISTS" = "true" ]; then
             PARENT=$(git rev-parse refs/remotes/origin/stable)
@@ -608,7 +610,7 @@ jobs:
           NEW=$(git commit-tree "$TREE" -p "$PARENT" \
                   -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
                   -m "Source-Commit: ${SOURCE_SHA}" \
-                  -m "Automatic promotion of the stable channel. The tree is identical to main@${SOURCE_SHA} except for .claude-plugin/plugin.json (semver) and CHANGELOG.md.")
+                  -m "Automatic promotion of the stable channel. The tree is identical to main@${SOURCE_SHA} except for .claude-plugin/plugin.json (semver), the marketplace entry's distribution branch and CHANGELOG.md.")
           git branch -f stable "$NEW"
           git reset -q --hard "$NEW"
           echo "stable commit: $NEW (parent: $PARENT)"
@@ -622,7 +624,7 @@ jobs:
             fi
           fi
 
-      - name: 'GATE: the stable tree is main''s except for two files'
+      - name: 'GATE: the stable tree is main''s except for three files'
         working-directory: source
         run: |
           set -euo pipefail
@@ -630,13 +632,23 @@ jobs:
           # promotion introduced NOTHING that did not go through main and
           # through the gates.
           if ! git diff --quiet "$SOURCE_SHA" stable -- . \
-              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md'; then
-            echo "::error::stable differs from main@${SOURCE_SHA} outside plugin.json and CHANGELOG.md" >&2
+              ':(exclude).claude-plugin/plugin.json' ':(exclude).claude-plugin/marketplace.json' ':(exclude)CHANGELOG.md'; then
+            echo "::error::stable differs from main@${SOURCE_SHA} outside plugin.json, marketplace.json and CHANGELOG.md" >&2
             git diff --stat "$SOURCE_SHA" stable -- . \
-              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md' >&2
+              ':(exclude).claude-plugin/plugin.json' ':(exclude).claude-plugin/marketplace.json' ':(exclude)CHANGELOG.md' >&2
             exit 1
           fi
-          echo "[OK] identical tree except for the two expected files"
+          echo "[OK] identical tree except for the three expected files"
+
+          # Inside marketplace.json, the only allowed difference is the
+          # distribution branch the entry installs from.
+          git show "${SOURCE_SHA}:.claude-plugin/marketplace.json" | jq -S '.plugins |= map(del(.source.ref?))' > "${RUNNER_TEMP}/ma.json"
+          git show "stable:.claude-plugin/marketplace.json"        | jq -S '.plugins |= map(del(.source.ref?))' > "${RUNNER_TEMP}/mb.json"
+          if ! diff -u "${RUNNER_TEMP}/ma.json" "${RUNNER_TEMP}/mb.json"; then
+            echo "::error::marketplace.json changed in something other than the distribution branch" >&2
+            exit 1
+          fi
+          echo "[OK] marketplace.json only changes in the distribution branch"
 
           # And inside plugin.json, the only allowed difference is `version`.
           git show "${SOURCE_SHA}:.claude-plugin/plugin.json" | jq -S 'del(.version)' > "${RUNNER_TEMP}/a.json"
@@ -651,7 +663,6 @@ jobs:
         env:
           EHS_REPO_ROOT: ${{ github.workspace }}/source
           EHS_CHANNEL: stable
-          EHS_REQUIRE_CLAUDE_CLI: '1'
         run: bash tools/scripts/gates/gate-plugin-version.sh
 
       - name: gate-plugin-integrity (final tree)

@@ -6,6 +6,12 @@ Written as a contract on purpose: the corpus and the machinery that guards it ar
 
 > **Status.** Partly running, partly specification, and the table below says which is which. Seventeen gates execute on every push and pull request through `.github/workflows/ci.yml`; two more run where they can only run — in a pull request — through `.github/workflows/issue-closure-gate.yml`; and one runs where its input exists, in `.github/workflows/scorecard.yml`. Eight have their own self-test battery. What has **not** landed: `stable`, a tagged release, and the knowledge loop. **Every gate in the table below is running.** Anything marked *specified* describes a control that is not running. See `docs/design-decisions.md`.
 
+## Which gates block a pull request
+
+Since 2026-10-15, fifteen. `scripts/gates/data/gate-sets.json` lists them under `pull_request`: the gates whose failure would reach a user who installs the plugin — the agents' tool posture and roster, the served tree and its version, secrets, the report and findings contracts, the verdict vocabulary and triage rules, the corpus's structure, identifiers and licence hygiene, and the workflows (`gate-actions-lint.sh` in its own job). `ci.yml` runs them with `run-all.sh --set pull_request` and their batteries with `EHS_GATE_SET=pull_request`; G7 and G8 keep their own pull-request workflow.
+
+Every other gate — the evaluation bench, the governance files, the census and ledgers, the documents that describe the gates — **still runs**: weekly and on demand in `.github/workflows/gates-weekly.yml` (`run-all.sh --set weekly`, every battery), and all of them, in full, over every release candidate in `release.yml`. A red there blocks a promotion to `stable`, not anyone's merge. The change answers an adversarial review that found 37 gates on every pull request, most of them checking that this repository's documents agree with each other while the product had never been measured. A gate moves into `pull_request` when a defect it catches can reach a user; the list is the place to argue it.
+
 ## What runs today
 
 | Requirement | Status | Implementation |
@@ -121,6 +127,7 @@ The region below is machine-read by the gate. Removing it fails the gate, on pur
 **3. The shell, which is the honest half.** Auditors keep `Bash`, and `Bash` writes. Removing `Edit` and `Write` therefore closes the direct write path and **not** the write path. `Bash` cannot be withdrawn — the auditors need a shell to measure anything — so the requirement is that the restriction lives where the model actually reads it: **every agent carrying `Bash` states its scope restriction in its own body.** For an auditor that means an explicit prohibition on writing through the shell (a sentence naming both the shell and the prohibition; "leave the tree as you found it" does not qualify, because it does not name the instrument). For the write-authorised agent it means the two bounds that make writing safe: writes limited to what the leader authorised, and the named operations it may not perform without explicit authorisation.
 
 **4. The claim surface.** `README.md`, `CHANGELOG.md` and `CONTRIBUTING.md` may describe this control and may not oversell it. Any sentence there that mentions the auditors' tool restriction must carry, in its own window, the caveat that the shell survives and the working tree is verified afterwards rather than assumed clean. Absolute wording — "cannot write", "guarantees", "fully prevents" — fails outright. If one of those files is missing, the claim surface is unmeasurable (2).
+**5. The declaration is YAML, and a YAML parser reads the same list.** The checks above read the frontmatter line by line; the harness reads it with a YAML parser. Every agent's frontmatter must therefore parse as YAML, be a mapping with no duplicated key, carry a non-empty `name` and `description`, and yield the same `tools` list to a YAML parser as to the line reader. A description with an unquoted `: ` (what `agents/ehs-local-app.md` shipped with from 2026-08-20 to 2026-10-15), a tool list folded onto a second line, and two `tools:` keys each fail (1). A missing PyYAML is unmeasurable (2). `claude plugin validate <dir>` is not a substitute: measured on 2.1.300, it passes a frontmatter that is not YAML at all.
 <!-- gate:agent-tools spec-end -->
 
 **What this contract does not buy.** All four checks read declarations, not behaviour. The gate proves the contract says the right thing; it cannot prove an agent obeyed it. The runtime half of the control is unchanged and stays where it was: after an `audit` run, confirm `git status --porcelain` is empty. Anyone quoting G1b as proof that auditors cannot write has quoted it wrong.
@@ -326,6 +333,8 @@ A pull request **fails** if its diff carries any mark of automation and touches 
 skills/ethical-hacker-squad/SKILL.md
 .claude-plugin/**
 agents/**
+hooks/**
+scripts/hooks/**
 .github/workflows/**
 .github/CODEOWNERS
 docs/sources-allowlist.json

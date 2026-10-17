@@ -52,6 +52,32 @@ LIST="$TMPD/batteries.txt"
 find "$ROOT" -type d -name fixtures -prune -o \
      -type f -name '*.selftest.sh' -print | LC_ALL=C sort > "$LIST"
 
+# EHS_GATE_SET=pull_request keeps the batteries a pull request has to prove:
+# the battery of every gate in that set (scripts/gates/data/gate-sets.json) and
+# the listed batteries of what users run. Every other battery runs in the weekly
+# workflow, which calls this script without the variable. The deferred ones are
+# printed by name: a battery that is not run here must not look like one that
+# passed.
+DEFERRED_BATTERIES=""
+if [ "${EHS_GATE_SET:-}" = "pull_request" ]; then
+  SETS="$ROOT/gates/data/gate-sets.json"
+  python3 - "$SETS" "$LIST" > "$LIST.pr" <<'PY' || { err "COULD NOT MEASURE" "cannot read $SETS"; exit 2; }
+import json, os, sys
+sets = json.load(open(sys.argv[1]))
+gates = set(sets["pull_request"])
+extra = set(sets.get("pull_request_batteries", []))
+for path in open(sys.argv[2]).read().split():
+    name = os.path.basename(path)
+    if "/gates/" in path and name.endswith(".selftest.sh"):
+        keep = name.replace(".selftest.sh", ".sh") in gates
+    else:
+        keep = any(path.endswith(e.split("/", 1)[1]) if e.startswith("scripts/") else path.endswith(e) for e in extra)
+    print(("KEEP " if keep else "DEFER ") + path)
+PY
+  DEFERRED_BATTERIES="$(awk '$1 == "DEFER" { printf " %s", $2 }' "$LIST.pr")"
+  awk '$1 == "KEEP" { print $2 }' "$LIST.pr" > "$LIST"
+fi
+
 if [ "$LIST_ONLY" -eq 1 ]; then cat "$LIST"; exit 0; fi
 
 worst=0; found=0; failed=""; unmeasured=""
@@ -65,7 +91,9 @@ while IFS= read -r t <&3; do
   found=$((found + 1))
   group "$t"
   rc=0
-  bash "$t" </dev/null || rc=$?
+  # The set is this run's choice, not the battery's: a battery that drives this
+  # script on a fixture tree must see the default behaviour.
+  EHS_GATE_SET= bash "$t" </dev/null || rc=$?
   endgrp
   case "$rc" in
     0) echo "ok        $t" ;;
@@ -85,5 +113,6 @@ echo ""
 echo "batteries run: $found"
 [ -n "$failed" ]     && echo "did not behave:$failed"
 [ -n "$unmeasured" ] && echo "could not measure:$unmeasured"
+[ -n "$DEFERRED_BATTERIES" ] && echo "deferred to the weekly run (not run here, not passed):$DEFERRED_BATTERIES"
 [ "$worst" -eq 0 ]   && echo "every battery behaved"
 exit "$worst"

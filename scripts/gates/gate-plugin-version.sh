@@ -34,7 +34,12 @@
 #   EHS_CHANNEL            latest|stable  (by default derived from the branch)
 #   EHS_BASE_REF           base ref for the diff (default GITHUB_BASE_REF,
 #                          then origin/main, then main)
-#   EHS_REQUIRE_CLAUDE_CLI 1 => if the `claude` binary is missing, rc=2 instead of SKIP
+#   EHS_PLUGIN_VALIDATOR   the official validator binary (default: `claude`). A
+#                          missing validator is rc=2, never a SKIP: until
+#                          2026-10-15 it was a SKIP that ended rc=0, so the PR
+#                          check never ran it, and the one workflow that did
+#                          (release.yml) reported a broken agent for five weeks
+#                          that no pull request could see.
 #   EHS_REPO_ROOT          repo root (default: git rev-parse, then cwd)
 # ---------------------------------------------------------------------------
 set -uo pipefail
@@ -134,7 +139,7 @@ fi
 # --- 4. the marketplace entry describes THIS plugin ------------------------
 LOCAL_ENTRY_NAMES=$(jq -r '[.plugins[]? | select((.source|type=="string") and (.source|test("^\\./|^\\.$"))) | .name] | join("\n")' "$MARKET_JSON")
 if [[ -z "$LOCAL_ENTRY_NAMES" ]]; then
-  skip "no marketplace entry uses the local source './' - there is no name cross-check to do"
+  info "not applicable: no marketplace entry uses the local source './', so there is no name to cross-check"
 elif grep -qxF "$PLUGIN_NAME" <<<"$LOCAL_ENTRY_NAMES"; then
   ok "the local './' entry is named the same as plugin.json ('$PLUGIN_NAME')"
 else
@@ -181,7 +186,7 @@ if [[ "$CHANNEL" == "stable" ]]; then
     # Re-publishing an already tagged version = a silently skipped update.
     TAG="${PLUGIN_NAME}--v${PLUGIN_VERSION}"
     if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-      skip "not a git repo: I cannot check whether the tag '$TAG' already exists"
+      unmeasurable "not a git repo: I cannot check whether the tag '$TAG' already exists"
     elif git -C "$ROOT" rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
       TAGGED_SHA=$(git -C "$ROOT" rev-list -n1 "refs/tags/$TAG")
       HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
@@ -260,7 +265,7 @@ else # latest
   fi
 fi
 
-# --- 7. official validator (optional, with teeth if CI demands it) ---------
+# --- 7. official validator (required: a validator that did not run is rc=2) --
 section "official Anthropic validator"
 # MEASURED on 2.1.221: `claude plugin validate <dir>` with marketplace.json present
 # validates ONLY the marketplace manifest and does NOT report the plugin version
@@ -268,11 +273,9 @@ section "official Anthropic validator"
 # ALSO MEASURED: it returns rc=1 both when it measured and failed and when the path
 # does not exist => that is why this wrapper pre-checks and never delegates its exit
 # code to the tool.
-if ! command -v claude >/dev/null 2>&1; then
-  if [[ "${EHS_REQUIRE_CLAUDE_CLI:-0}" == "1" ]]; then
-    unmeasurable "EHS_REQUIRE_CLAUDE_CLI=1 but the 'claude' binary is not in PATH"
-  fi
-  skip "'claude' binary not available: validate was not run (set EHS_REQUIRE_CLAUDE_CLI=1 to demand it)"
+VALIDATOR="${EHS_PLUGIN_VALIDATOR:-claude}"
+if ! command -v "$VALIDATOR" >/dev/null 2>&1; then
+  unmeasurable "the validator '$VALIDATOR' is not in PATH, so \`plugin validate --strict\` did not run. Install the pinned CLI (cd tooling/claude-cli && npm ci --ignore-scripts) - a validator that did not run is not a pass"
 else
   # On latest, the ONLY legitimate complaint from --strict is "No version
   # specified": that is intentional. Rather than giving up --strict (losing
@@ -282,14 +285,24 @@ else
 
   validate_target() { # $1=path  $2=label
     local target="$1" label="$2" out rc n_warn n_expected
-    out=$(claude plugin validate "$target" --strict 2>&1); rc=$?
+    out=$("$VALIDATOR" plugin validate "$target" --strict 2>&1); rc=$?
     if (( rc == 0 )); then
       ok "claude plugin validate --strict over $label"
       return 0
     fi
     if [[ "$CHANNEL" == "latest" ]]; then
-      n_warn=$(grep -c '❯ ' <<<"$out")
-      n_expected=$(grep -c "❯ .*$EXPECTED_WARN" <<<"$out")
+      # Only the warning and error sections count. Since 2.1.275 the CLI also
+      # prints an "Advice (does not change the verdict)" section with its own
+      # bullets; counting those made a newer CLI fail a tree an older one
+      # passed, which is why this gate's self-test was red on every laptop
+      # with a current CLI and green in CI, where no CLI ran at all.
+      counted=$(awk '
+        /Found [0-9]+ (warning|error)/ { mode = 1; next }
+        /Advice/                       { mode = 0; next }
+        mode && /❯ /                   { print }
+      ' <<<"$out")
+      n_warn=$(grep -c '❯ ' <<<"$counted")
+      n_expected=$(grep -c "❯ .*$EXPECTED_WARN" <<<"$counted")
       if (( n_warn > 0 && n_warn == n_expected )) && ! grep -q 'Found .* error' <<<"$out"; then
         ok "claude plugin validate --strict over $label: the only complaint is the absence of 'version', which is intentional on latest ($n_warn warning(s), all expected)"
         return 0
@@ -317,6 +330,11 @@ fi
 if (( FAILURES > 0 )); then
   printf '\ngate-plugin-version: rc=1 — %d MEASURED failure(s)\n' "$FAILURES" >&2
   exit 1
+fi
+# A check that did not run is not a check that passed.
+if ((${#SKIPPED[@]} > 0)); then
+  printf '\ngate-plugin-version: rc=2 — %d check(s) not run (not a pass)\n' "${#SKIPPED[@]}" >&2
+  exit 2
 fi
 printf '\ngate-plugin-version: rc=0 — measured and correct\n'
 exit 0

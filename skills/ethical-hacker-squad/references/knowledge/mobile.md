@@ -230,13 +230,13 @@ Rules: FP-01.
 
 **Where to look**
 - Android: `res/xml/network_security_config.xml` (referenced by `android:networkSecurityConfig`); look for `cleartextTrafficPermitted="true"`, `<domain-config>` blocks relaxing a specific domain, and `<trust-anchors>` including `<certificates src="user"/>`.
-- Manifest: `android:usesCleartextTraffic="true"`; code: `http://` URLs in constants, endpoint values in `BuildConfig`, configuration inside `assets/`.
+- Manifest: `android:usesCleartextTraffic="true"` (ignored from API 24 when a network security config exists); code: `http://` URLs in constants, endpoint values in `BuildConfig`, configuration inside `assets/`. **And `targetSdkVersion`**: with no config at all, an app targeting API 27 or lower permits cleartext by default, and one targeting API 23 or lower also trusts user-installed CAs — the absence of a file is a finding there.
 - iOS: `NSAppTransportSecurity` in `Info.plist` with `NSAllowsArbitraryLoads`, `NSAllowsArbitraryLoadsInWebContent` or per-domain exceptions (`NSExceptionAllowsInsecureHTTPLoads`).
 
 **Vulnerable pattern** — unencrypted traffic to the backend or to an auxiliary service (images, analytics, updates) that discloses the session or allows tampering with content. `<certificates src="user"/>` makes the app trust CAs installed by the device user: any locally installed proxy intercepts the traffic, which defeats the purpose of the channel for sensitive data.
 
 **What rules it out (false positive)**
-- `cleartextTrafficPermitted="false"` globally, with exceptions limited to `localhost` or to a test domain that does not exist in production.
+- `cleartextTrafficPermitted="false"` globally, with exceptions limited to `localhost` or to a test domain that does not exist in production — or no config and a `targetSdkVersion` of 28 or higher, where cleartext is off by default (24 or higher for user CAs). Read the target from the artifact, not from `build.gradle`.
 - System-only trust anchors in the release configuration; the debug variant may differ and is not a finding if it is not published.
 - The cleartext endpoint serves public content whose integrity is guaranteed by other means (resource signing), verifiable in the code.
 

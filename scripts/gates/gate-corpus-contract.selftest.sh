@@ -76,6 +76,36 @@ import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/references/knowledge/README.md"
 p.write_text(re.sub(r"\d+ numbered procedures","999 numbered procedures",p.read_text(),count=1))'
 
+# The exact sentence GitHub showed while the corpus held 171 procedures across 8.
+case_run description-states-a-count 1 "settings.description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/governance.json"
+d=json.loads(p.read_text())
+d["settings"]["description"]+=" 122 procedures across 7 role packs."
+p.write_text(json.dumps(d,indent=2))'
+
+# The descriptions /plugin shows: the manifest and every marketplace entry.
+case_run plugin-description-states-a-count 1 "plugin.json: description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/".claude-plugin/plugin.json"
+d=json.loads(p.read_text())
+d["description"]+=" Nine specialists, 180 procedures."
+p.write_text(json.dumps(d,indent=2))'
+
+case_run marketplace-entry-states-a-count 1 "plugins\[0\].description states" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/".claude-plugin/marketplace.json"
+d=json.loads(p.read_text())
+d["plugins"][0]["description"]+=" Across eight role packs."
+p.write_text(json.dumps(d,indent=2))'
+
+case_run description-undeclared 1 "settings.description is not declared" '
+import os,json,pathlib
+p=pathlib.Path(os.environ["EHS_WORK"])/"scripts/gh/governance.json"
+d=json.loads(p.read_text())
+del d["settings"]["description"]
+p.write_text(json.dumps(d,indent=2))'
+
 # The mutation is DERIVED from the file, never pinned to a literal upper bound.
 # Pinned to `AI-28` it silently stopped biting the day the corpus reached AI-29:
 # the replace matched nothing, the gate correctly returned 0, and the case read
@@ -111,10 +141,14 @@ p.write_text(p.read_text()+chr(10)+
   "Both defects were in the files every arm was given, and across the files we read "
   "the pattern held."+chr(10))'
 
+# The count word may be compound. Matching only `[a-z]+` stopped biting the day
+# the corpus reached twenty-one files: the mutation found nothing to change.
 case_run declared-file-count-drift 1 "declares" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
-p.write_text(re.sub(r"across [a-z]+ files","across nine files",p.read_text(),count=1))'
+s=p.read_text(); t=re.sub(r"across [a-z]+(?:-[a-z]+)? files","across nine files",s,count=1)
+assert t!=s, "the mutation changed nothing"
+p.write_text(t)'
 
 case_run file-row-range-drift 1 "a reader routes by this table" '
 import os,pathlib

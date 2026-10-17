@@ -11,14 +11,38 @@ Nothing here is a checklist to complete. A row that does not match the inventory
 3. Staff the roles in the `Role` column, at most four.
 4. Pass the `Pack sections` column to each specialist so it opens the right part of its pack instead of the whole file.
 
-Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `web-api-logging`, `mobile` + `mobile-runtime-trust` + `mobile-ios`, `infra-cloud` + `infra-cloud-cicd-exposure` + `infra-cloud-cicd-platforms`, `supply-chain` + `supply-chain-secrets-malware` + `supply-chain-source-lifecycle`, `ai-safety` + `ai-safety-data-output` + `ai-safety-agent-runtime`, `local-app` + `local-app-desktop-ipc`). The `Pack sections` column names the file that actually holds each section, so pass it verbatim: a row citing several files means the specialist opens all of them.
+Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `web-api-logging` + `web-api-baas` + `web-api-fullstack`, `mobile` + `mobile-runtime-trust` + `mobile-ios`, `infra-cloud` + `infra-cloud-cicd-exposure` + `infra-cloud-cicd-platforms`, `supply-chain` + `supply-chain-secrets-malware` + `supply-chain-source-lifecycle`, `ai-safety` + `ai-safety-data-output` + `ai-safety-agent-runtime`, `local-app` + `local-app-desktop-ipc`). The `Pack sections` column names the file that actually holds each section, so pass it verbatim: a row citing several files means the specialist opens all of them.
+
+## Quick audit
+
+`quick` mode reads this section and nothing else in this file. It is a fixed, ordered checklist: take the items whose *When* is in the inventory, top to bottom, and read each procedure **alone** with `${CLAUDE_PLUGIN_ROOT}/scripts/ehs show <ID>` (about 500 tokens each) instead of opening its pack. Without `scripts/ehs` — no Python, or the skill copied without the plugin — Grep the pack for `### <ID>` and read only that section. The order is what most often becomes a breach or a bill in an app built fast.
+
+**Start with `${CLAUDE_PLUGIN_ROOT}/scripts/ehs prescan <target>`.** It reads the tree without running anything and prints *leads* keyed to these procedure IDs — a table with no row-level security, a secret behind `NEXT_PUBLIC_`, a Server Action or route that never reads the session, a webhook with no `constructEvent`, a matcher that skips `/api`. A lead tells you where to read first; it is never a finding until its procedure says so, and no lead is not a clean bill.
+
+1. `SUP-16`, `SUP-17` — Is a live secret in the tree or in git history? *When:* any repository.
+2. `SUP-27` — Does a server secret ship inside the browser bundle? *When:* `NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_` and the other public prefixes.
+3. `WEB-29` — Does every exposed table have RLS with a policy that binds each row to its owner? *When:* Supabase.
+4. `WEB-30` — Do the rules check the owner, not just "signed in"? *When:* Firebase.
+5. `WEB-31` — Can a user write their own role, plan or credits? *When:* Supabase or any `profiles`/`users` table with a role, plan or credits.
+6. `WEB-33` — Does each Server Action and Route Handler check the session and the owner itself? *When:* `"use server"`, `app/**/route.ts`, `pages/api/`.
+7. `WEB-34` — Is the proxy the only check, and does its matcher skip `/api`? *When:* `middleware.ts`, `proxy.ts`, Clerk, Auth.js.
+8. `WEB-04` — Can user A read or change user B's object? *When:* any route that takes an id.
+9. `WEB-05` — Can a normal user call an admin function? *When:* admin pages or routes.
+10. `WEB-36` — Is the webhook signature verified, and is the price set on the server? *When:* Stripe.
+11. `WEB-32` — Does each function identify the caller before using the secret key? *When:* `supabase/functions/`.
+12. `WEB-35` — Can anyone on the internet trigger the job? *When:* `crons` in `vercel.json`, internal or admin routes.
+13. `AI-19` — Can anyone spend your model key through your app, without a limit? *When:* an LLM API call.
+14. `AI-05` — Does the model's text decide what a user may do? *When:* an LLM that calls tools.
+
+**The cap.** No subagents, at most the twelve matching procedures that come first in this order, and no reading beyond what they name. If the user set a budget, it wins. When the cap is reached, stop and report; what was not reached goes in the coverage declaration as not checked, and the full audit is offered. A quick audit never claims more than its checklist.
 
 ## Routing table
 
 | Signal in the inventory | Role | Pack sections | Notes |
 |---|---|---|---|
-| `package.json`, `requirements.txt`, `pom.xml`, `go.mod`, `Gemfile`, `composer.json`, `*.csproj` | `supply-chain` | `supply-chain.md` §1-§4, §7 + `supply-chain-source-lifecycle.md` §11 | Always staffed: every project has dependencies. `>99%` of observed open-source malware lands in npm, so weight Node projects higher. §11 is not optional here: without it a clean scan of an unsupported runtime gets reported as clean instead of as unmeasured. |
+| `package.json`, `requirements.txt`, `pom.xml`, `go.mod`, `Gemfile`, `composer.json`, `*.csproj` | `supply-chain` | `supply-chain.md` §1-§4, §7 + `supply-chain-source-lifecycle.md` §11 | Always staffed: every project has dependencies. `>99%` of observed open-source malware lands in npm (Sonatype, 2026), so weight Node projects higher. §11 is not optional here: without it a clean scan of an unsupported runtime gets reported as clean instead of as unmeasured. |
 | Any git repository | `supply-chain` | `supply-chain-secrets-malware.md` §8 | Secret scanning of tree and history. Distinctive-format detection before entropy. |
+| A frontend build that reads environment variables: `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`, `EXPO_PUBLIC_`, `PUBLIC_`, `GATSBY_`, `NUXT_PUBLIC_`, `import.meta.env`, an `envPrefix` setting | `supply-chain` | `supply-chain-secrets-malware.md` §8 | `SUP-27`. A public prefix copies the value into the bundle at build time; a `.env` kept out of git by `.gitignore` is still inside what the browser downloads. |
 | HTTP routes, controllers, middleware, `urls.py`, `routes/`, `@RestController`, `app.get(` | `web-api` | `web-api.md` §0-§4, `web-api-clientside-logic.md` §7-§8, `web-api-logging.md` §11 | Start at §0. Authorization and business logic are the classes tooling misses. |
 | ORM usage, raw SQL, query builders | `web-api` | `web-api.md` §3 | |
 | File upload, deserialization, template rendering, PDF/XML/YAML parsing | `web-api` | `web-api.md` §3, §5 | CWE-502 and CWE-20 are among the least-detected classes by SAST. |
@@ -27,6 +51,9 @@ Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `
 | Browser-rendered HTML, React/Vue/Svelte, template engines, `innerHTML` | `web-api` | `web-api-clientside-logic.md` §6, §7 | Client-side sinks, CSP, CORS, caching. |
 | GraphQL schema, WebSocket handlers, gRPC | `web-api` | `web-api-clientside-logic.md` §10 | |
 | JWT, OAuth/OIDC, session cookies, password handling, MFA | `web-api` | `web-api.md` §1, `web-api-clientside-logic.md` §9 | |
+| A backend-as-a-service the browser reaches directly: `@supabase/supabase-js`, `supabase/migrations/*.sql`, `supabase/config.toml`, `supabase/functions/`, a `firebase` client SDK, `firebase.json`, `firestore.rules`, `storage.rules`, `database.rules.json` | `web-api` | `web-api-baas.md` §12 | `WEB-29` for Postgres row-level security behind Supabase (anonymous sign-ins and Realtime channels included), `WEB-30` for Firebase Security Rules, `WEB-31` for a privilege column the user can write, `WEB-32` for Edge Functions that skip the caller. The client key is public by design, so the policy is the only authorization, and there may be no server code to read at all. |
+| A full-stack framework with its server in the same repository: `"use server"`, `app/**/route.ts`, `pages/api/`, `middleware.ts` or `proxy.ts`, `@clerk/nextjs`, `next-auth` / Auth.js, `crons` in `vercel.json` | `web-api` | `web-api-fullstack.md` §13 | `WEB-33` (each Server Action and Route Handler checks the session and the owner itself), `WEB-34` (authorization only in the proxy or a matcher, CVE-2025-29927 on self-hosted Next.js), `WEB-35` (a cron or internal route anyone can call). The UI is not the boundary: an exported Server Action is a public `POST`. |
+| Payments: `stripe` in the manifest, a webhook route, `checkout.sessions.create`, `paymentIntents.create` | `web-api` | `web-api-fullstack.md` §14 | `WEB-36`: unsigned or fail-open webhook verification, fulfilment on the redirect page, a price taken from the request. |
 | `AndroidManifest.xml`, `build.gradle`, `.apk`, `.aab` | `mobile` | `mobile.md` §0-§6, `mobile-runtime-trust.md` §7 | §0 first: it fixes what you may assert from a compiled APK versus from source, and it requires declaring the MAS testing profile the audit assumed. |
 | A payment, transfer or approval screen; biometric or PIN unlock; CodePush, Expo or other over-the-air updates | `mobile` | `mobile-runtime-trust.md` §9-§11 | Overlay and accessibility defenses, biometrics bound to a key, and code that never passed through the store. |
 | `Info.plist`, `.xcodeproj`, Swift/Objective-C sources, `.ipa` | `mobile` | `mobile.md` §0, `mobile-ios.md` §8 | Add `mobile-runtime-trust.md` §9 and §11 if the app uses `LAContext` or a JavaScript bundle it downloads. |

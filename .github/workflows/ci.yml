@@ -56,11 +56,50 @@ jobs:
           # useless: it reports 2, could not measure, on every run.
           fetch-depth: 0
 
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      # gate-plugin-version.sh runs `claude plugin validate --strict`, and a
+      # validator that is not installed is rc=2, never a pass. Until 2026-10-15
+      # this job had no CLI, the gate SKIPped the validator and ended green, and
+      # the only workflow that ran it (release.yml, weekly) reported a broken
+      # agent for five weeks that no pull request could see. Same install as
+      # release.yml: the lock file's integrity hash, no install scripts, the
+      # platform binary linked from the optional package the lock pins.
+      #
+      # It installs OUTSIDE the work tree on purpose: several gates walk the
+      # tree with `find`, and a node_modules beside them would be judged as
+      # part of the repository.
+      - name: Install the Claude Code CLI (from the lock file)
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/claude-cli"
+          mkdir -p "$dest"
+          cp tooling/claude-cli/package.json tooling/claude-cli/package-lock.json "$dest/"
+          cd "$dest"
+          npm ci --ignore-scripts
+          bin="$PWD/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          if [ ! -x "$bin" ]; then
+            echo "::error title=No CLI binary::the lock file did not put an executable at $bin"
+            exit 1
+          fi
+          mkdir -p "$PWD/.bin"
+          ln -sf "$bin" "$PWD/.bin/claude"
+          "$PWD/.bin/claude" --version
+          echo "$PWD/.bin" >> "$GITHUB_PATH"
+
       - name: Gate inventory
         run: ./scripts/gates/run-all.sh --list
 
-      - name: Run the gates that do not depend on external tools
-        run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
+      # Only the gates whose failure would reach a user who installs the plugin
+      # block a pull request: scripts/gates/data/gate-sets.json, `pull_request`.
+      # The rest - the bench, the governance files, the documents that describe
+      # the gates - run weekly in gates-weekly.yml and in full over every release
+      # candidate in release.yml. Nothing stopped running; it stopped blocking.
+      - name: Run the gates that block a pull request
+        run: ./scripts/gates/run-all.sh --set pull_request --skip 'gate-actions-lint.sh'
 
       # The rule - anything named `*.selftest.sh` is a battery and gets run,
       # wherever it lives - used to be written HERE, inline. That made it
@@ -69,7 +108,16 @@ jobs:
       # and nowhere a maintainer could see. The rule now lives in one file that
       # both call, and that file has its own battery.
       - name: Prove the gates in the negative
+        env:
+          EHS_GATE_SET: pull_request
         run: ./scripts/run-batteries.sh
+
+      # What users receive is the `dist` branch, built from
+      # scripts/dist/manifest.txt by dist.yml after a merge. Building it here
+      # proves, before the merge, that the manifest still carries everything the
+      # plugin reads at run time.
+      - name: Build the distribution and prove it runs
+        run: bash scripts/dist/build.sh "$RUNNER_TEMP/dist"
 
   workflow-hardening:
     # Same rule as above: the name IS the required-context string.

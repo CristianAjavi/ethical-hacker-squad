@@ -10,11 +10,14 @@
 # A gate against a silent failure that nobody has ever seen fail is worth
 # exactly as much as no gate. Hence this file.
 #
-# The `claude` CLI is optional here: when it is absent the gate SKIPs the
-# official validator, and every case below still lands on its verdict for its
-# own reason. That is why the fixture is nonetheless built to pass
-# `claude plugin validate --strict` - description, author and frontmatter
-# included - so a green here means the same thing on a laptop and on a runner.
+# The official validator is NOT optional for the gate: a missing `claude` is
+# rc=2. It is not run here, though. Every case uses a stub validator
+# (EHS_PLUGIN_VALIDATOR) that answers the way the CLI answers, so the verdicts
+# below test this gate's reading of the validator and not the CLI installed on
+# the machine. Before the stub, a newer CLI on a laptop printed an "Advice"
+# section the gate counted as a warning, and this battery was red on every
+# current laptop and green in CI, where no CLI ran. The real CLI runs where it
+# belongs: the gate itself, over the real tree, in the `gates` job.
 #
 # Exit codes: 0 = every case behaved | 1 = some case did not | 2 = harness broke.
 set -uo pipefail
@@ -28,6 +31,36 @@ done
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-plugin-version-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+
+# The stub validator. It reads the manifest it is pointed at the way the CLI
+# does on `latest`: no `version` is one warning, which `--strict` turns into
+# rc=1. STUB_MODE adds what newer or stricter CLIs print on top of that.
+STUB="$TMP/bin/stub-validator"; mkdir -p "$TMP/bin"
+cat > "$STUB" <<'STUBEOF'
+#!/usr/bin/env bash
+target="$3"
+case "$target" in
+  */marketplace.json) pj="$(dirname "$target")/plugin.json" ;;
+  *) pj="$target" ;;
+esac
+rc=0
+echo "Validating: $target"
+if ! jq -e 'has("version")' "$pj" >/dev/null 2>&1; then
+  printf '\n⚠ Found 1 warning:\n\n  ❯ version: No version specified. Consider adding a version following semver (e.g., "1.0.0")\n'
+  rc=1
+fi
+case "${STUB_MODE:-}" in
+  advice)
+    printf '\nℹ Advice (does not change the verdict):\n\n  ❯ README.md: This README has no line that installs the plugin from a marketplace.\n' ;;
+  agent-error)
+    printf '\nValidating agent: agents/a.md\n\n✘ Found 1 error:\n\n  ❯ frontmatter: YAML frontmatter failed to parse. At runtime this agent loads with empty metadata.\n'
+    rc=1 ;;
+esac
+if [ "$rc" -eq 0 ]; then echo "✔ Validation passed"; else echo "✘ Validation failed (--strict treats warnings as errors)"; fi
+exit "$rc"
+STUBEOF
+chmod +x "$STUB"
+export EHS_PLUGIN_VALIDATOR="$STUB"
 G() { git -C "$1" -c user.email=t@e -c user.name=t "${@:2}"; }
 
 write_plugin_json() {  # <dir> <version-or-empty>
@@ -120,7 +153,25 @@ run_case plugin-json-without-name            1 "name"                      lates
 run_case plugin-json-not-json                1 "JSON"                      latest m_broken_json    ""
 run_case plugin-json-missing                 1 "missing"                   latest m_no_manifest    ""
 
+echo "-- the official validator, read through a stub"
+run_case validator-advice-is-not-a-warning   0 "all expected"              latest m_served       ""
+export STUB_MODE=advice
+run_case validator-advice-section-tolerated  0 "all expected"              latest m_served       ""
+export STUB_MODE=agent-error
+run_case validator-agent-error-fails         1 "failed over"               latest m_served       ""
+unset STUB_MODE
+
 echo "-- could not measure (never a pass)"
+# A validator that is not there is not a validator that passed. Until
+# 2026-10-15 this was a SKIP that ended rc=0, and the PR check never ran it.
+d="$TMP/no-validator"; mkdir -p "$d"; build_repo "$d" ""
+G "$d" checkout -q -b feat/change; m_served "$d"; G "$d" add -A; G "$d" commit -qm change
+rc=0; out="$(EHS_REPO_ROOT="$d" EHS_CHANNEL=latest EHS_BASE_REF=main EHS_PLUGIN_VALIDATOR="$TMP/bin/absent" bash "$GATE" 2>&1)" || rc=$?
+if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -qi "is not in PATH"; then
+  printf 'ok       %-38s rc=2\n' validator-missing; pass=$((pass+1))
+else printf 'FAILED   %-38s rc=%s (wanted 2)\n' validator-missing "$rc"
+     printf '%s\n' "$out" | sed 's/^/         /' | tail -8; fail=$((fail+1)); fi
+
 # There is exactly ONE path to the base-ref lookup: channel `latest` WITH a
 # version declared - the transition state, where the bump rule still applies.
 # On stable there is no diff to compute and on a versionless latest there is

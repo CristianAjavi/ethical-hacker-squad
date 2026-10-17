@@ -252,6 +252,24 @@ index($0, "\t") > 0 { has_tab = 1 }
         fail("secrets-inherit", "`secrets: inherit` hands EVERY repository secret to the called workflow", FNR)
 }
 
+# --- rule 5: a package install that runs third-party code --------------------
+# Issue #17: release.yml ran `npm install -g <cli>@<version>` inside jobs holding
+# `contents: write`. A version tag resolves to whatever the registry serves that
+# day, and `install`/`ci` run every package's lifecycle scripts with the job's
+# token in reach. The fix was `npm ci --ignore-scripts` from a lock file; this
+# is the check that keeps it fixed. Comment lines are skipped; every other line
+# is read, `run:` blocks included.
+{
+    rl = $0
+    if (trim(rl) !~ /^#/) {
+        sub(/[ ]#.*$/, "", rl)
+        if (rl ~ /(^|[^[:alnum:]_-])npm[ ]+(install|i|add)[ ]+([^#]*[ ])?(-g|--global)([ ]|$)/)
+            fail("global-install", "`npm install -g` resolves a version TAG at run time and runs its install scripts; install from a lock file with `npm ci --ignore-scripts`", FNR)
+        else if (rl ~ /(^|[^[:alnum:]_-])(npm|pnpm|yarn|bun)[ ]+(install|i|ci|add)([ ]|$)/ && rl !~ /--ignore-scripts/)
+            fail("install-scripts", "a package install without `--ignore-scripts` runs every dependency's lifecycle scripts inside this job", FNR)
+    }
+}
+
 # --- structure ---------------------------------------------------------------
 {
     line = $0
