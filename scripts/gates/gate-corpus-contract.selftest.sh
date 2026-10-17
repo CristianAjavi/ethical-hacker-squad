@@ -111,10 +111,14 @@ p.write_text(p.read_text()+chr(10)+
   "Both defects were in the files every arm was given, and across the files we read "
   "the pattern held."+chr(10))'
 
+# The count word may be compound. Matching only `[a-z]+` stopped biting the day
+# the corpus reached twenty-one files: the mutation found nothing to change.
 case_run declared-file-count-drift 1 "declares" '
 import os,re,pathlib
 p=pathlib.Path(os.environ["EHS_WORK"])/"skills/ethical-hacker-squad/SKILL.md"
-p.write_text(re.sub(r"across [a-z]+ files","across nine files",p.read_text(),count=1))'
+s=p.read_text(); t=re.sub(r"across [a-z]+(?:-[a-z]+)? files","across nine files",s,count=1)
+assert t!=s, "the mutation changed nothing"
+p.write_text(t)'
 
 case_run file-row-range-drift 1 "a reader routes by this table" '
 import os,pathlib
