@@ -26,7 +26,7 @@ Never translate: standard identifiers (`WSTG-INPV-05`, `ASVS 5.0 V8`, `CWE-89`, 
 
 ## Quick report
 
-A `quick` audit writes the same deliverable — `report.md` and `findings.json` — with every mandatory section present and most of them one line long. The executive summary is the report: **Fix these first**, then the checklist rows run, each marked `checked` (with its finding, or "nothing found at this depth") or `not reached`. Findings not demonstrated stay `probable` with what would settle them. The coverage declaration names the checklist and the cap, and the residual-risk section offers the full audit. No `unaided_pass`, no `VER-09` pass: say so in scope and method.
+A `quick` audit writes the same deliverable — `report.md` and `findings.json` — with every mandatory section present and most of them one line long. The executive summary is the report: **Fix these first**, then the checklist rows run, each marked `checked` (with its finding, or "nothing found at this depth") or `not reached`. Findings not demonstrated stay `probable` with what would settle them. A control you checked and found correct goes under *What was ruled out, and what resisted* — never as a numbered item under a severity heading, where a reader acts on it as a defect (measured: the first eval run lost its false-alarm grader on exactly that). The coverage declaration names the checklist and the cap, and the residual-risk section offers the full audit. No `unaided_pass`, no `VER-09` pass: say so in scope and method.
 
 <!-- report:section id=redaction-pass class=mandatory -->
 ## Redaction pass — before writing, not after
