@@ -571,6 +571,15 @@ jobs:
           jq --arg v "$NEXT_VERSION" '.version = $v' .claude-plugin/plugin.json > "$tmp"
           mv "$tmp" .claude-plugin/plugin.json
 
+          # 1b) the channel's distribution: main's marketplace entry installs
+          #     from the `dist` branch, stable's from `dist-stable`, which
+          #     dist.yml builds from this branch. Without it a stable user
+          #     would be served main's build.
+          tmp=$(mktemp)
+          jq '.plugins |= map(if (.source | type) == "object" and .source.ref == "dist" then .source.ref = "dist-stable" else . end)' \
+            .claude-plugin/marketplace.json > "$tmp"
+          mv "$tmp" .claude-plugin/marketplace.json
+
           # 2) CHANGELOG (commit subjects sanitized to plain text).
           "${GITHUB_WORKSPACE}/tools/scripts/gh/build-changelog.sh" \
             --version "$NEXT_VERSION" --from "$FROM" --to "$SOURCE_SHA" \
@@ -597,7 +606,7 @@ jobs:
           #    GATE checks) and the stable branch stays append-only: every
           #    release advances fast-forward and nobody has to force-push a
           #    branch users have already cloned.
-          git add .claude-plugin/plugin.json CHANGELOG.md
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
           TREE=$(git write-tree)
           if [ "$STABLE_EXISTS" = "true" ]; then
             PARENT=$(git rev-parse refs/remotes/origin/stable)
@@ -607,7 +616,7 @@ jobs:
           NEW=$(git commit-tree "$TREE" -p "$PARENT" \
                   -m "release: ${PLUGIN_NAME} ${NEXT_VERSION}" \
                   -m "Source-Commit: ${SOURCE_SHA}" \
-                  -m "Automatic promotion of the stable channel. The tree is identical to main@${SOURCE_SHA} except for .claude-plugin/plugin.json (semver) and CHANGELOG.md.")
+                  -m "Automatic promotion of the stable channel. The tree is identical to main@${SOURCE_SHA} except for .claude-plugin/plugin.json (semver), the marketplace entry's distribution branch and CHANGELOG.md.")
           git branch -f stable "$NEW"
           git reset -q --hard "$NEW"
           echo "stable commit: $NEW (parent: $PARENT)"
@@ -621,7 +630,7 @@ jobs:
             fi
           fi
 
-      - name: 'GATE: the stable tree is main''s except for two files'
+      - name: 'GATE: the stable tree is main''s except for three files'
         working-directory: source
         run: |
           set -euo pipefail
@@ -629,13 +638,23 @@ jobs:
           # promotion introduced NOTHING that did not go through main and
           # through the gates.
           if ! git diff --quiet "$SOURCE_SHA" stable -- . \
-              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md'; then
-            echo "::error::stable differs from main@${SOURCE_SHA} outside plugin.json and CHANGELOG.md" >&2
+              ':(exclude).claude-plugin/plugin.json' ':(exclude).claude-plugin/marketplace.json' ':(exclude)CHANGELOG.md'; then
+            echo "::error::stable differs from main@${SOURCE_SHA} outside plugin.json, marketplace.json and CHANGELOG.md" >&2
             git diff --stat "$SOURCE_SHA" stable -- . \
-              ':(exclude).claude-plugin/plugin.json' ':(exclude)CHANGELOG.md' >&2
+              ':(exclude).claude-plugin/plugin.json' ':(exclude).claude-plugin/marketplace.json' ':(exclude)CHANGELOG.md' >&2
             exit 1
           fi
-          echo "[OK] identical tree except for the two expected files"
+          echo "[OK] identical tree except for the three expected files"
+
+          # Inside marketplace.json, the only allowed difference is the
+          # distribution branch the entry installs from.
+          git show "${SOURCE_SHA}:.claude-plugin/marketplace.json" | jq -S '.plugins |= map(del(.source.ref?))' > "${RUNNER_TEMP}/ma.json"
+          git show "stable:.claude-plugin/marketplace.json"        | jq -S '.plugins |= map(del(.source.ref?))' > "${RUNNER_TEMP}/mb.json"
+          if ! diff -u "${RUNNER_TEMP}/ma.json" "${RUNNER_TEMP}/mb.json"; then
+            echo "::error::marketplace.json changed in something other than the distribution branch" >&2
+            exit 1
+          fi
+          echo "[OK] marketplace.json only changes in the distribution branch"
 
           # And inside plugin.json, the only allowed difference is `version`.
           git show "${SOURCE_SHA}:.claude-plugin/plugin.json" | jq -S 'del(.version)' > "${RUNNER_TEMP}/a.json"

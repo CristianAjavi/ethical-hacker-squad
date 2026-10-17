@@ -315,8 +315,10 @@ def cmd_install(args: argparse.Namespace) -> int:
                                   f"{(proc.stderr or proc.stdout).strip()[:300]}")
                     break
             if ok:
-                installed.append("Claude Code plugin ethical-hacker-squad (local marketplace "
-                                 f"{ROOT}); restart Claude Code to load it")
+                installed.append("Claude Code plugin ethical-hacker-squad (marketplace "
+                                 f"{ROOT}); restart Claude Code to load it. It installs the "
+                                 "published `dist` branch; to try this working copy instead, run "
+                                 f"`claude --plugin-dir {ROOT}`")
 
     if args.antigravity or args.all:
         agy_target = Path.home() / ".gemini" / "antigravity-cli" / "skills" / "ethical-hacker-squad"

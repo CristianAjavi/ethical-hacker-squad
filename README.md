@@ -109,7 +109,7 @@ The one-step install is under **Start here**. To update:
 /plugin update ethical-hacker-squad
 ```
 
-Claude Code also refreshes marketplaces in the background after startup, so updates usually arrive without being asked for. The repository is public, so no credentials are involved.
+Claude Code also refreshes marketplaces in the background after startup, so updates usually arrive without being asked for. The repository is public, so no credentials are involved. What installs is the `dist` branch — the skill, the agents, the hook and the scripts they call, about 1 MB — not this repository with its bench and gates ([`docs/release-channels.md`](docs/release-channels.md)).
 
 **Channels.** Today there is one: `main` is the `latest` channel, and every commit on it is a new version. A `stable` channel — a weekly, tagged, rested promotion — is specified in [`docs/release-channels.md`](docs/release-channels.md) and **has never been published**: the promotion has failed every week it has run. To pin a version today, add the marketplace at a specific `ref` or `sha`.
 

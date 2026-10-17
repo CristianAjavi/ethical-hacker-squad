@@ -36,4 +36,5 @@ Changes from an adversarial review of the whole repository (2026-10-15), whose v
 - **The README puts install first** (#132) and says what does not exist yet: no `stable` release, no running knowledge loop.
 - **`team.md` loads lighter** (#139): role orders move to `team-roles.md`, read only without the plugin's subagents.
 - **The changelog** moved its history to `docs/changelog-history.md`.
+- **The plugin installs 1 MB, not 10** (`dist.yml`): users receive a `dist` branch built from `scripts/dist/manifest.txt` and proved to run before it is pushed, without the bench — whose manifests name malicious packages on purpose — the evals or the gates. `stable` installs from `dist-stable`.
 - **Fifteen gates block a pull request, not thirty-seven.** The ones whose failure would reach a user stay on every pull request (`scripts/gates/data/gate-sets.json`); the bench, governance and document-consistency gates run weekly in `gates-weekly.yml` and in full over every release candidate. Nothing stopped running.

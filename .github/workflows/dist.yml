@@ -1,0 +1,78 @@
+# .github/workflows/dist.yml
+#
+# Publishes what a user's plugin cache receives. The marketplace entry installs
+# the plugin from the `dist` branch (and, on the stable channel, `dist-stable`),
+# which holds only the paths in scripts/dist/manifest.txt: about 1 MB instead of
+# the whole repository's 10, without the evaluation bench - whose manifests name
+# malicious packages on purpose - the evals, the gates or their fixtures.
+#
+# The build proves itself before anything is pushed (scripts/dist/build.sh runs
+# the CLI, the shell guard and both deliverable validators inside the built
+# tree). A broken build fails this job and leaves the published branch as it was.
+#
+# Triggers: a push to main or stable, which only the maintainer's merges and the
+# promotion workflow make, and a manual dispatch. Nothing a third party controls.
+name: Distribution
+
+on:
+  push:
+    branches:
+      - main
+      - stable
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: dist-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dist:
+    name: dist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # push the dist branch; nothing else
+    steps:
+      - name: Checkout the source branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: source
+          persist-credentials: false
+
+      - name: Build the distribution and prove it runs
+        run: bash source/scripts/dist/build.sh "$RUNNER_TEMP/dist"
+
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            main)   target=dist ;;
+            stable) target=dist-stable ;;
+            *) echo "::error::dist is built only from main or stable, not $GITHUB_REF_NAME"; exit 1 ;;
+          esac
+          src_sha="$(git -C source rev-parse HEAD)"
+          work="$RUNNER_TEMP/publish"
+          git init -q "$work"
+          cd "$work"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 "$remote" "refs/heads/${target}:refs/remotes/origin/${target}" 2>/dev/null; then
+            git checkout -q -B "$target" "origin/${target}"
+            git rm -rq --ignore-unmatch . >/dev/null
+          else
+            git checkout -q --orphan "$target"
+          fi
+          cp -R "$RUNNER_TEMP/dist/." .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "[OK] ${target} already holds main@${src_sha}'s distribution"
+            exit 0
+          fi
+          git commit -q -m "dist: ${GITHUB_REF_NAME}@${src_sha}"
+          git push -q "$remote" "HEAD:refs/heads/${target}"
+          echo "[OK] ${target} now holds the distribution of ${GITHUB_REF_NAME}@${src_sha}"
