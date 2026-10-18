@@ -25,6 +25,15 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **A pull-request mode: `docs/github-action.md` and a workflow to copy.** The review found no way
+  to run the squad on a change rather than a repository, and no GitHub Action. The example runs a
+  `quick` audit of the files a pull request changes through `anthropics/claude-code-action`
+  (pinned by SHA, plugin installed through its `plugin_marketplaces`/`plugins` inputs), exports
+  `findings.json` with `scripts/ehs sarif`, uploads it to code scanning, and shows how
+  `scripts/ehs compare --fail-on high` against a baseline turns it into a gate. The guide says
+  what it costs, that the pull request is untrusted input to an agent holding an API key, that
+  uploading publishes, and that a change-scoped review does not replace a full audit.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad
