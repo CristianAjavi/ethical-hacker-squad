@@ -17,7 +17,7 @@ Six packs ship as more than one file (`web-api` + `web-api-clientside-logic` + `
 
 | Signal in the inventory | Role | Pack sections | Notes |
 |---|---|---|---|
-| `package.json`, `requirements.txt`, `pom.xml`, `go.mod`, `Gemfile`, `composer.json`, `*.csproj` | `supply-chain` | `supply-chain.md` §1-§4, §7 + `supply-chain-source-lifecycle.md` §11 | Always staffed: every project has dependencies. `>99%` of observed open-source malware lands in npm, so weight Node projects higher. §11 is not optional here: without it a clean scan of an unsupported runtime gets reported as clean instead of as unmeasured. |
+| `package.json`, `requirements.txt`, `pom.xml`, `go.mod`, `Gemfile`, `composer.json`, `*.csproj` | `supply-chain` | `supply-chain.md` §1-§4, §7 + `supply-chain-source-lifecycle.md` §11 | Always staffed: every project has dependencies. `>99%` of observed open-source malware lands in npm (Sonatype, 2026), so weight Node projects higher. §11 is not optional here: without it a clean scan of an unsupported runtime gets reported as clean instead of as unmeasured. |
 | Any git repository | `supply-chain` | `supply-chain-secrets-malware.md` §8 | Secret scanning of tree and history. Distinctive-format detection before entropy. |
 | HTTP routes, controllers, middleware, `urls.py`, `routes/`, `@RestController`, `app.get(` | `web-api` | `web-api.md` §0-§4, `web-api-clientside-logic.md` §7-§8, `web-api-logging.md` §11 | Start at §0. Authorization and business logic are the classes tooling misses. |
 | ORM usage, raw SQL, query builders | `web-api` | `web-api.md` §3 | |

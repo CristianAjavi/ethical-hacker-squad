@@ -77,7 +77,7 @@ Never a reach proof, in any combination:
 - **an exit status of `0`** on its own: it is the same `0` a runner returns when it collected no tests at all;
 - **empty output**, no matches, no findings: the absence of a message is not a message;
 - **a green test suite**: it covers what somebody thought of covering, and the vulnerability is by definition what nobody thought of;
-- a scanner run with nothing in it: measured recall for individual static analyzers on real vulnerabilities runs between roughly 20% and 53%, and combining tools still leaves a large fraction undetected;
+- a scanner run with nothing in it: even the best of six static C analyzers found only 20% to 53% of 192 real CVEs, depending on how a detection is counted, and combining all six still missed 30% to 69%;
 - the remediator's word that the patch works, or a diff that reads convincingly;
 - a screenshot, a green CI badge, or "it worked when I tried it earlier".
 <!-- /reach-proof:reject -->

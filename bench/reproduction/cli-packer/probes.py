@@ -100,6 +100,17 @@ def probe_P06(mod, work: Path) -> Observation:
             f"this interpreter defaults tarfile extraction to filter={default!r}, so a "
             "block here would come from the runtime rather than from the code under test",
         )
+    # CPython 3.14 made `data` the default WITHOUT changing that signature: the
+    # parameter still defaults to None and None now resolves to `data`. The check
+    # above saw nothing and the probe read the runtime's refusal as the code's.
+    # Ask the runtime directly, with a canary, and when it refuses by default,
+    # measure the code under the default the key assumes - `fully_trusted`, which
+    # is what 3.13 and older apply - and say so in the evidence.
+    emulated = ""
+    if _runtime_refuses_traversal(work / "canary"):
+        tarfile.TarFile.extraction_filter = staticmethod(tarfile.fully_trusted_filter)
+        emulated = (" (measured under the pre-3.14 default, filter=fully_trusted: this "
+                    "interpreter refuses the traversal by default, Python 3.13 and older do not)")
 
     dest = work / "dest"
     dest.mkdir()
@@ -118,11 +129,32 @@ def probe_P06(mod, work: Path) -> Observation:
             warnings.simplefilter("ignore", DeprecationWarning)
             mod.unpack(str(archive), str(dest))
     except Exception as exc:  # a refusal is a real answer: the defect did not happen
-        return Observation(False, f"extraction refused the entry: {type(exc).__name__}: {exc}")
+        return Observation(False, f"extraction refused the entry: {type(exc).__name__}: {exc}{emulated}")
+    finally:
+        if emulated:
+            tarfile.TarFile.extraction_filter = None
 
     if landed.exists():
-        return Observation(True, f"the entry wrote {landed}, outside the destination {dest}")
-    return Observation(False, f"nothing landed outside {dest}")
+        return Observation(True, f"the entry wrote {landed}, outside the destination {dest}{emulated}")
+    return Observation(False, f"nothing landed outside {dest}{emulated}")
+
+
+def _runtime_refuses_traversal(canary: Path) -> bool:
+    """Does plain `extractall(dest)` refuse an entry that climbs out of `dest`?"""
+    (canary / "dest").mkdir(parents=True)
+    payload = canary / "payload"
+    payload.write_bytes(b"canary\n")
+    archive = canary / "canary.tar"
+    with tarfile.open(archive, "w") as tf:
+        tf.add(str(payload), arcname="./../canary-escaped")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            with tarfile.open(archive) as tf:
+                tf.extractall(canary / "dest")
+    except Exception:
+        return True
+    return not (canary / "canary-escaped").exists()
 
 
 # ---------------------------------------------------------------------------

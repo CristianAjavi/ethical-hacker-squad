@@ -30,11 +30,11 @@ on: pull_request_target                    # runs with secrets and a write token
 ```
 **What rules it out (false positive)**
 - The workflow uses `pull_request_target` but does **not** check out the PR code: it only reads metadata to label or comment. That is the legitimate use of the trigger.
-- The job sits behind an `environment:` with required reviewers, so an external PR cannot run without human approval.
+- The job sits behind an `environment:` with required reviewers, or an `if:` that admits only same-repository PRs (`github.event.pull_request.head.repo.full_name == github.repository`). A label gate (`safe to test`) is a human approval, but a push after the label still runs: a finding of lower severity, not a dismissal.
 
 Rules: FP-01, FP-09.
 
-**Minimal test**: for every workflow with `pull_request_target`, find `actions/checkout` and inspect the `ref`: with no explicit `ref` it checks out the base (safe); with `head.*` the finding is confirmed.\
+**Minimal test**: for every workflow with `pull_request_target`, find `actions/checkout` and inspect the `ref`: with no explicit `ref` it checks out the base (safe). With `head.*`, confirm two more things before calling it confirmed: a later step executes or loads code from the checkout (install, build, test, a composite action, a tool reading config from it), and the job holds something worth taking (a secret, a token with write `permissions:`, a cache key). Checkout alone, read-only, with nothing to steal, is `probable` with that reasoning.\
 **Traceability**: `CWE-94` · `CWE-829` · `A03:2025` · `A08:2025` · `CICD-SEC-4` · `SSDF PW` · `SLSA Build L2` · `NIST 800-53 SA`\
 **Tooling**: `zizmor --offline --format sarif .github/workflows/` — **`--offline` is mandatory**: passing `--gh-token` or having `GH_TOKEN` in the environment switches it to online mode and queries the GitHub API, which is already traffic against a third party. Complement it with `actionlint -format '{{json .}}' .github/workflows/*.yml`.
 

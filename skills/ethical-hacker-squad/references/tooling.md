@@ -5,7 +5,7 @@ Load this before invoking any scanner. It answers three questions per tool: how 
 ## Three rules that override any tool output
 
 1. **A match is a candidate, not a finding.** Trace source, transformation and sink, look for compensating controls, then decide. The packs' `What rules it out` field exists for this.
-2. **A clean run is not evidence of absence.** Measured on 27 real projects and 192 CVE-confirmed vulnerabilities, individual static analyzers missed between 47% and 80% of them; combining several left 30% to 69% still missed (Lipp et al., ISSTA 2022). On a Java benchmark, four well-known SAST tools detected 11%-27% each and 38.8% combined, with deserialization, input validation and XSS the least detected (Bennett et al., EASE 2024). Report a clean scan as a fact about the tool.
+2. **A clean run is not evidence of absence.** Measured on 27 real projects and 192 CVE-confirmed vulnerabilities, even the best of six static C analyzers missed between 47% and 80% of them, depending on how a detection is counted; combining several left 30% to 69% still missed (Lipp et al., ISSTA 2022). On a Java benchmark, four well-known SAST tools detected 11%-27% each and 38.8% combined, with deserialization, input validation and XSS the least detected (Bennett et al., EASE 2024). Report a clean scan as a fact about the tool.
 3. **Licence and network posture are part of the invocation.** Some tools may be executed but not redistributed; some phone home by default; some verify a discovered credential by using it against the real provider, which is an action against a third party.
 
 ## Network posture
@@ -44,14 +44,14 @@ Two facts worth acting on: 81% of secrets committed to public repositories are n
 | cargo-audit | Apache-2.0 OR MIT | `cargo audit --file Cargo.lock --no-fetch --json` | Mixes `unmaintained`, `unsound` and `yanked` advisories, which are not exploitable vulnerabilities. |
 | OWASP dependency-check | Apache-2.0 | `dependency-check.sh --scan . --format SARIF --noupdate --disableOssIndex` | Worst profile: heuristic CPE name matching, shaded JARs match unrelated CPEs. A suppression file is normal operation, not a workaround. |
 
-**Triage before reporting.** Fewer than 9.5% of dependency vulnerabilities have a real call path from the application to the vulnerable function, and 95% sit in transitive dependencies (Endor Labs). Applying runtime context, only 18% of CVSS-critical findings stay critical (Datadog, 2026). Of 192,035 CVEs observed over six and a half years, 6.4% were ever exploited; prioritizing by CVSS ≥ 7 gives 82% coverage at 6.5% efficiency, while EPSS at threshold **0.088** gives 82% coverage at 78.5% efficiency for an eighth of the effort (Jacobs et al., 2023).
+**Triage before reporting.** Fewer than 9.5% of dependency vulnerabilities have a real call path from the application to the vulnerable function, and 95% sit in transitive dependencies (Endor Labs: the first figure from its 2024 Dependency Management Report, the second from its 2022 study of Java packages). Applying runtime context, only 18% of CVSS-critical findings stay critical (Datadog, 2026). Of 192,035 CVEs observed from July 2016 to December 2022, 6.4% were seen exploited in that window; prioritizing by CVSS ≥ 7 covers 82.1% of them at 3.9% efficiency by patching 58.1% of all CVEs, while EPSS at threshold **0.088** covers 82.0% at 45.5% efficiency by patching 7.3% — an eighth of the effort (Jacobs et al., 2023, Fig. 5).
 
 So the priority order is: reachable, then in the KEV catalog, then EPSS above threshold, then CVSS. Two free lookups:
 
 - KEV: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`; `knownRansomwareCampaignUse == "Known"` escalates automatically.
 - EPSS v5 (`v2026.06.15`, FIRST.org): `https://api.first.org/data/v1/epss?cve=CVE-a,CVE-b` in one batched call.
 
-Also note that roughly 65% of open-source CVEs carry no NVD CVSS score at all, with a 41-day median to score the rest. "No CVSS" is not "no risk".
+Also note that nearly 65% of open-source CVEs carry no NVD CVSS score at all, with a 41-day median to score the rest (Sonatype, 2026). "No CVSS" is not "no risk".
 
 ## Static analysis
 
@@ -70,7 +70,7 @@ Also note that roughly 65% of open-source CVEs carry no NVD CVSS score at all, w
 
 `checkov -d . --framework terraform kubernetes dockerfile --skip-download --compact -o json` is the noisiest of the group: it does not resolve variables or modules, so a variable with a safe default still reports, and it flags controls compensated at another layer. `trivy config . --skip-check-update` is the successor to tfsec, whose maintainers redirected their community to Trivy; it scans Helm without rendering, so template literals appear as insecure values. `hadolint --no-fail -f sarif Dockerfile` is GPL-3.0 — invoke it, never vendor it — and most of its noise is style with no security impact. `kube-bench` audits a node, not a repository, and fails control-plane checks that the provider manages on EKS, GKE and AKS. `conftest`/`opa` false positives are yours: a `deny` rule that does not filter on `input.kind` fires across the whole YAML stream.
 
-For workflows, `actionlint -format '{{json .}}' .github/workflows/*.yml` and `zizmor --offline --format sarif .github/workflows/` are pure static checks. `--offline` matters: supplying `--gh-token` or `GH_TOKEN` switches zizmor to online mode. Its `unpinned-uses` finding is hardening rather than an exploitable issue in repositories that never expose a writable token — but note that only about 4% of organizations pin all public actions by commit SHA, and a tag is mutable: in March 2025 every tag of a widely used action from `v1` through `v45.0.7` was repointed at a malicious commit that dumped runner secrets into the workflow log.
+For workflows, `actionlint -format '{{json .}}' .github/workflows/*.yml` and `zizmor --offline --format sarif .github/workflows/` are pure static checks. `--offline` matters: supplying `--gh-token` or `GH_TOKEN` switches zizmor to online mode. Its `unpinned-uses` finding is hardening rather than an exploitable issue in repositories that never expose a writable token — but note that only about 4% of organizations pin all public actions by commit SHA (Datadog, 2026), and a tag is mutable: in March 2025 every tag of a widely used action from `v1` through `v45.0.7` was repointed at a malicious commit that dumped runner secrets into the workflow log.
 
 ## Mobile, static and local only
 
