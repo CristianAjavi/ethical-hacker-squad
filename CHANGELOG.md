@@ -8,6 +8,17 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The validators were named by a path that only exists inside this repository.** `report.md`
+  and `findings-artifact.md` told the leader to run `scripts/gates/gate-report-contract.sh` and
+  `scripts/gates/gate-findings-artifact.sh`; a leader working in the audited repository resolves
+  that against the target, where nothing of the kind exists. Both now name `<plugin root>` —
+  `${CLAUDE_PLUGIN_ROOT}`, two directories above the skill's base directory — and an absolute
+  deliverable path, and a skill copied without the plugin reports each validator as *not
+  available — not measured, not a pass* instead of skipping it. `team.md` also tells the leader
+  what it means that the session started inside the target (its `CLAUDE.md` and project settings
+  came first) and how a user starts clean: `claude --add-dir <target>` from a neutral directory,
+  which does not load the added directory's `CLAUDE.md`, or `claudeMdExcludes`.
+
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
