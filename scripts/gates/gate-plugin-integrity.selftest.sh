@@ -46,6 +46,79 @@ agent
 MD
 }
 
+
+# --- shipped tools ------------------------------------------------------------
+# Permitting an extension is not permitting what the file DOES, and these cases
+# exist because the second is the part a user is trusting. Each writes a tool
+# that is inert except for one capability, and asserts the gate names it.
+
+m_tool_inert() {
+  mkdir -p "$1/skills/mypack/tools"
+  cat > "$1/skills/mypack/tools/t.py" <<'PY'
+import ast
+import json
+import sys
+from pathlib import Path
+
+
+def main():
+    tree = ast.parse(Path(sys.argv[1]).read_text())
+    print(json.dumps({"nodes": len(list(ast.walk(tree)))}))
+PY
+}
+m_tool_loose() {            # the same inert file, one level up: not a tool
+  m_tool_inert "$1"
+  mv "$1/skills/mypack/tools/t.py" "$1/skills/mypack/t.py"
+}
+m_tool_subprocess() { m_tool_inert "$1"; printf 'import subprocess\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_network()    { m_tool_inert "$1"; printf 'from urllib import request\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_writes()     { m_tool_inert "$1"; printf 'open("/tmp/x", "w")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_writetext()  { m_tool_inert "$1"; printf 'Path("/tmp/x").write_text("y")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_eval()       { m_tool_inert "$1"; printf 'eval("1+1")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_compile()    { m_tool_inert "$1"; printf 'compile("x=1", "<s>", "exec")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_recompile()  { m_tool_inert "$1"; printf 'import re\nPAT = re.compile(r"x")\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_ossystem()   { m_tool_inert "$1"; printf 'import os\nos.system("id")\n' >> "$1/skills/mypack/tools/t.py"; }
+# A compiled artifact git ignores is on the disk and never in the package.
+# `git add -A` is the whole fix for the two cases below, and the reason they were
+# once withdrawn as COULD NOT MEASURE: the gate builds its file set from
+# `git ls-files`, so a fixture that is a git repo with NOTHING staged presents no
+# files at all and the gate correctly answers that it could not measure. That was
+# never the rule failing - it was the fixture never showing it anything. Staging
+# needs no commit and no git identity, and `add -A` honours .gitignore, so the
+# ignored artifact stays out on its own merits rather than by being left behind.
+m_ignored_pyc() {
+  m_tool_inert "$1"
+  git -C "$1" init --quiet 2>/dev/null
+  printf '__pycache__/\n' > "$1/.gitignore"
+  mkdir -p "$1/skills/mypack/tools/__pycache__"
+  printf 'x\n' > "$1/skills/mypack/tools/__pycache__/t.cpython-312.pyc"
+  git -C "$1" add -A 2>/dev/null
+}
+# The same bytes where git would ship them must still fail.
+m_tracked_pyc() {
+  m_tool_inert "$1"
+  git -C "$1" init --quiet 2>/dev/null
+  printf '# nothing ignored\n' > "$1/.gitignore"
+  printf 'x\n' > "$1/skills/mypack/tools/t.pyc"
+  git -C "$1" add -A 2>/dev/null
+}
+# agents/ holds a role the manifest never lists: it is in the tree and not in the
+# package, which no other gate can see because they all read the directory.
+m_undeclared_agent() {
+  m_tool_inert "$1"
+  mkdir -p "$1/.claude-plugin" "$1/agents"
+  printf -- '---\nname: ghost\ndescription: A role the manifest does not declare.\n---\n\nrole\n' > "$1/agents/ghost.md"
+  printf '{"name":"p","description":"d","agents":[]}\n' > "$1/.claude-plugin/plugin.json"
+}
+# and the other direction: the manifest promises a role that is not in the tree.
+m_ghost_agent() {
+  m_tool_inert "$1"
+  mkdir -p "$1/.claude-plugin"
+  printf '{"name":"p","description":"d","agents":["./agents/absent.md"]}\n' > "$1/.claude-plugin/plugin.json"
+}
+m_tool_relative()   { m_tool_inert "$1"; printf 'from . import helper\n' >> "$1/skills/mypack/tools/t.py"; }
+m_tool_unparseable(){ mkdir -p "$1/skills/mypack/tools"; printf 'def (\n' > "$1/skills/mypack/tools/t.py"; }
+
 # run_case <name> <expected rc> <needle> <mutation> [env assignments...]
 run_case() {
   local name="$1" want="$2" needle="$3" mutate="$4"; shift 4
@@ -58,7 +131,7 @@ run_case() {
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
-    printf '%s\n' "$out" | sed 's/^/         /' | grep -iE 'fail|unmeas' | head -4; fail=$((fail+1))
+    printf '%s\n' "$out" | sed 's/^/         /' | grep -iE 'fail|unmeas|could not' | head -6; fail=$((fail+1))
   fi
 }
 
@@ -138,6 +211,35 @@ run_case tree-over-file-budget       1 "files >"                   m_none EHS_MA
 run_case tree-headroom-notice        0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000 EHS_MAX_REF_BYTES=999999
 run_case_absent tree-headroom-quiet  0 "of headroom left"          m_none EHS_MAX_TREE_BYTES=1000000
 
+echo "-- shipped tools: the extension is permitted, the capability is not"
+run_case tool-inert-ships            0 "read and inert"            m_tool_inert
+run_case tool-loose-in-tree          1 "non-permitted extension"   m_tool_loose
+run_case tool-imports-subprocess     1 "subprocess"                m_tool_subprocess
+run_case tool-imports-network        1 "urllib"                    m_tool_network
+run_case tool-opens-for-writing      1 "for writing"               m_tool_writes
+run_case tool-calls-write-text       1 "write_text"                m_tool_writetext
+run_case tool-calls-eval             1 "calls \`eval\`"            m_tool_eval
+run_case tool-calls-builtin-compile  1 "calls \`compile\`"         m_tool_compile
+run_case tool-uses-re-compile        0 "read and inert"            m_tool_recompile
+# The git-ignored-paths rule now has both cases, and the reason it did not is
+# worth keeping: they were withdrawn as "COULD NOT MEASURE - I found no .md file
+# to analyse" with the cause unisolated, and the guess in this comment - that
+# `git check-ignore` was dropping every file - was WRONG. The gate builds its
+# file set from `git ls-files`, and the fixtures ran `git init` and staged
+# nothing, so there were no files to judge and the gate said so correctly. One
+# `git add -A` per builder fixes it. A manual check stood in for these two for a
+# day, which is exactly the weaker thing this file exists to replace.
+run_case pyc-git-ignored            0 "git-ignored"              m_ignored_pyc
+run_case pyc-tracked-still-fails    1 "extension"                m_tracked_pyc
+# A role that exists and is not declared does not ship. Measured on the real
+# repo: nine roles in agents/, eight in the manifest, so every install was
+# missing the local-application specialist with no error anywhere.
+run_case role-not-in-the-manifest    1 "does not declare it"      m_undeclared_agent
+run_case manifest-names-a-ghost      1 "is not there"             m_ghost_agent
+run_case tool-calls-os-system        1 "calls \`system\`"          m_tool_ossystem
+run_case tool-relative-import        1 "stand alone"               m_tool_relative
+run_case tool-does-not-parse         1 "does not parse"            m_tool_unparseable
+
 echo "-- could not measure (never a pass)"
 run_case no-skill-md-anywhere        2 "nothing to validate"       m_no_skill_md
 run_case no-markdown-at-all          2 ""                          m_no_md_at_all
@@ -146,6 +248,7 @@ echo
 echo "Summary: $pass ok, $fail failures"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate rejects a malformed skill, a tree that points outside"
-echo "        itself, and a corpus over budget, and it reports could-not-measure"
-echo "        instead of approving an incomplete tree."
+echo "        itself, a corpus over budget, and a shipped tool that can reach off"
+echo "        the machine or change it; and it reports could-not-measure instead"
+echo "        of approving an incomplete tree."
 exit 0

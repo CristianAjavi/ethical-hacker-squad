@@ -100,6 +100,22 @@ generator-authored, the method sees type-1 and type-2 clones only, and 31 distin
 is a small sample that is not a random one. The method was fixed before any number was
 computed.
 
+## A check measured against the shape it is named for, and it was not finding it
+
+[2026-08-27, negative search](runs/2026-08-27-negative-search/) — **0 of 5 known writer
+asymmetries flagged before, 2 of 2 Python ones after, 0 decoys either way.** Two auditors
+reported by hand what `writer_parity.py` had not, in two different components of
+`corpus-v10`; its precision had been published carefully a day earlier and its **recall had
+never been measured at all**, so the summary line *"0 with one writer checked and another
+not"* read as *"no asymmetry exists"*. The cause is not tuning: `WRITE` matched calls, and an
+ORM write is frequently an attribute assignment with no call to match.
+
+Scored both ways because one of them flatters: **2 of 2 by symbol**, 0 of 2 within five lines
+and 2 of 2 within ten — the flag anchors on the `def`, the key on the offending statement
+eight and ten lines inside. Two flags is a small sample and this is not a precision claim.
+The three TypeScript and JavaScript asymmetries are **still invisible**, the pass was never
+written, and the tool now says so on every run — clean or not.
+
 ## Reproduction
 
 All sixteen planted defects that are reproducible without installing anything now carry an
