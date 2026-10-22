@@ -253,6 +253,8 @@ info "$N_AGENTS agent definition(s) found"
 
 FACTS="$TMPD/facts.tsv"   # rel <TAB> role <TAB> hasbash <TAB> writetools <TAB> ntools
 : > "$FACTS"
+LINE_TOOLS="$TMPD/line-tools.tsv"   # rel <TAB> tools as the line reader saw them
+: > "$LINE_TOOLS"
 
 while IFS= read -r AF; do
   REL="${AF#"$ROOT"/}"
@@ -311,6 +313,7 @@ while IFS= read -r AF; do
   fi
 
   TOOLS_RAW="$(get TOOLS)"
+  printf '%s\t%s\n' "$REL" "$TOOLS_RAW" >> "$LINE_TOOLS"
   DESC="$(get DESC)"
   BODYSTART="$(get BODYSTART)"
 
@@ -379,6 +382,115 @@ while IFS= read -r AF; do
     info "$REL — role: auditor (no write-authority declaration; the strict branch is the default)"
   fi
 done < "$AGENTS_LIST"
+
+# --- 3b. the frontmatter is YAML, and a YAML parser agrees with this gate ---
+# Everything above reads the frontmatter line by line, and so did the review of
+# every agent ever merged. Measured on 2026-10-15: `agents/ehs-local-app.md` had
+# shipped since 2026-08-20 with a description carrying an unquoted ": " ("local
+# daemons: path traversal"), which a YAML parser rejects outright ("mapping
+# values are not allowed here"). The line reader certified its `tools:` list all
+# the same, and `claude plugin validate <dir>` passes even a frontmatter that is
+# not YAML at all, so nothing in the pipeline could see it. The harness reads
+# this block with a YAML parser; a declaration only counts if that kind of
+# reader recovers the same thing this gate checked. So: it must parse, it must
+# be a mapping with no duplicated key (two `tools:` keys are two answers), and
+# the `tools` a YAML parser recovers must be the list the line reader saw.
+section "frontmatter parses as YAML"
+command -v python3 >/dev/null 2>&1 \
+  || unmeasurable "python3 is missing: I cannot check that the frontmatter parses as YAML"
+python3 -c 'import yaml' 2>/dev/null \
+  || unmeasurable "the PyYAML module is missing (pip install pyyaml): I cannot check that the frontmatter parses as YAML"
+
+YAML_REPORT="$TMPD/yaml.tsv"
+python3 - "$ROOT" "$AGENTS_LIST" "$LINE_TOOLS" > "$YAML_REPORT" <<'PY'
+import re, sys, yaml
+
+root, listing, line_tools = sys.argv[1], sys.argv[2], sys.argv[3]
+
+class StrictLoader(yaml.SafeLoader):
+    pass
+
+def mapping_without_duplicates(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise yaml.constructor.ConstructorError(
+                None, None, "duplicated key %r" % (key,), key_node.start_mark)
+        seen.add(key)
+    return loader.construct_mapping(node, deep=deep)
+
+StrictLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping_without_duplicates)
+
+def norm(entries):
+    return ",".join(e.strip().strip("\"'").strip() for e in entries if e.strip())
+
+line_saw = {}
+for row in open(line_tools, encoding="utf-8").read().splitlines():
+    rel_, _, raw = row.partition("\t")
+    line_saw[rel_] = norm(raw.split(","))
+
+def compare(rel, yaml_saw):
+    seen = line_saw.get(rel, "")
+    if seen == yaml_saw:
+        print("OK\t%s\t%s" % (rel, yaml_saw))
+    else:
+        print("MISMATCH\t%s\ta YAML parser reads `tools` as '%s' and the line reader as '%s'"
+              % (rel, yaml_saw or "<absent>", seen or "<absent>"))
+
+for path in open(listing, encoding="utf-8").read().splitlines():
+    rel = path[len(root) + 1:] if path.startswith(root + "/") else path
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError as e:
+        print("UNREADABLE\t%s\t%s" % (rel, e))
+        continue
+    m = re.match(r"---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(\r?\n|$)", text, re.S)
+    if not m:
+        print("NOFM\t%s\t-" % rel)   # already reported by the line reader
+        continue
+    try:
+        data = yaml.load(m.group(1), Loader=StrictLoader)
+    except yaml.YAMLError as e:
+        msg = " ".join(str(e).split())
+        hint = ""
+        if "mapping values are not allowed" in msg:
+            hint = " - quote the value, or reword it so it carries no ': '"
+        print("FAIL\t%s\tdoes not parse as YAML: %s%s" % (rel, msg[:220], hint))
+        continue
+    if not isinstance(data, dict):
+        print("FAIL\t%s\tparses as YAML but not as a mapping of keys" % rel)
+        continue
+    missing = [k for k in ("name", "description")
+               if not isinstance(data.get(k), str) or not data.get(k).strip()]
+    if missing:
+        print("FAIL\t%s\tparses as YAML but carries no non-empty string for: %s"
+              % (rel, ", ".join(missing)))
+        continue
+    tools = data.get("tools")
+    if tools is None:
+        compare(rel, "")
+    elif isinstance(tools, str):
+        compare(rel, norm(tools.split(",")))
+    elif isinstance(tools, list) and all(isinstance(t, str) for t in tools):
+        compare(rel, norm(tools))
+    else:
+        print("FAIL\t%s\tparses as YAML but `tools` is neither a string nor a list of strings" % rel)
+PY
+[ -s "$YAML_REPORT" ] || unmeasurable "the YAML reader produced no verdict for any agent"
+
+while IFS="$(printf '\t')" read -r KIND REL MSG; do
+  [ -n "$KIND" ] || continue
+  case "$KIND" in
+    NOFM) : ;;
+    UNREADABLE) unmeasurable "$REL could not be read by the YAML reader: $MSG" ;;
+    FAIL) fail "$REL — the frontmatter $MSG. If the harness's parser rejects it too, the agent loads without the metadata this gate certified, its \`tools\` restriction included" ;;
+    OK) ok "$REL parses as YAML and its \`tools\` read the same both ways${MSG:+ ($MSG)}" ;;
+    MISMATCH) fail "$REL — $MSG. Two readers, two tool lists: the restriction is whatever the harness happens to use" ;;
+    *) unmeasurable "the YAML reader returned an unknown verdict '$KIND' for $REL" ;;
+  esac
+done < "$YAML_REPORT"
 
 # --- 4. how many agents may write ------------------------------------------
 section "write authority"
