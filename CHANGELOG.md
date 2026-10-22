@@ -8,6 +8,17 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Fixed
 
+- **The repository description stated a corpus that no longer existed.** GitHub showed *"122
+  procedures across 7 role packs"* while the corpus held 171 across 8, and AI-written summaries
+  of this project were repeating the stale figure. Nothing could have caught it:
+  `scripts/sync-declared-counts.py` rewrites numbers in the tree, and the description lives on
+  GitHub. The fix states **no count** there, so there is nothing left to drift. The description is
+  now declared in `scripts/gh/governance.json` `settings`, where `apply-governance.sh` already
+  compares every key against the live repository, and `gate-corpus-contract.sh` fails if a count
+  comes back or the declaration disappears. The same rule now covers the descriptions a user reads
+  in `/plugin` before installing — `plugin.json` and every `marketplace.json` entry — which an
+  adversarial review found unwatched. Four new self-test cases, one of them the exact stale
+  sentence; 30 total, 0 failures.
 - **G7 failed on every Dependabot pull request and could never have passed one.** Reported by a
   user looking at the checks: *"hay un error en pr context gates"*. `.github/workflows/**` became
   protected on `23c240f`; PR #73 taught the gate to recognise `[bot]`. Each change was right;
