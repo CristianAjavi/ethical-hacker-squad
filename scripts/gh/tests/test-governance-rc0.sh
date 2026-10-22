@@ -87,9 +87,11 @@ case "$path" in
   repos/*/commits*) out='[{"sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' ;;
   repos/*)
     out=$(jq -c '.settings + {permissions:{admin:true}, owner:{type:"User"},
-      security_and_analysis:{
-        secret_scanning:{status: (if .secret_scanning.enabled then "enabled" else "disabled" end)},
-        secret_scanning_push_protection:{status: (if .secret_scanning.push_protection then "enabled" else "disabled" end)}}}' "$STATE")
+      security_and_analysis:
+        ( ((.security_and_analysis_declared // {}) | with_entries(.value = {status: .value}))
+          + {secret_scanning:{status:(if .secret_scanning.enabled then "enabled" else "disabled" end)},
+             secret_scanning_push_protection:{status:(if .secret_scanning.push_protection then "enabled" else "disabled" end)},
+             dependabot_security_updates:{status:(if .dependabot_security_updates then "enabled" else "disabled" end)}} )}' "$STATE")
     if [ -n "$OVERRIDE" ]; then out=$(jq -c "$OVERRIDE" <<<"$out"); fi ;;
   *) out='{}' ;;
 esac
@@ -121,6 +123,35 @@ OUT=$(LAB_HIDE_CONTEXT=workflow-hardening PATH="$LAB/bin:$PATH" \
 res "a required context never observed -> rc 1 (anti-lockout)" "$RC" 1 "$OUT"
 case "$OUT" in *"NEVER been observed"*) echo "        (it names the context it refuses to declare)";;
   *) echo "        FAIL: it does not name the unobserved context"; FAIL=$((FAIL+1));; esac
+
+# --- security_and_analysis: sections 6b and 6c, proved in the negative --------
+# The double used to serve two of the five keys the live API returns, which made
+# both sections UNMEASURABLE and every case here rc=2. It now serves the census
+# key set. That repair also means both sections pass here by construction, so
+# each one is driven red below - otherwise they are green for free.
+g() { GOV_OVERRIDE="$2" PATH="$LAB/bin:$PATH" \
+      "$LAB/repo/scripts/gh/apply-governance.sh" --no-color 2>&1; }
+
+OUT=$(g x '.security_and_analysis.dependabot_security_updates.status = "enabled"'); RC=$?
+res "6b: security updates switched on behind us -> rc 1" "$RC" 1 "$OUT"
+case "$OUT" in *"dependabot_security_updates: actual=enabled desired=disabled"*)
+    echo "        (it names the setting and both sides)";;
+  *) echo "        FAIL: it does not name the setting"; FAIL=$((FAIL+1));; esac
+
+OUT=$(g x '.security_and_analysis.a_setting_nobody_declared = {status:"enabled"}'); RC=$?
+res "6c: a key the API returns and nothing declares -> rc 1" "$RC" 1 "$OUT"
+case "$OUT" in *"a_setting_nobody_declared is enabled and governance.json declares nothing"*)
+    echo "        (it names the undeclared key)";;
+  *) echo "        FAIL: it does not name the undeclared key"; FAIL=$((FAIL+1));; esac
+
+OUT=$(g x 'del(.security_and_analysis.secret_scanning_validity_checks)'); RC=$?
+res "6c: a key declared that the API does not return -> rc 1" "$RC" 1 "$OUT"
+case "$OUT" in *"declares security_and_analysis.secret_scanning_validity_checks and the API does not"*)
+    echo "        (it names the phantom declaration)";;
+  *) echo "        FAIL: it does not name the phantom declaration"; FAIL=$((FAIL+1));; esac
+
+OUT=$(g x 'del(.security_and_analysis)'); RC=$?
+res "the whole object gone -> rc 2, never a silent 0" "$RC" 2 "$OUT"
 
 echo ""
 echo "  $PASS PASS / $FAIL FAIL"

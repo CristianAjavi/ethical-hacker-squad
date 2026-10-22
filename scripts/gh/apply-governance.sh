@@ -541,6 +541,87 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 6b) DEPENDABOT SECURITY UPDATES
+#     The confusable twin of section 5. `vulnerability_alerts` is the REPORTING
+#     channel and is on; this is the AUTOMATIC FIXING channel and is off. It was
+#     off on the live repository long before it was declared here, which is the
+#     whole reason it is now declared: a correct value nobody wrote down is
+#     indistinguishable from drift, and the next person to see `false` fixes it.
+#
+#     Read from the same security_and_analysis object as secret scanning, so it
+#     inherits the same rule: absent object = UNMEASURED, never correct.
+# ---------------------------------------------------------------------------
+section "Dependabot security updates"
+want_dsu="$(jq -r '.dependabot_security_updates' <<<"$STATE")"
+have_dsu="$(jq -r '.security_and_analysis.dependabot_security_updates.status // "unknown"' <<<"$REPO_JSON")"
+want_dsu_s=$([[ "$want_dsu" == "true" ]] && echo enabled || echo disabled)
+
+if [[ "$have_dsu" == "unknown" ]]; then
+  unmeas "the response of repos/$REPO does not carry security_and_analysis.dependabot_security_updates.
+         A setting I could not read is not a setting I agree with; this is UNMEASURED, not correct."
+elif [[ "$have_dsu" == "$want_dsu_s" ]]; then
+  ok "dependabot_security_updates = $have_dsu"
+else
+  drift "dependabot_security_updates: actual=$have_dsu desired=$want_dsu_s.
+         ON means Dependabot raises fix pull requests against every manifest in the dependency graph,
+         bench/cases/** included, and those are answer keys - see _why_dependabot_security_updates."
+  if [[ "$want_dsu" == "true" ]]; then
+    run_mutation "enable Dependabot security updates" \
+      gh api --method PUT "repos/$REPO/automated-security-fixes" || true
+  else
+    run_mutation "disable Dependabot security updates" \
+      gh api --method DELETE "repos/$REPO/automated-security-fixes" || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 6c) CENSUS OF security_and_analysis - the check that catches what 5, 6 and 6b
+#     structurally cannot.
+#
+#     Each of those goes looking for a field it was told about. A setting nobody
+#     was told about is precisely the one that gets missed, and that is not
+#     hypothetical: dependabot_security_updates was live, off, correct, and
+#     unmentioned anywhere in this repository until 2026-09-02, and two more
+#     keys were in the same position when this block was written.
+#
+#     So the comparison runs from the API's key list rather than from ours, in
+#     both directions. No --apply path: an undeclared key is a decision to take,
+#     not a value to push, and a mutation here would let the script pick.
+# ---------------------------------------------------------------------------
+section "security_and_analysis census"
+if ! jq -e 'has("security_and_analysis") and (.security_and_analysis != null)' >/dev/null 2>&1 <<<"$REPO_JSON"; then
+  unmeas "the response of repos/$REPO carries no security_and_analysis object, so the census has nothing
+         to enumerate. A list I could not read is not a list that agreed with me."
+else
+  sa_bad=0
+  while IFS='|' read -r k have; do
+    [ -n "$k" ] || continue
+    want="$(jq -r --arg k "$k" '.security_and_analysis_declared[$k] // "UNDECLARED"' <<<"$STATE")"
+    if [[ "$want" == "UNDECLARED" ]]; then
+      drift "security_and_analysis.$k is $have and governance.json declares nothing about it.
+         The value may well be right; nothing here knows that it is. Add it to
+         security_and_analysis_declared with the reason, then this line goes away."
+      sa_bad=1
+    elif [[ "$want" != "$have" ]]; then
+      drift "security_and_analysis.$k: actual=$have desired=$want"
+      sa_bad=1
+    fi
+  done < <(jq -r '.security_and_analysis | to_entries[] | "\(.key)|\(.value.status)"' <<<"$REPO_JSON")
+
+  while read -r k; do
+    [ -n "$k" ] || continue
+    if ! jq -e --arg k "$k" '.security_and_analysis | has($k)' >/dev/null 2>&1 <<<"$REPO_JSON"; then
+      drift "governance.json declares security_and_analysis.$k and the API does not return it.
+         Either the setting was renamed or removed upstream, or it never existed and the declaration
+         has been reassuring a reader about nothing."
+      sa_bad=1
+    fi
+  done < <(jq -r '.security_and_analysis_declared // {} | keys[]' <<<"$STATE")
+
+  [ "$sa_bad" -eq 0 ] && ok "security_and_analysis census: every key returned is declared, and vice versa"
+fi
+
+# ---------------------------------------------------------------------------
 # 7) COHERENCE: what is declared here vs what the promotion workflow consumes
 # ---------------------------------------------------------------------------
 section "Coherence with the promotion workflow"

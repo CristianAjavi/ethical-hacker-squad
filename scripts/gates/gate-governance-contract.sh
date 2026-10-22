@@ -56,8 +56,14 @@ trap 'rm -rf "$TMPDIR_GATE"' EXIT
 # PYTHONSAFEPATH: the helper is invoked BY PATH, so its own directory goes first
 # on sys.path - not a working directory that could belong to a tree under audit.
 # The release `verify` job runs every gate with the candidate tree as cwd.
+# COMPARATOR is passed on every call, fixtures included. The core can run
+# without it and says so in a STAT rather than passing over the check, but a
+# gate that took that branch would be reporting on two checks while running
+# one - so from here it is never omitted.
+COMPARATOR="${EHS_GOVERNANCE_SCRIPT:-$ROOT/scripts/gh/apply-governance.sh}"
+
 run_core() {  # <file> <out>
-  PYTHONSAFEPATH=1 python3 "$CORE" "$1" > "$2" 2>&1
+  PYTHONSAFEPATH=1 python3 "$CORE" "$1" "$COMPARATOR" > "$2" 2>&1
 }
 
 # ---------------------------------------------------------------------------
@@ -122,8 +128,8 @@ self_test() {
 # ---------------------------------------------------------------------------
 main() {
   gate_header "governance-contract (a required check that nothing requires)"
-  gate_scope "inside scripts/gh/governance.json: every context in \`promotion.required_contexts\` must also appear in \`branches.<source_branch>.protection.required_status_checks.checks\`"
-  gate_out_of_scope "the LIVE state of the repository - whether GitHub actually enforces what this file declares is apply-governance.sh's job, and it needs credentials this gate does not have"
+  gate_scope "inside scripts/gh/governance.json: every context in \`promotion.required_contexts\` must also appear in \`branches.<source_branch>.protection.required_status_checks.checks\`; every top-level field must be read by apply-governance.sh; and \`security_and_analysis_declared\` must agree with the blocks that carry the reasoning"
+  gate_out_of_scope "the LIVE state of the repository - whether GitHub actually enforces what this file declares is apply-governance.sh's job, and it needs credentials this gate does not have. Also whether a comparator that DOES read a field does anything with it: the evidence here is that the jq path appears, which catches a comparator nobody wrote and not one written badly"
 
   if [ ! -f "$CORE" ]; then
     gate_warn "the checker $CORE is missing"; gate_verdict 2; return "$GATE_UNMEASURABLE"
@@ -177,9 +183,19 @@ main() {
     gate_info "'$ctx' is enforced by the protection and not declared in required_contexts: stricter than declared, not a finding"
   done
 
-  if [ "$nmissing" -gt 0 ]; then
-    grep '^MISSING|' "$out" | while IFS='|' read -r _k ctx; do
+  local nunwatched ndisagree
+  nunwatched="$(grep -c '^UNWATCHED|' "$out" 2>/dev/null || true)"; nunwatched="${nunwatched:-0}"
+  ndisagree="$(grep -c '^DISAGREE|' "$out" 2>/dev/null || true)"; ndisagree="${ndisagree:-0}"
+
+  if [ "$nmissing" -gt 0 ] || [ "$nunwatched" -gt 0 ] || [ "$ndisagree" -gt 0 ]; then
+    grep '^MISSING|' "$out" 2>/dev/null | while IFS='|' read -r _k ctx; do
       gate_fail "'$ctx' is declared in promotion.required_contexts and is NOT in the branch protection: the job runs on every pull request and its red blocks no merge. Required by prose is not required"
+    done
+    grep '^UNWATCHED|' "$out" 2>/dev/null | while IFS='|' read -r _k field; do
+      gate_fail "'$field' is declared in governance.json and ${COMPARATOR##*/} never reads it: a governance claim with nothing comparing it against the live repository. Measured on 2026-09-02, a fabricated field sat in this file through all 38 gates without one of them noticing"
+    done
+    grep '^DISAGREE|' "$out" 2>/dev/null | while IFS='|' read -r _k detail; do
+      gate_fail "$detail - security_and_analysis_declared and the block carrying the reasoning are the same decision written twice, and they have drifted"
     done
     gate_verdict 1; return "$GATE_FAIL"
   fi
@@ -189,7 +205,7 @@ main() {
     gate_verdict 2; return "$GATE_UNMEASURABLE"
   fi
 
-  gate_ok "every declared required context is enforced by the branch protection"
+  gate_ok "every declared required context is enforced by the branch protection, every declared field is read by the comparator, and the census agrees with itself"
   gate_verdict 0
   return "$GATE_OK"
 }

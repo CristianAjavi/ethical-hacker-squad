@@ -124,9 +124,11 @@ case "$path" in
   repos/*commits*) out='[{"sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' ;;
   repos/*)
     out=$(jq -c '.settings + {permissions:{admin:true}, owner:{type:"User"},
-      security_and_analysis:{
-        secret_scanning:{status:(if .secret_scanning.enabled then "enabled" else "disabled" end)},
-        secret_scanning_push_protection:{status:(if .secret_scanning.push_protection then "enabled" else "disabled" end)}}}' "$STATE") ;;
+      security_and_analysis:
+        ( ((.security_and_analysis_declared // {}) | with_entries(.value = {status: .value}))
+          + {secret_scanning:{status:(if .secret_scanning.enabled then "enabled" else "disabled" end)},
+             secret_scanning_push_protection:{status:(if .secret_scanning.push_protection then "enabled" else "disabled" end)},
+             dependabot_security_updates:{status:(if .dependabot_security_updates then "enabled" else "disabled" end)}} )}' "$STATE") ;;
   *) out='{}' ;;
 esac
 if [ -n "$jqf" ]; then printf '%s' "$out" | jq -r "$jqf"; else printf '%s\n' "$out"; fi
