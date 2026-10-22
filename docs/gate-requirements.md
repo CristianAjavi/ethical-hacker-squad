@@ -326,6 +326,8 @@ A pull request **fails** if its diff carries any mark of automation and touches 
 skills/ethical-hacker-squad/SKILL.md
 .claude-plugin/**
 agents/**
+hooks/**
+scripts/hooks/**
 .github/workflows/**
 .github/CODEOWNERS
 docs/sources-allowlist.json
