@@ -25,6 +25,23 @@ The `latest` channel (`main`) resolves to the commit SHA and has no version numb
 
 ### Added
 
+- **`scripts/ehs sarif`: a findings.json deliverable, exported for GitHub code scanning.** The
+  squad's own findings had no way into the Security tab: `report.md` and `findings.json` were the
+  whole deliverable, while scanner output (gitleaks, trivy) could already be uploaded as SARIF.
+  `confirmed` maps to `kind: fail` with a level from its severity; `probable` (`review`) and
+  `hardening` (`informational`) carry `level: none`, the only level SARIF 2.1.0 §3.27.10 allows
+  for a kind other than `fail`; `discarded`, `withdrawn` and duplicates are not exported. Each
+  rule carries the procedure's `help` and a link to it, `external/cwe/cwe-n` tags, and its
+  highest `security-severity`; findings outside every procedure get one rule per CWE instead of
+  one bucket. The fingerprint hashes rule, file and component but not the line, so an alert
+  survives code moving above it. `automationDetails.id` (`--category`) lets an upload close the
+  alerts of the previous one. An artifact with an unredacted secret is refused with exit 1 and
+  nothing is written, and the formats come from one list now, `scripts/gates/data/secret-formats.txt`,
+  shared with the findings validator and `gate-report-contract.sh`: the validator used to know five
+  formats and the export four, none of them a Stripe, Supabase, OpenAI project or Google key, or a
+  signed JWT. Output validated with zero errors against the OASIS SARIF 2.1.0 schema. Uploading
+  stays the user's decision. Fourteen cases in `scripts/ehs.selftest.sh`; 21 total, 0 failures.
+
 - **The handover: a run that ends now has to say where the deliverable landed.**
   `references/report.md` specified the report in 180 lines and never once said the leader must
   tell the user where the file is. Measured 2026-09-01 from a user who had run the squad
