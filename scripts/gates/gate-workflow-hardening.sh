@@ -18,6 +18,13 @@
 #      arrives from forks) reads the `secrets` context - in any of its three
 #      forms: `secrets.X`, `secrets['X']` and `toJSON(secrets)` - nor uses
 #      `secrets: inherit`.
+#   5. That a job installing its own Python with `actions/setup-python` also
+#      installs the packages it will need. The runner image ships a `python3`
+#      carrying distribution packages - PyYAML among them; setup-python puts a
+#      CLEAN interpreter first on PATH and everything that relied on those
+#      packages breaks somewhere else, looking like a defect in the code under
+#      measurement. Measured cost: one whole CI run, three red batteries, one
+#      cause, none of them in the code being judged.
 #
 # Exit codes: 0 = measured and fine | 1 = measured and fails | 2 = could not measure.
 #
@@ -115,6 +122,7 @@ print_findings() {
 # ---------------------------------------------------------------------------
 self_test() {
   local ok=1 f out expect rule_found
+  local n_pass=0 n_fail=0
 
   if [ ! -d "$FIXTURES" ]; then
     gate_warn "self-test: I cannot find the fixtures in $FIXTURES"
@@ -131,13 +139,15 @@ self_test() {
     expect="$(sed -n 's/^#[ ]*gate-expect:[ ]*//p' "$f" | head -1)"
     if [ -z "$expect" ]; then
       gate_warn "self-test: fixture $(basename "$f") does not declare '# gate-expect:'"
-      ok=0
+      ok=0; n_fail=$((n_fail + 1))
       continue
     fi
     rule_found="$(grep -c "^FAIL|[^|]*|[0-9]*|$expect|" "$out" 2>/dev/null || true)"
     if [ "${rule_found:-0}" -lt 1 ]; then
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should trigger '$expect' and it did not"
-      ok=0
+      ok=0; n_fail=$((n_fail + 1))
+    else
+      n_pass=$((n_pass + 1))
     fi
   done
 
@@ -150,7 +160,9 @@ self_test() {
       gate_warn "POSITIVE self-test failed: $(basename "$f") should come out clean:"
       print_findings "$out" FAIL   "        "
       print_findings "$out" UNMEAS "        "
-      ok=0
+      ok=0; n_fail=$((n_fail + 1))
+    else
+      n_pass=$((n_pass + 1))
     fi
   done
 
@@ -161,9 +173,17 @@ self_test() {
     awk -v FILE="$f" -f "$AWK_PROG" "$f" > "$out" 2>/dev/null
     if ! grep -q '^UNMEAS|' "$out"; then
       gate_warn "self-test failed: $(basename "$f") should come out UNMEASURABLE and it came out silent"
-      ok=0
+      ok=0; n_fail=$((n_fail + 1))
+    else
+      n_pass=$((n_pass + 1))
     fi
   done
+
+  # The count goes out in the one form gate-declared-case-counts.sh reads. A
+  # self-test that runs fixtures and never says how many is a self-test whose
+  # number in the documentation cannot be compared to anything, and this gate
+  # was one of the four in exactly that state.
+  echo "--- $n_pass passed, $n_fail failed ---"
 
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"

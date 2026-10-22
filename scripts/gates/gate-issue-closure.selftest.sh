@@ -144,6 +144,9 @@ else
 fi
 
 printf '\nSummary: %d ok, %d failures\n' "$pass" "$fail"
+# The canonical tally line, in the one spelling gate-declared-case-counts.sh
+# reads. Without it the number this battery's row promises is true of nothing.
+printf -- '--- %d passed, %d failed ---\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 printf 'Result: OK. The gate fails when it must fail and distinguishes "could not measure".\n'
 exit 0

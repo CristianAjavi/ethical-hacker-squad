@@ -77,6 +77,13 @@ EXTERNAL_SCOPED='gate-scorecard-threshold.sh'
 # PAT with Administration:read, and that is the owner's decision, written down
 # here rather than left as a silent hole.
 LIVE_SCOPED='gate-governance-drift.sh'
+# Gates deferred for COST, not for scope. They measure this checkout and nothing
+# else, they need no token and no network, and they would answer correctly right
+# here - they just take minutes, because they run a whole battery per subject.
+# run-all.sh is the thing somebody runs before a push; an hour inside it is how a
+# suite gets switched off. Named here with the workflow that does run them,
+# because a gate quietly absent is indistinguishable from a gate that passed.
+SLOW_SCOPED='gate-coverage-sweep.sh'
 
 # Files that live in scripts/gates/ and are NOT gates: they are the self-test of
 # a gate (the gate checking itself). They run separately, with --selftests.
@@ -190,6 +197,14 @@ while IFS= read -r g <&3; do
     n_deferred=$((n_deferred + 1))
     DEFERRED="$DEFERRED $name(needs-live-repo)"
     gate_info "$name reads the live repository, not this checkout: set EHS_LIVE_REPO=1 with an authenticated gh to run it"
+    continue
+  fi
+
+  # Gates that measure this checkout correctly but cost minutes.
+  if in_list "$name" "$SLOW_SCOPED" && [ -z "${EHS_SWEEP:-}" ]; then
+    n_deferred=$((n_deferred + 1))
+    DEFERRED="$DEFERRED $name(costs-minutes)"
+    gate_info "$name runs a whole battery per subject and takes minutes: set EHS_SWEEP=1 to run it, or let coverage-sweep.yml run it weekly"
     continue
   fi
 

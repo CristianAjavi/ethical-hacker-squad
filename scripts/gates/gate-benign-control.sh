@@ -256,7 +256,7 @@ while IFS='|' read -r key label word; do
     fail "run ($key) appears out of order in the rule of $ID (line $pos of the region): the order is baseline, benign, attack"
   fi
   PREV_POS="$pos"
-  if printf '%s' "$text" | grep -qi -- "$word"; then
+  if grep -qi -- "$word" <<<"$text"; then
     ok "run ($key) '$label' present and mentions '$word'"
   else
     fail "run ($key) '$label' no longer mentions '$word': the row lost what makes it that run"
@@ -306,12 +306,12 @@ if [ -z "$MISSING_LINE" ]; then
   fail "the rule of $ID no longer states what happens when (b) is missing (expected a line starting '**Missing (b)**')"
 else
   mtext=${MISSING_LINE#*:}
-  if printf '%s' "$mtext" | grep -qi 'incomplete'; then
+  if grep -qi 'incomplete' <<<"$mtext"; then
     ok "a missing benign run is declared INCOMPLETE"
   else
     fail "the '**Missing (b)**' line of $ID does not say the verification is incomplete"
   fi
-  if printf '%s' "$mtext" | grep -q '`partially verified`'; then
+  if grep -q '`partially verified`' <<<"$mtext"; then
     ok "the incomplete case is mapped to a declared outcome"
   else
     fail "the '**Missing (b)**' line of $ID names no declared outcome for the incomplete case"

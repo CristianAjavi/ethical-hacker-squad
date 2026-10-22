@@ -311,9 +311,9 @@ SF
     fi
     local out rc
     out="$(measure "$w" "$w/scripts/gates/data/alert-surface.json" 2>&1)"; rc=0
-    printf '%s' "$out" | grep -q '^1|' && rc=1
-    printf '%s' "$out" | grep -q '^2|' && rc=2
-    if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+    grep -q '^1|' <<<"$out" && rc=1
+    grep -q '^2|' <<<"$out" && rc=2
+    if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
       printf '  PASS  %-48s rc=%s\n' "$name" "$rc"; p=$((p+1))
     else
       printf '  FAIL  %-48s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -325,7 +325,7 @@ SF
   run_case a-tree-that-agrees-with-itself 0 "measured:" ""
   local real
   real="$(measure "$ROOT" "$SURFACE" 2>&1)"
-  if printf '%s' "$real" | grep -q '^0|' && ! printf '%s' "$real" | grep -q '^[12]|'; then
+  if grep -q '^0|' <<<"$real" && ! grep -q '^[12]|' <<<"$real"; then
     printf '  PASS  %-48s rc=0\n' "this-repository-as-it-stands"; p=$((p+1))
   else
     printf '  FAIL  %-48s\n' "this-repository-as-it-stands"
@@ -391,7 +391,7 @@ import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/ground-truth.json").unlink()'
 
   command rm -rf "$tmp"
-  echo "  $p PASS / $f FAIL"
+  echo "  $p passed, $f failed"
   [ "$f" -eq 0 ] || return 1
   return 0
 }

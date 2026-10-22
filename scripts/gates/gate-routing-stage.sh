@@ -89,9 +89,22 @@ selftest() {
   # The healthy tree must be clean, and each of the other five is the healthy
   # tree with exactly one thing broken. A check that passes all six is a check
   # that is not reading the thing it claims to read.
+  # Every failure below names its case on a line of its own, as
+  # `FAILED  <case>`. gate_fail alone is the GATE's verdict, not a case name, and
+  # a battery that only says "I went red" cannot tell the coverage sweep which
+  # rule the red belongs to - so all eight of this library's report sites were
+  # scoring as covered on the strength of a crash. Measured: 5 of the 7 sites in
+  # this repository that died with nobody naming them were here.
+  # ONE FIXTURE IS ONE CASE. This self-test is fail-fast, so the tally is
+  # printed on both roads: a count read off a red run is refused by the
+  # count gate anyway, and a run that says nothing answers to nothing.
+  gate_case
   out="$(audit "$work/healthy")"
-  if printf '%s\n' "$out" | grep -qE '^[12]\|'; then
-    rm -rf "$work"; gate_fail "self-test: the healthy fixture returned '$out'"; return "$GATE_FAIL"
+  if grep -qE '^[12]\|' <<<"$out"; then
+    rm -rf "$work"
+    echo "FAILED  healthy-fixture-is-clean"
+    gate_case_failed; gate_tally
+    gate_fail "self-test: the healthy fixture returned '$out'"; return "$GATE_FAIL"
   fi
 
   local -a checks=(
@@ -103,21 +116,27 @@ selftest() {
   )
   local spec name code phrase
   for spec in "${checks[@]}"; do
+    gate_case
     name="${spec%%|*}"; spec="${spec#*|}"; code="${spec%%|*}"; phrase="${spec#*|}"
     out="$(audit "$work/$name")"
-    if ! printf '%s\n' "$out" | grep -qF -- "$phrase"; then
+    if ! grep -qF -- "$phrase" <<<"$out"; then
       rm -rf "$work"
+      echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' never said '$phrase'; it said: ${out//$'\n'/ / }"
+      gate_case_failed; gate_tally
       return "$GATE_FAIL"
     fi
-    if ! printf '%s\n' "$out" | grep -q "^$code|"; then
+    if ! grep -q "^$code|" <<<"$out"; then
       rm -rf "$work"
+      echo "FAILED  $name"
       gate_fail "self-test: fixture '$name' did not return $code; it said: ${out//$'\n'/ / }"
+      gate_case_failed; gate_tally
       return "$GATE_FAIL"
     fi
   done
 
   rm -rf "$work"
+  gate_tally
   return "$GATE_OK"
 }
 

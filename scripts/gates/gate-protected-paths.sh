@@ -185,7 +185,7 @@ while IFS= read -r line; do
 done <<< "$out"
 
 case "$rc" in
-  0) if [ "$OVERRIDE" != "-" ] && printf '%s' "$out" | grep -q '^OVERRIDDEN '; then
+  0) if [ "$OVERRIDE" != "-" ] && grep -q '^OVERRIDDEN ' <<<"$out"; then
        gate_ok "the limits are documented as enforced; an automation moved some of them and the maintainer's label says so on purpose"
      else
        gate_ok "the limits are documented as enforced, and nothing carrying a mark of automation touched them"

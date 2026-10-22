@@ -100,8 +100,20 @@ class Unmeasured(Exception):
     pass
 
 
+# A MARKER IS A LINE, NOT A SUBSTRING. Written loosely, the sentence that
+# EXPLAINS this exemption opens it: `<!-- counts:historical -->` inside prose
+# is an opening marker, the lazy span runs to the next real closing one, and
+# everything between silently stops being checked. Measured on 2026-09-07
+# against CHANGELOG.md: 35 lines and 10,116 characters of the live section,
+# including a declared corpus count that had been wrong since 2026-09-01. The
+# run said "1 region", which is exactly what it says when nothing is wrong.
+# Both markers must therefore own their line, which is how they are really
+# written, and a mention inside a sentence stays inert.
 HISTORICAL = re.compile(
-    r"<!--\s*counts:historical\s*-->.*?<!--\s*/counts:historical\s*-->", re.S)
+    r"^[ \t]*<!--[ \t]*counts:historical[ \t]*-->[ \t]*$"
+    r".*?"
+    r"^[ \t]*<!--[ \t]*/counts:historical[ \t]*-->[ \t]*$",
+    re.S | re.M)
 
 
 def drop_historical(text: str, counter: list[int] | None = None) -> str:
@@ -134,6 +146,32 @@ def read(root: Path, rel: str) -> str:
 
 def as_int(text: str) -> int:
     return int(text.replace(",", ""))
+
+
+# THE SPELLING IS NOT THE CLAIM. DECL_FILES deliberately accepts a digit as
+# well as a word, and the comparison used to admit only the word, so every
+# "20 files" in the prose was a finding no rewrite of the number could clear -
+# a check that accuses the text for saying the right thing in the other
+# spelling. It went unseen because it lived inside the region the historical
+# marker was swallowing.
+WORD_VALUE = {w: n for n, w in NUMBER_WORDS.items()}
+WORD_VALUE.update({
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9,
+})
+
+
+def count_value(token: str) -> int | None:
+    """The number a declaration states, in whichever spelling it uses."""
+    token = token.strip().lower()
+    if token.isdigit():
+        return int(token)
+    if token in WORD_VALUE:
+        return WORD_VALUE[token]
+    head, _, tail = token.partition("-")
+    if head in WORD_VALUE and tail in WORD_VALUE:
+        return WORD_VALUE[head] + WORD_VALUE[tail]
+    return None
 
 
 def main() -> int:
@@ -212,7 +250,6 @@ def main() -> int:
             )
 
     # ---- 2 and 3. declarations ----------------------------------------
-    file_word = NUMBER_WORDS.get(len(on_disk))
     for rel in DECLARING_FILES:
         text = drop_historical(current_section(rel, read(root, rel)), historical)
         for m in DECL_LINES.finditer(text):
@@ -225,9 +262,15 @@ def main() -> int:
                 findings.append(f"{rel}: declares {m.group(1)} procedures; measured {total_procs}")
         for m in DECL_FILES.finditer(text):
             checks += 1
-            if file_word and m.group(1) != file_word:
+            said = count_value(m.group(1))
+            if said is None:
                 findings.append(
-                    f"{rel}: declares '{m.group(1)} files'; there are {len(on_disk)} ({file_word})"
+                    f"{rel}: declares '{m.group(1)} files' and this gate cannot read that "
+                    "as a number, so it is not checking it"
+                )
+            elif said != len(on_disk):
+                findings.append(
+                    f"{rel}: declares '{m.group(1)} files'; there are {len(on_disk)}"
                 )
     for rel in DECLARING_FILES + [TEAM]:
         text = drop_historical(current_section(rel, read(root, rel)))

@@ -132,6 +132,12 @@ PY
 }
 
 selftest() {
+  # Cases that PASSED. A self-test that cannot say how many it ran cannot
+  # tell five from zero, and the doc row promising a number was never
+  # checkable against anything. Counted on the pass branch, which is the
+  # only one that does not abort. Global on purpose: the line that prints it
+  # lives in the main flow, outside this function.
+  SELFTEST_CASES=0
   command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not on PATH"; return "$GATE_UNMEASURABLE"; }
   local work out
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
@@ -144,7 +150,7 @@ selftest() {
 
   out="$(census "$work")"
   case "$out" in
-    0\|*) : ;;
+    0\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a consistent census returned '$out', expected 0"; return "$GATE_FAIL" ;;
   esac
 
@@ -153,7 +159,7 @@ selftest() {
   printf '%s\n' '| c | `ehs-gamma` |' >> "$work/skills/ethical-hacker-squad/references/team.md"
   out="$(census "$work")"
   case "$out" in
-    1\|*ehs-gamma*ships\ to\ nobody*) : ;;
+    1\|*ehs-gamma*ships\ to\ nobody*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: an undeclared agent returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
   esac
 
@@ -161,7 +167,7 @@ selftest() {
   printf '%s\n' '{"agents": ["./agents/ehs-alpha.md", "./agents/ehs-ghost.md"]}' > "$work/.claude-plugin/plugin.json"
   out="$(census "$work")"
   case "$out" in
-    1\|*ehs-ghost*broken\ path*) : ;;
+    1\|*ehs-ghost*broken\ path*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a declared-but-absent agent returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
@@ -172,7 +178,7 @@ selftest() {
   printf '%s\n' '{"agents": ["./agents/ehs-alpha.md", "./agents/ehs-beta.md", "./agents/ehs-alpha.md"]}' > "$work/.claude-plugin/plugin.json"
   out="$(census "$work")"
   case "$out" in
-    1\|*ehs-alpha*declared\ 2\ times*) : ;;
+    1\|*ehs-alpha*declared\ 2\ times*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: an agent declared twice returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
   esac
 
@@ -181,7 +187,7 @@ selftest() {
   printf '%s\n' '{"agents": ["./agents/ehs-alpha.md", "./agents/ehs-beta.md", "./vendor/ehs-alpha.md"]}' > "$work/.claude-plugin/plugin.json"
   out="$(census "$work")"
   case "$out" in
-    1\|*ehs-alpha*declared\ 2\ times*) : ;;
+    1\|*ehs-alpha*declared\ 2\ times*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: two paths for one role returned '$out', expected 1 naming it"; return "$GATE_FAIL" ;;
   esac
 
@@ -189,7 +195,7 @@ selftest() {
   printf '%s\n' '{ not json' > "$work/.claude-plugin/plugin.json"
   out="$(census "$work")"
   case "$out" in
-    2\|*) : ;;
+    2\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: an unparseable manifest returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
@@ -206,6 +212,7 @@ main() {
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
+    gate_info "self-test: $SELFTEST_CASES passed, 0 failed"
     gate_info "self-test: an undeclared agent, a declared-but-absent one, a role declared twice, two paths for one role and an unparseable manifest all behave"
   else
     SELFTEST_SKIPPED=1

@@ -66,25 +66,26 @@ self_test() {
     local found=0
     for d in "$FIXTURES/$want"/*/; do
       [ -d "$d" ] || continue
-      found=1; rc=0
+      found=1; gate_case; rc=0
       run_core "$d" "$out" || rc=$?
       case "$want" in
         bad)
           if [ "$rc" -ne 0 ] || ! grep -qE '^(UNINDEXED|BROKEN)\|' "$out"; then
-            gate_warn "NEGATIVE self-test failed: $(basename "$d") should report a finding"; ok=0
+            gate_warn "NEGATIVE self-test failed: $(basename "$d") should report a finding"; ok=0; gate_case_failed
           fi ;;
         good)
           if [ "$rc" -ne 0 ] || grep -qE '^(UNINDEXED|BROKEN|ERR)\|' "$out"; then
-            gate_warn "POSITIVE self-test failed: $(basename "$d") should be clean:"; sed 's/^/        /' "$out"; ok=0
+            gate_warn "POSITIVE self-test failed: $(basename "$d") should be clean:"; sed 's/^/        /' "$out"; ok=0; gate_case_failed
           fi ;;
         unmeasurable)
           if [ "$rc" -ne 2 ] || ! grep -q '^ERR|' "$out"; then
-            gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (rc 2 + ERR), gave rc=$rc"; ok=0
+            gate_warn "self-test failed: $(basename "$d") should be UNMEASURABLE (rc 2 + ERR), gave rc=$rc"; ok=0; gate_case_failed
           fi ;;
       esac
     done
     [ "$found" -eq 1 ] || { gate_warn "self-test: there are no '$want' fixtures"; ok=0; }
   done
+  gate_tally
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"
 }

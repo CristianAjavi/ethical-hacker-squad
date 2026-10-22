@@ -133,6 +133,12 @@ PY
 }
 
 selftest() {
+  # Cases that PASSED. A self-test that cannot say how many it ran cannot
+  # tell five from zero, and the doc row promising a number was never
+  # checkable against anything. Counted on the pass branch, which is the
+  # only one that does not abort. Global on purpose: the line that prints it
+  # lives in the main flow, outside this function.
+  SELFTEST_CASES=0
   command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not on PATH"; return "$GATE_UNMEASURABLE"; }
   local work out cov tra
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
@@ -146,28 +152,28 @@ selftest() {
   write_tra "no procedure, and deliberately so."
   printf '%s\n' '| widgets | x | y | has **no procedure** (gap: **Widget surfaces**). |' > "$cov"
   out="$(audit "$work")"
-  case "$out" in 0\|*) : ;; *) rm -rf "$work"; gate_fail "self-test: an anchored live gap returned '$out', expected 0"; return "$GATE_FAIL" ;; esac
+  case "$out" in 0\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;; *) rm -rf "$work"; gate_fail "self-test: an anchored live gap returned '$out', expected 0"; return "$GATE_FAIL" ;; esac
 
   # The defect: the anchor resolves and its target refutes the claim.
   write_tra "now covered by \`widget.md\` (\`WID-01\`..\`WID-09\`)."
   out="$(audit "$work")"
-  case "$out" in 1\|*sends\ a\ reader\ away*) : ;; *) rm -rf "$work"; gate_fail "self-test: a claim anchored to a covered gap returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
+  case "$out" in 1\|*sends\ a\ reader\ away*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;; *) rm -rf "$work"; gate_fail "self-test: a claim anchored to a covered gap returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
 
   # An unanchored claim of absence is unverifiable prose.
   write_tra "no procedure, and deliberately so."
   printf '%s\n' '| widgets | x | y | has **no procedure** - see the gap list. |' > "$cov"
   out="$(audit "$work")"
-  case "$out" in 1\|*names\ no\ gap-list\ entry*) : ;; *) rm -rf "$work"; gate_fail "self-test: an unanchored claim returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
+  case "$out" in 1\|*names\ no\ gap-list\ entry*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;; *) rm -rf "$work"; gate_fail "self-test: an unanchored claim returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
 
   # An anchor pointing at nothing.
   printf '%s\n' '| widgets | x | y | has **no procedure** (gap: **Gadget surfaces**). |' > "$cov"
   out="$(audit "$work")"
-  case "$out" in 1\|*not\ an\ entry*) : ;; *) rm -rf "$work"; gate_fail "self-test: a dangling anchor returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
+  case "$out" in 1\|*not\ an\ entry*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;; *) rm -rf "$work"; gate_fail "self-test: a dangling anchor returned '$out', expected 1"; return "$GATE_FAIL" ;; esac
 
   # No gap section at all is 2, never a pass.
   printf '%s\n' '# nothing here' > "$tra"
   out="$(audit "$work")"
-  case "$out" in 2\|*) : ;; *) rm -rf "$work"; gate_fail "self-test: a missing gap section returned '$out', expected 2"; return "$GATE_FAIL" ;; esac
+  case "$out" in 2\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;; *) rm -rf "$work"; gate_fail "self-test: a missing gap section returned '$out', expected 2"; return "$GATE_FAIL" ;; esac
 
   rm -rf "$work"
   return "$GATE_OK"
@@ -182,6 +188,7 @@ main() {
     selftest
     local st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
+    gate_info "self-test: $SELFTEST_CASES passed, 0 failed"
     gate_info "self-test: a live anchored gap passes; a claim anchored to a covered gap, an unanchored claim and a dangling anchor each fail; a missing gap section reports 2"
   else
     SELFTEST_SKIPPED=1

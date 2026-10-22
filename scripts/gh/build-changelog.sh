@@ -98,8 +98,8 @@ while IFS= read -r sha; do
   desc=$(sanitize "$desc")
   entry="- ${desc} (\`${short}\`)"
 
-  if printf '%s' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
-     || printf '%s' "$body" | grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:'; then
+  if grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' <<<"$subject" \
+     || grep -qE '(^|[[:space:]])BREAKING[ -]CHANGE:' <<<"$body"; then
     BREAKS+="${entry}"$'\n'
   fi
 

@@ -150,6 +150,12 @@ PY
 }
 
 selftest() {
+  # Cases that PASSED. A self-test that cannot say how many it ran cannot
+  # tell five from zero, and the doc row promising a number was never
+  # checkable against anything. Counted on the pass branch, which is the
+  # only one that does not abort. Global on purpose: the line that prints it
+  # lives in the main flow, outside this function.
+  SELFTEST_CASES=0
   command -v python3 >/dev/null 2>&1 || { gate_warn "python3 is not on PATH"; return "$GATE_UNMEASURABLE"; }
   local work out
   work="$(mktemp -d)" || { gate_warn "cannot create a working directory"; return "$GATE_UNMEASURABLE"; }
@@ -161,14 +167,14 @@ selftest() {
   printf '%s\n' '{"families":{"alpha":{"inputs":1,"assertions":1}}}' > "$c"
 
   out="$(count "$work" "$c")"
-  case "$out" in 0\|*) : ;;
+  case "$out" in 0\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a matching census returned '$out', expected 0"; return "$GATE_FAIL" ;;
   esac
 
   # THE DEFECT THIS GATE EXISTS FOR: a negative proof removed from the tree.
   command rm "$work/scripts/gates/fixtures/alpha/bad/1-broken.json"
   out="$(count "$work" "$c")"
-  case "$out" in 1\|*RETIRED*) : ;;
+  case "$out" in 1\|*RETIRED*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a retired proof returned '$out', expected 1 saying RETIRED"; return "$GATE_FAIL" ;;
   esac
 
@@ -176,7 +182,7 @@ selftest() {
   : > "$work/scripts/gates/fixtures/alpha/bad/1-broken.json"
   : > "$work/scripts/gates/fixtures/alpha/bad/2-also-broken.json"
   out="$(count "$work" "$c")"
-  case "$out" in 1\|*stale*) : ;;
+  case "$out" in 1\|*stale*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a stale census returned '$out', expected 1 saying stale"; return "$GATE_FAIL" ;;
   esac
   command rm "$work/scripts/gates/fixtures/alpha/bad/2-also-broken.json"
@@ -186,7 +192,7 @@ selftest() {
   mkdir -p "$work/scripts/gates/fixtures/beta/bad"
   : > "$work/scripts/gates/fixtures/beta/bad/1-broken.json"
   out="$(count "$work" "$c")"
-  case "$out" in 1\|*does\ not\ name\ this\ family*) : ;;
+  case "$out" in 1\|*does\ not\ name\ this\ family*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: an undeclared family returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
   command rm -rf "$work/scripts/gates/fixtures/beta"
@@ -195,14 +201,14 @@ selftest() {
   # which a naive per-file comparison reads as "nothing to compare".
   command rm -rf "$work/scripts/gates/fixtures/alpha"
   out="$(count "$work" "$c")"
-  case "$out" in 1\|*GONE\ from\ disk*) : ;;
+  case "$out" in 1\|*GONE\ from\ disk*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a deleted family returned '$out', expected 1"; return "$GATE_FAIL" ;;
   esac
 
   # And a missing census must be 2, never a pass: a gate whose baseline is gone
   # has not measured a clean tree, it has measured nothing.
   out="$(count "$work" "$work/does-not-exist.json")"
-  case "$out" in 2\|*) : ;;
+  case "$out" in 2\|*) SELFTEST_CASES=$((SELFTEST_CASES + 1)) ;;
     *) rm -rf "$work"; gate_fail "self-test: a missing census returned '$out', expected 2"; return "$GATE_FAIL" ;;
   esac
 
@@ -221,6 +227,7 @@ main() {
   if [ "${GATE_SELFTEST:-1}" != "0" ]; then
     selftest; st=$?
     [ "$st" -eq "$GATE_OK" ] || { gate_verdict "$st"; return "$st"; }
+    gate_info "self-test: $SELFTEST_CASES passed, 0 failed"
     gate_info "self-test: a retired proof, a stale baseline, an undeclared family, a deleted family and a missing census all behave"
   else
     gate_warn "self-test SKIPPED via GATE_SELFTEST=0: the verdict cannot be 0"

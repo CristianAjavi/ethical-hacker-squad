@@ -59,17 +59,29 @@ jobs:
       - name: Gate inventory
         run: ./scripts/gates/run-all.sh --list
 
-      - name: Run the gates that do not depend on external tools
-        run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
-
       # The rule - anything named `*.selftest.sh` is a battery and gets run,
       # wherever it lives - used to be written HERE, inline. That made it
       # unreproducible on a laptop: locally the only battery runner walked
       # scripts/gates/ and nothing else, so scripts/bench/'s batteries ran in CI
       # and nowhere a maintainer could see. The rule now lives in one file that
       # both call, and that file has its own battery.
+      #
+      # This runs BEFORE the gates, and that order is load-bearing. Five of these
+      # batteries are also what `gate-declared-case-counts` has to run to check
+      # the case counts the requirements table declares, so the job used to run
+      # them twice: 59.3 s of duplicated work, median of 3, spread 2%. Going
+      # first, this step leaves their tallies in EHS_TALLY_LEDGER and the gate
+      # reads them instead - measured 40.4 s -> 3.9 s, ranges apart. A missing
+      # or stale ledger costs exactly what it cost before: the battery runs.
       - name: Prove the gates in the negative
         run: ./scripts/run-batteries.sh
+        env:
+          EHS_TALLY_LEDGER: ${{ runner.temp }}/tally-ledger.txt
+
+      - name: Run the gates that do not depend on external tools
+        run: ./scripts/gates/run-all.sh --skip 'gate-actions-lint.sh'
+        env:
+          EHS_TALLY_LEDGER: ${{ runner.temp }}/tally-ledger.txt
 
   workflow-hardening:
     # Same rule as above: the name IS the required-context string.

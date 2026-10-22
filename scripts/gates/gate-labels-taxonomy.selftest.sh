@@ -41,7 +41,7 @@ run_case() {  # <name> <expected rc> <needle> <mutation>
   "$mutate" "$d"
   local out rc=0
   out="$(bash "$d/$GATE_REL" 2>&1)" || rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -qi -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -qi -- "$needle" <<<"$out"; }; then
     printf 'ok       %-36s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-36s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
@@ -107,7 +107,7 @@ run_case labels-sh-missing           2 "labels.sh"               m_no_labels_sh
 run_case issue-template-dir-missing  2 "ISSUE_TEMPLATE"          m_no_form_dir
 
 echo
-echo "Summary: $pass ok, $fail failures"
+echo "Summary: $pass passed, $fail failed"
 [ "$fail" -gt 0 ] && { echo "Result: FAILED."; exit 1; }
 echo "Result: OK. The gate catches a label GitHub would drop in silence, an entry"
 echo "        path with no label at all, and a tool depending on a label nobody"

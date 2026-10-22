@@ -197,7 +197,7 @@ matches_any_pattern_affirmative() {
     [ -n "$pat" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
-      if printf '%s\n' "$line" | grep -qiE "$NEGATION_RE"; then continue; fi
+      if grep -qiE "$NEGATION_RE" <<<"$line"; then continue; fi
       printf '%s\n' "$line"; return 0
     done <<EOF2
 $(grep -niE "$pat" "$file" 2>/dev/null)

@@ -152,7 +152,7 @@ expect_says() { # expect_says <name> <want_rc> <substring> <dir> [extra args...]
   got=$?
   if [ "$got" -ne "$want" ]; then
     bad "$name" "expected exit $want, got $got"
-  elif printf '%s' "$LAST_OUT" | grep -qF "$needle"; then
+  elif grep -qF "$needle" <<<"$LAST_OUT"; then
     ok "$name (exit $got, said \"$needle\")"
   else
     bad "$name" "exit $want was right but the output never mentions: $needle"
@@ -214,7 +214,7 @@ if [ -x "$BIN/bash" ] && ! PATH="$BIN" command -v python3 >/dev/null 2>&1; then
   LAST_OUT="$(PATH="$BIN" bash "$METER" --root "$F" --packs "$F/packs.json" \
       --families "$SELF_DIR/standards-families.json" --no-gates 2>&1)"
   got=$?
-  if [ "$got" -eq 2 ] && printf '%s' "$LAST_OUT" | grep -qF "python3 is not on PATH"; then
+  if [ "$got" -eq 2 ] && grep -qF "python3 is not on PATH" <<<"$LAST_OUT"; then
     ok "T09 missing python3 degrades to NOT MEASURED (exit 2)"
   else
     bad "T09 missing python3 degrades to NOT MEASURED" "got exit $got"
@@ -236,7 +236,7 @@ F="$WORK/t11"; make_fixture "$F"
 printf '# Orphan\n\n### TST-99 Nobody counts me\n\n%s\n' "$PROC_BODY" > "$F/kb/orphan.md"
 expect_says "T11 undeclared knowledge file is reported" 2 "not declared in packs.json" "$F"
 run_meter "$F"
-if printf '%s' "$LAST_OUT" | grep -q 'TOTALS NOT MEASURED'; then
+if grep -q 'TOTALS NOT MEASURED' <<<"$LAST_OUT"; then
   ok "T11b undeclared file also voids the totals (no silent under-count)"
 else
   bad "T11b undeclared file also voids the totals" "the totals were still published as measured"
@@ -318,10 +318,10 @@ mv "$F/kb/pack-one.md" "$F/pack-one.md.moved"
 run_meter "$F"; got=$?
 if [ "$got" -ne 2 ]; then
   bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" "expected 2, got $got"
-elif printf '%s' "$LAST_OUT" | grep -qE '^  TOTAL +0 +0 +0'; then
+elif grep -qE '^  TOTAL +0 +0 +0' <<<"$LAST_OUT"; then
   bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" \
       "it printed a TOTAL of 0 as though it had counted"
-elif printf '%s' "$LAST_OUT" | grep -qF 'every procedure carries the six'; then
+elif grep -qF 'every procedure carries the six' <<<"$LAST_OUT"; then
   bad "T17 an empty corpus directory is NOT MEASURED, never 0 procedures" \
       "it gave an all-clear on the six fields over a corpus it never read"
 else
@@ -341,7 +341,7 @@ mv "$F/kb/pack-two.md" "$F/pack-two.md.moved"
 run_meter "$F"; got=$?
 if [ "$got" -ne 2 ]; then
   bad "T18 an unreadable pack file voids the totals" "expected 2, got $got"
-elif printf '%s' "$LAST_OUT" | grep -qE '^  TOTAL +[0-9]'; then
+elif grep -qE '^  TOTAL +[0-9]' <<<"$LAST_OUT"; then
   bad "T18 an unreadable pack file voids the totals" \
       "the TOTAL row still published a number summed over files it could not read"
 else

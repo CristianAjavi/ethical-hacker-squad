@@ -16,28 +16,36 @@ else SRC="$(cd "$HERE/../.." && pwd)"; fi
 command -v python3 >/dev/null 2>&1 || { echo "UNMEASURABLE python3 is missing"; exit 2; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ehs-blind-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+
+# shellcheck source=scripts/gates/lib/fixture-tree.sh
+. "$HERE/lib/fixture-tree.sh" || { echo "UNMEASURABLE lib/fixture-tree.sh is missing"; exit 2; }
+fixture_init "$SRC" "$TMP" || exit 2
 B="bench/runs/2026-08-22-third-competitor/verify/claims.json"
 
 case_run() {
-  local name="$1" want="$2" needle="$3" mutation="$4" work="$TMP/$1"
-  rm -rf "$work"; mkdir -p "$work"
-  (cd "$SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | (cd "$work" && tar -xf -)
+  local name="$1" want="$2" needle="$3" mutation="$4" work="$FIXTURE_WORK"
   local before after
   before="$(cd "$work" && find bench -type f -exec shasum {} + | shasum)"
   if [ -n "$mutation" ] && ! EHS_WORK="$work" python3 -c "$mutation" >/dev/null 2>&1; then
-    printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-38s the mutation itself failed\n' "$name"; fail=$((fail+1)); fixture_reset >/dev/null 2>&1 || true; return
   fi
   after="$(cd "$work" && find bench -type f -exec shasum {} + | shasum)"
   if [ -n "$mutation" ] && [ "$before" = "$after" ]; then
-    printf 'HARNESS  %-38s the mutation was a no-op\n' "$name"; fail=$((fail+1)); return
+    printf 'HARNESS  %-38s the mutation was a no-op\n' "$name"; fail=$((fail+1)); fixture_reset >/dev/null 2>&1 || true; return
   fi
   local out rc
   out="$(EHS_REPO_ROOT="$work" bash "$GATE" 2>&1)"; rc=$?
-  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || printf '%s' "$out" | grep -q -- "$needle"; }; then
+  if [ "$rc" -eq "$want" ] && { [ -z "$needle" ] || grep -q -- "$needle" <<<"$out"; }; then
     printf 'ok       %-38s rc=%s\n' "$name" "$rc"; pass=$((pass+1))
   else
     printf 'FAILED   %-38s rc=%s (wanted %s)\n' "$name" "$rc" "$want"
     printf '%s\n' "$out" | sed 's/^/         /' | tail -5; fail=$((fail+1))
+  fi
+  # The tree the next case is about to receive is only trustworthy if this one
+  # gave it back intact, so the proof runs here and not at the end of the file.
+  local why
+  if ! why="$(fixture_reset)"; then
+    printf 'HARNESS  %-38s %s\n' "$name" "$why"; fail=$((fail+1))
   fi
 }
 
@@ -96,6 +104,11 @@ p.write_text(json.dumps({"rows":[]},indent=1))'
 case_run provenance-will-not-parse 2 "could not be classified" '
 import os,pathlib
 (pathlib.Path(os.environ["EHS_WORK"])/"bench/runs/2026-08-22-third-competitor/keys/provenance.json").write_text("{nope")'
+
+# FOUR CASES THAT HOLD THE REUSED TREE. They live in the library and not here
+# because nine batteries have this shape, and a control written nine times is
+# nine places for one of them to fall behind unnoticed.
+fixture_controls "$SRC"
 
 echo "--- $pass passed, $fail failed ---"
 [ "$fail" -eq 0 ] || exit 1

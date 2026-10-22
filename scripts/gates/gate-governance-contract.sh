@@ -77,44 +77,48 @@ self_test() {
 
   for f in "$FIXTURES"/bad/*.json; do
     [ -e "$f" ] || { gate_warn "self-test: there are no negative fixtures"; return "$GATE_UNMEASURABLE"; }
-    rc=0; run_core "$f" "$out" || rc=$?
+    gate_case; rc=0; run_core "$f" "$out" || rc=$?
     expect="$(sed -n 's/.*"_gate_expect"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
     if [ -z "$expect" ]; then
       gate_warn "self-test: fixture $(basename "$f") does not declare \"_gate_expect\""
-      ok=0
+      ok=0; gate_case_failed
       continue
     fi
     if [ "$rc" -ne 0 ]; then
+      echo "FAILED  negative/$(basename "$f")"
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should be MEASURED (rc 0 from the core) and the core returned $rc"
-      ok=0
+      ok=0; gate_case_failed
       continue
     fi
     if ! grep -q "^${expect}|" "$out"; then
+      echo "FAILED  negative/$(basename "$f")"
       gate_warn "NEGATIVE self-test failed: $(basename "$f") should produce '$expect' and it produced:"
       sed 's/^/        /' "$out"
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
   for f in "$FIXTURES"/good/*.json; do
     [ -e "$f" ] || { gate_warn "self-test: there are no positive fixtures"; return "$GATE_UNMEASURABLE"; }
-    rc=0; run_core "$f" "$out" || rc=$?
+    gate_case; rc=0; run_core "$f" "$out" || rc=$?
     if [ "$rc" -ne 0 ] || grep -qE '^(MISSING|ERR)\|' "$out"; then
+      echo "FAILED  positive/$(basename "$f")"
       gate_warn "POSITIVE self-test failed: $(basename "$f") should come out clean (rc=$rc):"
       sed 's/^/        /' "$out"
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
   for f in "$FIXTURES"/unmeasurable/*.json; do
     [ -e "$f" ] || continue
-    rc=0; run_core "$f" "$out" || rc=$?
+    gate_case; rc=0; run_core "$f" "$out" || rc=$?
     if [ "$rc" -ne 2 ] || ! grep -q '^ERR|' "$out"; then
       gate_warn "self-test failed: $(basename "$f") should come out UNMEASURABLE (rc 2 + ERR) and gave rc=$rc"
-      ok=0
+      ok=0; gate_case_failed
     fi
   done
 
+  gate_tally
   [ "$ok" -eq 1 ] && return "$GATE_OK"
   return "$GATE_UNMEASURABLE"
 }
